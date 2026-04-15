@@ -200,8 +200,9 @@
     <FxCompile Include="resources\shaders\ui\CircleMaskPS.hlsl" />
     <FxCompile Include="resources\shaders\ui\FullscreenQuadVS.hlsl" />
     <FxCompile Include="resources\shaders\SkinnedObject.VS.hlsl" />
-    <FxCompile Include="resources\shaders\CopyImage.VS.hlsl" />
-    <FxCompile Include="resources\shaders\CopyImage.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Fullscreen.VS.hlsl" />
+    <FxCompile Include="resources\shaders\Fullscreen.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Grayscale.PS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Camera\DebugCamera.h">

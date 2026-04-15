@@ -525,21 +525,21 @@ void TitleScene::DrawRender(GameApp& app)
 
 	//if (skyDome_) skyDome_->Draw();
 
-//	if (!showVideo_) {
-		//if (ground_) ground_->Draw();
+	if (!showVideo_) {
+		if (ground_) ground_->Draw();
 		if (titlePlayer) titlePlayer->Draw();
-	//}
+	}
 
-	/*if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
-		auto* cmd = app.Dx()->GetCommandList();
+	//if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
+		/*auto* cmd = app.Dx()->GetCommandList();
 
 		video_->UploadToGpu(cmd);
 
 		D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
 		videoPlane_->DrawWithOverrideSrv(vh);
 
-		video_->EndFrame(cmd);
-	}*/
+		video_->EndFrame(cmd);*/
+	//}
 }
 
 void TitleScene::Draw3D(GameApp& app)
@@ -573,7 +573,7 @@ void TitleScene::Draw2D(GameApp& app)
 	Matrix4x4 proj = Matrix4x4::MakeOrthographicMatrix(
 		0, 0, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0, 100);
 
-	if (!showVideo_) {
+	/*if (!showVideo_) {
 		if (bg_) {
 			bg_->Update(view, proj);
 			bg_->Draw();
@@ -582,7 +582,7 @@ void TitleScene::Draw2D(GameApp& app)
 			pressStart_->Update(view, proj);
 			pressStart_->Draw();
 		}
-	}
+	}*/
 }
 
 void TitleScene::Draw(GameApp& app) {
