@@ -15,6 +15,10 @@ public:
     void Change(GameApp& app, const std::string& name);
 
     void Update(GameApp& app, float dt);
+
+    void DrawRender(GameApp& app);
+    void Draw3D(GameApp& app);
+    void Draw2D(GameApp& app);
     void Draw(GameApp& app);
 
     IScene* Current() { return current_.get(); }

@@ -23,6 +23,9 @@ public:
 	void OnExit(GameApp& app) override;
 
 	void Update(GameApp& app, float dt) override;
+	void DrawRender(GameApp& app) override;
+	void Draw3D(GameApp& app) override;
+	void Draw2D(GameApp& app) override;
 	void Draw(GameApp& app) override;
 
 private:
