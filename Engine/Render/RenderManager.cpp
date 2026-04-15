@@ -111,8 +111,8 @@ void RenderManager::CreateCopyImageRootSignature()
 // ★オフスクリーンからバックバッファへコピーするためのパイプラインステートを作成
 void RenderManager::CreateCopyImagePipelineState()
 {
-    auto vs = dx_->CompileShader(L"resources/shaders/CopyImage.VS.hlsl", L"vs_6_0");
-    auto ps = dx_->CompileShader(L"resources/shaders/CopyImage.PS.hlsl", L"ps_6_0");
+    auto vs = dx_->CompileShader(L"resources/shaders/Fullscreen.VS.hlsl", L"vs_6_0");
+    auto ps = dx_->CompileShader(L"resources/shaders/Grayscale.PS.hlsl", L"ps_6_0");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
 
@@ -150,6 +150,10 @@ void RenderManager::DrawOffscreenToBackBuffer()
 
     auto* cmd = dx_->GetCommandList();
 
+    // ★ SRVヒープを明示的に再セット
+    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
+    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+
     // RenderTexture を読む状態へ
     dx_->TransitionResource(
         offscreen_->GetResource(),
@@ -168,7 +172,6 @@ void RenderManager::DrawOffscreenToBackBuffer()
 
     cmd->DrawInstanced(3, 1, 0, 0);
 
-    // 次フレームまた RenderTarget として使うので戻す
     dx_->TransitionResource(
         offscreen_->GetResource(),
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
