@@ -10,6 +10,7 @@
 #include <dxcapi.h>
 #include <chrono>
 #include <thread>
+#include "MathStruct.h"
 
 class DirectXCommon
 {
@@ -102,7 +103,31 @@ public:
 	/// </summary>
 	static	D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(const Microsoft::WRL::ComPtr < ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriporSize, uint32_t index);
 
+	//===========================
+	//レンダー用
+	//===========================
 
+	//RenderTextureの関数
+	Microsoft::WRL::ComPtr<ID3D12Resource> CreateRenderTextureResource(
+		uint32_t width,
+		uint32_t height,
+		DXGI_FORMAT format,
+		const Vector4& clearColor
+	);
+
+	// RenderTexture用RTVの作成
+	void CreateRenderTextureRTV(
+		ID3D12Resource* resource,
+		uint32_t rtvIndex,
+		DXGI_FORMAT format);
+
+	void PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clearColor);
+
+	// RenderTexture用DSVの作成
+	void TransitionResource(
+		ID3D12Resource* resource,
+		D3D12_RESOURCE_STATES before,
+		D3D12_RESOURCE_STATES after);
 
 private:
 

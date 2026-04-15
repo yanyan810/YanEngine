@@ -16,6 +16,8 @@
 #include "ParticleCommon.h"
 #include "ImGuiManagaer.h"
 
+#include "RenderManager.h"
+
 #include <Windows.h>
 
 GameApp::GameApp() = default;
@@ -43,19 +45,9 @@ int GameApp::Run() {
         // Update
         sceneMgr_->Update(*this, dt);
 
-        // Draw（★PreDraw/SrvPreDraw/PostDraw はここで1回だけ）
-        dx_->PreDraw();
-        srv_->PreDraw();
 
-      
-        sceneMgr_->Draw(*this);
-
-#ifdef USE_IMGUI
-        imgui_->End(dx_->GetCommandList());
-
-#endif // DEBUG
-
-        dx_->PostDraw();
+        //描画
+        Draw();
     }
 
     Finalize_();
@@ -74,6 +66,10 @@ bool GameApp::Initialize_() {
 
     srv_ = std::make_unique<SrvManager>();
     srv_->Initialize(dx_.get());
+
+	//RenderManagerを作る
+    render_ = std::make_unique<RenderManager>();
+    render_->Initialize(dx_.get(), srv_.get());
 
     spriteCommon_ = std::make_unique<SpriteCommon>();
     spriteCommon_->Initialize(dx_.get());
@@ -135,6 +131,7 @@ void GameApp::Finalize_() {
     if (win_) win_->Finalize();
 
     if (dx_) dx_->ReportLiveObjects();
+    render_.reset();
 
     sceneMgr_.reset();
     imgui_.reset();
@@ -158,13 +155,31 @@ void GameApp::Update(float dt) {
 void GameApp::Draw() {
     OutputDebugStringA("[GameApp] Draw\n");
 
-    dx_->PreDraw();
     srv_->PreDraw();
 
-    sceneMgr_->Draw(*this); // ここがあるかが重要
+    // ① Offscreenへ描く
+    render_->BeginOffscreen();
+    sceneMgr_->DrawRender(*this);
+    render_->EndOffscreen();
+
+    // ② BackBufferへ
+    dx_->PreDraw();
+
+    // ③ Offscreenの中身を画面へ貼る
+    render_->DrawOffscreenToBackBuffer();
+
+    // ④ 直接描く3D/2D/最終演出
+    sceneMgr_->Draw3D(*this);
+    sceneMgr_->Draw2D(*this);
+    sceneMgr_->Draw(*this);
+
+#ifdef USE_IMGUI
+    if (imgui_) {
+        imgui_->End(dx_->GetCommandList());
+    }
+#endif
 
     dx_->PostDraw();
-
 }
 
 void GameApp::WarmupAssets_() {

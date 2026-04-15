@@ -11,6 +11,7 @@ class Object3dCommon;
 class ParticleCommon;
 class ImGuiManagaer;
 class SkinningCommon;
+class RenderManager;
 
 class SceneManager;
 
@@ -39,6 +40,9 @@ public:
 
     void Draw();
 
+    //レンダー用ゲッター
+    RenderManager* Render() const { return render_.get(); }
+
     Input* GetInput() { return input_.get(); }
     const Input* GetInput() const { return input_.get(); }
 
@@ -61,4 +65,8 @@ private:
     std::unique_ptr<SceneManager> sceneMgr_;
     std::unique_ptr<Input> input_; 
     std::unique_ptr<SkinningCommon> skinCom_;
+
+	//RenderManagerを持たせる
+    std::unique_ptr<RenderManager> render_;
+
 };
