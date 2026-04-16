@@ -13,6 +13,7 @@
 
 #include "Player.h"
 #include "PlayerCombo.h"
+#include "Skybox.h"
 
 class Particle;
 class Camera;
@@ -156,6 +157,8 @@ private:
 	std::unique_ptr<Player> titlePlayer;
 	std::unique_ptr<VideoPlayerMF> video_; // もしくは値型でもOK
 	bool enableVideo_ = true;              // ImGuiでON/OFFできるように
+
+	std::unique_ptr<Skybox> skybox_;
 
 	// ===== Lighting params =====
 	LightingParam light_;

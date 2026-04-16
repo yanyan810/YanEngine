@@ -67,12 +67,11 @@ void TextureManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
 void TextureManager::LoadTexture(const std::string& filePath)
 {
     if (filePath.empty()) {
-        return; // 空は白テクスチャを使う想定
+        return;
     }
 
-    // ★これを入れる
     if (textureDatas_.contains(filePath)) {
-        return; // 既にロード済み
+        return;
     }
 
     if (!std::filesystem::exists(filePath)) {
@@ -80,52 +79,79 @@ void TextureManager::LoadTexture(const std::string& filePath)
         return;
     }
 
-    // ---- 画像読み込み ----
     DirectX::ScratchImage image{};
     std::wstring filePathW = ConvertString(filePath);
-    HRESULT hr = DirectX::LoadFromWICFile(
-        filePathW.c_str(),
-        DirectX::WIC_FLAGS_FORCE_SRGB,
-        nullptr,
-        image
-    );
+
+    HRESULT hr = S_OK;
+
+    // 拡張子で分岐
+    if (filePath.size() >= 4 &&
+        (filePath.ends_with(".dds") || filePath.ends_with(".DDS"))) {
+        hr = DirectX::LoadFromDDSFile(
+            filePathW.c_str(),
+            DirectX::DDS_FLAGS_NONE,
+            nullptr,
+            image
+        );
+    }
+    else {
+        hr = DirectX::LoadFromWICFile(
+            filePathW.c_str(),
+            DirectX::WIC_FLAGS_FORCE_SRGB,
+            nullptr,
+            image
+        );
+    }
     assert(SUCCEEDED(hr));
 
-    // ---- ミップ生成（失敗したら元画像でOK）----
     DirectX::ScratchImage mipImages{};
-    hr = DirectX::GenerateMipMaps(
-        image.GetImages(),
-        image.GetImageCount(),
-        image.GetMetadata(),
-        DirectX::TEX_FILTER_SRGB,
-        0,
-        mipImages
-    );
-    if (FAILED(hr)) {
+
+    // 圧縮DDSはGenerateMipMapsが失敗しやすいのでそのまま使う
+    if (DirectX::IsCompressed(image.GetMetadata().format)) {
         mipImages = std::move(image);
     }
+    else {
+        hr = DirectX::GenerateMipMaps(
+            image.GetImages(),
+            image.GetImageCount(),
+            image.GetMetadata(),
+            DirectX::TEX_FILTER_SRGB,
+            0,
+            mipImages
+        );
+        if (FAILED(hr)) {
+            mipImages = std::move(image);
+        }
+    }
 
-    // ---- 登録（unordered_map の key に filePath を使う）----
     TextureData& tex = textureDatas_[filePath];
 
     tex.metadata = mipImages.GetMetadata();
     tex.resource = dx_->CreateTextureResource(tex.metadata);
 
-    // GPUへアップロード
     dx_->UploadTextureData(tex.resource, mipImages);
 
-    // SRV確保（★チェックは Allocate 内で完結）
     tex.srvIndex = srvManager_->Allocate();
     tex.srvHandleCPU = srvManager_->GetCPUDescriptionHandle(tex.srvIndex);
     tex.srvHandleGPU = srvManager_->GetGPUDescriptionHandle(tex.srvIndex);
 
-    // SRV作成は SrvManager に委譲
-    srvManager_->CreateSRVTexture2D(
-        tex.srvIndex,
-        tex.resource.Get(),
-        tex.metadata.format,
-        static_cast<UINT>(tex.metadata.mipLevels)
-    );
+    // cubemap かどうかで SRV を分ける
+    if (tex.metadata.IsCubemap()) {
+        srvManager_->CreateSRVTextureCube(
+            tex.srvIndex,
+            tex.resource.Get(),
+            tex.metadata.format,
+            static_cast<UINT>(tex.metadata.mipLevels)
+        );
+    }
+    else {
+        srvManager_->CreateSRVTexture2D(
+            tex.srvIndex,
+            tex.resource.Get(),
+            tex.metadata.format,
+            static_cast<UINT>(tex.metadata.mipLevels)
+        );
+    }
 }
 
 

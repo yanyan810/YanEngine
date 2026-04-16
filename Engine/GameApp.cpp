@@ -16,6 +16,7 @@
 #include "ParticleCommon.h"
 #include "ImGuiManagaer.h"
 
+
 #include "RenderManager.h"
 
 #include <Windows.h>
@@ -85,6 +86,10 @@ bool GameApp::Initialize_() {
 
     particleCommon_ = std::make_unique<ParticleCommon>();
     particleCommon_->Initialize(dx_.get());
+
+    skyboxCommon_ = std::make_unique<SkyboxCommon>();
+    skyboxCommon_->Initialize(dx_.get());
+
 
 #ifdef USE_IMGUI
     imgui_ = std::make_unique<ImGuiManagaer>();
@@ -187,6 +192,7 @@ void GameApp::WarmupAssets_() {
 
     // もしテクスチャも初回で刺さるならここで
     TextureManager::GetInstance()->LoadTexture("resources/shadow/shadow.png");
+    TextureManager::GetInstance()->LoadTexture("resources/skybox/skybox.dds");
 
     // モデル（ModelManager がキャッシュする前提）
     ModelManager::GetInstance()->LoadModel("human/walk.gltf");
