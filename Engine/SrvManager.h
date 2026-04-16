@@ -15,6 +15,8 @@ public:
     // SRV生成（テクスチャ）
     void CreateSRVTexture2D(uint32_t srvIndex, ID3D12Resource* pResource, DXGI_FORMAT format, UINT mipLevels);
 
+    void CreateSRVTextureCube(uint32_t srvIndex, ID3D12Resource* pResource, DXGI_FORMAT format, UINT mipLevels);
+
     void PreDraw();
     void SetGraphicsDescriptorTable(UINT RootParameterIndex, uint32_t srvIndex);
 

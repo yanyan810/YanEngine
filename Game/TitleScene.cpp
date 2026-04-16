@@ -51,8 +51,15 @@ void TitleScene::OnEnter(GameApp& app) {
 	ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
 	ground_->SetEnableLighting(0);
 
+	skybox_ = std::make_unique<Skybox>();
+	skybox_->Initialize(app.SkyboxCom(), app.Dx());
+	skybox_->SetCamera(camera_.get());
+	skybox_->SetScale({ 500.0f, 500.0f, 500.0f });
 
-
+	TextureManager::GetInstance()->LoadTexture("resources/skybox/skybox.dds");
+	skybox_->SetTextureHandle(
+		TextureManager::GetInstance()->GetSrvHandleGPU("resources/skybox/skybox.dds")
+	);
 
 	// Particle
 	particle_ = std::make_unique<Particle>();
@@ -180,6 +187,8 @@ void TitleScene::Update(GameApp& app, float dt) {
 		app.RequestQuit();
 		return;
 	}
+
+	skybox_->Update();
 
 	bool spaceNow = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 	bool spaceTrig = spaceNow && !prevSpace_;
@@ -519,16 +528,19 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 }
 
+//========================
+//レンダー反映するモデル
+//========================
 void TitleScene::DrawRender(GameApp& app)
 {
 	app.ObjCom()->SetGraphicsPipelineState();
 
 	//if (skyDome_) skyDome_->Draw();
 
-	if (!showVideo_) {
-		if (ground_) ground_->Draw();
-		if (titlePlayer) titlePlayer->Draw();
-	}
+	//if (!showVideo_) {
+	//	if (ground_) ground_->Draw();
+	//	if (titlePlayer) titlePlayer->Draw();
+	//}
 
 	//if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
 		/*auto* cmd = app.Dx()->GetCommandList();
@@ -540,11 +552,17 @@ void TitleScene::DrawRender(GameApp& app)
 
 		video_->EndFrame(cmd);*/
 	//}
+
+	skybox_->Draw();
+
 }
 
+//========================
+//レンダー反映しないモデル
+//========================
 void TitleScene::Draw3D(GameApp& app)
 {
-	////app.ObjCom()->SetGraphicsPipelineState();
+	app.ObjCom()->SetGraphicsPipelineState();
 
 	////if (skyDome_) skyDome_->Draw();
 
@@ -563,6 +581,9 @@ void TitleScene::Draw3D(GameApp& app)
 
 	////	video_->EndFrame(cmd);
 	////}
+
+	//skybox_->Draw();
+
 }
 
 void TitleScene::Draw2D(GameApp& app)

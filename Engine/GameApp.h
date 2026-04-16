@@ -2,6 +2,7 @@
 #include <memory>
 #include "SceneManager.h"
 #include "Input.h"
+#include "SkyboxCommon.h"
 
 class WinApp;
 class DirectXCommon;
@@ -31,7 +32,7 @@ public:
     Object3dCommon* ObjCom() const { return objCommon_.get(); }
     ParticleCommon* ParticleCom() const { return particleCommon_.get(); }
     ImGuiManagaer* ImGui() const { return imgui_.get(); }
-
+    SkyboxCommon* SkyboxCom() const { return skyboxCommon_.get(); }
     SkinningCommon* SkinCom() { return skinCom_.get(); }
 
     SceneManager& Scenes() { return *sceneMgr_; }
@@ -65,6 +66,7 @@ private:
     std::unique_ptr<SceneManager> sceneMgr_;
     std::unique_ptr<Input> input_; 
     std::unique_ptr<SkinningCommon> skinCom_;
+    std::unique_ptr<SkyboxCommon> skyboxCommon_;
 
 	//RenderManagerを持たせる
     std::unique_ptr<RenderManager> render_;
