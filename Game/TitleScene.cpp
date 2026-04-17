@@ -553,7 +553,7 @@ void TitleScene::DrawRender(GameApp& app)
 		video_->EndFrame(cmd);*/
 	//}
 
-	skybox_->Draw();
+	//skybox_->Draw();
 
 }
 
@@ -582,7 +582,7 @@ void TitleScene::Draw3D(GameApp& app)
 	////	video_->EndFrame(cmd);
 	////}
 
-	//skybox_->Draw();
+	skybox_->Draw();
 
 }
 
