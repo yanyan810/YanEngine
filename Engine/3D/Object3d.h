@@ -68,29 +68,6 @@ public:
 
 	};
 
-	//struct WellForGPU {
-	//	Matrix4x4 skeletonSpaceMatrix;
-	//	Matrix4x4 skeletonSpaceInverseTransposeMatrix;
-	//};
-
-	//struct SkinCluster {
-	//	// ---- inverse bind (jointIndex順) ----
-	//	std::vector<Matrix4x4> inverseBindPoseMatrices;
-
-	//	// ---- influence (vertexCount分) ----
-	//	Microsoft::WRL::ComPtr<ID3D12Resource> influenceResource;
-	//	D3D12_VERTEX_BUFFER_VIEW influenceBufferView;
-	//	std::span<Model::VertexInfluence> mappedInfluence;
-	//	
-	//	// ---- palette (jointCount分) ----
-	//	Microsoft::WRL::ComPtr<ID3D12Resource> paletteResource;
-	//	std::span<WellForGPU> mappedPalette;
-	//	std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> paletteSrvHandle{};
-	//};
-
-
-
-
 public:
 
 	void Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx);
@@ -190,6 +167,30 @@ public:
 
 	Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
 
+public:
+
+	//環境マップ
+	void SetUseEnvironmentMap(bool use) { useEnvironmentMap_ = use; }
+	bool GetUseEnvironmentMap() const { return useEnvironmentMap_; }
+
+	void SetEnvironmentTexturePath(const std::string& path) { environmentTexturePath_ = path; }
+	const std::string& GetEnvironmentTexturePath() const { return environmentTexturePath_; }
+
+	void SetEnvironmentCoefficient(float v) {
+		if (model_ && model_->GetMaterial()) {
+			model_->GetMaterial()->environmentCoefficient = v;
+		}
+	}
+
+	float GetEnvironmentCoefficient() const {
+		return (model_ && model_->GetMaterial()) ?
+			model_->GetMaterial()->environmentCoefficient : 0.0f;
+	}
+
+private:
+	//環境マップ
+	bool useEnvironmentMap_ = false;
+	std::string environmentTexturePath_;
 
 private:
 
@@ -255,7 +256,7 @@ private:
 	std::string playingAnimName_;   // 空なら先頭を使う
 	std::string playingNodeName_ = "root"; // まずはroot/なければ先頭
 	bool loop_ = true;
-	
+
 	bool poseReady_ = false;
 
 	bool debugDrawBones_ = false;
@@ -266,41 +267,41 @@ private:
 
 	SrvManager* srvManager_ = nullptr; // ★参照
 
-	private:
-		SkinCluster CreateSkinCluster(
-			ID3D12Device* device,
-			const Model::Skeleton& skeleton,
-			const std::map<std::string, Model::JointWeightData>& skinData,
-			uint32_t vertexCount,
-			ID3D12DescriptorHeap* srvHeap,
-			uint32_t descriptorSize
-		);
+private:
+	SkinCluster CreateSkinCluster(
+		ID3D12Device* device,
+		const Model::Skeleton& skeleton,
+		const std::map<std::string, Model::JointWeightData>& skinData,
+		uint32_t vertexCount,
+		ID3D12DescriptorHeap* srvHeap,
+		uint32_t descriptorSize
+	);
 
-		void UpdateSkinCluster_();
-
-
-		int32_t swordNodeIndex_ = -1;   // ノード index
-		uint32_t swordMeshIndex_ = 2;   // 今ログ的に sword は mesh[2]
+	void UpdateSkinCluster_();
 
 
-		public:
-
-			//========================
-			//video
-			//========================
-
-			void SetVideo(VideoPlayerMF* v) { video_ = v; useVideo_ = (v != nullptr); }
-
-			void DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv);
+	int32_t swordNodeIndex_ = -1;   // ノード index
+	uint32_t swordMeshIndex_ = 2;   // 今ログ的に sword は mesh[2]
 
 
-		private:
-			//=======
-			//video
-			//=======
+public:
 
-			bool useVideo_ = false;
-			VideoPlayerMF* video_ = nullptr;
+	//========================
+	//video
+	//========================
+
+	void SetVideo(VideoPlayerMF* v) { video_ = v; useVideo_ = (v != nullptr); }
+
+	void DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv);
+
+
+private:
+	//=======
+	//video
+	//=======
+
+	bool useVideo_ = false;
+	VideoPlayerMF* video_ = nullptr;
 
 };
 

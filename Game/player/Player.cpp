@@ -57,6 +57,9 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     currentModelSet_ = PlayerModelSet::HumanWalk;
     model_->SetModel("Player/player.gltf"); // あなたの実パスに合わせる
     model_->PlayAnimation("Idle", true);
+    model_->SetUseEnvironmentMap(true);
+    model_->SetEnvironmentCoefficient(1.0f);
+    model_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
     curAnim_ = "Idle";
 
     // 見た目初期反映

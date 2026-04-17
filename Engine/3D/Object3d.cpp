@@ -262,15 +262,44 @@ void Object3d::Draw()
 	};
 	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
+	// ------------------------------------------------------------
+	// EnvMap SRV を RootParameter 7 にセットする共通処理
+	// ------------------------------------------------------------
+	auto BindEnvironmentMapIfNeeded = [&]() {
+		if (!useEnvironmentMap_) {
+			return;
+		}
+
+		if (environmentTexturePath_.empty()) {
+			OutputDebugStringA("[EnvMap] environmentTexturePath_ is empty\n");
+			return;
+		}
+
+		// 未ロードならロード
+		TextureManager::GetInstance()->LoadTexture(environmentTexturePath_);
+
+		// RootParameter 7 : t2
+		cmd->SetGraphicsRootDescriptorTable(
+			7,
+			TextureManager::GetInstance()->GetSrvHandleGPU(environmentTexturePath_)
+		);
+		};
+
 	if (model_->HasSkinning()) {
 
-		// ★スキン用 PSO/RootSig
-		skinningCommon_->SetGraphicsPipelineState();
+		// =====================================================
+		// スキン付きメッシュ本体
+		// =====================================================
+		if (useEnvironmentMap_) {
+			skinningCommon_->SetGraphicsPipelineStateEnvMap();
+		} else {
+			skinningCommon_->SetGraphicsPipelineState();
+		}
 
 		// Transform (Root 1)
 		cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
-		// Lights (Root 4..7)
+		// Lights (Root 4..7) ※スキン用RootSigに合わせた既存処理
 		cmd->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(5, cameraResource_->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(6, pointLightResource_->GetGPUVirtualAddress());
@@ -279,21 +308,39 @@ void Object3d::Draw()
 		// Palette SRV (Root 2, VS t0)
 		cmd->SetGraphicsRootDescriptorTable(2, skinCluster_.paletteSrvHandle.second);
 
-		// Draw skinned (textureは Root 3 に入れる)
+		if (useEnvironmentMap_) {
+			if (!environmentTexturePath_.empty()) {
+				TextureManager::GetInstance()->LoadTexture(environmentTexturePath_);
+				cmd->SetGraphicsRootDescriptorTable(
+					8,
+					TextureManager::GetInstance()->GetSrvHandleGPU(environmentTexturePath_)
+				);
+			}
+		}
+
+		// Draw skinned (textureは Root 3 に入る前提)
 		model_->DrawSkinned(cmd, skinCluster_);
+
 		// =====================================================
-// スキン無し（剣など）を描く
-//  ★剣は「RightHandボーン」＋「swordノードのローカル（手基準）」で追従させる
-// =====================================================
+		// スキン無し（剣など）を描く
+		// =====================================================
 		{
-			object3dCommon->SetGraphicsPipelineState();
+			if (useEnvironmentMap_) {
+				object3dCommon->SetGraphicsPipelineStateEnvMap();
+			} else {
+				object3dCommon->SetGraphicsPipelineState();
+			}
+
 			cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			// lights/camera (Rigid側RootSigに合わせる)
+			// lights/camera (Rigid側RootSig)
 			cmd->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 			cmd->SetGraphicsRootConstantBufferView(4, cameraResource_->GetGPUVirtualAddress());
 			cmd->SetGraphicsRootConstantBufferView(5, pointLightResource_->GetGPUVirtualAddress());
 			cmd->SetGraphicsRootConstantBufferView(6, spotLightResource_->GetGPUVirtualAddress());
+
+			// EnvMap (Root 7 : t2)
+			BindEnvironmentMapIfNeeded();
 
 			// Material / VB / IB
 			cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
@@ -309,7 +356,6 @@ void Object3d::Draw()
 			int swordMeshIndex = -1;
 			int swordNodeIndex = -1;
 			for (const auto& inst : model_->GetNodeInstances()) {
-				// node名で探す（関数名はあなたの実装に合わせて）
 				const std::string& nodeName = model_->GetNodeName(inst.nodeIndex);
 				if (nodeName == "sword") {
 					swordMeshIndex = inst.meshIndex;
@@ -332,30 +378,20 @@ void Object3d::Draw()
 
 			// -------------------------------------------------
 			// 2) 剣が見つかったら、RightHandボーンに追従させて描く
-			//    （bind pose の “RightHand→sword” ローカルを作って、それを毎フレ掛ける）
 			// -------------------------------------------------
 			if (swordMeshIndex >= 0 && swordNodeIndex >= 0 && rhNodeIndex >= 0 && rhJointIndex >= 0) {
 
-				// ★ bind pose の nodeGlobals を作る（anim=null で、ベース姿勢の階層合成）
 				std::vector<Matrix4x4> bindGlobals;
 				model_->ComputeNodeGlobalMatrices(nullptr, 0.0f, bindGlobals);
 
-				// RightHand と sword の bind global
 				const Matrix4x4 bindRH = bindGlobals[rhNodeIndex];
 				const Matrix4x4 bindSword = bindGlobals[swordNodeIndex];
 
-				// ★ row-vector行列想定： local = inv(parentGlobal) * childGlobal
-				// （あなたの Multiply の順番は nodeWorld * baseWorld で使ってるのでこれでOK）
 				const Matrix4x4 swordLocalFromRH =
 					Matrix4x4::Multiply(Matrix4x4::Inverse(bindRH), bindSword);
 
-				// ★ 今フレームの RightHand “ボーン” の global（モデル空間）
 				const Matrix4x4 rhBoneGlobal = poseSkeleton_.joints[rhJointIndex].skeletonSpaceMatrix;
-
-				// swordModel = swordLocal(手基準) * rhBoneGlobal
 				const Matrix4x4 swordModel = Matrix4x4::Multiply(swordLocalFromRH, rhBoneGlobal);
-
-				// swordWorld = swordModel * baseWorld（ObjectのWorldは最後）
 				const Matrix4x4 swordWorld = Matrix4x4::Multiply(swordModel, baseWorld);
 
 				transformationMatrixDataModel->World = swordWorld;
@@ -365,10 +401,10 @@ void Object3d::Draw()
 
 				cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
-				// 剣だけ描く
+				// 剣だけ描く（RootParameter 2 に通常textureが入る想定）
 				model_->DrawOneMesh(cmd, swordMeshIndex, 2);
 
-				// 戻す（任意）
+				// 戻す
 				transformationMatrixDataModel->World = baseWorld;
 				transformationMatrixDataModel->WVP = Matrix4x4::Multiply(baseWorld, vp);
 				transformationMatrixDataModel->WorldInverseTranspose =
@@ -376,26 +412,33 @@ void Object3d::Draw()
 			}
 
 			// -------------------------------------------------
-			// 3) その他の非スキンがあれば nodeGlobals で描く（剣は二重描画しない）
+			// 3) その他の非スキンを描く（剣は除外）
 			// -------------------------------------------------
 			const Animation* anim = nullptr;
 			if (isPlayAnimation_ && HasAnimation()) {
 				const auto& anims = model_->GetAnimations();
 				if (!playingAnimName_.empty()) {
 					auto itA = anims.find(playingAnimName_);
-					if (itA != anims.end()) anim = &itA->second;
+					if (itA != anims.end()) {
+						anim = &itA->second;
+					}
 				}
-				if (!anim && !anims.empty()) anim = &anims.begin()->second;
+				if (!anim && !anims.empty()) {
+					anim = &anims.begin()->second;
+				}
 			}
 
 			std::vector<Matrix4x4> nodeGlobals;
 			model_->ComputeNodeGlobalMatrices(anim, animationTime_, nodeGlobals);
 
 			for (const auto& inst : model_->GetNodeInstances()) {
-				if (model_->IsMeshSkinned(inst.meshIndex)) continue;
+				if (model_->IsMeshSkinned(inst.meshIndex)) {
+					continue;
+				}
 
-				// ★剣は上で描いたのでスキップ
-				if (inst.meshIndex == swordMeshIndex) continue;
+				if (inst.meshIndex == swordMeshIndex) {
+					continue;
+				}
 
 				const Matrix4x4 nodeWorld = nodeGlobals[inst.nodeIndex];
 				Matrix4x4 world = Matrix4x4::Multiply(nodeWorld, baseWorld);
@@ -410,7 +453,7 @@ void Object3d::Draw()
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 			}
 
-			// 戻す（任意）
+			// 戻す
 			transformationMatrixDataModel->World = baseWorld;
 			transformationMatrixDataModel->WVP = Matrix4x4::Multiply(baseWorld, vp);
 			transformationMatrixDataModel->WorldInverseTranspose =
@@ -418,30 +461,31 @@ void Object3d::Draw()
 
 			if (swordMeshIndex < 0) {
 				OutputDebugStringA("[SwordDBG] sword node NOT FOUND in nodeInstances\n");
-			}
-			else {
+			} else {
 				char b[128];
 				std::snprintf(b, sizeof(b), "[SwordDBG] sword found: meshIndex=%d nodeIndex=%d\n",
 					swordMeshIndex, swordNodeIndex);
 				OutputDebugStringA(b);
 			}
-
-
+		}
+	} else {
+		if (useEnvironmentMap_) {
+			object3dCommon->SetGraphicsPipelineStateEnvMap();
+		} else {
+			object3dCommon->SetGraphicsPipelineState();
 		}
 
-
-	}
-	else {
-		object3dCommon->SetGraphicsPipelineState();
-
-		// light/camera CBV は今まで通り
+		// light/camera CBV
 		cmd->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(4, cameraResource_->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(5, pointLightResource_->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(6, spotLightResource_->GetGPUVirtualAddress());
 
-		// VB/IB/Material はここで一回だけセット（Model::DrawOneMesh は触らない）
-		cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());  // ※ getter作るか、Modelに関数用意
+		// EnvMap (Root 7 : t2)
+		BindEnvironmentMapIfNeeded();
+
+		// VB/IB/Material
+		cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());
 		cmd->IASetIndexBuffer(&model_->GetIBV());
 		cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
 
@@ -453,22 +497,20 @@ void Object3d::Draw()
 
 			if (!playingAnimName_.empty()) {
 				auto itA = anims.find(playingAnimName_);
-				if (itA != anims.end()) anim = &itA->second;
+				if (itA != anims.end()) {
+					anim = &itA->second;
+				}
 			}
-			if (!anim) anim = &anims.begin()->second;
+			if (!anim && !anims.empty()) {
+				anim = &anims.begin()->second;
+			}
 
-			// time更新（Updateでやってるならここは不要）
-			// animationTime_ += dt; ...
-
-			// ノードglobal
 			std::vector<Matrix4x4> nodeGlobals;
 			model_->ComputeNodeGlobalMatrices(anim, animationTime_, nodeGlobals);
 
 			const Matrix4x4& vp = camera_->GetViewProjectionMatrix();
-
 			const Matrix4x4 baseWorld = transformationMatrixDataModel->World;
 
-			// インスタンスごとに World/WVP を差し替え
 			for (const auto& inst : model_->GetNodeInstances()) {
 				const Matrix4x4 nodeWorld = nodeGlobals[inst.nodeIndex];
 
@@ -485,49 +527,65 @@ void Object3d::Draw()
 
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 			}
-
-		}
-		else {
+		} else {
 			cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
-			if (video_ && video_->IsReady()) { // ←あなたの実装に合わせて
+			if (video_ && video_->IsReady()) {
 				video_->ReadNextFrame();
 				video_->UploadToGpu(cmd);
 
 				D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
 				model_->Draw(cmd, 1, &vh);
 
-				video_->EndFrame(cmd); // 運用するなら
+				video_->EndFrame(cmd);
 			} else {
-				model_->Draw(cmd); // 通常
+				model_->Draw(cmd);
 			}
 		}
-
 	}
-
 
 	// debug bones
 	if (debugDrawBones_ && !boneMarkers_.empty()) {
-		for (auto& m : boneMarkers_) { m->Draw(); }
+		for (auto& m : boneMarkers_) {
+			m->Draw();
+		}
 	}
 }
 
 void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 {
-	if (!model_) return;
+	if (!model_) {
+		return;
+	}
 
 	auto* cmd = dx_->GetCommandList();
 
-	// ★動画SRVがいるので SrvManager の heap をセット
-	ID3D12DescriptorHeap* heaps[] = { srvManager_->GetDescriptorHeap() }; // ←あなたの関数名に合わせて
+	ID3D12DescriptorHeap* heaps[] = {
+		TextureManager::GetInstance()->GetSrvDescriptorHeap()
+	};
 	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
-	object3dCommon->SetGraphicsPipelineState();
+	if (useEnvironmentMap_) {
+		object3dCommon->SetGraphicsPipelineStateEnvMap();
+	} else {
+		object3dCommon->SetGraphicsPipelineState();
+	}
 
 	cmd->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 	cmd->SetGraphicsRootConstantBufferView(4, cameraResource_->GetGPUVirtualAddress());
 	cmd->SetGraphicsRootConstantBufferView(5, pointLightResource_->GetGPUVirtualAddress());
 	cmd->SetGraphicsRootConstantBufferView(6, spotLightResource_->GetGPUVirtualAddress());
+
+	// RootParameter 7 : t2
+	if (useEnvironmentMap_) {
+		if (!environmentTexturePath_.empty()) {
+			TextureManager::GetInstance()->LoadTexture(environmentTexturePath_);
+			cmd->SetGraphicsRootDescriptorTable(
+				7,
+				TextureManager::GetInstance()->GetSrvHandleGPU(environmentTexturePath_)
+			);
+		}
+	}
 
 	cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());
 	cmd->IASetIndexBuffer(&model_->GetIBV());
