@@ -49,14 +49,17 @@ void TitleScene::OnEnter(GameApp& app) {
 	ground_->SetTranslate({ 0.0f, -5.0f, 0.0f });
 	ground_->SetScale({ 1.0f, 1.0f, 1.0f });
 	ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
-	ground_->SetEnableLighting(0);
+	ground_->SetEnableLighting(2);//ライティング設定
+	ground_->SetUseEnvironmentMap(true);//環境マップ有効か
+	ground_->SetEnvironmentCoefficient(0.5f);//環境マップの影響度（0.0f〜1.0f）
+	ground_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
 
 	skybox_ = std::make_unique<Skybox>();
 	skybox_->Initialize(app.SkyboxCom(), app.Dx());
 	skybox_->SetCamera(camera_.get());
 	skybox_->SetScale({ 500.0f, 500.0f, 500.0f });
 
-	TextureManager::GetInstance()->LoadTexture("resources/skybox/skybox.dds");
+
 	skybox_->SetTextureHandle(
 		TextureManager::GetInstance()->GetSrvHandleGPU("resources/skybox/skybox.dds")
 	);
@@ -567,8 +570,8 @@ void TitleScene::Draw3D(GameApp& app)
 	////if (skyDome_) skyDome_->Draw();
 
 	////if (!showVideo_) {
-	////	if (ground_) ground_->Draw();
-	////	if (titlePlayer) titlePlayer->Draw();
+		if (ground_) ground_->Draw();
+	if (titlePlayer) titlePlayer->Draw();
 	////}
 
 	////if (enableVideo_ && videoPlane_ && video_ && showVideo_) {

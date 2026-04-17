@@ -211,6 +211,8 @@
     <FxCompile Include="resources\shaders\Grayscale.PS.hlsl" />
     <FxCompile Include="resources\shaders\Skybox.VS.hlsl" />
     <FxCompile Include="resources\shaders\Skybox.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Object3dEnvMap.PS.hlsl" />
+    <FxCompile Include="resources\shaders\SkinnedObjectEnvMap.PS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Camera\DebugCamera.h">

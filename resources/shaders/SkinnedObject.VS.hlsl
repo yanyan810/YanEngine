@@ -32,26 +32,6 @@ struct Well
 
 StructuredBuffer<Well> gMatrixPalette : register(t0);
 
-//Skinned Skinning(VertexShaderInput input)
-//{
-//    Skinned skinned;
-
-//    skinned.position = mul(input.position, gMatrixPalette[input.index.x].skeletonSpaceMatrix) * input.weight.x;
-//    skinned.position += mul(input.position, gMatrixPalette[input.index.y].skeletonSpaceMatrix) * input.weight.y;
-//    skinned.position += mul(input.position, gMatrixPalette[input.index.z].skeletonSpaceMatrix) * input.weight.z;
-//    skinned.position += mul(input.position, gMatrixPalette[input.index.w].skeletonSpaceMatrix) * input.weight.w;
-//    skinned.position.w = 1.0f;
-
-//    float3 n0 = mul(input.normal, (float3x3) gMatrixPalette[input.index.x].skeletonSpaceInverseTransposeMatrix) * input.weight.x;
-//    float3 n1 = mul(input.normal, (float3x3) gMatrixPalette[input.index.y].skeletonSpaceInverseTransposeMatrix) * input.weight.y;
-//    float3 n2 = mul(input.normal, (float3x3) gMatrixPalette[input.index.z].skeletonSpaceInverseTransposeMatrix) * input.weight.z;
-//    float3 n3 = mul(input.normal, (float3x3) gMatrixPalette[input.index.w].skeletonSpaceInverseTransposeMatrix) * input.weight.w;
-
-//    skinned.normal = normalize(n0 + n1 + n2 + n3);
-
-//    return skinned;
-//}
-
 Skinned Skinning(VertexShaderInput input)
 {
     Skinned skinned;
@@ -98,23 +78,3 @@ VertexShaderOutput main(VertexShaderInput input)
 
     return output;
 }
-
-//VertexShaderOutput main(VertexShaderInput input)
-//{
-//    VertexShaderOutput output;
-
-//    // ★ スキニングしない（元頂点をそのまま使う）
-//    float4 localPos = input.position;
-//    float3 localNrm = input.normal;
-
-//    output.position = mul(localPos, gTransformation.WVP);
-//    output.texcoord = input.texcoord;
-
-//    float4 wp = mul(localPos, gTransformation.World);
-//    output.worldPosition = wp.xyz;
-
-//    float3 n = mul(localNrm, (float3x3) gTransformation.WorldInverseTranspose);
-//    output.normal = normalize(n);
-
-//    return output;
-//}
