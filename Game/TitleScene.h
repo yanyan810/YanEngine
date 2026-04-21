@@ -83,7 +83,7 @@ private:
 	// 確認用パラメータ
 	float shininess_ = 64.0f;
 	int lightingMode_ = 2;     // 1:Lambert 2:HalfLambert 3:SpecOnly
-	bool orbitCam_ = true;
+	bool orbitCam_ = false;
 	float orbitSpeed_ = 0.6f;
 	float orbitRadius_ = 10.0f;
 	float orbitT_ = 0.0f;

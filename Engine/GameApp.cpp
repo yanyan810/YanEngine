@@ -193,6 +193,7 @@ void GameApp::WarmupAssets_() {
     // もしテクスチャも初回で刺さるならここで
     TextureManager::GetInstance()->LoadTexture("resources/shadow/shadow.png");
     TextureManager::GetInstance()->LoadTexture("resources/skybox/skybox.dds");
+	TextureManager::GetInstance()->LoadTexture("resources/gradationLine.png");
 
     // モデル（ModelManager がキャッシュする前提）
     ModelManager::GetInstance()->LoadModel("human/walk.gltf");
