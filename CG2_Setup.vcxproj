@@ -181,6 +181,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3D\Skybox.cpp" />
     <ClCompile Include="Engine\3D\SkyboxCommon.cpp" />
     <ClCompile Include="Engine\3D\VideoPlayerMF.cpp" />
+    <ClCompile Include="Engine\GeometryGenerator.cpp" />
     <ClCompile Include="Engine\Render\OffscreenPass.cpp" />
     <ClCompile Include="Engine\Render\RenderManager.cpp" />
     <ClCompile Include="externals\imgui\imgui.cpp" />
@@ -363,6 +364,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3D\Skybox.h" />
     <ClInclude Include="Engine\3D\SkyboxCommon.h" />
     <ClInclude Include="Engine\3D\VideoPlayerMF.h" />
+    <ClInclude Include="Engine\GeometryGenerator.h" />
     <ClInclude Include="Engine\LightingParam.h" />
     <ClInclude Include="Engine\math\MathStruct.h" />
     <ClInclude Include="Engine\math\Quaternion.h" />

@@ -32,6 +32,14 @@ public:
 	/// <returns></returns>
 	Model* FindModel(const std::string& filePath);
 
+	/// <summary>
+	/// プリミティブモデルを作る
+	/// </summary>
+	/// <param name="key"></param>
+	/// <param name="modelData"></param>
+	/// <returns></returns>
+	Model* CreatePrimitiveModel(const std::string& key, const Model::ModelData& modelData);
+
 private:
 	static ModelManager* instance;
 

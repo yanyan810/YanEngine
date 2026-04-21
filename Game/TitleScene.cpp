@@ -6,14 +6,75 @@
 #include "ParticleCommon.h"
 #include "Camera.h"
 
-struct SRT {
-	Vector3 pos{ 0,0,0 };
-	Vector3 rot{ 0,0,0 };   // degで管理が楽（必要ならSet時にradへ）
-	Vector3 scale{ 1,1,1 };
-};
 
+namespace {
 
+	std::vector<Model::VertexData> MakePrimitiveVertices(int typeIndex) {
+		switch (typeIndex) {
+		case 0: return GeometryGenerator::GenerateRingTriListXY(64, 1.0f, 0.5f);
+		case 1: return GeometryGenerator::GenerateSphereTriList(32, 16, 1.0f);
+		case 2: return GeometryGenerator::GenerateBoxTriList(2.0f, 2.0f, 2.0f);
+		case 3: return GeometryGenerator::GeneratePlaneTriListXY(2.0f, 2.0f);
+		case 4: return GeometryGenerator::GenerateTorusTriList(32, 16, 1.0f, 0.3f);
+		case 5: return GeometryGenerator::GenerateCylinderTriList(32, 1.0f, 2.0f);
+		case 6: return GeometryGenerator::GenerateConeTriList(32, 1.0f, 2.0f);
+		case 7: return GeometryGenerator::GenerateTriangleTriListXY(2.0f, 2.0f);
+		default: return GeometryGenerator::GenerateRingTriListXY(64, 1.0f, 0.5f);
+		}
+	}
 
+}
+
+namespace {
+
+	Model::ModelData MakePrimitiveModelData(const std::vector<Model::VertexData>& vertices) {
+		Model::ModelData md{};
+
+		md.materials.push_back({ "" });
+
+		Model::MeshData mesh{};
+		mesh.materialIndex = 0;
+		mesh.vertices = vertices;
+		mesh.skinned = false;
+		mesh.startVertex = 0;
+		mesh.vertexCount = static_cast<uint32_t>(vertices.size());
+		mesh.startIndex = 0;
+		mesh.indexCount = static_cast<uint32_t>(vertices.size());
+
+		md.meshes.push_back(std::move(mesh));
+
+		// 非indexedでも今の Model 側が扱いやすいように index を連番で入れておく
+		md.indices.resize(vertices.size());
+		for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+			md.indices[i] = i;
+		}
+
+		md.rootNode.name = "PrimitiveRoot";
+		md.rootNode.localMatrix = Matrix4x4::MakeIdentity4x4();
+		md.rootNode.meshIndices.push_back(0);
+
+		return md;
+	}
+
+}
+
+void TitleScene::RebuildPrimitive_() {
+	if (!primitiveObj_) {
+		return;
+	}
+
+	auto vertices = MakePrimitiveVertices(primitiveTypeIndex_);
+	auto modelData = MakePrimitiveModelData(vertices);
+
+	std::string key = "primitive_" + std::to_string(primitiveTypeIndex_);
+
+	Model* model = ModelManager::GetInstance()->CreatePrimitiveModel(key, modelData);
+	primitiveObj_->SetModel(model);
+
+	primitiveObj_->SetEnableLighting(2);
+	primitiveObj_->SetMaterialColor({ 1,1,1,1 });
+	primitiveObj_->SetShininess(64.0f);
+}
 
 void TitleScene::OnEnter(GameApp& app) {
 
@@ -69,7 +130,7 @@ void TitleScene::OnEnter(GameApp& app) {
 	particle_->Initialize(app.ParticleCom(), app.Dx(), app.Srv());
 
 	// ★これが無いと「model_ が null」で Draw しても何も出ません
-	particle_->SetModel(assimpPlanePaths_[assimpPlaneIndex_]);
+	particle_->SetModel("plane.obj");
 	assimpPlaneIndexPrev_ = assimpPlaneIndex_;
 
 	// カメラを渡せるなら渡す（Particle.cpp は camera_ があればそれを使う仕様）
@@ -81,6 +142,18 @@ void TitleScene::OnEnter(GameApp& app) {
 	particle_->SetBlendMode(ParticleCommon::BlendMode::kBlendModeAdd);
 	particle_->SetMaterialColor({ 1, 1, 1, 1 });
 
+
+	//primitive
+	primitiveObj_ = std::make_unique<Object3d>();
+	primitiveObj_->Initialize(app.ObjCom(), app.Dx());
+	primitiveObj_->SetCamera(camera_.get());
+	primitiveObj_->SetEnableLighting(2);
+	primitiveObj_->SetMaterialColor({ 1,1,1,1 });
+	primitiveObj_->SetShininess(64.0f);
+
+	srtPrimitive_.pos = { 0.0f, 1.0f, 0.0f };
+	srtPrimitive_.rot = { 0.0f, 0.0f, 0.0f };
+	srtPrimitive_.scale = { 2.0f, 2.0f, 2.0f };
 
 	skyDome_ = std::make_unique<Object3d>();
 	skyDome_->Initialize(app.ObjCom(), app.Dx());
@@ -167,6 +240,9 @@ void TitleScene::OnEnter(GameApp& app) {
 	showVideo_ = false;     // ← 最初は titlePlayer を出す
 	switchT_ = 0.0f;        // ← タイマーリセット
 
+	primitiveTypePrevIndex_ = -1;
+	RebuildPrimitive_();
+	primitiveTypePrevIndex_ = primitiveTypeIndex_;
 
 }
 
@@ -202,7 +278,7 @@ void TitleScene::Update(GameApp& app, float dt) {
 	switch (state_) {
 	case State::Idle:
 		if (spaceTrig) {
-			state_ = State::ExitClose; // ★すぐ遷移しない
+		//	state_ = State::ExitClose; // ★すぐ遷移しない
 		}
 		break;
 
@@ -261,6 +337,18 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 	if (titlePlayer) {
 		titlePlayer->SetTitleTransform(srtPlayer_.pos, srtPlayer_.rot, srtPlayer_.scale);
+	}
+
+	if (primitiveTypeIndex_ != primitiveTypePrevIndex_) {
+		RebuildPrimitive_();
+		primitiveTypePrevIndex_ = primitiveTypeIndex_;
+	}
+
+	if (primitiveObj_) {
+		primitiveObj_->SetTranslate(srtPrimitive_.pos);
+		primitiveObj_->SetRotate(srtPrimitive_.rot);
+		primitiveObj_->SetScale(srtPrimitive_.scale);
+		primitiveObj_->Update(dt);
 	}
 
 #ifdef USE_IMGUI
@@ -420,6 +508,21 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 	ImGui::End();
 
+	ImGui::Begin("Primitive Check");
+
+	ImGui::Combo(
+		"Primitive Type",
+		&primitiveTypeIndex_,
+		primitiveLabels_.data(),
+		static_cast<int>(primitiveLabels_.size())
+	);
+
+	ImGui::DragFloat3("Primitive Pos", &srtPrimitive_.pos.x, 0.1f);
+	ImGui::DragFloat3("Primitive Rot", &srtPrimitive_.rot.x, 0.01f);
+	ImGui::DragFloat3("Primitive Scale", &srtPrimitive_.scale.x, 0.1f, 0.01f, 100.0f);
+
+	ImGui::End();
+
 #endif
 
 #ifdef USE_IMGUI
@@ -494,8 +597,23 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 	// ===== カメラ反映 =====
 	if (camera_) {
-		camera_->SetTranslate(imguiCamPos_);
-		camera_->SetRotate(imguiCamRot_);
+		if (orbitCam_) {
+			orbitT_ += orbitSpeed_ * dt;
+
+			Vector3 target{ 0.0f, 1.0f, 0.0f };
+			Vector3 eye{
+				target.x + std::cosf(orbitT_) * orbitRadius_,
+				target.y + 3.0f,
+				target.z + std::sinf(orbitT_) * orbitRadius_
+			};
+
+			camera_->SetTranslate(eye);
+			camera_->SetRotate(imguiCamRot_); // 仮
+		} else {
+			camera_->SetTranslate(imguiCamPos_);
+			camera_->SetRotate(imguiCamRot_);
+		}
+
 		camera_->Update();
 	}
 
@@ -517,11 +635,11 @@ void TitleScene::Update(GameApp& app, float dt) {
 	// 3D
 	ApplyObject3dSRT(skyDome_.get(), srtSky_);
 	ApplyObject3dSRT(videoPlane_.get(), srtVideo_);
-	if (particle_) {
-		particle_->SetTranslate(srtParticle_.pos);
-		particle_->SetRotate(srtParticle_.rot);
-		particle_->SetScale(srtParticle_.scale); // Particleに無ければ外す
-	}
+	//if (particle_) {
+	//	particle_->SetTranslate(srtParticle_.pos);
+	//	particle_->SetRotate(srtParticle_.rot);
+	//	particle_->SetScale(srtParticle_.scale); // Particleに無ければ外す
+	//}
 
 	// 2D
 	ApplySpriteSRT(bg_.get(), srtBG_);
@@ -529,6 +647,9 @@ void TitleScene::Update(GameApp& app, float dt) {
 	ApplyObject3dSRT(ground_.get(), srtGround_);
 
 
+	if (particle_) {
+		particle_->Update();
+	}
 }
 
 //========================
@@ -567,11 +688,13 @@ void TitleScene::Draw3D(GameApp& app)
 {
 	app.ObjCom()->SetGraphicsPipelineState();
 
+	skybox_->Draw();
+
 	////if (skyDome_) skyDome_->Draw();
 
 	////if (!showVideo_) {
-		if (ground_) ground_->Draw();
-	if (titlePlayer) titlePlayer->Draw();
+		//if (ground_) ground_->Draw();
+	//if (titlePlayer) titlePlayer->Draw();
 	////}
 
 	////if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
@@ -585,7 +708,13 @@ void TitleScene::Draw3D(GameApp& app)
 	////	video_->EndFrame(cmd);
 	////}
 
-	skybox_->Draw();
+	if (primitiveObj_) primitiveObj_->Draw();
+
+	if (particle_) {
+		app.ParticleCom()->SetGraphicsPipelineState();
+		particle_->Draw();
+	}
+	
 
 }
 

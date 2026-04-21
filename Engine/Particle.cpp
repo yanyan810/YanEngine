@@ -103,17 +103,18 @@ Particle::ParticleData Particle::MakeNewParticle(std::mt19937& ramdomEngine, con
 
 }
 
+
 Particle::ParticleData Particle::MakeNewParticleHit(std::mt19937& randomEngine, const Vector3& translate) {
 	ParticleData p{};
+	p.type = ParticleType::Hit;
 	p.transform.translate = translate;
 	p.color = { 1,1,1,1 };
 	p.velocity = { 0,0,0 };
-	p.lifeTime = 0.6f;
+	p.lifeTime = hitLifeTime_;  
 	p.currentTime = 0.0f;
-	
-	// scale/rotate は SpawnHit 側で “星形” に作るのでここでは初期値だけ
-	p.transform.scale = { 0.05f, 1.0f, 1.0f };
-	p.transform.rotate = { 0.0f, 0.0f, 0.0f }; // ★Z回転を使う
+
+	p.transform.scale = { hitBaseScaleX_, 1.0f, 1.0f };
+	p.transform.rotate = { 0.0f, 0.0f, 0.0f };
 	return p;
 }
 
@@ -293,21 +294,16 @@ void Particle::SpawnHit(const Vector3& pos) {
 
 	for (uint32_t i = 0; i < hitCount_; ++i) {
 		ParticleData p = MakeNewParticleHit(randomEngine, pos);
-		p.type = ParticleType::Hit;
-		// 放射状の角度（等間隔 + 少しブレ）
-		const float a = step * float(i) + distJitter(randomEngine);
 
-		// ★Z回転に入れる（面内回転）
-		p.transform.rotate = { 0.0f, 0.0f, a };
+		const float angle = step * float(i) + distJitter(randomEngine);
+		const float len = distLen(randomEngine);
 
-		// 太さX + 長さY（細長い線）
-		p.transform.scale = { hitBaseScaleX_, distLen(randomEngine), 1.0f };
+		p.transform.rotate = { 0.0f, 0.0f, angle };
+		p.transform.scale = { hitBaseScaleX_, len, 1.0f };
 
-		// ★中心から少しだけ外側に配置（重なりを減らす）
-		// billboard面のローカルで見た「右(x), 上(y)」に相当する方向にずらす
 		p.transform.translate = {
-			pos.x + std::cosf(a) * hitRadius_,
-			pos.y + std::sinf(a) * hitRadius_,
+			pos.x + std::cosf(angle) * hitRadius_,
+			pos.y + std::sinf(angle) * hitRadius_,
 			pos.z
 		};
 
@@ -403,24 +399,17 @@ void Particle::MakeCameraMatrices() {
 }
 
 void Particle::BuildWorld_Normal(ParticleData& p) {
-	// --- billboardMatrix は MakeCameraMatrices() で作られている前提 ---
-
-	// plane.obj が XZ 平面なら板を立てる補正
 	Matrix4x4 fix = Matrix4x4::RotateX(-std::numbers::pi_v<float> *0.5f);
-
 	Matrix4x4 scaleM = Matrix4x4::MakeScaleMatrix(p.transform.scale);
 	Matrix4x4 translateM = Matrix4x4::Translation(p.transform.translate);
-
-	// Normal は回転を使わないなら identity（使うならここに回転入れる）
 	Matrix4x4 rotM = Matrix4x4::MakeIdentity4x4();
 
-	// ※ここはあなたの行列規約に依存（今まで動いてた順を維持）
 	Matrix4x4 world =
 		Matrix4x4::Multiply(
 			Matrix4x4::Multiply(
 				Matrix4x4::Multiply(
-					Matrix4x4::Multiply(billboardMatrix_, rotM),
-					fix),
+					Matrix4x4::Multiply(fix, rotM),
+					billboardMatrix_),
 				scaleM),
 			translateM);
 
@@ -432,4 +421,3 @@ void Particle::BuildWorld_Normal(ParticleData& p) {
 
 	++instanceCount_;
 }
-
