@@ -254,7 +254,8 @@ public:
 	// ノードのワールド行列を取得
 	Matrix4x4 GetNodeWorldMatrix(int nodeIndex) const;
 
-
+	// ModelDataを直接入れる
+	void InitializeFromModelData(ModelCommon* modelCommon, const ModelData& modelData);
 
 private:
 	static Skeleton CreateSkeleton(const Node& rootNode);

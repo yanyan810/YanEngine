@@ -15,6 +15,8 @@
 #include "PlayerCombo.h"
 #include "Skybox.h"
 
+#include "GeometryGenerator.h"
+
 class Particle;
 class Camera;
 
@@ -143,7 +145,7 @@ private:
 	SRT srtParticle_{};
 	SRT srtBG_{};
 	SRT srtPress_{};
-	
+
 
 	// === Assimp plane 切替 ===
 	std::array<const char*, 2> assimpPlanePaths_ = {
@@ -177,5 +179,44 @@ private:
 
 	SRT srtGround_{};
 	SRT srtPlayer_{};
+
+public:
+	//パーティクル用
+
+
+private:
+	//パーティクル用
+
+	enum class PrimitiveType {
+		Ring,
+		Sphere,
+		Box,
+		Plane,
+		Torus,
+		Cylinder,
+		Cone,
+		Triangle,
+	};
+
+	std::unique_ptr<Object3d> primitiveObj_;
+
+	int primitiveTypeIndex_ = 0;
+	int primitiveTypePrevIndex_ = -1;
+
+	std::array<const char*, 8> primitiveLabels_ = {
+		"Ring",
+		"Sphere",
+		"Box",
+		"Plane",
+		"Torus",
+		"Cylinder",
+		"Cone",
+		"Triangle"
+	};
+
+	SRT srtPrimitive_{};
+
+	//再構築関数
+	void RebuildPrimitive_();
 
 };

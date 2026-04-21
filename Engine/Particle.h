@@ -194,7 +194,7 @@ private:
 	// HitEffect
 	uint32_t hitCount_ = 12;
 	float hitLifeTime_ = 0.4f;
-	float hitBaseScaleX_ = 0.05f; // 線の太さ
+	float hitBaseScaleX_ = 0.42f; // 線の太さ
 	float hitScaleMin_ = 0.6f;    // 線の最小長さ
 	float hitScaleMax_ = 1.2f;    // 線の最大長さ
 	float hitRadius_ = 0.0f;     // ★中心から少し外に置く

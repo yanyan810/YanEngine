@@ -72,3 +72,19 @@ Model* ModelManager::FindModel(const std::string& filePath) {
 	return nullptr;
 
 }
+
+Model* ModelManager::CreatePrimitiveModel(const std::string& key, const Model::ModelData& modelData) {
+
+	// すでにあるなら再利用
+	if (models.contains(key)) {
+		return models.at(key).get();
+	}
+
+	// 新規作成
+	std::unique_ptr<Model> model = std::make_unique<Model>();
+	model->InitializeFromModelData(modelCommon, modelData);
+
+	Model* result = model.get();
+	models.insert(std::make_pair(key, std::move(model)));
+	return result;
+}
