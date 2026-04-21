@@ -539,7 +539,15 @@ void Object3d::Draw()
 
 				video_->EndFrame(cmd);
 			} else {
-				model_->Draw(cmd);
+
+				//指定されたテクスチャを適応
+				if (useOverrideTexture_) {
+					auto handle = TextureManager::GetInstance()->GetSrvHandleGPU(texturePath_);
+					model_->Draw(cmd, 1, &handle);
+				} else {
+					//モデルにあるテクスチャを適応
+					model_->Draw(cmd);
+				}
 			}
 		}
 	}
@@ -593,6 +601,14 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 	cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
 	model_->Draw(cmd, 1, &srv);
+}
+
+//テクスチャを指定
+void Object3d::SetTexture(const std::string& path)
+{
+	texturePath_ = path;
+	TextureManager::GetInstance()->LoadTexture(path);
+	useOverrideTexture_ = true;
 }
 
 void Object3d::SetModel(const std::string& filePath) {

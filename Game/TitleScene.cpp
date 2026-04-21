@@ -148,7 +148,8 @@ void TitleScene::OnEnter(GameApp& app) {
 	primitiveObj_->Initialize(app.ObjCom(), app.Dx());
 	primitiveObj_->SetCamera(camera_.get());
 	primitiveObj_->SetEnableLighting(2);
-	primitiveObj_->SetMaterialColor({ 1,1,1,1 });
+	primitiveObj_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
+	primitiveObj_->SetTexture("resources/gradationLine.png");
 	primitiveObj_->SetShininess(64.0f);
 
 	srtPrimitive_.pos = { 0.0f, 1.0f, 0.0f };

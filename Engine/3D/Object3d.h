@@ -158,6 +158,8 @@ public:
 		if (spotLightData_) spotLightData_->cosFalloffStart = c;
 	}
 
+	//テクスチャを指定
+	void SetTexture(const std::string& path);
 
 	Model* GetModel() const { return model_; }
 
@@ -229,6 +231,9 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12Resource> spotLightResource_;
 	SpotLight* spotLightData_ = nullptr;
 
+	//テクスチャ
+	std::string texturePath_ = "";
+	bool useOverrideTexture_ = false;
 
 public:
 	//=============
