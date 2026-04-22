@@ -103,126 +103,117 @@ void Object3dCommon::CreateGraphicsPipelineState() {
     CreateRootSignature();
 
     // === Shaders ===
-    // ※ まずは既存の Object3D シェーダを流用（あなたの main と同じ）
-
     Microsoft::WRL::ComPtr<IDxcBlob> vs = dx_->CompilesSharder(L"resources/shaders/Object3D.VS.hlsl", L"vs_6_0");
     Microsoft::WRL::ComPtr<IDxcBlob> ps = dx_->CompilesSharder(L"resources/shaders/Object3D.PS.hlsl", L"ps_6_0");
 
-    // === Blend ===
-    D3D12_BLEND_DESC blend{};
-    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    for (int i = 0; i < static_cast<int>(BlendMode::kCountOfBlendMode); ++i) {
+        BlendMode mode = static_cast<BlendMode>(i);
 
-    switch (blendMode_) {
-    case BlendMode::kBlendModeNone:
-        blend.RenderTarget[0].BlendEnable = FALSE;
-        break;
+        // === Blend ===
+        D3D12_BLEND_DESC blend{};
+        blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-    case BlendMode::kBlendModeNormal:
+        switch (mode) {
+        case BlendMode::kBlendModeNone:
+            blend.RenderTarget[0].BlendEnable = FALSE;
+            break;
 
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+        case BlendMode::kBlendModeNormal:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
 
-        break;
+        case BlendMode::kBlendModeAdd:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
 
-    case BlendMode::kBlendModeAdd:
+        case BlendMode::kBlendModeSubtract:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
 
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+        case BlendMode::kBlendModeMultily:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
 
-        break;
+        case BlendMode::kBlendModeScreen:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
+        }
 
-    case BlendMode::kBlendModeSubtract:
+        // === Rasterizer ===
+        D3D12_RASTERIZER_DESC rast{};
+        rast.CullMode = D3D12_CULL_MODE_NONE;
+        rast.FillMode = D3D12_FILL_MODE_SOLID;
 
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+        // === Depth/Stencil ===
+        D3D12_DEPTH_STENCIL_DESC ds{};
+        ds.DepthEnable = TRUE;                    // 必要に応じて FALSE（UI最前面に）でもOK
+        ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
-        break;
+        // === PSO ===
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
+        psoDesc.pRootSignature = rootSignature_.Get();
+        psoDesc.InputLayout = inputLayout_;
+        psoDesc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+        psoDesc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+        psoDesc.BlendState = blend;
+        psoDesc.RasterizerState = rast;
+        psoDesc.DepthStencilState = ds;
+        psoDesc.NumRenderTargets = 1;
+        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        psoDesc.SampleDesc.Count = 1;
+        psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+        psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
-    case BlendMode::kBlendModeMultily:
-
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-
-        break;
-
-    case BlendMode::kBlendModeScreen:
-
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-
-        break;
-
+        HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso_[i]));
+        if (FAILED(hr)) {
+            OutputDebugStringA("[PSO] CreateGraphicsPipelineState FAILED\n");
+            dx_->ReportLiveObjects(); // 任意
+            assert(false);
+        }
+        assert(SUCCEEDED(hr));
     }
-   
-    // === Rasterizer ===
-    D3D12_RASTERIZER_DESC rast{};
-    rast.CullMode = D3D12_CULL_MODE_NONE;
-    rast.FillMode = D3D12_FILL_MODE_SOLID;
-
-    // === Depth/Stencil ===
-    D3D12_DEPTH_STENCIL_DESC ds{};
-    ds.DepthEnable = TRUE;                    // 必要に応じて FALSE（UI最前面に）でもOK
-    ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-    ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-
-    // === PSO ===
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
-    psoDesc.pRootSignature = rootSignature_.Get();
-    psoDesc.InputLayout = inputLayout_;
-    psoDesc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
-    psoDesc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
-    psoDesc.BlendState = blend;
-    psoDesc.RasterizerState = rast;
-    psoDesc.DepthStencilState = ds;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    psoDesc.SampleDesc.Count = 1;
-    psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-    HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso_));
-    if (FAILED(hr)) {
-        OutputDebugStringA("[PSO] CreateGraphicsPipelineState FAILED\n");
-        dx_->ReportLiveObjects(); // 任意
-        assert(false);
-    }
-
-    assert(SUCCEEDED(hr));
 }
 
-void Object3dCommon::SetGraphicsPipelineState() {
+void Object3dCommon::SetGraphicsPipelineState(BlendMode mode) {
     auto* cmd = dx_->GetCommandList();
 
     // ルートシグネチャ
     cmd->SetGraphicsRootSignature(rootSignature_.Get());
     // グラフィックスパイプラインステート（PSO）
-    cmd->SetPipelineState(pso_.Get());
+    const int idx = static_cast<int>(mode);
+    cmd->SetPipelineState(pso_[idx].Get());
     // プリミティブトポロジ（スプライトは三角形リスト）
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
@@ -242,93 +233,98 @@ void Object3dCommon::CreateEnvMapGraphicsPipelineState() {
     Microsoft::WRL::ComPtr<IDxcBlob> ps =
         dx_->CompilesSharder(L"resources/shaders/Object3dEnvMap.PS.hlsl", L"ps_6_0");
 
-    D3D12_BLEND_DESC blend{};
-    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    for (int i = 0; i < static_cast<int>(BlendMode::kCountOfBlendMode); ++i) {
+        BlendMode mode = static_cast<BlendMode>(i);
 
-    switch (blendMode_) {
-    case BlendMode::kBlendModeNone:
-        blend.RenderTarget[0].BlendEnable = FALSE;
-        break;
-    case BlendMode::kBlendModeNormal:
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-        break;
-    case BlendMode::kBlendModeAdd:
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-        break;
-    case BlendMode::kBlendModeSubtract:
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-        break;
-    case BlendMode::kBlendModeMultily:
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-        break;
-    case BlendMode::kBlendModeScreen:
-        blend.RenderTarget[0].BlendEnable = TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-        break;
+        D3D12_BLEND_DESC blend{};
+        blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+        switch (mode) {
+        case BlendMode::kBlendModeNone:
+            blend.RenderTarget[0].BlendEnable = FALSE;
+            break;
+        case BlendMode::kBlendModeNormal:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
+        case BlendMode::kBlendModeAdd:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
+        case BlendMode::kBlendModeSubtract:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
+        case BlendMode::kBlendModeMultily:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
+        case BlendMode::kBlendModeScreen:
+            blend.RenderTarget[0].BlendEnable = TRUE;
+            blend.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+            blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            break;
+        }
+
+        D3D12_RASTERIZER_DESC rast{};
+        rast.CullMode = D3D12_CULL_MODE_NONE;
+        rast.FillMode = D3D12_FILL_MODE_SOLID;
+
+        D3D12_DEPTH_STENCIL_DESC ds{};
+        ds.DepthEnable = TRUE;
+        ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
+        psoDesc.pRootSignature = rootSignature_.Get();
+        psoDesc.InputLayout = inputLayout_;
+        psoDesc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+        psoDesc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+        psoDesc.BlendState = blend;
+        psoDesc.RasterizerState = rast;
+        psoDesc.DepthStencilState = ds;
+        psoDesc.NumRenderTargets = 1;
+        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        psoDesc.SampleDesc.Count = 1;
+        psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+        psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(
+            &psoDesc, IID_PPV_ARGS(&envMapPso_[i]));
+        assert(SUCCEEDED(hr));
     }
-
-    D3D12_RASTERIZER_DESC rast{};
-    rast.CullMode = D3D12_CULL_MODE_NONE;
-    rast.FillMode = D3D12_FILL_MODE_SOLID;
-
-    D3D12_DEPTH_STENCIL_DESC ds{};
-    ds.DepthEnable = TRUE;
-    ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-    ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
-    psoDesc.pRootSignature = rootSignature_.Get();
-    psoDesc.InputLayout = inputLayout_;
-    psoDesc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
-    psoDesc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
-    psoDesc.BlendState = blend;
-    psoDesc.RasterizerState = rast;
-    psoDesc.DepthStencilState = ds;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    psoDesc.SampleDesc.Count = 1;
-    psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-    HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(
-        &psoDesc, IID_PPV_ARGS(&envMapPso_));
-    assert(SUCCEEDED(hr));
 }
 
-void Object3dCommon::SetGraphicsPipelineStateEnvMap() {
+void Object3dCommon::SetGraphicsPipelineStateEnvMap(BlendMode mode) {
     auto* cmd = dx_->GetCommandList();
 
     cmd->SetGraphicsRootSignature(rootSignature_.Get());
-    cmd->SetPipelineState(envMapPso_.Get());
+    const int idx = static_cast<int>(mode);
+    cmd->SetPipelineState(envMapPso_[idx].Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

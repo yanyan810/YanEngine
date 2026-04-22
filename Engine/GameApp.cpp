@@ -13,6 +13,7 @@
 #include "TextureManager.h"
 #include "ModelManager.h"
 #include "Object3dCommon.h"
+#include "PrimitiveCommon.h"
 #include "ParticleCommon.h"
 #include "ImGuiManagaer.h"
 
@@ -82,6 +83,10 @@ bool GameApp::Initialize_() {
     objCommon_->Initialize(dx_.get());
 
     objCommon_->SetSrvManager(srv_.get());
+
+    primitiveCommon_ = std::make_unique<PrimitiveCommon>();
+    primitiveCommon_->Initialize(dx_.get());
+    primitiveCommon_->SetSrvManager(srv_.get());
   
 
     particleCommon_ = std::make_unique<ParticleCommon>();
@@ -140,6 +145,7 @@ void GameApp::Finalize_() {
 
     sceneMgr_.reset();
     imgui_.reset();
+    primitiveCommon_.reset();
     particleCommon_.reset();
     objCommon_.reset();
     spriteCommon_.reset();

@@ -233,8 +233,6 @@ void GameOverScene::Update(GameApp& app, float dt) {
 
 void GameOverScene::Draw(GameApp& app) {
 
-    app.ObjCom()->SetGraphicsPipelineState();
-
     if (skyDome_) skyDome_->Draw();
 
     // ===== Video（★GameClear と同じ）=====

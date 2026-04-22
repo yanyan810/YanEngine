@@ -323,7 +323,6 @@ void TestScene::Draw(GameApp& app) {
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     // ===== 3D =====
-    app.ObjCom()->SetGraphicsPipelineState();
 
     if (ground_) ground_->Draw();
 
