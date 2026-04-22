@@ -27,14 +27,8 @@ public:
 public:
     void Initialize(DirectXCommon* dxCommon);
 
-    void SetGraphicsPipelineState();
-    void SetGraphicsPipelineStateEnvMap();
-
-    void SetBlendMode(BlendMode m) {
-        blendMode_ = m;
-        CreateGraphicsPipelineState();
-        CreateEnvMapGraphicsPipelineState();
-    }
+    void SetGraphicsPipelineState(BlendMode mode);
+    void SetGraphicsPipelineStateEnvMap(BlendMode mode);
 
     void SetSrvManager(SrvManager* srv) { srv_ = srv; }
     void SetSkinningCommon(SkinningCommon* skin) { skinCom_ = skin; }
@@ -56,11 +50,9 @@ private:
     SrvManager* srv_ = nullptr;
     SkinningCommon* skinCom_ = nullptr;
 
-    BlendMode blendMode_ = BlendMode::kBlendModeNormal;
-
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pso_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> envMapPso_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pso_[static_cast<int>(BlendMode::kCountOfBlendMode)];
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> envMapPso_[static_cast<int>(BlendMode::kCountOfBlendMode)];
 
     D3D12_INPUT_ELEMENT_DESC inputElems_[3] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,

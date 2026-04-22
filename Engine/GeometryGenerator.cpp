@@ -59,13 +59,13 @@ GeometryGenerator::GenerateRingTriListXY(uint32_t divide, float outerR, float in
 		float u0 = float(i) / float(divide);
 		float u1 = float(i + 1) / float(divide);
 
-		v.push_back(MakeVertex(ox0, oy0, 0.0f, u0, 0.0f, 0.0f, 0.0f, 1.0f));
-		v.push_back(MakeVertex(ix0, iy0, 0.0f, u0, 1.0f, 0.0f, 0.0f, 1.0f));
-		v.push_back(MakeVertex(ox1, oy1, 0.0f, u1, 0.0f, 0.0f, 0.0f, 1.0f));
+		v.push_back(MakeVertex(ox0, oy0, 0.0f, u0, 0.0f, 0.0f, 0.0f, 1.0f)); // ①
+		v.push_back(MakeVertex(ox1, oy1, 0.0f, u1, 0.0f, 0.0f, 0.0f, 1.0f)); // ②
+		v.push_back(MakeVertex(ix0, iy0, 0.0f, u0, 1.0f, 0.0f, 0.0f, 1.0f)); // ③
 
-		v.push_back(MakeVertex(ox1, oy1, 0.0f, u1, 0.0f, 0.0f, 0.0f, 1.0f));
-		v.push_back(MakeVertex(ix0, iy0, 0.0f, u0, 1.0f, 0.0f, 0.0f, 1.0f));
-		v.push_back(MakeVertex(ix1, iy1, 0.0f, u1, 1.0f, 0.0f, 0.0f, 1.0f));
+		v.push_back(MakeVertex(ox1, oy1, 0.0f, u1, 0.0f, 0.0f, 0.0f, 1.0f)); // ②
+		v.push_back(MakeVertex(ix1, iy1, 0.0f, u1, 1.0f, 0.0f, 0.0f, 1.0f)); // ④
+		v.push_back(MakeVertex(ix0, iy0, 0.0f, u0, 1.0f, 0.0f, 0.0f, 1.0f)); // ③
 	}
 
 	return v;

@@ -9,6 +9,7 @@ class DirectXCommon;
 class SrvManager;
 class SpriteCommon;
 class Object3dCommon;
+class PrimitiveCommon;
 class ParticleCommon;
 class ImGuiManagaer;
 class SkinningCommon;
@@ -30,6 +31,7 @@ public:
     SrvManager* Srv() const { return srv_.get(); }
     SpriteCommon* SpriteCom() const { return spriteCommon_.get(); }
     Object3dCommon* ObjCom() const { return objCommon_.get(); }
+    PrimitiveCommon* PrimitiveCom() const { return primitiveCommon_.get(); }
     ParticleCommon* ParticleCom() const { return particleCommon_.get(); }
     ImGuiManagaer* ImGui() const { return imgui_.get(); }
     SkyboxCommon* SkyboxCom() const { return skyboxCommon_.get(); }
@@ -60,6 +62,7 @@ private:
 
     std::unique_ptr<SpriteCommon> spriteCommon_;
     std::unique_ptr<Object3dCommon> objCommon_;
+    std::unique_ptr<PrimitiveCommon> primitiveCommon_;
     std::unique_ptr<ParticleCommon> particleCommon_;
     std::unique_ptr<ImGuiManagaer> imgui_;
 

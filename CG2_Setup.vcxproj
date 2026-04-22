@@ -177,6 +177,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3D\ModelManager.cpp" />
     <ClCompile Include="Engine\3D\Object3d.cpp" />
     <ClCompile Include="Engine\3D\Object3dCommon.cpp" />
+    <ClCompile Include="Engine\3D\PrimitiveCommon.cpp" />
     <ClCompile Include="Engine\3D\SkinningCommon.cpp" />
     <ClCompile Include="Engine\3D\Skybox.cpp" />
     <ClCompile Include="Engine\3D\SkyboxCommon.cpp" />
@@ -357,6 +358,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3D\ModelManager.h" />
     <ClInclude Include="Engine\3D\Object3d.h" />
     <ClInclude Include="Engine\3D\Object3dCommon.h" />
+    <ClInclude Include="Engine\3D\PrimitiveCommon.h" />
     <ClInclude Include="Engine\3D\SkinningCommon.h" />
     <ClInclude Include="Engine\3D\SkinningTypes.h" />
     <ClInclude Include="Engine\3D\Animation.h" />

@@ -21,6 +21,8 @@
 
 //class Object3dCommon;
 
+class PrimitiveCommon;
+
 class Object3d
 {
 
@@ -123,7 +125,7 @@ public:
 	}
 
 	//ブレンド設定
-	void SetBlendMode(Object3dCommon::BlendMode m) { object3dCommon->SetBlendMode(m); }
+	void SetBlendMode(Object3dCommon::BlendMode m) { blendMode_ = m; }
 
 	//色関係
 	void SetMaterialColor(const Vector4& c) {
@@ -163,6 +165,11 @@ public:
 
 	Model* GetModel() const { return model_; }
 
+	void SetIsVisible(bool visible) { isVisible_ = visible; }
+	bool GetIsVisible() const { return isVisible_; }
+
+	void SetPrimitiveCommon(PrimitiveCommon* p) { primitiveCommon_ = p; }
+
 
 	bool GetJointWorldMatrix(const std::string& jointName, Matrix4x4& out) const;
 
@@ -193,6 +200,8 @@ private:
 	//環境マップ
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
+
+	bool isVisible_=false;
 
 private:
 
@@ -234,6 +243,9 @@ private:
 	//テクスチャ
 	std::string texturePath_ = "";
 	bool useOverrideTexture_ = false;
+	
+	Object3dCommon::BlendMode blendMode_ = Object3dCommon::BlendMode::kBlendModeNormal;
+	PrimitiveCommon* primitiveCommon_ = nullptr;
 
 public:
 	//=============

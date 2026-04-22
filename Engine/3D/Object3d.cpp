@@ -1,5 +1,6 @@
 #include "Object3d.h"
 #include "Object3dCommon.h"
+#include "PrimitiveCommon.h"
 
 
 //Vector3 Normalize(const Vector3& v) {
@@ -291,9 +292,9 @@ void Object3d::Draw()
 		// スキン付きメッシュ本体
 		// =====================================================
 		if (useEnvironmentMap_) {
-			skinningCommon_->SetGraphicsPipelineStateEnvMap();
+			skinningCommon_->SetGraphicsPipelineStateEnvMap(static_cast<SkinningCommon::BlendMode>(blendMode_));
 		} else {
-			skinningCommon_->SetGraphicsPipelineState();
+			skinningCommon_->SetGraphicsPipelineState(static_cast<SkinningCommon::BlendMode>(blendMode_));
 		}
 
 		// Transform (Root 1)
@@ -325,10 +326,18 @@ void Object3d::Draw()
 		// スキン無し（剣など）を描く
 		// =====================================================
 		{
-			if (useEnvironmentMap_) {
-				object3dCommon->SetGraphicsPipelineStateEnvMap();
+			if (primitiveCommon_) {
+				if (useEnvironmentMap_) {
+					primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				} else {
+					primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				}
 			} else {
-				object3dCommon->SetGraphicsPipelineState();
+				if (useEnvironmentMap_) {
+					object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
+				} else {
+					object3dCommon->SetGraphicsPipelineState(blendMode_);
+				}
 			}
 
 			cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -469,10 +478,18 @@ void Object3d::Draw()
 			}
 		}
 	} else {
-		if (useEnvironmentMap_) {
-			object3dCommon->SetGraphicsPipelineStateEnvMap();
+		if (primitiveCommon_) {
+			if (useEnvironmentMap_) {
+				primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+			} else {
+				primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+			}
 		} else {
-			object3dCommon->SetGraphicsPipelineState();
+			if (useEnvironmentMap_) {
+				object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
+			} else {
+				object3dCommon->SetGraphicsPipelineState(blendMode_);
+			}
 		}
 
 		// light/camera CBV
@@ -573,10 +590,18 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 	};
 	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
-	if (useEnvironmentMap_) {
-		object3dCommon->SetGraphicsPipelineStateEnvMap();
+	if (primitiveCommon_) {
+		if (useEnvironmentMap_) {
+			primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+		} else {
+			primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+		}
 	} else {
-		object3dCommon->SetGraphicsPipelineState();
+		if (useEnvironmentMap_) {
+			object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
+		} else {
+			object3dCommon->SetGraphicsPipelineState(blendMode_);
+		}
 	}
 
 	cmd->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());

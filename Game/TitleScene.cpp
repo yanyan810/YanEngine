@@ -146,11 +146,13 @@ void TitleScene::OnEnter(GameApp& app) {
 	//primitive
 	primitiveObj_ = std::make_unique<Object3d>();
 	primitiveObj_->Initialize(app.ObjCom(), app.Dx());
+	primitiveObj_->SetPrimitiveCommon(app.PrimitiveCom());
 	primitiveObj_->SetCamera(camera_.get());
-	primitiveObj_->SetEnableLighting(2);
-	primitiveObj_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
+	primitiveObj_->SetEnableLighting(0);
+	primitiveObj_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
 	primitiveObj_->SetTexture("resources/gradationLine.png");
 	primitiveObj_->SetShininess(64.0f);
+	primitiveObj_->SetMaterialColor({ 1,1,1,0.3f });
 
 	srtPrimitive_.pos = { 0.0f, 1.0f, 0.0f };
 	srtPrimitive_.rot = { 0.0f, 0.0f, 0.0f };
@@ -658,8 +660,6 @@ void TitleScene::Update(GameApp& app, float dt) {
 //========================
 void TitleScene::DrawRender(GameApp& app)
 {
-	app.ObjCom()->SetGraphicsPipelineState();
-
 	//if (skyDome_) skyDome_->Draw();
 
 	//if (!showVideo_) {
@@ -687,8 +687,6 @@ void TitleScene::DrawRender(GameApp& app)
 //========================
 void TitleScene::Draw3D(GameApp& app)
 {
-	app.ObjCom()->SetGraphicsPipelineState();
-
 	skybox_->Draw();
 
 	////if (skyDome_) skyDome_->Draw();

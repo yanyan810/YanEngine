@@ -504,7 +504,6 @@ void GameScene::Draw(GameApp& app) {
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     // 3D
-    app.ObjCom()->SetGraphicsPipelineState();
     //if (objA_) objA_->Draw();
     //if (objB_) objB_->Draw();
 

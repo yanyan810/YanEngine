@@ -222,7 +222,6 @@ void GameClearScene::Update(GameApp& app, float dt) {
 }
 
 void GameClearScene::Draw(GameApp& app) {
-    app.ObjCom()->SetGraphicsPipelineState();
 
 	skyDome_->Draw();
 
