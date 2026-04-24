@@ -60,6 +60,11 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     vertexBuffer_->Unmap(0, nullptr);
 }
 
+void ParticleManager::Finalize() {
+    particleGroups_.clear();
+    vertexBuffer_.Reset();
+}
+
 void ParticleManager::Update(float dt, const Camera& camera)
 {
     // ★ 実カメラから取得

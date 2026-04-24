@@ -144,6 +144,7 @@ public:
 		const D3D12_GPU_DESCRIPTOR_HANDLE* overrideSrv);
 
 	void DrawSkinned(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc);
+	void DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc);
 
 	void DrawMeshIndexed(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t instanceCount);
 	
@@ -216,6 +217,7 @@ public:
 
 	// ---- getters for binding ----
 	const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }
+	Microsoft::WRL::ComPtr<ID3D12Resource> GetVertexResource() const { return vertexResource_; }
 
 	// Indexあり前提。無い場合に備えて bool も用意
 	const D3D12_INDEX_BUFFER_VIEW& GetIBV() const { return indexBufferView_; }

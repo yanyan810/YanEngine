@@ -15,6 +15,7 @@
 #include "Object3dCommon.h"
 #include "PrimitiveCommon.h"
 #include "ParticleCommon.h"
+#include "ParticleManager.h"
 #include "ImGuiManagaer.h"
 
 
@@ -135,21 +136,25 @@ void GameApp::Finalize_() {
 
     if (imgui_) imgui_->Shutdown();
 
+    ParticleManager::GetInstance()->Finalize();
     TextureManager::GetInstance()->Finalize();
     ModelManager::GetInstance()->Finalize();
 
     if (win_) win_->Finalize();
 
-    if (dx_) dx_->ReportLiveObjects();
     render_.reset();
 
     sceneMgr_.reset();
+    input_.reset();
+    skyboxCommon_.reset();
     imgui_.reset();
     primitiveCommon_.reset();
     particleCommon_.reset();
     objCommon_.reset();
     spriteCommon_.reset();
+    skinCom_.reset(); // SkinningCommonも確実にリセット
     srv_.reset();
+    
     dx_.reset();
     win_.reset();
 }

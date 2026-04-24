@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="ソース ファイル">
@@ -147,6 +147,12 @@
     <ClCompile Include="Engine\3D\Object3d.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3D\Animator.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3D\Object3dLight.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\3D\Object3dCommon.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -219,6 +225,7 @@
     <FxCompile Include="resources\shaders\Skybox.PS.hlsl" />
     <FxCompile Include="resources\shaders\Object3dEnvMap.PS.hlsl" />
     <FxCompile Include="resources\shaders\SkinnedObjectEnvMap.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Skinning.CS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Camera\DebugCamera.h">
@@ -363,6 +370,12 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3D\Object3d.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3D\Animator.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3D\Object3dLight.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3D\Object3dCommon.h">

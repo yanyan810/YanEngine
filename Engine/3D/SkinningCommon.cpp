@@ -6,6 +6,10 @@ void SkinningCommon::Initialize(DirectXCommon* dxCommon)
     dx_ = dxCommon;
     CreateGraphicsPipelineState();
     CreateEnvMapGraphicsPipelineState();
+    
+    // Compute Shader用のセットアップ
+    CreateComputeRootSignature();
+    CreateComputePipelineState();
 }
 
 void SkinningCommon::CreateRootSignature()
@@ -99,6 +103,94 @@ void SkinningCommon::CreateRootSignature()
     if (sig) sig->Release();
     if (err) err->Release();
 }
+
+void SkinningCommon::CreateComputeRootSignature()
+{
+    // CS用のルートパラメータ
+    D3D12_DESCRIPTOR_RANGE rangePalette{};
+    rangePalette.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rangePalette.NumDescriptors = 1;
+    rangePalette.BaseShaderRegister = 0; // t0
+    rangePalette.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE rangeInputVertex{};
+    rangeInputVertex.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rangeInputVertex.NumDescriptors = 1;
+    rangeInputVertex.BaseShaderRegister = 1; // t1
+    rangeInputVertex.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE rangeInfluence{};
+    rangeInfluence.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rangeInfluence.NumDescriptors = 1;
+    rangeInfluence.BaseShaderRegister = 2; // t2
+    rangeInfluence.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE rangeOutputVertex{};
+    rangeOutputVertex.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    rangeOutputVertex.NumDescriptors = 1;
+    rangeOutputVertex.BaseShaderRegister = 0; // u0
+    rangeOutputVertex.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER params[5]{};
+
+    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[0].DescriptorTable.NumDescriptorRanges = 1;
+    params[0].DescriptorTable.pDescriptorRanges = &rangePalette;
+
+    params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[1].DescriptorTable.NumDescriptorRanges = 1;
+    params[1].DescriptorTable.pDescriptorRanges = &rangeInputVertex;
+
+    params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[2].DescriptorTable.NumDescriptorRanges = 1;
+    params[2].DescriptorTable.pDescriptorRanges = &rangeInfluence;
+
+    params[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[3].DescriptorTable.NumDescriptorRanges = 1;
+    params[3].DescriptorTable.pDescriptorRanges = &rangeOutputVertex;
+
+    params[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[4].Descriptor.ShaderRegister = 0; // b0
+
+    D3D12_ROOT_SIGNATURE_DESC desc{};
+    desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+    desc.NumParameters = _countof(params);
+    desc.pParameters = params;
+
+    ID3DBlob* sig = nullptr;
+    ID3DBlob* err = nullptr;
+    HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
+    assert(SUCCEEDED(hr));
+
+    hr = dx_->GetDevice()->CreateRootSignature(
+        0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&computeRootSignature_));
+    assert(SUCCEEDED(hr));
+
+    if (sig) sig->Release();
+    if (err) err->Release();
+}
+
+void SkinningCommon::CreateComputePipelineState()
+{
+    auto cs = dx_->CompilesSharder(L"resources/shaders/Skinning.CS.hlsl", L"cs_6_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc{};
+    computePipelineStateDesc.CS = {
+        cs->GetBufferPointer(),
+        cs->GetBufferSize()
+    };
+    computePipelineStateDesc.pRootSignature = computeRootSignature_.Get();
+
+    HRESULT hr = dx_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&computePipelineState_));
+    assert(SUCCEEDED(hr));
+}
+
 
 void SkinningCommon::CreateGraphicsPipelineState()
 {

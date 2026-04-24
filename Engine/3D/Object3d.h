@@ -11,13 +11,10 @@
 #include "ModelManager.h"
 #include "Object3dCommon.h"
 #include "Camera.h"
-#include "AnimationEvaluate.h"
-#include <array>
-#include <span>
-#include "SrvManager.h"
-#include "SkinningTypes.h"
 #include "SkinningCommon.h"
 #include "VideoPlayerMF.h"
+#include "Animator.h"
+#include "Object3dLight.h"
 
 //class Object3dCommon;
 
@@ -34,40 +31,9 @@ public:
 		Matrix4x4 WorldInverseTranspose;
 	};
 
-	struct DirectionalLight {
-		Vector4 color;
-		Vector3 direction;
-		float intensity;
-	};
-
 	struct CameraGPU {
 		Vector3 worldPosition;
 		float pad; // ★16byte揃え
-	};
-
-
-	struct PointLight {
-		Vector4 color;//!<ライトの色
-		Vector3 position;//!<ライトの位置
-		float intensity;//!<輝度
-		float radius;//!<ライトの届く最大距離
-		float decay;//!<減衰率
-		float padding[2];
-	};
-
-	struct SpotLight {
-
-		Vector4 color;//!< ライトの色
-		Vector3 position;//!< ライトの位置
-		float intensity;//!< 輝度
-		Vector3 direction;//!< ライトの向き
-		float distance;//!< ライトの届く最大距離
-		float decay;//!< 減衰率
-		float cosAngle;//!スポットライトの余弦
-		float cosFalloffStart;
-		float padding[2];
-
-
 	};
 
 public:
@@ -95,17 +61,14 @@ public:
 	const Vector3& GetRotate()    const { return transform.rotate; }
 	const Vector3& GetTranslate() const { return transform.translate; }
 
-	//光源用
-	void SetLightColor(const Vector4& color) { if (directionalLightData) directionalLightData->color = color; }
+	// 光源用セッター・ゲッター (Object3dLightに委譲)
+	void SetLightColor(const Vector4& color) { light_->SetDirectionalLightColor(color); }
+	void SetDirection(const Vector3& direction) { light_->SetDirectionalLightDirection(direction); }
+	void SetIntensity(float intensity) { light_->SetDirectionalLightIntensity(intensity); }
 
-	void SetDirection(const Vector3& direction);
-
-	void SetIntensity(float intensity) { if (directionalLightData) directionalLightData->intensity = intensity; }
-
-	// 光源 getter（正しく返すように修正）
-	const Vector4& GetLightColor()     const { return directionalLightData->color; }
-	const Vector3& GetDirection() const { return directionalLightData->direction; }
-	float          GetIntensity() const { return directionalLightData->intensity; }
+	const Vector4& GetLightColor() const { return light_->GetDirectionalLightColor(); }
+	const Vector3& GetDirection() const { return light_->GetDirectionalLightDirection(); }
+	float          GetIntensity() const { return light_->GetDirectionalLightIntensity(); }
 
 	void SetEnableLighting(int enable) {
 		if (model_ && model_->GetMaterial()) {
@@ -141,24 +104,21 @@ public:
 	void SetCamera(Camera* camera) { camera_ = camera; }
 
 	//ポイントライトセッター
-	void SetPointLightColor(const Vector4& c) { if (pointLightData_) pointLightData_->color = c; }
-	void SetPointLightPos(const Vector3& p) { if (pointLightData_) pointLightData_->position = p; }
-	void SetPointLightIntensity(float i) { if (pointLightData_) pointLightData_->intensity = i; }
-	void SetPointLightRadius(float r) { if (pointLightData_) pointLightData_->radius = r; }
-	void SetPointLightDecay(float d) { if (pointLightData_) pointLightData_->decay = d; }
+	void SetPointLightColor(const Vector4& c) { light_->SetPointLightColor(c); }
+	void SetPointLightPos(const Vector3& p) { light_->SetPointLightPos(p); }
+	void SetPointLightIntensity(float i) { light_->SetPointLightIntensity(i); }
+	void SetPointLightRadius(float r) { light_->SetPointLightRadius(r); }
+	void SetPointLightDecay(float d) { light_->SetPointLightDecay(d); }
 
 	//スポットライトセッター
-	void SetSpotLightColor(const Vector4& c) { if (spotLightData_) spotLightData_->color = c; }
-	void SetSpotLightPos(const Vector3& p) { if (spotLightData_) spotLightData_->position = p; }
-	void SetSpotLightIntensity(float i) { if (spotLightData_) spotLightData_->intensity = i; }
-	void SetSpotLightDirection(const Vector3& d) { if (spotLightData_) spotLightData_->direction = d; } // 正規化推奨
-	void SetSpotLightDistance(float d) { if (spotLightData_) spotLightData_->distance = d; }
-	void SetSpotLightDecay(float d) { if (spotLightData_) spotLightData_->decay = d; }
-	void SetSpotLightCosAngle(float c) { if (spotLightData_) spotLightData_->cosAngle = c; } // cos(角度)
-
-	void SetSpotLightCosFalloffStart(float c) {
-		if (spotLightData_) spotLightData_->cosFalloffStart = c;
-	}
+	void SetSpotLightColor(const Vector4& c) { light_->SetSpotLightColor(c); }
+	void SetSpotLightPos(const Vector3& p) { light_->SetSpotLightPos(p); }
+	void SetSpotLightIntensity(float i) { light_->SetSpotLightIntensity(i); }
+	void SetSpotLightDirection(const Vector3& d) { light_->SetSpotLightDirection(d); }
+	void SetSpotLightDistance(float d) { light_->SetSpotLightDistance(d); }
+	void SetSpotLightDecay(float d) { light_->SetSpotLightDecay(d); }
+	void SetSpotLightCosAngle(float c) { light_->SetSpotLightCosAngle(c); }
+	void SetSpotLightCosFalloffStart(float c) { light_->SetSpotLightCosFalloffStart(c); }
 
 	//テクスチャを指定
 	void SetTexture(const std::string& path);
@@ -171,10 +131,10 @@ public:
 	void SetPrimitiveCommon(PrimitiveCommon* p) { primitiveCommon_ = p; }
 
 
-	bool GetJointWorldMatrix(const std::string& jointName, Matrix4x4& out) const;
+	//bool GetJointWorldMatrix(const std::string& jointName, Matrix4x4& out) const;
 
 
-	Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
+	//Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
 
 public:
 
@@ -213,16 +173,10 @@ private:
 
 	Model* model_ = nullptr;
 
-	Model::Skeleton poseSkeleton_; // ★再生用（modelのskeletonをコピーして使う）
-
 	//モデル用のTransformationMatrix用のリソースを作る。Matrix4x4 一つ分のサイズを用意する
 	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResourceModel;/* = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));*/
 	//データを書き込む
 	TransformationMatrix* transformationMatrixDataModel = nullptr;
-
-	//ライトのリソース作成
-	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource;
-	DirectionalLight* directionalLightData = nullptr;
 
 	Transform transform;
 	Transform cameraTransform;
@@ -231,14 +185,6 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> cameraResource_;
 	CameraGPU* cameraData_ = nullptr;
-
-	// 点光源（CB）
-	Microsoft::WRL::ComPtr<ID3D12Resource> pointLightResource_;
-	PointLight* pointLightData_ = nullptr;
-
-	// スポットライト（CB）
-	Microsoft::WRL::ComPtr<ID3D12Resource> spotLightResource_;
-	SpotLight* spotLightData_ = nullptr;
 
 	//テクスチャ
 	std::string texturePath_ = "";
@@ -252,51 +198,33 @@ public:
 	//アニメーション
 	//=============
 
-	void PlayAnimation(const std::string& animName = "", bool loop = true);
+	void PlayAnimation(const std::string& animName = "", bool loop = true) { if(animator_) animator_->PlayAnimation(animName, loop); }
 
-	bool IsAnimationFinished() const;
-	const std::string& GetPlayingAnimName() const;
-	void StopAnimation() { isPlayAnimation_ = false; }
-	void SetAnimationNodeName(const std::string& node) { playingNodeName_ = node; }
+	bool IsAnimationFinished() const { return animator_ ? animator_->IsAnimationFinished() : true; }
 
-	bool HasAnimation() const;
+	Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
+
+	const std::string& GetPlayingAnimName() const { static std::string empty; return animator_ ? animator_->GetPlayingAnimName() : empty; }
+	void StopAnimation() { if(animator_) animator_->StopAnimation(); }
+	void SetAnimationNodeName(const std::string& node) { if(animator_) animator_->SetAnimationNodeName(node); }
+
+	bool HasAnimation() const { return animator_ ? animator_->HasAnimation() : false; }
 
 	//デバッグ用
 	void SetDebugDrawBones(bool enable) { debugDrawBones_ = enable; }
 	void SetBoneMarkerModel(const std::string& path) { boneMarkerModel_ = path; }
 
 private:
-
-	// Object3d.h （private でOK）
-	bool  isPlayAnimation_ = false;
-	float animationTime_ = 0.0f;
-	std::string playingAnimName_;   // 空なら先頭を使う
-	std::string playingNodeName_ = "root"; // まずはroot/なければ先頭
-	bool loop_ = true;
-
-	bool poseReady_ = false;
+	std::unique_ptr<Animator> animator_;
+	std::unique_ptr<Object3dLight> light_;
 
 	bool debugDrawBones_ = false;
 	std::string boneMarkerModel_ = "cube/cube.obj";
 	std::vector<std::unique_ptr<Object3d>> boneMarkers_;
 
-	SkinCluster skinCluster_;
-
 	SrvManager* srvManager_ = nullptr; // ★参照
 
 private:
-	SkinCluster CreateSkinCluster(
-		ID3D12Device* device,
-		const Model::Skeleton& skeleton,
-		const std::map<std::string, Model::JointWeightData>& skinData,
-		uint32_t vertexCount,
-		ID3D12DescriptorHeap* srvHeap,
-		uint32_t descriptorSize
-	);
-
-	void UpdateSkinCluster_();
-
-
 	int32_t swordNodeIndex_ = -1;   // ノード index
 	uint32_t swordMeshIndex_ = 2;   // 今ログ的に sword は mesh[2]
 

@@ -991,6 +991,51 @@ void Model::DrawSkinned(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc)
 	}
 }
 
+void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc)
+{
+	if (!indexResource_ || !materialResource_ || !materialData_ || !sc.outputVertexResource) {
+		OutputDebugStringA("[Model] DrawSkinnedCompute skipped: resources not initialized\n");
+		return;
+	}
+
+	// ★ ComputeShaderでスキニング済みのVBV (slot0のみ)
+	cmd->IASetVertexBuffers(0, 1, &sc.skinnedVertexBufferView);
+	cmd->IASetIndexBuffer(&indexBufferView_);
+
+	// Material (b0)
+	cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+
+	for (const auto& mesh : modelData_.meshes) {
+
+		if (!mesh.skinned) {
+			continue; // 剣などスキン無しはここでは描かない
+		}
+
+		// ---- texture path ----
+		std::string texPath;
+		if (mesh.materialIndex < modelData_.materials.size()) {
+			texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
+		}
+
+		D3D12_GPU_DESCRIPTOR_HANDLE handle{};
+		if (!texPath.empty()) {
+			if (!TextureManager::GetInstance()->HasTexture(texPath)) {
+				TextureManager::GetInstance()->LoadTexture(texPath);
+			}
+			handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
+		}
+		else {
+			handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+		}
+
+		// ★PrimitiveCommon/Object3dCommon: RootParam(2) が PS Texture SRV(t0)
+		cmd->SetGraphicsRootDescriptorTable(2, handle);
+
+		// ★IB は vOffset 足し込み済みなので BaseVertexLocation=0
+		cmd->DrawIndexedInstanced(mesh.indexCount, 1, mesh.startIndex, 0, 0);
+	}
+}
+
 void Model::DrawMeshIndexed(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t instanceCount)
 {
 	const auto& mesh = modelData_.meshes[meshIndex];
