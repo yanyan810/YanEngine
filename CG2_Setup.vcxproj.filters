@@ -226,6 +226,7 @@
     <FxCompile Include="resources\shaders\Object3dEnvMap.PS.hlsl" />
     <FxCompile Include="resources\shaders\SkinnedObjectEnvMap.PS.hlsl" />
     <FxCompile Include="resources\shaders\Skinning.CS.hlsl" />
+    <FxCompile Include="resources\shaders\InitializeParticle.CS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Camera\DebugCamera.h">

@@ -12,6 +12,21 @@
 
 #include "ParticleCommon.h"
 
+// GPU Particle用構造体
+struct Particles {
+    Vector3 translate;
+    Vector3 scale;
+    float lifeTime;
+    Vector3 velocity;
+    float currentTime;
+    Vector4 color;
+};
+
+struct PerView {
+    Matrix4x4 viewProjection;
+    Matrix4x4 billboardMatrix;
+};
+
 // ===============================
 // 定数
 // ===============================
@@ -25,14 +40,14 @@ static constexpr uint32_t kVertexCount = 6;
 struct ParticleGroup {
     uint32_t textureSrvIndex = 0;
 
-    // ★ ここを軽量データにする（本体 Particle クラスは入れない）
+    // CPU用のパーティクル管理（後日不要になる可能性あり）
     std::list<Particle::ParticleData> particles;
 
+    // UAV用リソース（DEFAULTヒープ）
     Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource;
-    void* mappedData = nullptr;
 
-    uint32_t instanceCount = 0;
     uint32_t instancingSrvIndex = 0;
+    uint32_t instancingUavIndex = 0; // ★追加
 
     ParticleCommon::BlendMode blendMode = ParticleCommon::BlendMode::kBlendModeNormal; 
 
@@ -95,4 +110,7 @@ private:
 
     ParticleCommon* particleCommon_ = nullptr;
 
+    // === GPU Particle用 PerView ===
+    Microsoft::WRL::ComPtr<ID3D12Resource> perViewResource_;
+    PerView* mappedPerView_ = nullptr;
 };
