@@ -176,6 +176,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3D\ModelCommon.cpp" />
     <ClCompile Include="Engine\3D\ModelManager.cpp" />
     <ClCompile Include="Engine\3D\Object3d.cpp" />
+    <ClCompile Include="Engine\3D\Animator.cpp" />
+    <ClCompile Include="Engine\3D\Object3dLight.cpp" />
     <ClCompile Include="Engine\3D\Object3dCommon.cpp" />
     <ClCompile Include="Engine\3D\PrimitiveCommon.cpp" />
     <ClCompile Include="Engine\3D\SkinningCommon.cpp" />
@@ -312,6 +314,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <FxCompile Include="resources\shaders\Skinning.CS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="resources\shaders\Skybox.PS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
@@ -357,6 +364,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3D\ModelCommon.h" />
     <ClInclude Include="Engine\3D\ModelManager.h" />
     <ClInclude Include="Engine\3D\Object3d.h" />
+    <ClInclude Include="Engine\3D\Animator.h" />
+    <ClInclude Include="Engine\3D\Object3dLight.h" />
     <ClInclude Include="Engine\3D\Object3dCommon.h" />
     <ClInclude Include="Engine\3D\PrimitiveCommon.h" />
     <ClInclude Include="Engine\3D\SkinningCommon.h" />

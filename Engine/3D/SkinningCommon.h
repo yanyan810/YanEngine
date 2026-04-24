@@ -24,15 +24,23 @@ public:
     void SetDefaultCamera(Camera* camera) { defaultCamera_ = camera; }
     Camera* GetDefaultCamera() const { return defaultCamera_; }
 
+    ID3D12RootSignature* GetComputeRootSignature() const { return computeRootSignature_.Get(); }
+    ID3D12PipelineState* GetComputePipelineState() const { return computePipelineState_.Get(); }
+
 private:
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
     void CreateEnvMapGraphicsPipelineState();
 
+    void CreateComputeRootSignature();
+    void CreateComputePipelineState();
+
 private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> computeRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pso_[static_cast<int>(BlendMode::kCountOfBlendMode)];
     Microsoft::WRL::ComPtr<ID3D12PipelineState> envMapPso_[static_cast<int>(BlendMode::kCountOfBlendMode)];
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> computePipelineState_;
     DirectXCommon* dx_ = nullptr;
 
     Camera* defaultCamera_ = nullptr;

@@ -49,6 +49,7 @@ public:
     static ParticleManager* GetInstance();
 
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, ParticleCommon* particleCommon); // ★追加
+    void Finalize();
     void SetGroupBlendMode(const std::string& groupName, ParticleCommon::BlendMode mode);            // ★追加
     void Update(float deltaTime, const Camera& camera);
     void Draw(ID3D12GraphicsCommandList* cmd);

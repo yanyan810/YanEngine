@@ -281,7 +281,7 @@ void TitleScene::Update(GameApp& app, float dt) {
 	switch (state_) {
 	case State::Idle:
 		if (spaceTrig) {
-		//	state_ = State::ExitClose; // ★すぐ遷移しない
+			state_ = State::ExitClose; // ★すぐ遷移しない
 		}
 		break;
 
@@ -692,8 +692,8 @@ void TitleScene::Draw3D(GameApp& app)
 	////if (skyDome_) skyDome_->Draw();
 
 	////if (!showVideo_) {
-		//if (ground_) ground_->Draw();
-	//if (titlePlayer) titlePlayer->Draw();
+	if (ground_) ground_->Draw();
+	if (titlePlayer) titlePlayer->Draw();
 	////}
 
 	////if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
