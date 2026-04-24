@@ -4,6 +4,7 @@
 #include "GameApp.h"
 #include "Particle.h"
 #include "ParticleCommon.h"
+#include "ParticleManager.h"
 #include "Camera.h"
 
 
@@ -141,6 +142,9 @@ void TitleScene::OnEnter(GameApp& app) {
 	// 見えやすいように（任意）
 	particle_->SetBlendMode(ParticleCommon::BlendMode::kBlendModeAdd);
 	particle_->SetMaterialColor({ 1, 1, 1, 1 });
+
+	// GPU Particle 初期化（テスト用）
+	ParticleManager::GetInstance()->CreateParticleGroup("gpu_test", "");
 
 
 	//primitive
@@ -653,6 +657,9 @@ void TitleScene::Update(GameApp& app, float dt) {
 	if (particle_) {
 		particle_->Update();
 	}
+
+	// GPU Particle 更新
+	ParticleManager::GetInstance()->Update(dt, *camera_);
 }
 
 //========================
@@ -713,6 +720,9 @@ void TitleScene::Draw3D(GameApp& app)
 		app.ParticleCom()->SetGraphicsPipelineState();
 		particle_->Draw();
 	}
+	
+	// GPU Particle 描画
+	ParticleManager::GetInstance()->Draw(app.Dx()->GetCommandList());
 	
 
 }

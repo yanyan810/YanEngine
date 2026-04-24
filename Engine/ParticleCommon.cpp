@@ -7,6 +7,10 @@ void ParticleCommon::Initialize(DirectXCommon* dxCommon)
 
     // RootSig は1回だけ
     CreateRootSignature();
+    
+    // Compute用
+    CreateComputeRootSignature();
+    CreateComputePipelineState();
 
     // ★ 全BlendMode分 PSO を事前生成
     for (int i = 0; i < static_cast<int>(BlendMode::kCountOfBlendMode); ++i) {
@@ -30,7 +34,7 @@ void ParticleCommon::CreateRootSignature()
     descriptorRangeTexture.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     // ==== Root Parameters ====
-    D3D12_ROOT_PARAMETER params[4]{};
+    D3D12_ROOT_PARAMETER params[5]{};
 
     // (0) Pixel: Material CBV(b0)
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -53,6 +57,11 @@ void ParticleCommon::CreateRootSignature()
     params[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     params[3].Descriptor.ShaderRegister = 1; // b1
+
+    // (4) Vertex: PerView CBV(b0)
+    params[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    params[4].Descriptor.ShaderRegister = 0; // b0
 
     // ==== Static Sampler ====
     D3D12_STATIC_SAMPLER_DESC samp{};
@@ -85,6 +94,50 @@ void ParticleCommon::CreateRootSignature()
         sigBlob->GetBufferPointer(),
         sigBlob->GetBufferSize(),
         IID_PPV_ARGS(&rootSignature_));
+    assert(SUCCEEDED(hr));
+}
+
+void ParticleCommon::CreateComputeRootSignature()
+{
+    // CSでは register(u0) に RWStructuredBuffer を配置する想定
+    D3D12_DESCRIPTOR_RANGE range{};
+    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    range.NumDescriptors = 1;
+    range.BaseShaderRegister = 0; // u0
+    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER param{};
+    param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    param.DescriptorTable.NumDescriptorRanges = 1;
+    param.DescriptorTable.pDescriptorRanges = &range;
+
+    D3D12_ROOT_SIGNATURE_DESC desc{};
+    desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+    desc.NumParameters = 1;
+    desc.pParameters = &param;
+    desc.NumStaticSamplers = 0;
+    desc.pStaticSamplers = nullptr;
+
+    Microsoft::WRL::ComPtr<ID3DBlob> sigBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> errBlob;
+    HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
+    assert(SUCCEEDED(hr));
+
+    hr = dx_->GetDevice()->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&computeRootSignature_));
+    assert(SUCCEEDED(hr));
+}
+
+void ParticleCommon::CreateComputePipelineState()
+{
+    Microsoft::WRL::ComPtr<IDxcBlob> cs =
+        dx_->CompilesSharder(L"resources/shaders/InitializeParticle.CS.hlsl", L"cs_6_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = computeRootSignature_.Get();
+    psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    HRESULT hr = dx_->GetDevice()->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&computePipelineState_));
     assert(SUCCEEDED(hr));
 }
 
@@ -211,4 +264,11 @@ void ParticleCommon::SetGraphicsPipelineState()
     cmd->SetPipelineState(pso_[idx].Get());
 
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void ParticleCommon::SetComputePipelineState()
+{
+    auto* cmd = dx_->GetCommandList();
+    cmd->SetComputeRootSignature(computeRootSignature_.Get());
+    cmd->SetPipelineState(computePipelineState_.Get());
 }

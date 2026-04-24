@@ -58,6 +58,13 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     vertexBuffer_->Map(0, nullptr, &mapped);
     memcpy(mapped, vertices_.data(), bufferSize);
     vertexBuffer_->Unmap(0, nullptr);
+
+    // PerView リソース作成
+    perViewResource_ = dxCommon_->CreateBufferResource(sizeof(PerView));
+    perViewResource_->Map(0, nullptr, reinterpret_cast<void**>(&mappedPerView_));
+    // 初期値
+    mappedPerView_->viewProjection = Matrix4x4::MakeIdentity4x4();
+    mappedPerView_->billboardMatrix = Matrix4x4::MakeIdentity4x4();
 }
 
 void ParticleManager::Finalize() {
@@ -71,58 +78,15 @@ void ParticleManager::Update(float dt, const Camera& camera)
     const Matrix4x4& vp = camera.GetViewProjectionMatrix();
     const Matrix4x4& cameraMatrix = camera.GetWorldMatrix();
 
-    // billboard（今のやり方をそのまま）
-  /*  Matrix4x4 backToFrontMatrix = Matrix4x4::RotateY(std::numbers::pi_v<float> *0.5f);
-    Matrix4x4 billboardMatrix = Matrix4x4::Multiply(backToFrontMatrix, cameraMatrix);
-    billboardMatrix.m[3][0] = 0.0f;
-    billboardMatrix.m[3][1] = 0.0f;
-    billboardMatrix.m[3][2] = 0.0f;*/
     Matrix4x4 billboardMatrix = cameraMatrix;
     billboardMatrix.m[3][0] = 0.0f;
     billboardMatrix.m[3][1] = 0.0f;
     billboardMatrix.m[3][2] = 0.0f;
 
-
-    for (auto& [name, group] : particleGroups_) {
-
-        group.instanceCount = 0;
-
-        auto* gpu = reinterpret_cast<Particle::ParticleForGPU*>(group.mappedData);
-        if (!gpu) { continue; }
-
-        for (auto it = group.particles.begin();
-            it != group.particles.end() && group.instanceCount < kMaxInstance; )
-        {
-            auto& p = *it;
-
-            if (p.lifeTime <= p.currentTime) {
-                it = group.particles.erase(it);
-                continue;
-            }
-
-            p.currentTime += dt;
-            p.transform.translate += p.velocity * dt;
-
-            float alpha = 1.0f - (p.currentTime / p.lifeTime);
-
-            Matrix4x4 scaleM = Matrix4x4::MakeScaleMatrix(p.transform.scale);
-            Matrix4x4 translateM = Matrix4x4::Translation(p.transform.translate);
-
-            Matrix4x4 world =
-                Matrix4x4::Multiply(
-                    Matrix4x4::Multiply(scaleM, billboardMatrix),
-                    translateM);
-
-            Matrix4x4 wvp = Matrix4x4::Multiply(world, vp);
-
-            gpu[group.instanceCount].World = world;
-            gpu[group.instanceCount].WVP = wvp;
-            gpu[group.instanceCount].color = p.color;
-            gpu[group.instanceCount].color.w = alpha;
-
-            group.instanceCount++;
-            ++it;
-        }
+    // PerView の更新
+    if (mappedPerView_) {
+        mappedPerView_->viewProjection = vp;
+        mappedPerView_->billboardMatrix = billboardMatrix;
     }
 }
 
@@ -168,19 +132,71 @@ void ParticleManager::CreateParticleGroup(
     TextureManager::GetInstance()->LoadTexture(texturePath);
     group.textureSrvIndex = TextureManager::GetInstance()->GetSrvIndex(texturePath);
 
-    // --- instancing buffer ---
-    group.instancingResource =
-        dxCommon_->CreateBufferResource(sizeof(Particle::ParticleForGPU) * kMaxInstance);
-    group.instancingResource->Map(0, nullptr, &group.mappedData);
+    // --- instancing buffer (DEFAULT heap + UAV) ---
+    D3D12_HEAP_PROPERTIES heapProps{};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    
+    D3D12_RESOURCE_DESC resDesc{};
+    resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    resDesc.Alignment = 0;
+    resDesc.Width = sizeof(Particles) * kMaxInstance;
+    resDesc.Height = 1;
+    resDesc.DepthOrArraySize = 1;
+    resDesc.MipLevels = 1;
+    resDesc.Format = DXGI_FORMAT_UNKNOWN;
+    resDesc.SampleDesc.Count = 1;
+    resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    resDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
-    // --- instancing SRV ---
+    HRESULT hr = dxCommon_->GetDevice()->CreateCommittedResource(
+        &heapProps, D3D12_HEAP_FLAG_NONE, &resDesc, 
+        D3D12_RESOURCE_STATE_COMMON, nullptr, 
+        IID_PPV_ARGS(&group.instancingResource));
+    assert(SUCCEEDED(hr));
+
+    // --- instancing SRV & UAV ---
     group.instancingSrvIndex = srvManager_->Allocate();
     srvManager_->CreateSRVforStructuredBuffer(
         group.instancingSrvIndex,
         group.instancingResource.Get(),
         kMaxInstance,
-        sizeof(Particle::ParticleForGPU)
+        sizeof(Particles)
     );
+
+    group.instancingUavIndex = srvManager_->Allocate();
+    srvManager_->CreateUAVforStructuredBuffer(
+        group.instancingUavIndex,
+        group.instancingResource.Get(),
+        kMaxInstance,
+        sizeof(Particles)
+    );
+
+    // --- Compute Shaderで初期化 (Dispatch) ---
+    auto* cmd = dxCommon_->GetCommandList();
+
+    // barrier: COMMON -> UAV
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = group.instancingResource.Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    cmd->ResourceBarrier(1, &barrier);
+
+    particleCommon_->SetComputePipelineState();
+    
+    // ★追加: DescriptorHeapをコマンドリストにセットする
+    srvManager_->PreDraw();
+
+    // UAVセット (Register u0)
+    cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
+
+    cmd->Dispatch(kMaxInstance, 1, 1);
+
+    // barrier: UAV -> SRV (NON_PIXEL_SHADER_RESOURCE)
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    cmd->ResourceBarrier(1, &barrier);
 
     particleGroups_.emplace(name, std::move(group));
 }
@@ -203,10 +219,14 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
         cmd->IASetVertexBuffers(0, 1, &vbView_);
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+        // PerView(CBV) を RootParameter 4 にセット (b0)
+        cmd->SetGraphicsRootConstantBufferView(4, perViewResource_->GetGPUVirtualAddress());
+
         srvManager_->SetGraphicsDescriptorTable(2, group.textureSrvIndex);
         srvManager_->SetGraphicsDescriptorTable(1, group.instancingSrvIndex);
 
-        cmd->DrawInstanced(kVertexCount, group.instanceCount, 0, 0);
+        // 1024個すべて描画
+        cmd->DrawInstanced(kVertexCount, kMaxInstance, 0, 0);
     }
 }
 

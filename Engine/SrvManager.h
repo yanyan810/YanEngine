@@ -27,7 +27,9 @@ public:
     void CreateSRVforStructuredBuffer(uint32_t srvIndex, ID3D12Resource* pResource,
         UINT numElements, UINT structureByteStride);
 
-
+    // UAV生成(StructuredBuffer用)
+    void CreateUAVforStructuredBuffer(uint32_t uavIndex, ID3D12Resource* pResource,
+        UINT numElements, UINT structureByteStride);
 private:
     DirectXCommon* dxCommon_ = nullptr;
 

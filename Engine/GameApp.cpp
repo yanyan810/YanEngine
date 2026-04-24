@@ -93,6 +93,8 @@ bool GameApp::Initialize_() {
     particleCommon_ = std::make_unique<ParticleCommon>();
     particleCommon_->Initialize(dx_.get());
 
+    ParticleManager::GetInstance()->Initialize(dx_.get(), srv_.get(), particleCommon_.get());
+
     skyboxCommon_ = std::make_unique<SkyboxCommon>();
     skyboxCommon_->Initialize(dx_.get());
 
