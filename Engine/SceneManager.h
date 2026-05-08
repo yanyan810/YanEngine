@@ -20,6 +20,7 @@ public:
     void Draw3D(GameApp& app);
     void Draw2D(GameApp& app);
     void Draw(GameApp& app);
+    void DrawImGui(GameApp& app);
 
     IScene* Current() { return current_.get(); }
 

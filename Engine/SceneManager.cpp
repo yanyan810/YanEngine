@@ -47,3 +47,8 @@ void SceneManager::Draw(GameApp& app) {
     if (!current_) return;
     current_->Draw(app);
 }
+
+void SceneManager::DrawImGui(GameApp& app) {
+    if (!current_) return;
+    current_->DrawImGui(app);
+}

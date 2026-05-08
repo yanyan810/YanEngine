@@ -17,6 +17,7 @@ public:
 
     void Update(GameApp& app, float dt) override;
     void Draw(GameApp& app) override;
+    void DrawImGui(GameApp& app) override;
 
 private:
     enum class State { EnterOpen, Idle, ExitClose };

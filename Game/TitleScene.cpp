@@ -268,16 +268,18 @@ void TitleScene::OnExit(GameApp&) {
 
 void TitleScene::Update(GameApp& app, float dt) {
 
-	// ESC で終了（Input クラス持ってるなら差し替え）
-	if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+	const Input* input = app.GetInput();
+
+	// ESC で終了
+	if (input->IsKeyTrigger(DIK_ESCAPE)) {
 		app.RequestQuit();
 		return;
 	}
 
 	skybox_->Update();
 
-	bool spaceNow = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-	bool spaceTrig = spaceNow && !prevSpace_;
+	bool spaceNow = input->IsKeyPressed(DIK_SPACE);
+	bool spaceTrig = input->IsKeyTrigger(DIK_SPACE);
 	prevSpace_ = spaceNow;
 
 	dt_ = dt;
@@ -358,210 +360,7 @@ void TitleScene::Update(GameApp& app, float dt) {
 		primitiveObj_->Update(dt);
 	}
 
-#ifdef USE_IMGUI
 
-	// ===== ImGui =====
-	ImGui::Begin("Camera Debug");
-
-	ImGui::DragFloat3("Position", &imguiCamPos_.x, 0.1f);
-	ImGui::DragFloat3("Rotation", &imguiCamRot_.x, 0.01f);
-
-	ImGui::End();
-
-#endif // DEBUG
-
-#ifdef USE_IMGUI
-	ImGui::Begin("Phong Check");
-
-	ImGui::Checkbox("Orbit Camera", &orbitCam_);
-	ImGui::DragFloat("Orbit Speed", &orbitSpeed_, 0.01f, 0.0f, 5.0f);
-	ImGui::DragFloat("Orbit Radius", &orbitRadius_, 0.1f, 1.0f, 50.0f);
-
-	ImGui::SliderFloat("Shininess", &shininess_, 1.0f, 256.0f);
-
-	// 1:Lambert 2:Half 3:SpecOnly
-	ImGui::RadioButton("Lambert", &lightingMode_, 1); ImGui::SameLine();
-	ImGui::RadioButton("HalfLambert", &lightingMode_, 2); ImGui::SameLine();
-	ImGui::RadioButton("SpecOnly(Phong)", &lightingMode_, 3); ImGui::SameLine();
-	ImGui::RadioButton("SpecOnly(Blinn)", &lightingMode_, 4);
-
-	ImGui::Separator();
-	ImGui::Text("Light");
-
-	ImGui::DragFloat3("Dir", &lightDir_.x, 0.01f, -1.0f, 1.0f);
-	ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
-	ImGui::ColorEdit3("Color", &lightColor_.x); // RGBだけ
-
-
-	ImGui::End();
-
-	ImGui::Begin("Object SRT (Per-Object)");
-
-	static const char* targetLabels[] = {
-	"SkyDome",
-	"VideoPlane",
-	"Particle",
-	"Ground",        // 追加
-	"TitlePlayer",   // 追加
-	"BG(Sprite)",
-	"PressStart(Sprite)",
-	};
-
-	ImGui::Combo("Target", &editTarget_, targetLabels, IM_ARRAYSIZE(targetLabels));
-
-
-	// ターゲットに応じて参照先を切り替え
-	SRT* cur = nullptr;
-	switch ((EditTarget)editTarget_) {
-	case EditTarget::SkyDome:     cur = &srtSky_; break;
-	case EditTarget::VideoPlane:  cur = &srtVideo_; break;
-	case EditTarget::Particle:    cur = &srtParticle_; break;
-	case EditTarget::Ground:      cur = &srtGround_; break;
-	case EditTarget::TitlePlayer: cur = &srtPlayer_; break;
-	case EditTarget::BG:          cur = &srtBG_; break;
-	case EditTarget::PressStart:  cur = &srtPress_; break;
-	default: break;
-	}
-
-
-
-	if (cur) {
-		ImGui::DragFloat3("T", &cur->pos.x, 0.1f);
-		ImGui::DragFloat3("R", &cur->rot.x, 0.01f);
-		ImGui::DragFloat3("S", &cur->scale.x, 0.1f, 0.001f, 100.0f);
-	}
-
-	ImGui::Separator();
-	ImGui::Text("PointLight");
-
-	ImGui::DragFloat3("Point Pos", &pointPos_.x, 0.1f);
-	ImGui::SliderFloat("Point Intensity", &pointIntensity_, 0.0f, 10.0f);
-	ImGui::DragFloat(
-		"Point Radius",
-		&pointRadius_,
-		0.1f,        // 1ドラッグの変化量
-		0,        // 最小
-		100.0f,      // 最大（まずは100で十分）
-		"%.2f"
-	);
-	ImGui::DragFloat(
-		"Point Decay",
-		&pointDecay_,
-		0.05f,
-		0.0f,
-		8.0f,
-		"%.2f"
-	);
-
-	ImGui::ColorEdit3("Point Color", &pointColor_.x);
-
-	ImGui::Separator();
-	ImGui::RadioButton("View: All", &lightViewMode_, 0); ImGui::SameLine();
-	ImGui::RadioButton("View: DirOnly", &lightViewMode_, 1); ImGui::SameLine();
-	ImGui::RadioButton("View: PointOnly", &lightViewMode_, 2);
-
-	ImGui::Separator();
-	ImGui::Text("SpotLight");
-
-	ImGui::DragFloat3("Spot Pos", &spotPos_.x, 0.1f);
-	ImGui::DragFloat3("Spot Dir", &spotDir_.x, 0.01f, -1.0f, 1.0f);
-
-	ImGui::SliderFloat("Spot Intensity", &spotIntensity_, 0.0f, 20.0f);
-	ImGui::DragFloat("Spot Distance", &spotDistance_, 0.1f, 0.0f, 200.0f, "%.2f");
-	ImGui::DragFloat("Spot Decay", &spotDecay_, 0.05f, 0.0f, 8.0f, "%.2f");
-
-	ImGui::ColorEdit3("Spot Color", &spotColor_.x);
-
-	ImGui::SliderFloat("Spot Angle (deg)", &spotAngleDeg_, 1.0f, 89.0f);
-	ImGui::SliderFloat("Falloff Start (deg)", &spotFalloffStartDeg_, 0.5f, 89.0f);
-
-	ImGui::End();
-
-	if (particle_) {
-		particle_->DebugImGui(); // ★Particle側のウィンドウを出す
-	}
-
-
-	DrawImGui_ModelSwitchersOneWindow();
-
-	ImGui::Begin("Video");
-	ImGui::Checkbox("Enable Video", &enableVideo_);
-	ImGui::End();
-
-	ImGui::Begin("Video");
-
-	if (video_) {
-		int n = video_->GetAudioTrackCount();
-		ImGui::Text("Audio tracks: %d", n);
-
-		static int track = 0;
-		if (n > 0) {
-			if (track >= n) track = n - 1;
-
-			if (ImGui::BeginCombo("Audio Track", ("Track" + std::to_string(track + 1)).c_str())) {
-				for (int i = 0; i < n; ++i) {
-					std::string label = "Track" + std::to_string(i + 1);
-					bool selected = (i == track);
-					if (ImGui::Selectable(label.c_str(), selected)) {
-						track = i;
-						video_->SetAudioTrack(i);
-					}
-					if (selected) ImGui::SetItemDefaultFocus();
-				}
-				ImGui::EndCombo();
-			}
-		}
-	}
-
-	ImGui::End();
-
-	ImGui::Begin("Primitive Check");
-
-	ImGui::Combo(
-		"Primitive Type",
-		&primitiveTypeIndex_,
-		primitiveLabels_.data(),
-		static_cast<int>(primitiveLabels_.size())
-	);
-
-	ImGui::DragFloat3("Primitive Pos", &srtPrimitive_.pos.x, 0.1f);
-	ImGui::DragFloat3("Primitive Rot", &srtPrimitive_.rot.x, 0.01f);
-	ImGui::DragFloat3("Primitive Scale", &srtPrimitive_.scale.x, 0.1f, 0.01f, 100.0f);
-
-	ImGui::End();
-
-#endif
-
-#ifdef USE_IMGUI
-
-	// ===== 課題用ウィンドウ =====
-	ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(500, 100), ImGuiCond_Once);
-
-	if (ImGui::Begin("Sprite Position Control"))
-	{
-		// 現在のpressStartの座標を取得
-		Vector2 pos = pressStart_->GetPosition();
-
-		// スライダーで操作（小数1桁表示）
-		ImGui::SliderFloat2(
-			"PressStart Pos",
-			&pos.x,
-			0.0f,
-			1280.0f,
-			"%04.1f"
-		);
-
-		// 変更を反映
-		pressStart_->SetPosition(pos);
-
-		// 数値表示（整数4桁、小数1桁）
-		ImGui::Text("X: %04.1f  Y: %04.1f", pos.x, pos.y);
-	}
-
-	ImGui::End();
-
-#endif
 
 	spotCos = std::cosf(spotAngleDeg_ * (std::numbers::pi_v<float> / 180.0f));
 
@@ -796,4 +595,203 @@ void TitleScene::DrawImGui_ModelSwitchersOneWindow()
 	}
 
 	ImGui::End();
+}
+
+void TitleScene::DrawImGui(GameApp& app) {
+#ifdef USE_IMGUI
+
+	// ===== ImGui =====
+	ImGui::Begin("Camera Debug");
+
+	ImGui::DragFloat3("Position", &imguiCamPos_.x, 0.1f);
+	ImGui::DragFloat3("Rotation", &imguiCamRot_.x, 0.01f);
+
+	ImGui::End();
+
+	ImGui::Begin("Phong Check");
+
+	ImGui::Checkbox("Orbit Camera", &orbitCam_);
+	ImGui::DragFloat("Orbit Speed", &orbitSpeed_, 0.01f, 0.0f, 5.0f);
+	ImGui::DragFloat("Orbit Radius", &orbitRadius_, 0.1f, 1.0f, 50.0f);
+
+	ImGui::SliderFloat("Shininess", &shininess_, 1.0f, 256.0f);
+
+	// 1:Lambert 2:Half 3:SpecOnly
+	ImGui::RadioButton("Lambert", &lightingMode_, 1); ImGui::SameLine();
+	ImGui::RadioButton("HalfLambert", &lightingMode_, 2); ImGui::SameLine();
+	ImGui::RadioButton("SpecOnly(Phong)", &lightingMode_, 3); ImGui::SameLine();
+	ImGui::RadioButton("SpecOnly(Blinn)", &lightingMode_, 4);
+
+	ImGui::Separator();
+	ImGui::Text("Light");
+
+	ImGui::DragFloat3("Dir", &lightDir_.x, 0.01f, -1.0f, 1.0f);
+	ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
+	ImGui::ColorEdit3("Color", &lightColor_.x); // RGBだけ
+
+
+	ImGui::End();
+
+	ImGui::Begin("Object SRT (Per-Object)");
+
+	static const char* targetLabels[] = {
+	"SkyDome",
+	"VideoPlane",
+	"Particle",
+	"Ground",        // 追加
+	"TitlePlayer",   // 追加
+	"BG(Sprite)",
+	"PressStart(Sprite)",
+	};
+
+	ImGui::Combo("Target", &editTarget_, targetLabels, IM_ARRAYSIZE(targetLabels));
+
+
+	// ターゲットに応じて参照先を切り替え
+	SRT* cur = nullptr;
+	switch ((EditTarget)editTarget_) {
+	case EditTarget::SkyDome:     cur = &srtSky_; break;
+	case EditTarget::VideoPlane:  cur = &srtVideo_; break;
+	case EditTarget::Particle:    cur = &srtParticle_; break;
+	case EditTarget::Ground:      cur = &srtGround_; break;
+	case EditTarget::TitlePlayer: cur = &srtPlayer_; break;
+	case EditTarget::BG:          cur = &srtBG_; break;
+	case EditTarget::PressStart:  cur = &srtPress_; break;
+	default: break;
+	}
+
+	if (cur) {
+		ImGui::DragFloat3("T", &cur->pos.x, 0.1f);
+		ImGui::DragFloat3("R", &cur->rot.x, 0.01f);
+		ImGui::DragFloat3("S", &cur->scale.x, 0.1f, 0.001f, 100.0f);
+	}
+
+	ImGui::Separator();
+	ImGui::Text("PointLight");
+
+	ImGui::DragFloat3("Point Pos", &pointPos_.x, 0.1f);
+	ImGui::SliderFloat("Point Intensity", &pointIntensity_, 0.0f, 10.0f);
+	ImGui::DragFloat(
+		"Point Radius",
+		&pointRadius_,
+		0.1f,        // 1ドラッグの変化量
+		0,        // 最小
+		100.0f,      // 最大（まずは100で十分）
+		"%.2f"
+	);
+	ImGui::DragFloat(
+		"Point Decay",
+		&pointDecay_,
+		0.05f,
+		0.0f,
+		8.0f,
+		"%.2f"
+	);
+
+	ImGui::ColorEdit3("Point Color", &pointColor_.x);
+
+	ImGui::Separator();
+	ImGui::RadioButton("View: All", &lightViewMode_, 0); ImGui::SameLine();
+	ImGui::RadioButton("View: DirOnly", &lightViewMode_, 1); ImGui::SameLine();
+	ImGui::RadioButton("View: PointOnly", &lightViewMode_, 2);
+
+	ImGui::Separator();
+	ImGui::Text("SpotLight");
+
+	ImGui::DragFloat3("Spot Pos", &spotPos_.x, 0.1f);
+	ImGui::DragFloat3("Spot Dir", &spotDir_.x, 0.01f, -1.0f, 1.0f);
+
+	ImGui::SliderFloat("Spot Intensity", &spotIntensity_, 0.0f, 20.0f);
+	ImGui::DragFloat("Spot Distance", &spotDistance_, 0.1f, 0.0f, 200.0f, "%.2f");
+	ImGui::DragFloat("Spot Decay", &spotDecay_, 0.05f, 0.0f, 8.0f, "%.2f");
+
+	ImGui::ColorEdit3("Spot Color", &spotColor_.x);
+
+	ImGui::SliderFloat("Spot Angle (deg)", &spotAngleDeg_, 1.0f, 89.0f);
+	ImGui::SliderFloat("Falloff Start (deg)", &spotFalloffStartDeg_, 0.5f, 89.0f);
+
+	ImGui::End();
+
+	if (particle_) {
+		particle_->DebugImGui(); // ★Particle側のウィンドウを出す
+	}
+
+
+	DrawImGui_ModelSwitchersOneWindow();
+
+	ImGui::Begin("Video");
+	ImGui::Checkbox("Enable Video", &enableVideo_);
+	ImGui::End();
+
+	ImGui::Begin("Video");
+
+	if (video_) {
+		int n = video_->GetAudioTrackCount();
+		ImGui::Text("Audio tracks: %d", n);
+
+		static int track = 0;
+		if (n > 0) {
+			if (track >= n) track = n - 1;
+
+			if (ImGui::BeginCombo("Audio Track", ("Track" + std::to_string(track + 1)).c_str())) {
+				for (int i = 0; i < n; ++i) {
+					std::string label = "Track" + std::to_string(i + 1);
+					bool selected = (i == track);
+					if (ImGui::Selectable(label.c_str(), selected)) {
+						track = i;
+						video_->SetAudioTrack(i);
+					}
+					if (selected) ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
+			}
+		}
+	}
+
+	ImGui::End();
+
+	ImGui::Begin("Primitive Check");
+
+	ImGui::Combo(
+		"Primitive Type",
+		&primitiveTypeIndex_,
+		primitiveLabels_.data(),
+		static_cast<int>(primitiveLabels_.size())
+	);
+
+	ImGui::DragFloat3("Primitive Pos", &srtPrimitive_.pos.x, 0.1f);
+	ImGui::DragFloat3("Primitive Rot", &srtPrimitive_.rot.x, 0.01f);
+	ImGui::DragFloat3("Primitive Scale", &srtPrimitive_.scale.x, 0.1f, 0.01f, 100.0f);
+
+	ImGui::End();
+
+
+	// ===== 課題用ウィンドウ =====
+	ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(500, 100), ImGuiCond_Once);
+
+	if (ImGui::Begin("Sprite Position Control"))
+	{
+		// 現在のpressStartの座標を取得
+		Vector2 pos = pressStart_->GetPosition();
+
+		// スライダーで操作（小数1桁表示）
+		ImGui::SliderFloat2(
+			"PressStart Pos",
+			&pos.x,
+			0.0f,
+			1280.0f,
+			"%04.1f"
+		);
+
+		// 変更を反映
+		pressStart_->SetPosition(pos);
+
+		// 数値表示（整数4桁、小数1桁）
+		ImGui::Text("X: %04.1f  Y: %04.1f", pos.x, pos.y);
+	}
+
+	ImGui::End();
+
+#endif
 }

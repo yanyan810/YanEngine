@@ -258,13 +258,13 @@ void GameScene::OnExit(GameApp& /*app*/) {
 
 
 void GameScene::Update(GameApp& app, float dt) {
-    // ESC で終了（Input クラス持ってるなら差し替え）
-    if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+    if (!input_) return; // 念のため
+    
+    // ESC で終了
+    if (input_->IsKeyTrigger(DIK_ESCAPE)) {
         app.RequestQuit();
         return;
     }
-
-    if (!input_) return; // 念のため
 
     camera_->Update();
 
@@ -277,11 +277,11 @@ void GameScene::Update(GameApp& app, float dt) {
     // ----------------------------
     if (phase_ == Phase::IntroVideo) {
 
-        bool spaceNow = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-        bool enterNow = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+        bool spaceNow = input_->IsKeyPressed(DIK_SPACE);
+        bool enterNow = input_->IsKeyPressed(DIK_RETURN);
 
-        bool spaceTrig = spaceNow && !prevSpace_;
-        bool enterTrig = enterNow && !prevEnter_;
+        bool spaceTrig = input_->IsKeyTrigger(DIK_SPACE);
+        bool enterTrig = input_->IsKeyTrigger(DIK_RETURN);
 
         // dt方式（推奨）
         introTime_ += dt;
@@ -314,8 +314,8 @@ void GameScene::Update(GameApp& app, float dt) {
     } else if (phase_ == Phase::Battle) {
 
         // --- TABでポーズ切替（Battle中のみ）---
-        bool tabNow = (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
-        bool tabTrig = tabNow && !prevTab_;
+        bool tabNow = input_->IsKeyPressed(DIK_TAB);
+        bool tabTrig = input_->IsKeyTrigger(DIK_TAB);
         prevTab_ = tabNow;
 
         if (tabTrig) {
@@ -327,8 +327,8 @@ void GameScene::Update(GameApp& app, float dt) {
         if (isPaused_) {
 
             // 左右で選択（A/D or ←/→）
-            bool left = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0 || (GetAsyncKeyState('A') & 0x8000) != 0;
-            bool right = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0 || (GetAsyncKeyState('D') & 0x8000) != 0;
+            bool left = input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A);
+            bool right = input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D);
 
             if (left)  pauseSel_ = PauseSel::Close;
             if (right) pauseSel_ = PauseSel::ToTitle;
@@ -340,12 +340,12 @@ void GameScene::Update(GameApp& app, float dt) {
             }
 
             // 決定（Enter/Space）
-            bool enterNow = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-            bool spaceNow = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
+            bool enterNow = input_->IsKeyPressed(DIK_RETURN);
+            bool spaceNow = input_->IsKeyPressed(DIK_SPACE);
 
             // 連打で暴れないように「トリガ」扱いしたいなら prevEnter_/prevSpace_ を流用してOK
-            bool enterTrig = enterNow && !prevEnter_;
-            bool spaceTrig = spaceNow && !prevSpace_;
+            bool enterTrig = input_->IsKeyTrigger(DIK_RETURN);
+            bool spaceTrig = input_->IsKeyTrigger(DIK_SPACE);
             prevEnter_ = enterNow;
             prevSpace_ = spaceNow;
 
@@ -467,30 +467,14 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
         // （任意）スペースでスキップ
-         if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
+         if (input_->IsKeyTrigger(DIK_SPACE)) {
              RequestChangeScene_("GameClear");
              return;
          }
     }
 
 
-#ifdef USE_IMGUI
 
-
-    if (phase_ == Phase::IntroVideo && videoPlane_) {
-        videoPlane_->SetTranslate(srtVideo_.pos);
-        videoPlane_->SetRotate(srtVideo_.rot);
-        videoPlane_->SetScale(srtVideo_.scale);
-    }
-
-    ImGui::Begin("VideoPlane SRT");
-    ImGui::DragFloat3("T", &srtVideo_.pos.x, 0.1f);
-    ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
-    ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
-    ImGui::End();
-
-
-#endif // USE_IMGUI
 
 
 }
@@ -712,4 +696,20 @@ void GameScene::UpdateBossHPDigits_(int hp)
     setDigit(0, d0, x0, baseY, show0);
     setDigit(1, d1, x1, baseY, show1);
     setDigit(2, d2, x2, baseY, show2);
+}
+
+void GameScene::DrawImGui(GameApp& app) {
+#ifdef USE_IMGUI
+    if (phase_ == Phase::IntroVideo && videoPlane_) {
+        videoPlane_->SetTranslate(srtVideo_.pos);
+        videoPlane_->SetRotate(srtVideo_.rot);
+        videoPlane_->SetScale(srtVideo_.scale);
+    }
+
+    ImGui::Begin("VideoPlane SRT");
+    ImGui::DragFloat3("T", &srtVideo_.pos.x, 0.1f);
+    ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
+    ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
+    ImGui::End();
+#endif // USE_IMGUI
 }
