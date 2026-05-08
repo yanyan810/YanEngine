@@ -24,6 +24,9 @@ public:
     // 最終描画
     virtual void Draw(GameApp& app) = 0;
 
+    // ImGui描画
+    virtual void DrawImGui(GameApp& app) {}
+
     void RequestChangeScene_(const std::string& next) {
         nextScene_ = next;
     }

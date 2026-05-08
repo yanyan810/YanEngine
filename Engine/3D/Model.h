@@ -184,6 +184,8 @@ public:
 		return modelData_.animations;
 	}
 
+	const std::vector<MaterialData>& GetMaterials() const { return modelData_.materials; }
+
 	bool HasSkinning() const { return modelData_.hasSkinning; }
 
 	const Skeleton& GetSkeleton() const { return skeleton_; }

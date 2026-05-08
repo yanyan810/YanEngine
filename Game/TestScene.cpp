@@ -192,14 +192,6 @@ void TestScene::Update(GameApp& app, float dt) {
         RequestChangeScene_("Game");
     }
 
-#ifdef USE_IMGUI
-
-    // ===== ImGui =====
-    ImGui::Begin("Camera Debug");
-
-    ImGui::End();
-
-#endif // DEBUG
 
     player_->SetLighting(light_);
     enemyMgr_.SetLighting(light_);
@@ -236,7 +228,60 @@ void TestScene::Update(GameApp& app, float dt) {
 
 
 
+
+
+
+
+}
+
+
+void TestScene::Draw(GameApp& app) {
+    auto* cmd = app.Dx()->GetCommandList();
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    // ===== 3D =====
+
+    if (ground_) ground_->Draw();
+
+    skyDome_->Draw();
+
+    if (drawPointMarker_ && pointMarker_) pointMarker_->Draw();
+    if (drawSpotMarker_ && spotMarker_) spotMarker_->Draw();
+
+    if (player_) player_->Draw();
+
+#ifdef _DEBUG
+
+    player_->DrawDebugHitBoxes(enemyMgr_);
+
+#endif // DEBUG
+
+	
+    enemyMgr_.Draw();
+
+    // ===== 2D (Sprite) =====
+    app.SpriteCom()->SetGraphicsPipelineState();
+
+    Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
+    Matrix4x4 proj = Matrix4x4::MakeOrthographicMatrix(
+        0, 0,
+        float(WinApp::kClientWidth),
+        float(WinApp::kClientHeight),
+        0, 100
+    );
+
+    if (playTxst_) {
+        playTxst_->Update(view, proj);
+        playTxst_->Draw();
+    }
+}
+
+void TestScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI
+    // ===== ImGui =====
+    ImGui::Begin("Camera Debug");
+    ImGui::End();
+
     ImGui::Begin("Ground PointLight");
 
     ImGui::Checkbox("Point Only (ground)", &groundPointOnly_);
@@ -261,11 +306,8 @@ void TestScene::Update(GameApp& app, float dt) {
     ImGui::Checkbox("Draw Point Marker", &drawPointMarker_);
     ImGui::DragFloat("Marker Scale", &pointMarkerScale_, 0.01f, 0.01f, 5.0f);
 
-
     ImGui::End();
-#endif
 
-#ifdef USE_IMGUI
     ImGui::Begin("Ground SpotLight");
 
     ImGui::Checkbox("Spot Only (ground)", &groundSpotOnly_);
@@ -312,49 +354,4 @@ void TestScene::Update(GameApp& app, float dt) {
 
     ImGui::End();
 #endif
-
-
-
-}
-
-
-void TestScene::Draw(GameApp& app) {
-    auto* cmd = app.Dx()->GetCommandList();
-    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    // ===== 3D =====
-
-    if (ground_) ground_->Draw();
-
-    skyDome_->Draw();
-
-    if (drawPointMarker_ && pointMarker_) pointMarker_->Draw();
-    if (drawSpotMarker_ && spotMarker_) spotMarker_->Draw();
-
-    if (player_) player_->Draw();
-
-#ifdef _DEBUG
-
-    player_->DrawDebugHitBoxes(enemyMgr_);
-
-#endif // DEBUG
-
-	
-    enemyMgr_.Draw();
-
-    // ===== 2D (Sprite) =====
-    app.SpriteCom()->SetGraphicsPipelineState();
-
-    Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
-    Matrix4x4 proj = Matrix4x4::MakeOrthographicMatrix(
-        0, 0,
-        float(WinApp::kClientWidth),
-        float(WinApp::kClientHeight),
-        0, 100
-    );
-
-    if (playTxst_) {
-        playTxst_->Update(view, proj);
-        playTxst_->Draw();
-    }
 }

@@ -27,6 +27,7 @@ public:
 
     void Update(GameApp& app, float dt) override;
     void Draw(GameApp& app) override;
+    void DrawImGui(GameApp& app) override;
 
     void SpawnEnemyFromOutside_(EnemyType type);
 

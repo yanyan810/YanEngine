@@ -11,6 +11,8 @@ void ParticleCommon::Initialize(DirectXCommon* dxCommon)
     // Compute用
     CreateComputeRootSignature();
     CreateComputePipelineState();
+    CreateEmitComputePipelineState(); // ★追加
+    CreateUpdateComputePipelineState(); // ★追加
 
     // ★ 全BlendMode分 PSO を事前生成
     for (int i = 0; i < static_cast<int>(BlendMode::kCountOfBlendMode); ++i) {
@@ -100,22 +102,58 @@ void ParticleCommon::CreateRootSignature()
 void ParticleCommon::CreateComputeRootSignature()
 {
     // CSでは register(u0) に RWStructuredBuffer を配置する想定
-    D3D12_DESCRIPTOR_RANGE range{};
-    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-    range.NumDescriptors = 1;
-    range.BaseShaderRegister = 0; // u0
-    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    D3D12_DESCRIPTOR_RANGE range0{};
+    range0.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    range0.NumDescriptors = 1;
+    range0.BaseShaderRegister = 0; // u0
+    range0.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER param{};
-    param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    param.DescriptorTable.NumDescriptorRanges = 1;
-    param.DescriptorTable.pDescriptorRanges = &range;
+    D3D12_DESCRIPTOR_RANGE range1{};
+    range1.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    range1.NumDescriptors = 1;
+    range1.BaseShaderRegister = 1; // u1
+    range1.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE range2{};
+    range2.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    range2.NumDescriptors = 1;
+    range2.BaseShaderRegister = 2; // u2
+    range2.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER params[5]{};
+
+    // 0: UAV (u0) Particles
+    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[0].DescriptorTable.NumDescriptorRanges = 1;
+    params[0].DescriptorTable.pDescriptorRanges = &range0;
+
+    // 1: UAV (u1) FreeListIndex
+    params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[1].DescriptorTable.NumDescriptorRanges = 1;
+    params[1].DescriptorTable.pDescriptorRanges = &range1;
+
+    // 2: UAV (u2) FreeList
+    params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[2].DescriptorTable.NumDescriptorRanges = 1;
+    params[2].DescriptorTable.pDescriptorRanges = &range2;
+
+    // 3: CBV (b0) for Emitter
+    params[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[3].Descriptor.ShaderRegister = 0; // b0
+
+    // 4: CBV (b1) for PerFrame
+    params[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[4].Descriptor.ShaderRegister = 1; // b1
 
     D3D12_ROOT_SIGNATURE_DESC desc{};
     desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-    desc.NumParameters = 1;
-    desc.pParameters = &param;
+    desc.NumParameters = 5; // 変更
+    desc.pParameters = params;
     desc.NumStaticSamplers = 0;
     desc.pStaticSamplers = nullptr;
 
@@ -138,6 +176,32 @@ void ParticleCommon::CreateComputePipelineState()
     psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
 
     HRESULT hr = dx_->GetDevice()->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&computePipelineState_));
+    assert(SUCCEEDED(hr));
+}
+
+void ParticleCommon::CreateEmitComputePipelineState()
+{
+    Microsoft::WRL::ComPtr<IDxcBlob> cs =
+        dx_->CompilesSharder(L"resources/shaders/EmitParticle.CS.hlsl", L"cs_6_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = computeRootSignature_.Get();
+    psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    HRESULT hr = dx_->GetDevice()->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&emitComputePipelineState_));
+    assert(SUCCEEDED(hr));
+}
+
+void ParticleCommon::CreateUpdateComputePipelineState()
+{
+    Microsoft::WRL::ComPtr<IDxcBlob> cs =
+        dx_->CompilesSharder(L"resources/shaders/UpdateParticle.CS.hlsl", L"cs_6_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = computeRootSignature_.Get();
+    psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    HRESULT hr = dx_->GetDevice()->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&updateComputePipelineState_));
     assert(SUCCEEDED(hr));
 }
 
@@ -271,4 +335,18 @@ void ParticleCommon::SetComputePipelineState()
     auto* cmd = dx_->GetCommandList();
     cmd->SetComputeRootSignature(computeRootSignature_.Get());
     cmd->SetPipelineState(computePipelineState_.Get());
+}
+
+void ParticleCommon::SetEmitComputePipelineState()
+{
+    auto* cmd = dx_->GetCommandList();
+    cmd->SetComputeRootSignature(computeRootSignature_.Get());
+    cmd->SetPipelineState(emitComputePipelineState_.Get());
+}
+
+void ParticleCommon::SetUpdateComputePipelineState()
+{
+    auto* cmd = dx_->GetCommandList();
+    cmd->SetComputeRootSignature(computeRootSignature_.Get());
+    cmd->SetPipelineState(updateComputePipelineState_.Get());
 }

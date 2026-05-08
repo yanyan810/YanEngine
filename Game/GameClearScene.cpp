@@ -129,11 +129,13 @@ void GameClearScene::OnExit(GameApp&) {
 
 
 void GameClearScene::Update(GameApp& app, float dt) {
-    bool spaceNow = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-    bool enterNow = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+    const Input* input = app.GetInput();
 
-    bool spaceTrig = spaceNow && !prevSpace_;
-    bool enterTrig = enterNow && !prevEnter_;
+    bool spaceNow = input->IsKeyPressed(DIK_SPACE);
+    bool enterNow = input->IsKeyPressed(DIK_RETURN);
+
+    bool spaceTrig = input->IsKeyTrigger(DIK_SPACE);
+    bool enterTrig = input->IsKeyTrigger(DIK_RETURN);
 
     prevSpace_ = spaceNow;
     prevEnter_ = enterNow;
@@ -185,27 +187,6 @@ void GameClearScene::Update(GameApp& app, float dt) {
         break;
     }
 
-#ifdef USE_IMGUI
-	// ===== ImGui =====
-    ImGui::Begin("Clear");
-    ImGui::DragFloat("clearPosZ", &clearPosZ_, 0.1f);
-    ImGui::End();
-
-    ImGui::Begin("Clear Video");
-    ImGui::DragFloat3("T", &srtVideo_.pos.x, 0.1f);
-    ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
-    ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
-    ImGui::End();
-
-    // 反映
-    if (videoPlane_) {
-        videoPlane_->SetTranslate(srtVideo_.pos);
-        videoPlane_->SetRotate(srtVideo_.rot);
-        videoPlane_->SetScale(srtVideo_.scale);
-    }
-
-
-#endif
 
     if (damageObj_) {
 
@@ -266,4 +247,26 @@ void GameClearScene::Draw(GameApp& app) {
 
     // 円マスク（最後）
     app.SpriteCom()->DrawCircleMask(circle_, softness_);
+}
+
+void GameClearScene::DrawImGui(GameApp& app) {
+#ifdef USE_IMGUI
+	// ===== ImGui =====
+    ImGui::Begin("Clear");
+    ImGui::DragFloat("clearPosZ", &clearPosZ_, 0.1f);
+    ImGui::End();
+
+    ImGui::Begin("Clear Video");
+    ImGui::DragFloat3("T", &srtVideo_.pos.x, 0.1f);
+    ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
+    ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
+    ImGui::End();
+
+    // 反映
+    if (videoPlane_) {
+        videoPlane_->SetTranslate(srtVideo_.pos);
+        videoPlane_->SetRotate(srtVideo_.rot);
+        videoPlane_->SetScale(srtVideo_.scale);
+    }
+#endif
 }

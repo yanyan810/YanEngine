@@ -27,6 +27,8 @@ public:
 
     void SetGraphicsPipelineState();
     void SetComputePipelineState();
+    void SetEmitComputePipelineState(); // ★追加
+    void SetUpdateComputePipelineState(); // ★追加
 
     ID3D12RootSignature* GetComputeRootSignature() const { return computeRootSignature_.Get(); }
     ID3D12PipelineState* GetComputePipelineState() const { return computePipelineState_.Get(); }
@@ -41,6 +43,8 @@ private:
 
     void CreateComputeRootSignature();
 	void CreateComputePipelineState();
+    void CreateEmitComputePipelineState(); // ★追加
+    void CreateUpdateComputePipelineState(); // ★追加
 
 private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
@@ -51,6 +55,8 @@ private:
         static_cast<size_t>(BlendMode::kCountOfBlendMode)> pso_{};
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> computePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> emitComputePipelineState_; // ★追加
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> updateComputePipelineState_; // ★追加
 
     DirectXCommon* dx_ = nullptr;
 

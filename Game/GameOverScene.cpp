@@ -138,11 +138,13 @@ void GameOverScene::OnExit(GameApp& app) {
 
 
 void GameOverScene::Update(GameApp& app, float dt) {
-    bool spaceNow = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-    bool enterNow = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+    const Input* input = app.GetInput();
 
-    bool spaceTrigger = spaceNow && !prevSpace_;
-    bool enterTrigger = enterNow && !prevEnter_;
+    bool spaceNow = input->IsKeyPressed(DIK_SPACE);
+    bool enterNow = input->IsKeyPressed(DIK_RETURN);
+
+    bool spaceTrigger = input->IsKeyTrigger(DIK_SPACE);
+    bool enterTrigger = input->IsKeyTrigger(DIK_RETURN);
 
     prevSpace_ = spaceNow;
     prevEnter_ = enterNow;
@@ -177,7 +179,7 @@ void GameOverScene::Update(GameApp& app, float dt) {
             video_->PumpAudio();
         }
 
-        const Input* input = app.GetInput();
+        // const Input* input = app.GetInput(); は上で取得済みなので削除
 
         if (input->IsKeyPressed(DIK_LEFT) || input->IsKeyPressed(DIK_A)) {
             select_ = Select::Retry;
@@ -215,20 +217,7 @@ void GameOverScene::Update(GameApp& app, float dt) {
     //    damageObj_->Update(dt);
     //}
 
-#ifdef USE_IMGUI
-    ImGui::Begin("GameOver Video");
-    ImGui::Checkbox("enableVideo", &enableVideo_);
-    ImGui::DragFloat3("T", &srtVideo_.pos.x, 0.1f);
-    ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
-    ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
-    ImGui::End();
 
-    if (videoPlane_) {
-        videoPlane_->SetTranslate(srtVideo_.pos);
-        videoPlane_->SetRotate(srtVideo_.rot);
-        videoPlane_->SetScale(srtVideo_.scale);
-    }
-#endif
 }
 
 void GameOverScene::Draw(GameApp& app) {
@@ -272,4 +261,21 @@ void GameOverScene::Draw(GameApp& app) {
 
     // マスク（最後）
     app.SpriteCom()->DrawCircleMask(circle_, softness_);
+}
+
+void GameOverScene::DrawImGui(GameApp& app) {
+#ifdef USE_IMGUI
+    ImGui::Begin("GameOver Video");
+    ImGui::Checkbox("enableVideo", &enableVideo_);
+    ImGui::DragFloat3("T", &srtVideo_.pos.x, 0.1f);
+    ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
+    ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
+    ImGui::End();
+
+    if (videoPlane_) {
+        videoPlane_->SetTranslate(srtVideo_.pos);
+        videoPlane_->SetRotate(srtVideo_.rot);
+        videoPlane_->SetScale(srtVideo_.scale);
+    }
+#endif
 }

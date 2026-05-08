@@ -193,6 +193,8 @@ void GameApp::Draw() {
 
 #ifdef USE_IMGUI
     if (imgui_) {
+        sceneMgr_->DrawImGui(*this);
+        ParticleManager::GetInstance()->DrawImGui();
         imgui_->End(dx_->GetCommandList());
     }
 #endif
