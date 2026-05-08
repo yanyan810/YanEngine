@@ -98,6 +98,7 @@ public:
     void Finalize();
     void SetGroupBlendMode(const std::string& groupName, ParticleCommon::BlendMode mode);            // ★追加
     void Update(float deltaTime, const Camera& camera);
+    void UpdateCompute(ID3D12GraphicsCommandList* computeCmd);
     void Draw(ID3D12GraphicsCommandList* cmd);
     void DrawImGui(); // ★追加
 

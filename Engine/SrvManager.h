@@ -18,6 +18,7 @@ public:
     void CreateSRVTextureCube(uint32_t srvIndex, ID3D12Resource* pResource, DXGI_FORMAT format, UINT mipLevels);
 
     void PreDraw();
+    void PreDrawCompute(ID3D12GraphicsCommandList* cmd);
     void SetGraphicsDescriptorTable(UINT RootParameterIndex, uint32_t srvIndex);
 
     // ★追加：外から heap を取れるように

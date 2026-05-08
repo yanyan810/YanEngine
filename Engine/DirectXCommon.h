@@ -51,6 +51,7 @@ public:
 	//getter
 	ID3D12Device* GetDevice() const { return device_.Get(); }
 	ID3D12GraphicsCommandList* GetCommandList() const { return commandList.Get(); }
+	ID3D12GraphicsCommandList* GetComputeCommandList() const { return computeCommandList.Get(); }
 
 
 
@@ -164,6 +165,9 @@ private:
 	Microsoft::WRL::ComPtr < ID3D12CommandQueue> commandQueue = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = nullptr;
 	Microsoft::WRL::ComPtr < ID3D12CommandAllocator> commandAllocator = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> computeCommandList = nullptr;
+	Microsoft::WRL::ComPtr < ID3D12CommandAllocator> computeCommandAllocator = nullptr;
 
 	//スワップチェーン
 	Microsoft::WRL::ComPtr <IDXGISwapChain4> swapChain = nullptr;

@@ -466,7 +466,7 @@ void ParticleManager::CreateParticleGroup(
     );
 
     // --- Compute Shaderで初期化 (Dispatch) ---
-    auto* cmd = dxCommon_->GetCommandList();
+    auto* computeCmd = dxCommon_->GetComputeCommandList();
 
     D3D12_RESOURCE_BARRIER barriers[3]{};
     barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -486,17 +486,17 @@ void ParticleManager::CreateParticleGroup(
     barriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
     barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     barriers[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    cmd->ResourceBarrier(3, barriers);
+    computeCmd->ResourceBarrier(3, barriers);
 
-    particleCommon_->SetComputePipelineState();
+    particleCommon_->SetComputePipelineState(computeCmd);
     
-    srvManager_->PreDraw();
+    srvManager_->PreDrawCompute(computeCmd);
 
-    cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
-    cmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
-    cmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
+    computeCmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
+    computeCmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
+    computeCmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
 
-    cmd->Dispatch(kMaxInstance, 1, 1);
+    computeCmd->Dispatch(kMaxInstance, 1, 1);
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -504,7 +504,7 @@ void ParticleManager::CreateParticleGroup(
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    cmd->ResourceBarrier(1, &barrier);
+    computeCmd->ResourceBarrier(1, &barrier);
 
     // --- Emitter Buffer ---
     group.emitterResource = dxCommon_->CreateBufferResource(sizeof(EmitterSphere));
@@ -525,12 +525,12 @@ void ParticleManager::SetGroupBlendMode(const std::string& groupName, ParticleCo
     it->second.blendMode = mode;
 }
 
-void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
+void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
     for (auto& [name, group] : particleGroups_) {
 
         // --- Compute Shader による Emit ---
         if (particleCommon_) {
-            particleCommon_->SetEmitComputePipelineState();
+            particleCommon_->SetEmitComputePipelineState(computeCmd);
         }
 
         // バリア: SRV -> UAV
@@ -540,48 +540,49 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        cmd->ResourceBarrier(1, &barrier);
+        computeCmd->ResourceBarrier(1, &barrier);
 
         // SRVヒープをセット
-        srvManager_->PreDraw();
+        srvManager_->PreDrawCompute(computeCmd);
 
         // b0 に Emitter (CBV)
-        cmd->SetComputeRootConstantBufferView(3, group.emitterResource->GetGPUVirtualAddress());
+        computeCmd->SetComputeRootConstantBufferView(3, group.emitterResource->GetGPUVirtualAddress());
         // b1 に PerFrame (CBV) ★追加
-        cmd->SetComputeRootConstantBufferView(4, perFrameResource_->GetGPUVirtualAddress());
+        computeCmd->SetComputeRootConstantBufferView(4, perFrameResource_->GetGPUVirtualAddress());
         // u0 に Particles (UAV)
-        cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
+        computeCmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
         // u1 に FreeListIndex (UAV)
-        cmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
+        computeCmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
         // u2 に FreeList (UAV)
-        cmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
+        computeCmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
 
         // 実行 (Emit)
-        cmd->Dispatch(1, 1, 1);
+        computeCmd->Dispatch(1, 1, 1);
 
         // --- UAV Barrier ---
         D3D12_RESOURCE_BARRIER uavBarrier{};
         uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
         uavBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
         uavBarrier.UAV.pResource = group.instancingResource.Get();
-        cmd->ResourceBarrier(1, &uavBarrier);
+        computeCmd->ResourceBarrier(1, &uavBarrier);
 
         // --- Compute Shader による Update ---
         if (particleCommon_) {
-            particleCommon_->SetUpdateComputePipelineState();
+            particleCommon_->SetUpdateComputePipelineState(computeCmd);
         }
 
-        // Update用のパラメータをセット (u0のみ使用、b1のPerFrameは既にセット済みなので流用可能だが念のため再セットするかどうか。同じRootSigなので維持される)
-        // cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
-        // cmd->SetComputeRootConstantBufferView(3, perFrameResource_->GetGPUVirtualAddress());
-
         // 実行 (Update)
-        cmd->Dispatch(kMaxInstance / 1024 > 0 ? kMaxInstance / 1024 : 1, 1, 1);
+        computeCmd->Dispatch(kMaxInstance / 1024 > 0 ? kMaxInstance / 1024 : 1, 1, 1);
 
         // バリア: UAV -> SRV
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        cmd->ResourceBarrier(1, &barrier);
+        computeCmd->ResourceBarrier(1, &barrier);
+    }
+}
+
+void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
+    for (auto& [name, group] : particleGroups_) {
 
         // --- Graphics による描画 ---
         // ★ ブレンド切替（PSO切替）

@@ -325,6 +325,9 @@ void DirectXCommon::Initialize(WinApp* winApp) {
 	hr = commandAllocator->Reset();                                    // アロケータをリセット
 	hr = commandList->Reset(commandAllocator.Get(), nullptr);          // 開き直す（←重要）
 
+	hr = computeCommandList->Close();
+	hr = computeCommandAllocator->Reset();
+	hr = computeCommandList->Reset(computeCommandAllocator.Get(), nullptr);
 }
 
 DirectXCommon::~DirectXCommon() {
@@ -437,6 +440,11 @@ void DirectXCommon::CommandInitialize() {
 	//コマンドアロケータの生成がうまくいかなかったので起動できない
 	assert(SUCCEEDED(hr));
 
+	hr = device_->CreateCommandAllocator(
+		D3D12_COMMAND_LIST_TYPE_DIRECT,
+		IID_PPV_ARGS(&computeCommandAllocator));
+	assert(SUCCEEDED(hr));
+
 	//コマンドリストを生成する
 
 	hr = device_->CreateCommandList(
@@ -446,6 +454,14 @@ void DirectXCommon::CommandInitialize() {
 		nullptr,
 		IID_PPV_ARGS(&commandList));
 	//コマンドリストの生成がうまくいかなかったので起動できない
+	assert(SUCCEEDED(hr));
+
+	hr = device_->CreateCommandList(
+		0,
+		D3D12_COMMAND_LIST_TYPE_DIRECT,
+		computeCommandAllocator.Get(),
+		nullptr,
+		IID_PPV_ARGS(&computeCommandList));
 	assert(SUCCEEDED(hr));
 
 	//コマンドキューを生成する
@@ -730,8 +746,10 @@ void DirectXCommon::PostDraw() {
 	commandList->ResourceBarrier(1, &barrier);
 
 	HRESULT hr = commandList->Close(); assert(SUCCEEDED(hr));
-	ID3D12CommandList* lists[] = { commandList.Get() };
-	commandQueue->ExecuteCommandLists(1, lists);
+	hr = computeCommandList->Close(); assert(SUCCEEDED(hr));
+	
+	ID3D12CommandList* lists[] = { computeCommandList.Get(), commandList.Get() };
+	commandQueue->ExecuteCommandLists(2, lists);
 
 	UpdateFixFPS();
 
@@ -760,6 +778,9 @@ void DirectXCommon::PostDraw() {
 	}
 	hr = commandAllocator->Reset();                           assert(SUCCEEDED(hr));
 	hr = commandList->Reset(commandAllocator.Get(), nullptr); assert(SUCCEEDED(hr));
+
+	hr = computeCommandAllocator->Reset(); assert(SUCCEEDED(hr));
+	hr = computeCommandList->Reset(computeCommandAllocator.Get(), nullptr); assert(SUCCEEDED(hr));
 
 	// ★ここで「今フレームの Present 後」の index をログ
 	const UINT idxAfter = swapChain->GetCurrentBackBufferIndex();

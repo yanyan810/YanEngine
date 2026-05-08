@@ -183,6 +183,8 @@ void GameApp::Draw() {
     // ② BackBufferへ
     dx_->PreDraw();
 
+    ParticleManager::GetInstance()->UpdateCompute(dx_->GetComputeCommandList());
+
     // ③ Offscreenの中身を画面へ貼る
     render_->DrawOffscreenToBackBuffer();
 

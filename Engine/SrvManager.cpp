@@ -70,6 +70,12 @@ void SrvManager::PreDraw()
     dxCommon_->GetCommandList()->SetDescriptorHeaps(1, heaps);
 }
 
+void SrvManager::PreDrawCompute(ID3D12GraphicsCommandList* cmd)
+{
+    ID3D12DescriptorHeap* heaps[] = { descriptorHeap.Get() };
+    cmd->SetDescriptorHeaps(1, heaps);
+}
+
 void SrvManager::SetGraphicsDescriptorTable(UINT rootParamIndex, uint32_t srvIndex)
 {
     dxCommon_->GetCommandList()->SetGraphicsRootDescriptorTable(

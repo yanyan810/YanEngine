@@ -318,9 +318,9 @@ void ParticleCommon::CreateGraphicsPipelineState(BlendMode mode)
     assert(SUCCEEDED(hr));
 }
 
-void ParticleCommon::SetGraphicsPipelineState()
+void ParticleCommon::SetGraphicsPipelineState(ID3D12GraphicsCommandList* cmd)
 {
-    auto* cmd = dx_->GetCommandList();
+    if (!cmd) cmd = dx_->GetCommandList();
 
     cmd->SetGraphicsRootSignature(rootSignature_.Get());
 
@@ -330,23 +330,23 @@ void ParticleCommon::SetGraphicsPipelineState()
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
-void ParticleCommon::SetComputePipelineState()
+void ParticleCommon::SetComputePipelineState(ID3D12GraphicsCommandList* cmd)
 {
-    auto* cmd = dx_->GetCommandList();
+    if (!cmd) cmd = dx_->GetCommandList();
     cmd->SetComputeRootSignature(computeRootSignature_.Get());
     cmd->SetPipelineState(computePipelineState_.Get());
 }
 
-void ParticleCommon::SetEmitComputePipelineState()
+void ParticleCommon::SetEmitComputePipelineState(ID3D12GraphicsCommandList* cmd)
 {
-    auto* cmd = dx_->GetCommandList();
+    if (!cmd) cmd = dx_->GetCommandList();
     cmd->SetComputeRootSignature(computeRootSignature_.Get());
     cmd->SetPipelineState(emitComputePipelineState_.Get());
 }
 
-void ParticleCommon::SetUpdateComputePipelineState()
+void ParticleCommon::SetUpdateComputePipelineState(ID3D12GraphicsCommandList* cmd)
 {
-    auto* cmd = dx_->GetCommandList();
+    if (!cmd) cmd = dx_->GetCommandList();
     cmd->SetComputeRootSignature(computeRootSignature_.Get());
     cmd->SetPipelineState(updateComputePipelineState_.Get());
 }

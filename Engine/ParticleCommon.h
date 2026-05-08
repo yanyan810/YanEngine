@@ -25,10 +25,10 @@ public:
 public:
     void Initialize(DirectXCommon* dxCommon);
 
-    void SetGraphicsPipelineState();
-    void SetComputePipelineState();
-    void SetEmitComputePipelineState(); // ★追加
-    void SetUpdateComputePipelineState(); // ★追加
+    void SetGraphicsPipelineState(ID3D12GraphicsCommandList* cmd = nullptr);
+    void SetComputePipelineState(ID3D12GraphicsCommandList* cmd = nullptr);
+    void SetEmitComputePipelineState(ID3D12GraphicsCommandList* cmd = nullptr); 
+    void SetUpdateComputePipelineState(ID3D12GraphicsCommandList* cmd = nullptr); 
 
     ID3D12RootSignature* GetComputeRootSignature() const { return computeRootSignature_.Get(); }
     ID3D12PipelineState* GetComputePipelineState() const { return computePipelineState_.Get(); }
