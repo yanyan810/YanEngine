@@ -35,14 +35,32 @@ struct PerFrame {
     float deltaTime;
 };
 
-// Emitter用の構造体
-struct EmitterSphere {
-    Vector3 translate; // 位置
-    float radius; // 射出半径
-    uint32_t count; // 射出数
-    float frequency; // 射出間隔
-    float frequencyTime; // 射出間隔調整用時間
-    uint32_t emit; // 射出許可
+// Emitter用の汎用構造体
+struct EmitterData {
+    Vector3 translate; // 位置 (12 bytes)
+    float radius; // 射出半径(Sphere/Cone用) (4 bytes) -> 合計 16 bytes
+
+    uint32_t count; // 射出数 (4 bytes)
+    float frequency; // 射出間隔 (4 bytes)
+    float frequencyTime; // 射出間隔調整用時間 (4 bytes)
+    uint32_t emit; // 射出許可 (4 bytes) -> 合計 16 bytes
+
+    Vector3 velocityBase; // 基本速度 (12 bytes)
+    float velocityVariance; // 速度の分散 (4 bytes) -> 合計 16 bytes
+
+    float lifeTimeMin; // 最小寿命 (4 bytes)
+    float lifeTimeMax; // 最大寿命 (4 bytes)
+    uint32_t shapeType; // 形状 (0:Sphere, 1:Cone, 2:Box) (4 bytes)
+    float shapeAngle; // Coneの広がり角 (4 bytes) -> 合計 16 bytes
+
+    Vector3 shapeSize; // BoxのXYZサイズ (12 bytes)
+    float padding1; // 16バイトアライメント用パディング (4 bytes) -> 合計 16 bytes
+
+    Vector3 acceleration; // 加速度(重力等) (12 bytes)
+    float padding2; // 16バイトアライメント用パディング (4 bytes) -> 合計 16 bytes
+
+    Vector4 startColor; // 発生時の色 (16 bytes) -> 合計 16 bytes
+    Vector4 endColor; // 消滅時の色 (16 bytes) -> 合計 16 bytes
 };
 
 // ===============================
@@ -78,10 +96,24 @@ struct ParticleGroup {
 
     // Emitter用リソース（UPLOADヒープ、CBV）
     Microsoft::WRL::ComPtr<ID3D12Resource> emitterResource;
-    EmitterSphere* mappedEmitter = nullptr;
+    EmitterData* mappedEmitter = nullptr;
 
     ParticleCommon::BlendMode blendMode = ParticleCommon::BlendMode::kBlendModeNormal; 
+    
+    // 手動/自動エミット制御用フラグ
+    bool isAutoEmit = true;
+    bool isEmitRequested = false;
 
+    // ビルボードモード
+    // 0: Billboard (カメラ追従)
+    // 1: Velocity Aligned (進行方向を向く)
+    // 2: None (回転なし/固定)
+    uint32_t billboardMode = 0;
+
+    // JSON保存復元用
+    std::string texturePath = "";
+    int modelType = 0; // 0: None, 1: Primitive, 2: File
+    std::string modelName = ""; // Primitiveの場合はインデックス文字列("0"~"7")、Fileの場合はパス
 };
 
 
@@ -101,6 +133,9 @@ public:
     void UpdateCompute(ID3D12GraphicsCommandList* computeCmd);
     void Draw(ID3D12GraphicsCommandList* cmd);
     void DrawImGui(); // ★追加
+
+    void Save(const std::string& filename);
+    void Load(const std::string& filename);
 
     void CreateParticleGroup(
         const std::string& name,
@@ -165,4 +200,6 @@ private:
     std::vector<std::string> modelFiles_;
     std::vector<std::string> textureFiles_;
     bool isResourcesScanned_ = false;
+
+    char saveFileName_[256] = "particles.json";
 };

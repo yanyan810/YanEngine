@@ -1,0 +1,53 @@
+[
+    {
+        "billboardMode": 1,
+        "blendMode": 1,
+        "emitter": {
+            "acceleration": [
+                0.0,
+                -0.8600000143051147,
+                0.0
+            ],
+            "count": 59,
+            "endColor": [
+                1.0,
+                1.0,
+                1.0,
+                0.0
+            ],
+            "frequency": 0.23000000417232513,
+            "lifeTimeMax": 2.0,
+            "lifeTimeMin": 0.5,
+            "radius": 5.0,
+            "shapeAngle": 0.5,
+            "shapeSize": [
+                5.0,
+                5.0,
+                5.0
+            ],
+            "shapeType": 0,
+            "startColor": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ],
+            "translate": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "velocityBase": [
+                0.0,
+                0.3499999940395355,
+                0.0
+            ],
+            "velocityVariance": 0.10000000149011612
+        },
+        "isAutoEmit": true,
+        "modelName": "",
+        "modelType": 0,
+        "name": "gpu_test",
+        "texturePath": ""
+    }
+]
