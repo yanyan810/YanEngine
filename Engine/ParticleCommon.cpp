@@ -36,7 +36,7 @@ void ParticleCommon::CreateRootSignature()
     descriptorRangeTexture.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     // ==== Root Parameters ====
-    D3D12_ROOT_PARAMETER params[5]{};
+    D3D12_ROOT_PARAMETER params[6]{};
 
     // (0) Pixel: Material CBV(b0)
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -64,6 +64,13 @@ void ParticleCommon::CreateRootSignature()
     params[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     params[4].Descriptor.ShaderRegister = 0; // b0
+
+    // (5) Vertex: BillboardMode (RootConstants 32bit)
+    params[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    params[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    params[5].Constants.Num32BitValues = 1;
+    params[5].Constants.ShaderRegister = 1; // b1
+    params[5].Constants.RegisterSpace = 0;
 
     // ==== Static Sampler ====
     D3D12_STATIC_SAMPLER_DESC samp{};
