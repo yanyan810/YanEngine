@@ -229,6 +229,7 @@
     <FxCompile Include="resources\shaders\InitializeParticle.CS.hlsl" />
     <FxCompile Include="resources\shaders\EmitParticle.CS.hlsl" />
     <FxCompile Include="resources\shaders\Vignette.PS.hlsl" />
+    <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Camera\DebugCamera.h">

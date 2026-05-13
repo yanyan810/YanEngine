@@ -16,7 +16,9 @@ public:
     void OnExit(GameApp& app) override;
 
     void Update(GameApp& app, float dt) override;
-    void Draw(GameApp& app) override;
+    void DrawRender(GameApp& app) override; // オフスクリーン（3D）
+    void Draw2D(GameApp& app) override;     // 2D / Sprite
+    void Draw(GameApp& app) override;       // その他（円マスクなど）
     void DrawImGui(GameApp& app) override;
 
 private:

@@ -320,6 +320,12 @@ void GameScene::Update(GameApp& app, float dt) {
 
         if (tabTrig) {
             isPaused_ = !isPaused_;
+
+            // ポーズ中はグレースケール
+            app.Render()->SetMode(isPaused_
+                ? PostEffectMode::Grayscale
+                : PostEffectMode::FullScreen);
+
             // 開いた時は選択をCloseに戻す（好み）
             if (isPaused_) pauseSel_ = PauseSel::Close;
         }
@@ -479,53 +485,40 @@ void GameScene::Update(GameApp& app, float dt) {
 
 }
 
-void GameScene::Draw(GameApp& app) {
-    auto* dx = app.Dx();
-    auto* srv = app.Srv();
-    auto* cmd = dx->GetCommandList();
-
-
+// ポストエフェクト対象の3D描画（オフスクリーンへ）
+void GameScene::DrawRender(GameApp& app) {
+    auto* cmd = app.Dx()->GetCommandList();
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // 3D
-    //if (objA_) objA_->Draw();
-    //if (objB_) objB_->Draw();
+    skyDome_->Draw();
 
-     skyDome_->Draw();
-   
-    // --- Intro中は動画を最前面に出したいなら、描画順を最後にする ---
-     if (phase_ == Phase::IntroVideo || phase_ == Phase::OutroVideo) {
-         if (enableVideo_ && video_ && videoPlane_) {
+    if (phase_ == Phase::IntroVideo || phase_ == Phase::OutroVideo) {
+        if (enableVideo_ && video_ && videoPlane_) {
+            ID3D12DescriptorHeap* heaps[] = { app.Srv()->GetDescriptorHeap() };
+            cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
-             ID3D12DescriptorHeap* heaps[] = { app.Srv()->GetDescriptorHeap() };
-             cmd->SetDescriptorHeaps(_countof(heaps), heaps);
-
-             video_->UploadToGpu(cmd);
-
-             D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
-             videoPlane_->DrawWithOverrideSrv(vh);
-
-             video_->EndFrame(cmd);
-         }
-     } else if (phase_ == Phase::Battle) {
-        // 戦闘フェーズ中は普通に描画
-
-
+            video_->UploadToGpu(cmd);
+            D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
+            videoPlane_->DrawWithOverrideSrv(vh);
+            video_->EndFrame(cmd);
+        }
+    } else if (phase_ == Phase::Battle) {
         if (ground_) ground_->Draw();
-
-        //player
         if (player_) player_->Draw();
-
         enemyMgr_.Draw();
-
     }
 
-    // Particle
+    // GPU Particle
     app.ParticleCom()->SetGraphicsPipelineState();
-  
-    //
+}
 
-    // 2D sprite
+// バックバッファへ直接描く3D（ポストエフェクト不要なもの）
+void GameScene::Draw3D(GameApp& app) {
+    // 今は特になし
+}
+
+// 2D / Sprite
+void GameScene::Draw2D(GameApp& app) {
     app.SpriteCom()->SetGraphicsPipelineState();
 
     Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
@@ -533,55 +526,34 @@ void GameScene::Draw(GameApp& app) {
         0, 0, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0, 100);
 
     if (phase_ == Phase::Battle) {
+        if (hpBack_) { hpBack_->Update(view, proj); hpBack_->Draw(); }
+        if (hpFill_) { hpFill_->Update(view, proj); hpFill_->Draw(); }
 
-        // ★ 背景
-        if (hpBack_) {
-            hpBack_->Update(view, proj);
-            hpBack_->Draw();
-        }
-        // ★ 中身
-        if (hpFill_) {
-            hpFill_->Update(view, proj);
-            hpFill_->Draw();
-        }
-
-        // 数字（後 = 上に乗る）
         for (int i = 0; i < 3; ++i) {
             if (!hpDigits_[i]) continue;
             hpDigits_[i]->Update(view, proj);
             hpDigits_[i]->Draw();
         }
-        // ===== Boss HP（追加）=====
-        if (bossHpBack_) {
-            bossHpBack_->Update(view, proj);
-            bossHpBack_->Draw();
-        }
-        if (bossHpFill_) {
-            bossHpFill_->Update(view, proj);
-            bossHpFill_->Draw();
-        }
+
+        if (bossHpBack_) { bossHpBack_->Update(view, proj); bossHpBack_->Draw(); }
+        if (bossHpFill_) { bossHpFill_->Update(view, proj); bossHpFill_->Draw(); }
         for (int i = 0; i < 3; ++i) {
             if (!bossHpDigits_[i]) continue;
             bossHpDigits_[i]->Update(view, proj);
             bossHpDigits_[i]->Draw();
         }
 
-        // ---- Pause UI ----
         if (isPaused_) {
-            if (pauseClose_) {
-                pauseClose_->Update(view, proj);
-                pauseClose_->Draw();
-            }
-            if (pauseToTitle_) {
-                pauseToTitle_->Update(view, proj);
-                pauseToTitle_->Draw();
-            }
+            if (pauseClose_) { pauseClose_->Update(view, proj); pauseClose_->Draw(); }
+            if (pauseToTitle_) { pauseToTitle_->Update(view, proj); pauseToTitle_->Draw(); }
         }
-
-
     }
-   
 }
+
+// その他（空でOK）
+void GameScene::Draw(GameApp& app) {
+}
+
 
 void GameScene::SpawnEnemyFromOutside_(EnemyType type) {
     // ===== 画面範囲（調整用） =====

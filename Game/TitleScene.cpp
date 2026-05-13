@@ -111,10 +111,10 @@ void TitleScene::OnEnter(GameApp& app) {
 	ground_->SetTranslate({ 0.0f, -5.0f, 0.0f });
 	ground_->SetScale({ 1.0f, 1.0f, 1.0f });
 	ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
-	ground_->SetEnableLighting(2);//ライティング設定
+	ground_->SetEnableLighting(0);//ライティング設定
 	ground_->SetUseEnvironmentMap(true);//環境マップ有効か
 	ground_->SetEnvironmentCoefficient(0.5f);//環境マップの影響度（0.0f〜1.0f）
-	ground_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
+	//ground_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
 
 	skybox_ = std::make_unique<Skybox>();
 	skybox_->Initialize(app.SkyboxCom(), app.Dx());
@@ -283,6 +283,12 @@ void TitleScene::Update(GameApp& app, float dt) {
 	prevSpace_ = spaceNow;
 
 	dt_ = dt;
+
+	if (input->IsKeyTrigger(DIK_D)) {
+
+		RequestChangeScene_("GameOver");
+
+	}
 
 	switch (state_) {
 	case State::Idle:
@@ -489,7 +495,7 @@ void TitleScene::DrawRender(GameApp& app)
 	if (ground_) ground_->Draw();
 	if (titlePlayer) titlePlayer->Draw();
 
-	if (primitiveObj_) primitiveObj_->Draw();
+	//if (primitiveObj_) primitiveObj_->Draw();
 
 	if (particle_) {
 		app.ParticleCom()->SetGraphicsPipelineState();
@@ -517,16 +523,16 @@ void TitleScene::Draw3D(GameApp& app)
 //	if (titlePlayer) titlePlayer->Draw();
 	////}
 
-	////if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
-	////	auto* cmd = app.Dx()->GetCommandList();
+	if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
+		auto* cmd = app.Dx()->GetCommandList();
 
-	////	video_->UploadToGpu(cmd);
+		video_->UploadToGpu(cmd);
 
-	////	D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
-	////	videoPlane_->DrawWithOverrideSrv(vh);
+		D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
+		videoPlane_->DrawWithOverrideSrv(vh);
 
-	////	video_->EndFrame(cmd);
-	////}
+		video_->EndFrame(cmd);
+	}
 
 	//if (primitiveObj_) primitiveObj_->Draw();
 

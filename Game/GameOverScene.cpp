@@ -13,6 +13,7 @@
 #include "Sprite.h"
 #include "TextureManager.h"
 #include "WinApp.h"
+#include "RenderManager.h" // PostEffectModeのため
 
 static float Clamp01(float x) { return std::clamp(x, 0.0f, 1.0f); }
 
@@ -119,10 +120,14 @@ void GameOverScene::OnEnter(GameApp& app) {
     skyDome_->SetCamera(camera_.get());
     videoPlane_->SetCamera(camera_.get());
 
-
+    // ★ このシーンではVignetteを適用
+    app.Render()->SetMode(PostEffectMode::Vignette);
 }
 
 void GameOverScene::OnExit(GameApp& app) {
+    // ★ エフェクトをデフォルトに戻す
+    app.Render()->SetMode(PostEffectMode::FullScreen);
+
     damageObj_.reset();
     skyDome_.reset();
     camera_.reset();
@@ -135,6 +140,7 @@ void GameOverScene::OnExit(GameApp& app) {
     retrySp_.reset();
     titleSp_.reset();
 }
+
 
 
 void GameOverScene::Update(GameApp& app, float dt) {
@@ -220,31 +226,26 @@ void GameOverScene::Update(GameApp& app, float dt) {
 
 }
 
-void GameOverScene::Draw(GameApp& app) {
-
+// ポストエフェクト対象の3D（オフスクリーンへ）
+void GameOverScene::DrawRender(GameApp& app) {
     if (skyDome_) skyDome_->Draw();
 
-    // ===== Video（★GameClear と同じ）=====
     if (enableVideo_ && video_ && videoPlane_) {
         auto* cmd = app.Dx()->GetCommandList();
-
         ID3D12DescriptorHeap* heaps[] = { app.Srv()->GetDescriptorHeap() };
         cmd->SetDescriptorHeaps(_countof(heaps), heaps);
-
         video_->UploadToGpu(cmd);
-
         D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
         videoPlane_->DrawWithOverrideSrv(vh);
-
         video_->EndFrame(cmd);
     }
 
-    // damage.obj
-    if (damageObj_) {
-    //    damageObj_->Draw();
-    }
+    // damage.obj（現在はコメントアウト中）
+    // if (damageObj_) damageObj_->Draw();
+}
 
-    // 2D
+// 2D / Sprite
+void GameOverScene::Draw2D(GameApp& app) {
     app.SpriteCom()->SetGraphicsPipelineState();
 
     Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
@@ -254,14 +255,17 @@ void GameOverScene::Draw(GameApp& app) {
     if (bg_) { bg_->Update(view, proj); bg_->Draw(); }
 
     if (retrySp_) retrySp_->SetScale(select_ == Select::Retry ? Vector3{ 1.8f,1.8f,1 } : Vector3{ 1,1,1 });
-    if (titleSp_) titleSp_->SetScale(select_ == Select::Title ? Vector3{ 1.8f,1.8f,1 } : Vector3{ 1,1,1 });
+    if (titleSp_) titleSp_->SetScale(select_ == Select::Title  ? Vector3{ 1.8f,1.8f,1 } : Vector3{ 1,1,1 });
 
     if (retrySp_) { retrySp_->Update(view, proj); retrySp_->Draw(); }
     if (titleSp_) { titleSp_->Update(view, proj); titleSp_->Draw(); }
+}
 
-    // マスク（最後）
+// 円マスクなど（最後に描画するもの）
+void GameOverScene::Draw(GameApp& app) {
     app.SpriteCom()->DrawCircleMask(circle_, softness_);
 }
+
 
 void GameOverScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI

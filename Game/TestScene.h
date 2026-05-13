@@ -26,7 +26,10 @@ public:
     void OnEnter(GameApp& app) override;
     void OnExit(GameApp& app) override;
     void Update(GameApp& app, float dt) override;
-    void Draw(GameApp& app) override;
+    void DrawRender(GameApp& app) override; // オフスクリーン（ポストエフェクト対象）
+    void Draw3D(GameApp& app) override;     // バックバッファへ直接描く3D
+    void Draw2D(GameApp& app) override;     // 2D / Sprite
+    void Draw(GameApp& app) override;       // その他（空でOK）
     void DrawImGui(GameApp& app) override;
 
 private:
