@@ -484,7 +484,22 @@ void TitleScene::DrawRender(GameApp& app)
 		video_->EndFrame(cmd);*/
 	//}
 
-	//skybox_->Draw();
+	skybox_->Draw();
+
+	if (ground_) ground_->Draw();
+	if (titlePlayer) titlePlayer->Draw();
+
+	if (primitiveObj_) primitiveObj_->Draw();
+
+	if (particle_) {
+		app.ParticleCom()->SetGraphicsPipelineState();
+		particle_->Draw();
+	}
+
+	// GPU Particle 描画
+	ParticleManager::GetInstance()->Draw(app.Dx()->GetCommandList());
+
+
 
 }
 
@@ -493,13 +508,13 @@ void TitleScene::DrawRender(GameApp& app)
 //========================
 void TitleScene::Draw3D(GameApp& app)
 {
-	skybox_->Draw();
+//	skybox_->Draw();
 
 	////if (skyDome_) skyDome_->Draw();
 
 	////if (!showVideo_) {
-	if (ground_) ground_->Draw();
-	if (titlePlayer) titlePlayer->Draw();
+//	if (ground_) ground_->Draw();
+//	if (titlePlayer) titlePlayer->Draw();
 	////}
 
 	////if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
@@ -513,15 +528,15 @@ void TitleScene::Draw3D(GameApp& app)
 	////	video_->EndFrame(cmd);
 	////}
 
-	if (primitiveObj_) primitiveObj_->Draw();
+	//if (primitiveObj_) primitiveObj_->Draw();
 
-	if (particle_) {
-		app.ParticleCom()->SetGraphicsPipelineState();
-		particle_->Draw();
-	}
-	
-	// GPU Particle 描画
-	ParticleManager::GetInstance()->Draw(app.Dx()->GetCommandList());
+	//if (particle_) {
+	//	app.ParticleCom()->SetGraphicsPipelineState();
+	//	particle_->Draw();
+	//}
+	//
+	//// GPU Particle 描画
+	//ParticleManager::GetInstance()->Draw(app.Dx()->GetCommandList());
 	
 
 }

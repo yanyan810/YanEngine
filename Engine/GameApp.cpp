@@ -197,6 +197,7 @@ void GameApp::Draw() {
     if (imgui_) {
         sceneMgr_->DrawImGui(*this);
         ParticleManager::GetInstance()->DrawImGui();
+        render_->DrawImGui(); // ポストエフェクト切り替えUI
         imgui_->End(dx_->GetCommandList());
     }
 #endif
