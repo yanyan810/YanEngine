@@ -16,6 +16,7 @@ enum class PostEffectMode {
     FullScreen = 0,  // コピーのみ（エフェクトなし）
     Grayscale,       // グレースケール
     Vignette,        // ヴィネット
+    BoxFilter,       // BoxFilter（スムージング）
 
     Count            // 種類の数（番兵）
 };

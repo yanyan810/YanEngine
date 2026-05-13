@@ -235,15 +235,13 @@ void TestScene::Update(GameApp& app, float dt) {
 }
 
 
-void TestScene::Draw(GameApp& app) {
+// ポストエフェクト対象の3D描画（オフスクリーンへ）
+void TestScene::DrawRender(GameApp& app) {
     auto* cmd = app.Dx()->GetCommandList();
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // ===== 3D =====
-
+   // if (skyDome_) skyDome_->Draw();
     if (ground_) ground_->Draw();
-
-    skyDome_->Draw();
 
     if (drawPointMarker_ && pointMarker_) pointMarker_->Draw();
     if (drawSpotMarker_ && spotMarker_) spotMarker_->Draw();
@@ -251,15 +249,19 @@ void TestScene::Draw(GameApp& app) {
     if (player_) player_->Draw();
 
 #ifdef _DEBUG
-
     player_->DrawDebugHitBoxes(enemyMgr_);
+#endif
 
-#endif // DEBUG
-
-	
     enemyMgr_.Draw();
+}
 
-    // ===== 2D (Sprite) =====
+// バックバッファへ直接描く3D（ポストエフェクト不要なもの）
+void TestScene::Draw3D(GameApp& app) {
+    // 今は特になし
+}
+
+// 2D / Sprite
+void TestScene::Draw2D(GameApp& app) {
     app.SpriteCom()->SetGraphicsPipelineState();
 
     Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
@@ -275,6 +277,11 @@ void TestScene::Draw(GameApp& app) {
         playTxst_->Draw();
     }
 }
+
+// その他（空でOK）
+void TestScene::Draw(GameApp& app) {
+}
+
 
 void TestScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI

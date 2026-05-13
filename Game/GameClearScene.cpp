@@ -202,52 +202,46 @@ void GameClearScene::Update(GameApp& app, float dt) {
 
 }
 
-void GameClearScene::Draw(GameApp& app) {
+// ポストエフェクト対象の3D（オフスクリーンへ）
+void GameClearScene::DrawRender(GameApp& app) {
+    if (skyDome_) skyDome_->Draw();
 
-	skyDome_->Draw();
-
-    // ===== Video =====
     if (enableVideo_ && video_ && videoPlane_) {
         auto* cmd = app.Dx()->GetCommandList();
-
-        // video SRV が入っている heap をセット
         ID3D12DescriptorHeap* heaps[] = { app.Srv()->GetDescriptorHeap() };
         cmd->SetDescriptorHeaps(_countof(heaps), heaps);
-
         video_->UploadToGpu(cmd);
-
         D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
         videoPlane_->DrawWithOverrideSrv(vh);
-
         video_->EndFrame(cmd);
     }
 
+    if (damageObj_) damageObj_->Draw();
+}
 
-    // ===== 2D =====
+// 2D / Sprite
+void GameClearScene::Draw2D(GameApp& app) {
     app.SpriteCom()->SetGraphicsPipelineState();
 
     Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
     Matrix4x4 proj = Matrix4x4::MakeOrthographicMatrix(
         0, 0, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0, 100);
 
-    if (bg_) {
-        bg_->Update(view, proj);
-        bg_->Draw();
-    }
+    if (bg_) { bg_->Update(view, proj); bg_->Draw(); }
 
-    // 点滅（alphaをSpriteが持ってる前提。無いなら消してOK）
     if (goTitle_) {
         const float a = 0.35f + 0.65f * (0.5f + 0.5f * std::sin(uiTime_ * 4.0f));
         goTitle_->SetColor({ 1,1,1,a });
-
         goTitle_->Update(view, proj);
         goTitle_->Draw();
     }
+}
 
-
-    // 円マスク（最後）
+// 円マスクなど（最後に描画するもの）
+void GameClearScene::Draw(GameApp& app) {
     app.SpriteCom()->DrawCircleMask(circle_, softness_);
 }
+
 
 void GameClearScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI

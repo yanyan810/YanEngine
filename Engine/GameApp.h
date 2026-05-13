@@ -13,7 +13,7 @@ class PrimitiveCommon;
 class ParticleCommon;
 class ImGuiManagaer;
 class SkinningCommon;
-class RenderManager;
+#include "RenderManager.h" // PostEffectMode を全シーンで使えるようにする
 
 class SceneManager;
 

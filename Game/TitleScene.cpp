@@ -284,6 +284,12 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 	dt_ = dt;
 
+	if (input->IsKeyTrigger(DIK_D)) {
+
+		RequestChangeScene_("GameOver");
+
+	}
+
 	switch (state_) {
 	case State::Idle:
 		if (spaceTrig) {
@@ -517,16 +523,16 @@ void TitleScene::Draw3D(GameApp& app)
 //	if (titlePlayer) titlePlayer->Draw();
 	////}
 
-	////if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
-	////	auto* cmd = app.Dx()->GetCommandList();
+	if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
+		auto* cmd = app.Dx()->GetCommandList();
 
-	////	video_->UploadToGpu(cmd);
+		video_->UploadToGpu(cmd);
 
-	////	D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
-	////	videoPlane_->DrawWithOverrideSrv(vh);
+		D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
+		videoPlane_->DrawWithOverrideSrv(vh);
 
-	////	video_->EndFrame(cmd);
-	////}
+		video_->EndFrame(cmd);
+	}
 
 	//if (primitiveObj_) primitiveObj_->Draw();
 
