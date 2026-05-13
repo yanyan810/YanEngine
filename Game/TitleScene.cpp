@@ -111,10 +111,10 @@ void TitleScene::OnEnter(GameApp& app) {
 	ground_->SetTranslate({ 0.0f, -5.0f, 0.0f });
 	ground_->SetScale({ 1.0f, 1.0f, 1.0f });
 	ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
-	ground_->SetEnableLighting(2);//ライティング設定
+	ground_->SetEnableLighting(0);//ライティング設定
 	ground_->SetUseEnvironmentMap(true);//環境マップ有効か
 	ground_->SetEnvironmentCoefficient(0.5f);//環境マップの影響度（0.0f〜1.0f）
-	ground_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
+	//ground_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
 
 	skybox_ = std::make_unique<Skybox>();
 	skybox_->Initialize(app.SkyboxCom(), app.Dx());
@@ -495,7 +495,7 @@ void TitleScene::DrawRender(GameApp& app)
 	if (ground_) ground_->Draw();
 	if (titlePlayer) titlePlayer->Draw();
 
-	if (primitiveObj_) primitiveObj_->Draw();
+	//if (primitiveObj_) primitiveObj_->Draw();
 
 	if (particle_) {
 		app.ParticleCom()->SetGraphicsPipelineState();

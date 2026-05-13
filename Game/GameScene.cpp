@@ -320,6 +320,12 @@ void GameScene::Update(GameApp& app, float dt) {
 
         if (tabTrig) {
             isPaused_ = !isPaused_;
+
+            // ポーズ中はグレースケール
+            app.Render()->SetMode(isPaused_
+                ? PostEffectMode::Grayscale
+                : PostEffectMode::FullScreen);
+
             // 開いた時は選択をCloseに戻す（好み）
             if (isPaused_) pauseSel_ = PauseSel::Close;
         }

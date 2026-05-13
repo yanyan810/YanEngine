@@ -15,6 +15,7 @@ static const char* kEffectNames[] = {
     "Grayscale",
     "Vignette",
     "BoxFilter (Smoothing)",
+    "GaussianBlur (Linear)",
 };
 
 // 各エフェクトのPSパス
@@ -23,6 +24,7 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/Grayscale.PS.hlsl",
     L"resources/shaders/Vignette.PS.hlsl",
     L"resources/shaders/BoxFilter.PS.hlsl",
+    L"resources/shaders/GaussianBlur.PS.hlsl",
 };
 
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)

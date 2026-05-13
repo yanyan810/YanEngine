@@ -17,6 +17,7 @@ enum class PostEffectMode {
     Grayscale,       // グレースケール
     Vignette,        // ヴィネット
     BoxFilter,       // BoxFilter（スムージング）
+    GaussianBlur,    // Gaussian（線形フィルタ）
 
     Count            // 種類の数（番兵）
 };
