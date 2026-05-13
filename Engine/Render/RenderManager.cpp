@@ -4,6 +4,25 @@
 #include "WinApp.h"
 #include <cassert>
 
+// ImGui
+#ifdef USE_IMGUI
+#include "imgui.h"
+#endif
+
+// ポストエフェクト名（ImGui表示用・英語のみ）
+static const char* kEffectNames[] = {
+    "FullScreen (No Effect)",
+    "Grayscale",
+    "Vignette",
+};
+
+// 各エフェクトのPSパス
+static const wchar_t* kEffectPSPaths[] = {
+    L"resources/shaders/Fullscreen.PS.hlsl",
+    L"resources/shaders/Grayscale.PS.hlsl",
+    L"resources/shaders/Vignette.PS.hlsl",
+};
+
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
 {
     assert(dx);
@@ -13,8 +32,6 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     srv_ = srv;
 
     offscreen_ = std::make_unique<OffscreenPass>();
-
-   // Vector4 clearColor = { 0.1f, 0.25f, 0.5f, 1.0f };
 
     Vector4 clearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
 
@@ -28,10 +45,13 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
         2
     );
 
-	// ★オフスクリーンからバックバッファへコピーするためのルートシグネチャとパイプラインステートを作成
+    // ルートシグネチャ（全エフェクト共有）
     CreateCopyImageRootSignature();
-    CreateCopyImagePipelineState();
 
+    // 各エフェクトのPSOを作成
+    for (int i = 0; i < kEffectCount; ++i) {
+        CreatePipelineState(kEffectPSPaths[i], pipelineStates_[i]);
+    }
 }
 
 
@@ -58,7 +78,7 @@ void RenderManager::BeginBackBuffer()
     dx_->PreDraw();
 }
 
-// ★オフスクリーンからバックバッファへコピーするためのルートシグネチャを作成
+// ★ ルートシグネチャ作成（共有）
 void RenderManager::CreateCopyImageRootSignature()
 {
     D3D12_DESCRIPTOR_RANGE range{};
@@ -108,11 +128,13 @@ void RenderManager::CreateCopyImageRootSignature()
     assert(SUCCEEDED(hr));
 }
 
-// ★オフスクリーンからバックバッファへコピーするためのパイプラインステートを作成
-void RenderManager::CreateCopyImagePipelineState()
+// ★ 各エフェクト用PSOを作成するヘルパー
+void RenderManager::CreatePipelineState(
+    const wchar_t* psPath,
+    Microsoft::WRL::ComPtr<ID3D12PipelineState>& outPSO)
 {
     auto vs = dx_->CompileShader(L"resources/shaders/Fullscreen.VS.hlsl", L"vs_6_0");
-    auto ps = dx_->CompileShader(L"resources/shaders/Grayscale.PS.hlsl", L"ps_6_0");
+    auto ps = dx_->CompileShader(psPath, L"ps_6_0");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
 
@@ -139,18 +161,18 @@ void RenderManager::CreateCopyImagePipelineState()
 
     HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(
         &desc,
-        IID_PPV_ARGS(&copyImagePipelineState_));
+        IID_PPV_ARGS(&outPSO));
     assert(SUCCEEDED(hr));
 }
 
-//Copy実行関数
+// ★ オフスクリーンをバックバッファへ描画（現在選択中のエフェクトを適用）
 void RenderManager::DrawOffscreenToBackBuffer()
 {
     assert(offscreen_);
 
     auto* cmd = dx_->GetCommandList();
 
-    // ★ SRVヒープを明示的に再セット
+    // SRVヒープを明示的に再セット
     ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
     cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
@@ -161,8 +183,12 @@ void RenderManager::DrawOffscreenToBackBuffer()
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
 
+    // 現在のモードに対応するPSOを選択
+    int modeIndex = static_cast<int>(currentMode_);
+    assert(modeIndex >= 0 && modeIndex < kEffectCount);
+
     cmd->SetGraphicsRootSignature(copyImageRootSignature_.Get());
-    cmd->SetPipelineState(copyImagePipelineState_.Get());
+    cmd->SetPipelineState(pipelineStates_[modeIndex].Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     cmd->SetGraphicsRootDescriptorTable(
@@ -177,4 +203,22 @@ void RenderManager::DrawOffscreenToBackBuffer()
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_STATE_RENDER_TARGET
     );
+}
+
+// ★ ImGui でポストエフェクトを切り替える
+void RenderManager::DrawImGui()
+{
+#ifdef USE_IMGUI
+    ImGui::Begin("Post Effect");
+
+    int current = static_cast<int>(currentMode_);
+    if (ImGui::Combo("Effect##posteffect", &current, kEffectNames, kEffectCount)) {
+        currentMode_ = static_cast<PostEffectMode>(current);
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Current: %s", kEffectNames[current]);
+
+    ImGui::End();
+#endif
 }
