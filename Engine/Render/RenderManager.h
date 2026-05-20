@@ -17,7 +17,9 @@ enum class PostEffectMode {
     Grayscale,       // グレースケール
     Vignette,        // ヴィネット
     BoxFilter,       // BoxFilter（スムージング）
-    GaussianBlur,    // Gaussian（線形フィルタ）
+    GaussianBlurX,   // Gaussian（水平方向）- 内部処理用
+    GaussianBlurY,   // Gaussian（垂直方向）- 内部処理用
+    GaussianBlur,    // Gaussian（統合） - UI・外部インターフェース用
 
     Count            // 種類の数（番兵）
 };
@@ -71,4 +73,12 @@ private:
     // 現在選択中のエフェクト
     PostEffectMode currentMode_ = PostEffectMode::FullScreen;
     std::array<bool, kEffectCount> enabledEffects_{};
+
+    // GaussianFilter用の定数バッファ
+    struct GaussianFilterParameter {
+        float sigma;
+    };
+    Microsoft::WRL::ComPtr<ID3D12Resource> gaussianFilterCB_;
+    GaussianFilterParameter* gaussianFilterCBData_ = nullptr;
+    float sigma_ = 4.0f;
 };

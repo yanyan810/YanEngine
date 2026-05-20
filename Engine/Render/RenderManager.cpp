@@ -15,6 +15,8 @@ static const char* kEffectNames[] = {
     "Grayscale",
     "Vignette",
     "BoxFilter (Smoothing)",
+    "GaussianBlurX (Horizontal)",
+    "GaussianBlurY (Vertical)",
     "GaussianBlur (Linear)",
 };
 
@@ -23,7 +25,9 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/Grayscale.PS.hlsl",
     L"resources/shaders/Vignette.PS.hlsl",
     L"resources/shaders/BoxFilter.PS.hlsl",
-    L"resources/shaders/GaussianBlur.PS.hlsl",
+    L"resources/shaders/GaussianBlurX.PS.hlsl",
+    L"resources/shaders/GaussianBlurY.PS.hlsl",
+    L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur自体はダミー
 };
 
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
@@ -71,6 +75,11 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
 
     CreateCopyImageRootSignature();
 
+    // GaussianFilter用の定数バッファを作成
+    gaussianFilterCB_ = dx_->CreateBufferResource((sizeof(GaussianFilterParameter) + 0xff) & ~0xff);
+    gaussianFilterCB_->Map(0, nullptr, reinterpret_cast<void**>(&gaussianFilterCBData_));
+    gaussianFilterCBData_->sigma = sigma_;
+
     for (int i = 0; i < kEffectCount; ++i) {
         CreatePipelineState(kEffectPSPaths[i], pipelineStates_[i]);
     }
@@ -92,10 +101,17 @@ void RenderManager::SetEffectEnabled(PostEffectMode mode, bool enabled)
     if (index <= static_cast<int>(PostEffectMode::FullScreen) || index >= kEffectCount) {
         return;
     }
+    if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
+        return;
+    }
 
     enabledEffects_[index] = enabled;
     currentMode_ = PostEffectMode::FullScreen;
     for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
         if (enabledEffects_[i]) {
             currentMode_ = static_cast<PostEffectMode>(i);
             break;
@@ -107,6 +123,9 @@ bool RenderManager::IsEffectEnabled(PostEffectMode mode) const
 {
     const int index = static_cast<int>(mode);
     if (index <= static_cast<int>(PostEffectMode::FullScreen) || index >= kEffectCount) {
+        return false;
+    }
+    if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
         return false;
     }
     return enabledEffects_[index];
@@ -148,11 +167,18 @@ void RenderManager::CreateCopyImageRootSignature()
     range.BaseShaderRegister = 0;
     range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[1]{};
+    D3D12_ROOT_PARAMETER rootParams[2]{};
+    // [0]: SRV (t0)
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParams[0].DescriptorTable.NumDescriptorRanges = 1;
     rootParams[0].DescriptorTable.pDescriptorRanges = &range;
+
+    // [1]: CBV (b0)
+    rootParams[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParams[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParams[1].Descriptor.ShaderRegister = 0;
+    rootParams[1].Descriptor.RegisterSpace = 0;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -230,6 +256,11 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
     cmd->SetPipelineState(pipelineStates_[modeIndex].Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->SetGraphicsRootDescriptorTable(0, srv_->GetGPUDescriptionHandle(srcSrvIndex));
+
+    if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
+        cmd->SetGraphicsRootConstantBufferView(1, gaussianFilterCB_->GetGPUVirtualAddress());
+    }
+
     cmd->DrawInstanced(3, 1, 0, 0);
 }
 
@@ -288,6 +319,10 @@ void RenderManager::DrawOffscreenToBackBuffer()
 
     int lastEffect = -1;
     for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
         if (enabledEffects_[i]) {
             lastEffect = i;
         }
@@ -307,19 +342,43 @@ void RenderManager::DrawOffscreenToBackBuffer()
     int bufferIndex = 0;
 
     for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
         if (!enabledEffects_[i]) {
             continue;
         }
 
         const PostEffectMode mode = static_cast<PostEffectMode>(i);
-        if (i == lastEffect) {
-            DrawFullscreenPassToBackBuffer(mode, srcSrvIndex, srcResource);
-        } else {
-            OffscreenPass& dst = *postBuffers_[bufferIndex];
-            DrawFullscreenPassToBuffer(mode, srcSrvIndex, srcResource, dst);
-            srcResource = dst.GetResource();
-            srcSrvIndex = dst.GetSrvIndex();
+        if (mode == PostEffectMode::GaussianBlur) {
+            // Horizontal (X)
+            OffscreenPass& dstX = *postBuffers_[bufferIndex];
+            DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurX, srcSrvIndex, srcResource, dstX);
+            srcResource = dstX.GetResource();
+            srcSrvIndex = dstX.GetSrvIndex();
             bufferIndex = 1 - bufferIndex;
+
+            // Vertical (Y)
+            if (i == lastEffect) {
+                DrawFullscreenPassToBackBuffer(PostEffectMode::GaussianBlurY, srcSrvIndex, srcResource);
+            } else {
+                OffscreenPass& dstY = *postBuffers_[bufferIndex];
+                DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurY, srcSrvIndex, srcResource, dstY);
+                srcResource = dstY.GetResource();
+                srcSrvIndex = dstY.GetSrvIndex();
+                bufferIndex = 1 - bufferIndex;
+            }
+        } else {
+            if (i == lastEffect) {
+                DrawFullscreenPassToBackBuffer(mode, srcSrvIndex, srcResource);
+            } else {
+                OffscreenPass& dst = *postBuffers_[bufferIndex];
+                DrawFullscreenPassToBuffer(mode, srcSrvIndex, srcResource, dst);
+                srcResource = dst.GetResource();
+                srcSrvIndex = dst.GetSrvIndex();
+                bufferIndex = 1 - bufferIndex;
+            }
         }
     }
 }
@@ -335,9 +394,21 @@ void RenderManager::DrawImGui()
 
     ImGui::Separator();
     for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
         bool enabled = enabledEffects_[i];
         if (ImGui::Checkbox(kEffectNames[i], &enabled)) {
             SetEffectEnabled(static_cast<PostEffectMode>(i), enabled);
+        }
+
+        if (static_cast<PostEffectMode>(i) == PostEffectMode::GaussianBlur && enabled) {
+            ImGui::Indent();
+            if (ImGui::SliderFloat("Sigma", &sigma_, 0.1f, 10.0f)) {
+                gaussianFilterCBData_->sigma = sigma_;
+            }
+            ImGui::Unindent();
         }
     }
 
@@ -345,6 +416,10 @@ void RenderManager::DrawImGui()
     ImGui::Text("Current Chain:");
     bool any = false;
     for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
         if (enabledEffects_[i]) {
             ImGui::BulletText("%s", kEffectNames[i]);
             any = true;
