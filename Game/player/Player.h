@@ -25,6 +25,8 @@ public:
         HumanWalk,
         HumanSneakWalk,
         GltfWalkGlb,
+        GltfTestGltf,
+        Player2Gltf,
     };
 
     enum class ModelId { Walk, I0, I1, I2, O0, O1, O2 /*など*/ };

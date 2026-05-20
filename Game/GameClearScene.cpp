@@ -116,14 +116,16 @@ void GameClearScene::OnEnter(GameApp& app) {
 }
 
 void GameClearScene::OnExit(GameApp&) {
+    enableVideo_ = false;
+    if (video_) { video_->Close(); }
+    video_.reset();
+    videoPlane_.reset();
+
     goTitle_.reset();
     bg_.reset();
     //clearObj_.reset();
     skyDome_.reset();
     camera_.reset();
-    if (video_) { video_->Close(); }
-    video_.reset();
-    videoPlane_.reset();
 
 }
 

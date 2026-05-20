@@ -21,6 +21,14 @@ static const char* kGltfWalkGlb_Set[] = {
     "gltf/walk.glb",
 };
 
+static const char* kGltfTestGltf_Set[] = {
+    "gltf/test.gltf",
+};
+
+static const char* kPlayer2Gltf_Set[] = {
+    "Player/player2.gltf",
+};
+
 static Vector4 Mul(const Matrix4x4& m, const Vector4& v);
 
 auto LogModel = [](const char* tag) {
@@ -33,6 +41,8 @@ static const char* GetPlayerModelPath(Player::PlayerModelSet set) {
     case Player::PlayerModelSet::HumanWalk:      return "human/walk.gltf";
     case Player::PlayerModelSet::HumanSneakWalk: return "human/sneakWalk.gltf";
     case Player::PlayerModelSet::GltfWalkGlb:    return "gltf/walk.glb";
+    case Player::PlayerModelSet::GltfTestGltf:   return "gltf/test.gltf";
+    case Player::PlayerModelSet::Player2Gltf:    return "Player/player2.gltf";
     default:                             return "human/walk.gltf";
     }
 }
@@ -54,8 +64,9 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     model_->Initialize(objCommon, dx);   // ←共通化できてればこれだけでOK
     model_->SetCamera(cam_);
 
-    currentModelSet_ = PlayerModelSet::HumanWalk;
+    currentModelSet_ = PlayerModelSet::Player2Gltf;
     model_->SetModel("Player/player.gltf"); // あなたの実パスに合わせる
+    model_->SetModel("Player/player2.gltf");
     model_->PlayAnimation("Idle", true);
     model_->SetUseEnvironmentMap(false);
     model_->SetEnvironmentCoefficient(1.0f);
@@ -178,10 +189,10 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         // ★1) まず「攻撃開始トリガー」を最優先（このフレームで必ず再生開始）
         if (!inAttackAnim) {
             if (atkITrig) {
-                model_->PlayAnimation("Attak_I", false);
+                model_->CrossFadeTo("Attak_I", 0.10f, false);
                 curAnim_ = "Attak_I";
             } else if (atkOTrig) {
-                model_->PlayAnimation("Attak_O", false);
+                model_->CrossFadeTo("Attak_O", 0.10f, false);
                 curAnim_ = "Attak_O";
             }
         }
@@ -194,12 +205,12 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
             if (model_->IsAnimationFinished()) {
                 if (isMoving) {
                     if (curAnim_ != "Walk") {
-                        model_->PlayAnimation("Walk", true);
+                        model_->CrossFadeTo("Walk", 0.20f, true);
                         curAnim_ = "Walk";
                     }
                 } else {
                     if (curAnim_ != "Idle") {
-                        model_->PlayAnimation("Idle", true);
+                        model_->CrossFadeTo("Idle", 0.20f, true);
                         curAnim_ = "Idle";
                     }
                 }
@@ -208,12 +219,12 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
             // ★3) 通常（Idle/Walk）
             if (isMoving) {
                 if (curAnim_ != "Walk") {
-                    model_->PlayAnimation("Walk", true);
+                    model_->CrossFadeTo("Walk", 0.20f, true);
                     curAnim_ = "Walk";
                 }
             } else {
                 if (curAnim_ != "Idle") {
-                    model_->PlayAnimation("Idle", true);
+                    model_->CrossFadeTo("Idle", 0.20f, true);
                     curAnim_ = "Idle";
                 }
             }
@@ -261,14 +272,32 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     // ===== 剣追従（スキンのボーンから取る）=====
     if (model_ && swordObj_) {
 
-        Matrix4x4 handW = model_->GetJointWorldMatrix("RightHand");
+        const char* handJointName = "RightHand";
+        const char* candidates[] = {
+            "mixamorig:RightHand",
+            "RightHand",
+            "hand.R",
+            "Hand.R",
+            "ボーン.017",
+            "ボーン.005",
+        };
+        for (const char* candidate : candidates) {
+            if (model_->HasJoint(candidate)) {
+                handJointName = candidate;
+                break;
+            }
+        }
+
+        Matrix4x4 handW = model_->GetJointWorldMatrix(handJointName);
 
         // 手の位置（あなたの行列は translation が m[3][0..2]）
         Vector3 handPos{ handW.m[3][0], handW.m[3][1], handW.m[3][2] };
 
         // 位置オフセット（手の中での微調整）
         Vector3 offset{ 0.0f, 0.0f, 0.0f };
+        Vector3 swordScale{ 0.15f, 0.15f, 0.15f };
 
+        swordObj_->SetScale(swordScale);
         swordObj_->SetTranslate({
             handPos.x + offset.x,
             handPos.y + offset.y,
@@ -415,7 +444,7 @@ void Player::UpdateModel_() {
 void Player::Draw() {
     if (shadow_) shadow_->Draw();
     if (model_) model_->Draw();
-    //if (swordObj_) swordObj_->Draw();
+    if (swordObj_) swordObj_->Draw();
 }
 
 void Player::DrawDebugHitBoxes(EnemyManager& enemyMgr) {
@@ -517,7 +546,7 @@ void Player::ResetTitleAttackDemo()
 
     // 見た目もリセットしたければ
     if (model_) {
-        model_->PlayAnimation("Idle", true);
+        model_->PlayAnimation("", true);
         curAnim_ = "Idle";
     }
 }
@@ -536,7 +565,7 @@ void Player::UpdateTitleAttackDemo(float dt, float intervalSec)
     const bool inAttackAnim = (curAnim_ == "Attak_I" || curAnim_ == "Attak_O");
     if (inAttackAnim) {
         if (model_->IsAnimationFinished()) {
-            model_->PlayAnimation("Idle", true);
+            model_->CrossFadeTo("Idle", 0.20f, true);
             curAnim_ = "Idle";
         }
         return;
@@ -548,10 +577,10 @@ void Player::UpdateTitleAttackDemo(float dt, float intervalSec)
         titleDemoTimer_ = 0.0f;
 
         if (titleDemoNextIsI_) {
-            model_->PlayAnimation("Attak_I", false);
+            model_->CrossFadeTo("Attak_I", 0.10f, false);
             curAnim_ = "Attak_I";
         } else {
-            model_->PlayAnimation("Attak_O", false);
+            model_->CrossFadeTo("Attak_O", 0.10f, false);
             curAnim_ = "Attak_O";
         }
         titleDemoNextIsI_ = !titleDemoNextIsI_;

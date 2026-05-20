@@ -195,43 +195,7 @@ void TestScene::Update(GameApp& app, float dt) {
 
     player_->SetLighting(light_);
     enemyMgr_.SetLighting(light_);
-    //// ground は SpotLightのみ反映
-    //if (ground_) {
-    //    ground_->SetEnableLighting(2);
-
-    //    // ★Directional OFF
-    //    ground_->SetIntensity(0.0f);
-
-    //    // ★Point OFF
-    //    ground_->SetPointLightIntensity(0.0f);
-
-    //    // ★Spot ON
-    //    const float cosOuter = std::cosf(groundLight_.spotAngleDeg * (std::numbers::pi_v<float> / 180.0f));
-    //    const float cosInner = std::cosf(groundLight_.spotFalloffStartDeg * (std::numbers::pi_v<float> / 180.0f));
-    //    ground_->SetShininess(128.0f);
-    //    ground_->SetSpotLightPos(groundLight_.spotPos);
-    //    ground_->SetSpotLightDirection(groundLight_.spotDir); // 正規化されてる前提
-    //    ground_->SetSpotLightIntensity(groundLight_.spotIntensity);
-    //    ground_->SetSpotLightDistance(groundLight_.spotDistance);
-    //    ground_->SetSpotLightDecay(groundLight_.spotDecay);
-    //    ground_->SetSpotLightCosAngle(cosOuter);
-    //    ground_->SetSpotLightCosFalloffStart(cosInner);
-    //    ground_->SetSpotLightColor({ groundLight_.spotColor.x, groundLight_.spotColor.y, groundLight_.spotColor.z, 1.0f });
-    //}
-
-    //// Spot マーカー追従
-    //if (spotMarker_) {
-    //    spotMarker_->SetTranslate(groundLight_.spotPos);
-    //    spotMarker_->SetScale({ spotMarkerScale_, spotMarkerScale_, spotMarkerScale_ });
-    //    spotMarker_->Update(dt);
-    //}
-
-
-
-
-
-
-
+   
 }
 
 

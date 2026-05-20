@@ -37,7 +37,8 @@ void Input::Initialize  (WinApp* winApp) {
 void Input::UpdateMouseDelta() {
     POINT currentMousePos;
     GetCursorPos(&currentMousePos);
-    ScreenToClient(GetActiveWindow(), &currentMousePos);
+    HWND hwnd = winApp_ ? winApp_->GetHwnd() : GetActiveWindow();
+    ScreenToClient(hwnd, &currentMousePos);
 
     if (firstMouseUpdate_) {
         // 初回は差分をゼロにしておく
@@ -52,7 +53,6 @@ void Input::UpdateMouseDelta() {
 
     if (cameraControlEnabled_) {
         // ウィンドウの中央座標を取得して固定
-        HWND hwnd = GetActiveWindow();
         RECT rect;
         GetClientRect(hwnd, &rect);
         POINT center;
@@ -91,14 +91,26 @@ void Input::Update() {
     UpdateMouseDelta();
 
     // === 修正済み：トグル処理は1回だけ ===
-    bool toggleKey = keys_[DIK_TAB];
+    bool toggleKey = keys_[DIK_F1];
     if (toggleKey && !prevToggleKeyState_) {
-        cameraControlEnabled_ = !cameraControlEnabled_;
+        SetCameraControlEnabled(!cameraControlEnabled_);
         justEnteredCameraMode_ = cameraControlEnabled_; // 初回だけtrue
 
-        ShowCursor(!cameraControlEnabled_);
     }
     prevToggleKeyState_ = toggleKey;
+}
+
+void Input::SetCameraControlEnabled(bool enabled) {
+    if (cameraControlEnabled_ == enabled) {
+        return;
+    }
+
+    cameraControlEnabled_ = enabled;
+    justEnteredCameraMode_ = enabled;
+    firstMouseUpdate_ = true;
+    mouseDelta_ = { 0, 0 };
+
+    ShowCursor(!cameraControlEnabled_);
 }
 
 bool Input::IsKeyTrigger(BYTE keyCode) const {

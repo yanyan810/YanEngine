@@ -373,6 +373,15 @@ bool VideoPlayerMF::Open(const std::wstring& path, bool loop)
 
 void VideoPlayerMF::Close()
 {
+	if (source_) {
+		source_->Stop(0);
+		source_->FlushSourceBuffers();
+	}
+
+	if (reader_) {
+		reader_->Flush((DWORD)MF_SOURCE_READER_ALL_STREAMS);
+	}
+
 	reader_.Reset();
 
 	width_ = height_ = 0;

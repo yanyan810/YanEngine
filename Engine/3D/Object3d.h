@@ -200,9 +200,14 @@ public:
 
 	void PlayAnimation(const std::string& animName = "", bool loop = true) { if(animator_) animator_->PlayAnimation(animName, loop); }
 
+	// ★ クロスフェード（fadeSec秒かけて animName へ滑らかに遷移）
+	void CrossFadeTo(const std::string& animName, float fadeSec = 0.2f, bool loop = true) { if(animator_) animator_->CrossFadeTo(animName, fadeSec, loop); }
+
 	bool IsAnimationFinished() const { return animator_ ? animator_->IsAnimationFinished() : true; }
+	bool IsFading() const { return animator_ ? animator_->IsFading() : false; }
 
 	Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
+	bool HasJoint(const std::string& jointName) const;
 
 	const std::string& GetPlayingAnimName() const { static std::string empty; return animator_ ? animator_->GetPlayingAnimName() : empty; }
 	void StopAnimation() { if(animator_) animator_->StopAnimation(); }

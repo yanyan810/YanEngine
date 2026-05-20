@@ -157,7 +157,7 @@ void Enemy::ChangeAnimIfChanged_(const char* name, bool loop) {
 
 	currentAnim_ = name;
 	currentAnimLoop_ = loop;
-	model_->PlayAnimation(currentAnim_.c_str(), loop);
+	model_->CrossFadeTo(currentAnim_.c_str(), 0.20f, loop);
 }
 
 void Enemy::StartOneShot_(const char* name, float lengthSec) {

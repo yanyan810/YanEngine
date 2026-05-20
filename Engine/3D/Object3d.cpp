@@ -57,7 +57,16 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 	srvManager_ = srv;
 	skinningCommon_ = skinCom;
 
+	if (!dx_) {
+		OutputDebugStringA("[Object3d] Initialize failed: DirectXCommon is null.\n");
+		return;
+	}
+
 	transformationMatrixResourceModel= dx->CreateBufferResource(sizeof(TransformationMatrix));
+	if (!transformationMatrixResourceModel) {
+		OutputDebugStringA("[Object3d] Initialize failed: transformationMatrixResourceModel is null.\n");
+		return;
+	}
 	//書き込むためのアドレスを取得
 	transformationMatrixResourceModel->Map(0, nullptr,
 		reinterpret_cast<void**>(&transformationMatrixDataModel));
@@ -598,4 +607,14 @@ Matrix4x4 Object3d::GetJointWorldMatrix(const std::string& jointName) const
 		Matrix4x4::Multiply(poseSkeleton.joints[jointIndex].skeletonSpaceMatrix, worldMatrixModel);
 
 	return jointWorld;
+}
+
+bool Object3d::HasJoint(const std::string& jointName) const
+{
+	if (!model_ || !model_->HasSkinning() || !animator_ || !animator_->IsPoseReady()) {
+		return false;
+	}
+
+	const auto& poseSkeleton = animator_->GetPoseSkeleton();
+	return poseSkeleton.jointMap.contains(jointName);
 }

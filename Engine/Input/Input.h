@@ -26,6 +26,8 @@ public:
 
     void UpdateMouseDelta();
     POINT GetMouseDelta() const { return mouseDelta_; }
+    void SetCameraControlEnabled(bool enabled);
+    bool IsCameraControlEnabled() const { return cameraControlEnabled_; }
 
  /*   bool IsKeyPressed(BYTE keyCode) const;
     bool IsKeyReleased(BYTE keyCode) const;*/
