@@ -48,6 +48,6 @@
         "modelName": "",
         "modelType": 0,
         "name": "gpu_test",
-        "texturePath": ""
+        "texturePath": "resources/circle.png"
     }
 ]

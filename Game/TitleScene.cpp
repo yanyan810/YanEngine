@@ -150,7 +150,7 @@ void TitleScene::OnEnter(GameApp& app) {
 	particle_->SetMaterialColor({ 1, 1, 1, 1 });
 
 	// GPU Particle 初期化（テスト用）
-	ParticleManager::GetInstance()->CreateParticleGroup("gpu_test", "");
+	// Disabled: debug GPU particle group is not required in TitleScene.
 
 
 	//primitive
@@ -266,6 +266,8 @@ void TitleScene::OnExit(GameApp&) {
 	}
 	video_.reset();
 
+	ParticleManager::GetInstance()->ClearGroups();
+
 	skyDome_.reset();
 	particle_.reset();
 	camera_.reset();
@@ -298,6 +300,11 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 		RequestChangeScene_("GameOver");
 
+	}
+
+	if (input->IsKeyTrigger(DIK_P)) {
+		RequestChangeScene_("ParticleTest");
+		return;
 	}
 
 	switch (state_) {
@@ -474,7 +481,7 @@ void TitleScene::Update(GameApp& app, float dt) {
 	}
 
 	// GPU Particle 更新
-	ParticleManager::GetInstance()->Update(dt, *camera_);
+	// Disabled: debug GPU particle update is not required in TitleScene.
 }
 
 //========================
@@ -513,7 +520,7 @@ void TitleScene::DrawRender(GameApp& app)
 	}
 
 	// GPU Particle 描画
-	ParticleManager::GetInstance()->Draw(app.Dx()->GetCommandList());
+	// Disabled: debug GPU particle draw is not required in TitleScene.
 
 
 
@@ -742,11 +749,6 @@ void TitleScene::DrawImGui(GameApp& app) {
 	ImGui::SliderFloat("Falloff Start (deg)", &spotFalloffStartDeg_, 0.5f, 89.0f);
 
 	ImGui::End();
-
-	if (particle_) {
-		particle_->DebugImGui(); // ★Particle側のウィンドウを出す
-	}
-
 
 	DrawImGui_ModelSwitchersOneWindow();
 

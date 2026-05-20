@@ -158,6 +158,11 @@ void ParticleManager::Finalize() {
     vertexBuffer_.Reset();
 }
 
+void ParticleManager::ClearGroups()
+{
+    particleGroups_.clear();
+}
+
 void ParticleManager::Update(float dt, const Camera& camera)
 {
     // ★ 実カメラから取得
@@ -241,7 +246,9 @@ void ParticleManager::CreateParticleGroup(
     const std::string& name,
     const std::string& texturePath)
 {
-    assert(!particleGroups_.contains(name));
+    if (particleGroups_.contains(name)) {
+        return;
+    }
 
     ParticleGroup group{};
     group.texturePath = texturePath;
@@ -327,7 +334,7 @@ void ParticleManager::CreateParticleGroup(
     );
 
     // --- Compute Shaderで初期化 (Dispatch) ---
-    auto* cmd = dxCommon_->GetCommandList();
+    auto* cmd = dxCommon_->GetComputeCommandList();
 
     // barrier: COMMON -> UAV
     D3D12_RESOURCE_BARRIER barriers[3]{};
@@ -350,10 +357,10 @@ void ParticleManager::CreateParticleGroup(
     barriers[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     cmd->ResourceBarrier(3, barriers);
 
-    particleCommon_->SetComputePipelineState();
+    particleCommon_->SetComputePipelineState(cmd);
     
     // ★追加: DescriptorHeapをコマンドリストにセットする
-    srvManager_->PreDraw();
+    srvManager_->PreDrawCompute(cmd);
 
     // UAVセット (Register u0, u1, u2)
     cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
@@ -403,7 +410,9 @@ void ParticleManager::CreateParticleGroup(
     const std::string& name,
     Model* model)
 {
-    assert(!particleGroups_.contains(name));
+    if (particleGroups_.contains(name)) {
+        return;
+    }
     assert(model != nullptr);
 
     ParticleGroup group{};

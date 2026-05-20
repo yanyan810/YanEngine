@@ -3,6 +3,7 @@
 #include "GameScene.h"  
 #include "TitleScene.h"
 #include "TestScene.h"
+#include "ParticleTestScene.h"
 #include "GameOverScene.h"
 #include "GameClearScene.h"
 #include "DebugScene.h"
@@ -123,12 +124,13 @@ bool GameApp::Initialize_() {
     sceneMgr_->Register("Title",     [] { return std::make_unique<TitleScene>();    });
     sceneMgr_->Register("Game",      [] { return std::make_unique<GameScene>();     });
     sceneMgr_->Register("Test",      [] { return std::make_unique<TestScene>();     }); 
+    sceneMgr_->Register("ParticleTest", [] { return std::make_unique<ParticleTestScene>(); });
     sceneMgr_->Register("GameOver",  [] { return std::make_unique<GameOverScene>(); }); 
 	sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
     sceneMgr_->Register("Debug",     [] { return std::make_unique<DebugScene>();    });
 
     // ★DebugScene から起動する（確認後は "Title" に戻す）
-    sceneMgr_->Change(*this, "Debug");
+    sceneMgr_->Change(*this, "Title");
 
 
     OutputDebugStringA("[GameApp] Initialize END\n");
@@ -199,7 +201,6 @@ void GameApp::Draw() {
 #ifdef USE_IMGUI
     if (imgui_) {
         sceneMgr_->DrawImGui(*this);
-        ParticleManager::GetInstance()->DrawImGui();
         render_->DrawImGui(); // ポストエフェクト切り替えUI
         imgui_->End(dx_->GetCommandList());
     }

@@ -124,6 +124,7 @@ public:
 		DXGI_FORMAT format);
 
 	void PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clearColor);
+	void SetBackBufferRenderTarget();
 
 	// RenderTexture用DSVの作成
 	void TransitionResource(
