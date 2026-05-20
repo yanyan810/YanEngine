@@ -143,6 +143,25 @@ void TestScene::OnEnter(GameApp& app) {
     skyDome_->SetShininess(1.0f);                // 影響しないけど保険
     skyDome_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
+    // ===== LevelLoader: JSONからオブジェクトを読み込む =====
+    // 1. BlenderアドオンでJSONをエクスポートする
+    // 2. resources/levels/stage1.json に配置する
+    // 3. 下のコメントアウトを外す
+    /*
+    LevelLoader::LevelData levelData = LevelLoader::Load("stage1");
+    for (auto& objData : levelData.objects) {
+        if (objData.fileName.empty()) { continue; }
+        ModelManager::GetInstance()->LoadModel(objData.fileName);
+        auto obj = std::make_unique<Object3d>();
+        obj->Initialize(app.ObjCom(), app.Dx());
+        obj->SetCamera(camera_.get());
+        obj->SetModel(objData.fileName);
+        obj->SetTranslate(objData.translation);
+        obj->SetRotate(objData.rotation);
+        obj->SetScale(objData.scaling);
+        levelObjects_.push_back(std::move(obj));
+    }
+    */
 
 }
 
@@ -158,8 +177,12 @@ void TestScene::Update(GameApp& app, float dt) {
     camera_->Update();
 
     ground_->Update(dt);
-
     skyDome_->Update(dt);
+
+    // LevelLoader で読み込んだオブジェクトの更新
+    for (auto& obj : levelObjects_) {
+        obj->Update(dt);
+    }
 
     if (player_) {
         player_->Update(dt, *input_, enemyMgr_);
@@ -206,6 +229,13 @@ void TestScene::DrawRender(GameApp& app) {
 
    // if (skyDome_) skyDome_->Draw();
     if (ground_) ground_->Draw();
+
+    skyDome_->Draw();
+
+    // LevelLoader で読み込んだオブジェクトの描画
+    for (auto& obj : levelObjects_) {
+        obj->Draw();
+    }
 
     if (drawPointMarker_ && pointMarker_) pointMarker_->Draw();
     if (drawSpotMarker_ && spotMarker_) spotMarker_->Draw();

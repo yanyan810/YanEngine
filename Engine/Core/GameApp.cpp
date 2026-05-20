@@ -5,6 +5,7 @@
 #include "TestScene.h"
 #include "GameOverScene.h"
 #include "GameClearScene.h"
+#include "DebugScene.h"
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -119,13 +120,15 @@ bool GameApp::Initialize_() {
 
     // SceneManager
     sceneMgr_ = std::make_unique<SceneManager>();
-    sceneMgr_->Register("Title", [] { return std::make_unique<TitleScene>(); });
-    sceneMgr_->Register("Game", [] { return std::make_unique<GameScene>();  });
-    sceneMgr_->Register("Test", [] { return std::make_unique<TestScene>();  }); 
-    sceneMgr_->Register("GameOver", [] { return std::make_unique<GameOverScene>();  }); 
-	sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>();  });
+    sceneMgr_->Register("Title",     [] { return std::make_unique<TitleScene>();    });
+    sceneMgr_->Register("Game",      [] { return std::make_unique<GameScene>();     });
+    sceneMgr_->Register("Test",      [] { return std::make_unique<TestScene>();     }); 
+    sceneMgr_->Register("GameOver",  [] { return std::make_unique<GameOverScene>(); }); 
+	sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
+    sceneMgr_->Register("Debug",     [] { return std::make_unique<DebugScene>();    });
 
-    sceneMgr_->Change(*this, "Title");
+    // ★DebugScene から起動する（確認後は "Title" に戻す）
+    sceneMgr_->Change(*this, "Debug");
 
 
     OutputDebugStringA("[GameApp] Initialize END\n");
@@ -220,5 +223,8 @@ void GameApp::WarmupAssets_() {
     ModelManager::GetInstance()->LoadModel("Player/player.gltf");
     ModelManager::GetInstance()->LoadModel("Player/sword.obj");
     
+	ModelManager::GetInstance()->LoadModel("plane.obj");
+    ModelManager::GetInstance()->LoadModel("fence/fence.obj");
+
     OutputDebugStringA("[Warmup] END\n");
 }

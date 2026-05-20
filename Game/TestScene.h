@@ -12,6 +12,8 @@
 #include "Object3d.h"
 #include <memory>
 #include "LightingParam.h"
+#include "LevelLoader.h"
+#include <vector>
 
 
 
@@ -66,5 +68,8 @@ private:
     std::unique_ptr<Object3d> spotMarker_;
     float spotMarkerScale_ = 0.25f;
     bool drawSpotMarker_ = false;
+
+    // ===== LevelLoader =====
+    std::vector<std::unique_ptr<Object3d>> levelObjects_;
 
 };
