@@ -30,7 +30,6 @@ Microsoft::WRL::ComPtr <ID3D12DescriptorHeap>   DirectXCommon::CreateDescriptorH
 		&descriptorHeapDesc, IID_PPV_ARGS(&descriptorHeap));
 	//ディスクリプタヒープが作れなかったので起動できない
 	assert(SUCCEEDED(hr));
-
 	return descriptorHeap;
 }
 
@@ -172,7 +171,11 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompilesSharder(
 }
 
 Microsoft::WRL::ComPtr<ID3D12Resource>DirectXCommon::CreateBufferResource( size_t sizeInBytes) {
-	//sizeInBytes = (sizeInBytes + 0xff) & ~0xff;
+	if (sizeInBytes == 0) {
+		OutputDebugStringA("[DirectXCommon] CreateBufferResource requested zero bytes. Using 256 bytes instead.\n");
+		sizeInBytes = 256;
+	}
+	sizeInBytes = (sizeInBytes + 0xff) & ~0xff;
 
 	// ヒープの設定
 	D3D12_HEAP_PROPERTIES heapProps{};
@@ -199,6 +202,14 @@ Microsoft::WRL::ComPtr<ID3D12Resource>DirectXCommon::CreateBufferResource( size_
 	assert(SUCCEEDED(hr));
 
 	// ここで名前を付ける（必要なら引数で名前渡す）
+	if (FAILED(hr) || !buffer) {
+		HRESULT reason = device_ ? device_->GetDeviceRemovedReason() : E_POINTER;
+		char msg[256]{};
+		sprintf_s(msg, "[DirectXCommon] CreateBufferResource failed. size=%zu hr=0x%08X reason=0x%08X\n",
+			sizeInBytes, static_cast<unsigned>(hr), static_cast<unsigned>(reason));
+		OutputDebugStringA(msg);
+		return nullptr;
+	}
 	buffer->SetName(L"GenericUploadBuffer");
 
 	return buffer;
@@ -785,6 +796,28 @@ void DirectXCommon::PostDraw() {
 	// ★ここで「今フレームの Present 後」の index をログ
 	const UINT idxAfter = swapChain->GetCurrentBackBufferIndex();
 	OutputDebugStringA(std::format("[After Present] backBufferIndex = {}\n", idxAfter).c_str());
+}
+
+void DirectXCommon::WaitForGPU() {
+	if (!commandQueue || !fence || !fenceEvent) {
+		return;
+	}
+
+	++fenceValue;
+	HRESULT hr = commandQueue->Signal(fence.Get(), fenceValue);
+	if (FAILED(hr)) {
+		OutputDebugStringA("[DirectXCommon] WaitForGPU Signal failed.\n");
+		return;
+	}
+
+	if (fence->GetCompletedValue() < fenceValue) {
+		hr = fence->SetEventOnCompletion(fenceValue, fenceEvent);
+		if (SUCCEEDED(hr)) {
+			WaitForSingleObject(fenceEvent, INFINITE);
+		} else {
+			OutputDebugStringA("[DirectXCommon] WaitForGPU SetEventOnCompletion failed.\n");
+		}
+	}
 }
 
 void DirectXCommon::ReportLiveObjects()

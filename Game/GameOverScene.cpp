@@ -17,6 +17,21 @@
 
 static float Clamp01(float x) { return std::clamp(x, 0.0f, 1.0f); }
 
+void GameOverScene::StopVideo_(DirectXCommon* dx) {
+    enableVideo_ = false;
+    if (dx) {
+        dx->WaitForGPU();
+    }
+    if (videoPlane_) {
+        videoPlane_->SetVideo(nullptr);
+    }
+    if (video_) {
+        video_->Close();
+    }
+    video_.reset();
+    videoPlane_.reset();
+}
+
 void GameOverScene::OnEnter(GameApp& app) {
 
     camera_ = std::make_unique<Camera>();
@@ -43,6 +58,7 @@ void GameOverScene::OnEnter(GameApp& app) {
 
     prevSpace_ = false;
     prevEnter_ = false;
+    acceptConfirmInput_ = false;
 
     // damage.obj 表示（Object3dで出す）
     damageObj_ = std::make_unique<Object3d>();
@@ -128,13 +144,11 @@ void GameOverScene::OnExit(GameApp& app) {
     // ★ エフェクトをデフォルトに戻す
     app.Render()->SetMode(PostEffectMode::FullScreen);
 
+    StopVideo_(app.Dx());
+
     damageObj_.reset();
     skyDome_.reset();
     camera_.reset();
-
-    if (video_) { video_->Close(); }
-    video_.reset();
-    videoPlane_.reset();
 
     bg_.reset();
     retrySp_.reset();
@@ -171,6 +185,10 @@ void GameOverScene::Update(GameApp& app, float dt) {
         damageAlpha_ = Clamp01(damageAlpha_ + 2.5f * dt);
         damageScale_ = Clamp01(damageScale_ + 1.0f * dt);
 
+        if (!spaceNow && !enterNow) {
+            acceptConfirmInput_ = true;
+        }
+
         if (circle_ >= 1.0f) {
             state_ = State::Idle;
         }
@@ -178,6 +196,10 @@ void GameOverScene::Update(GameApp& app, float dt) {
 
     case State::Idle:
     {
+        if (!spaceNow && !enterNow) {
+            acceptConfirmInput_ = true;
+        }
+
         // ★動画更新（映像 + 音）
         if (enableVideo_ && video_) {
             if (videoPlane_) videoPlane_->Update(dt);
@@ -194,8 +216,10 @@ void GameOverScene::Update(GameApp& app, float dt) {
             select_ = Select::Title;
         }
 
-        if (spaceTrigger || enterTrigger) {
+        if (acceptConfirmInput_ && (spaceTrigger || enterTrigger)) {
+            acceptConfirmInput_ = false;
             decided_ = select_;
+            StopVideo_(app.Dx());
             state_ = State::ExitClose;
         }
     } break;
@@ -210,6 +234,7 @@ void GameOverScene::Update(GameApp& app, float dt) {
             } else {
                 RequestChangeScene_(kNextTitle_);
             }
+            return;
         }
     } break;
     }

@@ -243,7 +243,13 @@ void GameScene::OnEnter(GameApp& app) {
 
 }
 
-void GameScene::OnExit(GameApp& /*app*/) {
+void GameScene::OnExit(GameApp& app) {
+    if (auto* input = app.GetInput()) {
+        input->SetCameraControlEnabled(false);
+    }
+    app.Render()->SetMode(PostEffectMode::FullScreen);
+    isPaused_ = false;
+
     player_.reset(); // ★追加
     particle_.reset();
     objB_.reset();

@@ -1,6 +1,7 @@
 #include "Animator.h"
 #include "AnimationEvaluate.h"
 #include <algorithm>
+#include <cassert>
 
 void Animator::Initialize(Model* model) {
 	model_ = model;
@@ -8,6 +9,42 @@ void Animator::Initialize(Model* model) {
 		poseSkeleton_ = model_->GetSkeleton();
 		poseReady_ = true;
 		Model::UpdateSkeleton(poseSkeleton_);
+	}
+}
+
+// 2つのスケルトンポーズをtでブレンド（t=0:a, t=1:b）
+void Animator::BlendSkeletons(Model::Skeleton& dst, const Model::Skeleton& a, const Model::Skeleton& b, float t) {
+	assert(a.joints.size() == b.joints.size());
+	const size_t count = a.joints.size();
+	dst.joints.resize(count);
+
+	for (size_t i = 0; i < count; ++i) {
+		dst.joints[i] = a.joints[i]; // name/parentなどはコピー
+
+		// translate: Lerp
+		const auto& ta = a.joints[i].transform.translate;
+		const auto& tb = b.joints[i].transform.translate;
+		dst.joints[i].transform.translate = {
+			ta.x + (tb.x - ta.x) * t,
+			ta.y + (tb.y - ta.y) * t,
+			ta.z + (tb.z - ta.z) * t,
+		};
+
+		// scale: Lerp
+		const auto& sa = a.joints[i].transform.scale;
+		const auto& sb = b.joints[i].transform.scale;
+		dst.joints[i].transform.scale = {
+			sa.x + (sb.x - sa.x) * t,
+			sa.y + (sb.y - sa.y) * t,
+			sa.z + (sb.z - sa.z) * t,
+		};
+
+		// rotate: Slerp（グローバル関数）
+		dst.joints[i].transform.rotate = Slerp(
+			a.joints[i].transform.rotate,
+			b.joints[i].transform.rotate,
+			t
+		);
 	}
 }
 
@@ -38,7 +75,7 @@ void Animator::ApplyAnimation(Model::Skeleton& skeleton, const Animation& animat
 void Animator::PlayAnimation(const std::string& animName, bool loop) {
 	if (!model_ || model_->GetAnimations().empty()) return;
 
-	if (animName.empty()) {
+	if (animName.empty() || !model_->GetAnimations().contains(animName)) {
 		playingAnimName_ = model_->GetAnimations().begin()->first;
 	}
 	else {
@@ -48,6 +85,38 @@ void Animator::PlayAnimation(const std::string& animName, bool loop) {
 	loop_ = loop;
 	animationTime_ = 0.0f;
 	isPlayAnimation_ = true;
+
+	// フェード状態もリセット
+	fadeTime_    = 0.0f;
+	fadeElapsed_ = 0.0f;
+	prevAnimName_ = "";
+}
+
+void Animator::CrossFadeTo(const std::string& animName, float fadeSec, bool loop) {
+	if (!model_ || model_->GetAnimations().empty()) return;
+	const std::string nextAnimName =
+		(animName.empty() || !model_->GetAnimations().contains(animName))
+		? model_->GetAnimations().begin()->first
+		: animName;
+	if (nextAnimName == playingAnimName_) return;
+	if (animName == playingAnimName_) return; // 同じアニメならスキップ
+	if (!isPlayAnimation_) { PlayAnimation(animName, loop); return; }
+
+	// 現在の状態を「前」として保存
+	prevAnimName_ = playingAnimName_;
+	prevAnimTime_ = animationTime_;
+	prevLoop_     = loop_;
+	prevSkeleton_ = poseSkeleton_;  // 現在のポーズを保存
+
+	// 次のアニメへ切り替え
+	playingAnimName_ = nextAnimName;
+	animationTime_   = 0.0f;
+	loop_            = loop;
+	isPlayAnimation_ = true;
+
+	// フェード設定
+	fadeTime_    = (fadeSec > 0.0f) ? fadeSec : 0.001f;
+	fadeElapsed_ = 0.0f;
 }
 
 bool Animator::IsAnimationFinished() const {
@@ -75,14 +144,48 @@ void Animator::Update(float dt) {
 
 	if (loop_) {
 		animationTime_ = std::fmod(animationTime_, clip.duration);
-	}
-	else {
+	} else {
 		if (animationTime_ > clip.duration) {
 			animationTime_ = clip.duration;
 		}
 	}
 
-	ApplyAnimation(poseSkeleton_, clip, animationTime_);
+	// クロスフェード中
+	if (fadeTime_ > 0.0f) {
+		fadeElapsed_ += dt;
+		float blend = fadeElapsed_ / fadeTime_; // 0→1
+
+		if (blend >= 1.0f) {
+			// フェード完了 → そのまま次のクリップだけ使う
+			fadeTime_    = 0.0f;
+			fadeElapsed_ = 0.0f;
+			prevAnimName_ = "";
+			ApplyAnimation(poseSkeleton_, clip, animationTime_);
+		} else {
+			// 前クリップのポーズを進める
+			auto prevIt = model_->GetAnimations().find(prevAnimName_);
+			if (prevIt != model_->GetAnimations().end()) {
+				prevAnimTime_ += dt;
+				if (prevLoop_) {
+					prevAnimTime_ = std::fmod(prevAnimTime_, prevIt->second.duration);
+				} else {
+					prevAnimTime_ = std::min(prevAnimTime_, prevIt->second.duration);
+				}
+				ApplyAnimation(prevSkeleton_, prevIt->second, prevAnimTime_);
+			}
+
+			// 次クリップも計算
+			Model::Skeleton nextSkeleton = poseSkeleton_;
+			ApplyAnimation(nextSkeleton, clip, animationTime_);
+
+			// 2つをブレンド
+			BlendSkeletons(poseSkeleton_, prevSkeleton_, nextSkeleton, blend);
+		}
+	} else {
+		// 通常再生
+		ApplyAnimation(poseSkeleton_, clip, animationTime_);
+	}
+
 	Model::UpdateSkeleton(poseSkeleton_);
 }
 

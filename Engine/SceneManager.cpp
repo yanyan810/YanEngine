@@ -1,5 +1,6 @@
 #include "SceneManager.h"
 #include "IScene.h"
+#include "GameApp.h"
 #include <cassert>
 
 void SceneManager::Register(const std::string& name, Factory factory) {
@@ -11,6 +12,11 @@ void SceneManager::Change(GameApp& app, const std::string& name) {
     assert(it != factories_.end());
 
     if (current_) current_->OnExit(app);
+
+    if (app.Render()) {
+        app.Render()->SetMode(PostEffectMode::FullScreen);
+    }
+
     current_ = it->second();
     currentName_ = name;
     current_->OnEnter(app);

@@ -6,6 +6,7 @@
 #include "VideoPlayerMF.h" 
 
 class Object3d;
+class DirectXCommon;
 
 class Sprite;
 
@@ -21,6 +22,8 @@ public:
     void DrawImGui(GameApp& app) override;
 
 private:
+    void StopVideo_(DirectXCommon* dx = nullptr);
+
     enum class State { EnterOpen, Idle, ExitClose };
     enum class Select { Retry, Title };
 
@@ -39,6 +42,7 @@ private:
     // 入力チャタリング防止
     bool prevSpace_ = false;
     bool prevEnter_ = false;
+    bool acceptConfirmInput_ = false;
 
     // 遷移先（SceneManager のキーに合わせて調整）
     const char* kNextRetry_ = "Game";   // ← TitleSceneのSPACE遷移と同じ

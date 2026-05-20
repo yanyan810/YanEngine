@@ -79,6 +79,11 @@ void TitleScene::RebuildPrimitive_() {
 
 void TitleScene::OnEnter(GameApp& app) {
 
+	if (auto* input = app.GetInput()) {
+		input->SetCameraControlEnabled(false);
+	}
+	app.Render()->SetMode(PostEffectMode::FullScreen);
+
 	state_ = State::Idle;
 	circle_ = 1.0f;     // 最初は表示されている
 	softness_ = 0.6f;
@@ -97,6 +102,7 @@ void TitleScene::OnEnter(GameApp& app) {
 	//player
 	titlePlayer = std::make_unique<Player>();
 	titlePlayer->Initialize(app.ObjCom(), app.Dx(), camera_.get());
+	titlePlayer->ChangeModelSet_(Player::PlayerModelSet::Player2Gltf);
 	titlePlayer->SetSpawnPos({ -12.0f, 0.0f, 5.0f }); // 好みで調整
 	titlePlayer->SetLighting(light_); // 操作禁止
 	titlePlayer->ResetTitleAttackDemo();
@@ -254,12 +260,16 @@ void TitleScene::OnEnter(GameApp& app) {
 }
 
 void TitleScene::OnExit(GameApp&) {
+	enableVideo_ = false;
+	if (video_) {
+		video_->Close();
+	}
+	video_.reset();
+
 	skyDome_.reset();
 	particle_.reset();
 	camera_.reset();
 	nodeObj_.reset();
-	video_->Close();
-	video_.reset();
 	if (titlePlayer) {
 		titlePlayer.reset();
 	}
@@ -555,16 +565,16 @@ void TitleScene::Draw2D(GameApp& app)
 	Matrix4x4 proj = Matrix4x4::MakeOrthographicMatrix(
 		0, 0, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0, 100);
 
-	/*if (!showVideo_) {
-		if (bg_) {
-			bg_->Update(view, proj);
-			bg_->Draw();
-		}
-		if (pressStart_) {
-			pressStart_->Update(view, proj);
-			pressStart_->Draw();
-		}
-	}*/
+	if (bg_) {
+		bg_->Update(view, proj);
+		bg_->Draw();
+	}
+
+	if (pressStart_) {
+		pressStart_->Update(view, proj);
+		pressStart_->Draw();
+	}
+
 }
 
 void TitleScene::Draw(GameApp& app) {
