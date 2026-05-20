@@ -576,6 +576,12 @@
     <FxCompile Include="resources\shaders\EmitParticle.CS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
+    <FxCompile Include="resources\shaders\GaussianBlurX.PS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\GaussianBlurY.PS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 
   <!-- ===== hlsli (インクルード) ===== -->
