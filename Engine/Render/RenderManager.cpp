@@ -1,15 +1,15 @@
 #include "RenderManager.h"
+
 #include "DirectXCommon.h"
 #include "SrvManager.h"
 #include "WinApp.h"
+
 #include <cassert>
 
-// ImGui
 #ifdef USE_IMGUI
 #include "imgui.h"
 #endif
 
-// ポストエフェクト名（ImGui表示用・英語のみ）
 static const char* kEffectNames[] = {
     "FullScreen (No Effect)",
     "Grayscale",
@@ -18,7 +18,6 @@ static const char* kEffectNames[] = {
     "GaussianBlur (Linear)",
 };
 
-// 各エフェクトのPSパス
 static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/Fullscreen.PS.hlsl",
     L"resources/shaders/Grayscale.PS.hlsl",
@@ -36,9 +35,10 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     srv_ = srv;
 
     offscreen_ = std::make_unique<OffscreenPass>();
+    postBuffers_[0] = std::make_unique<OffscreenPass>();
+    postBuffers_[1] = std::make_unique<OffscreenPass>();
 
     Vector4 clearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
-
     offscreen_->Initialize(
         dx_,
         srv_,
@@ -49,15 +49,73 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
         2
     );
 
-    // ルートシグネチャ（全エフェクト共有）
+    Vector4 postClearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+    postBuffers_[0]->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        postClearColor,
+        3
+    );
+    postBuffers_[1]->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        postClearColor,
+        4
+    );
+
     CreateCopyImageRootSignature();
 
-    // 各エフェクトのPSOを作成
     for (int i = 0; i < kEffectCount; ++i) {
         CreatePipelineState(kEffectPSPaths[i], pipelineStates_[i]);
     }
 }
 
+void RenderManager::SetMode(PostEffectMode mode)
+{
+    currentMode_ = mode;
+    ClearEffects();
+
+    if (mode != PostEffectMode::FullScreen) {
+        enabledEffects_[static_cast<int>(mode)] = true;
+    }
+}
+
+void RenderManager::SetEffectEnabled(PostEffectMode mode, bool enabled)
+{
+    const int index = static_cast<int>(mode);
+    if (index <= static_cast<int>(PostEffectMode::FullScreen) || index >= kEffectCount) {
+        return;
+    }
+
+    enabledEffects_[index] = enabled;
+    currentMode_ = PostEffectMode::FullScreen;
+    for (int i = 1; i < kEffectCount; ++i) {
+        if (enabledEffects_[i]) {
+            currentMode_ = static_cast<PostEffectMode>(i);
+            break;
+        }
+    }
+}
+
+bool RenderManager::IsEffectEnabled(PostEffectMode mode) const
+{
+    const int index = static_cast<int>(mode);
+    if (index <= static_cast<int>(PostEffectMode::FullScreen) || index >= kEffectCount) {
+        return false;
+    }
+    return enabledEffects_[index];
+}
+
+void RenderManager::ClearEffects()
+{
+    enabledEffects_.fill(false);
+}
 
 void RenderManager::BeginOffscreen()
 {
@@ -82,7 +140,6 @@ void RenderManager::BeginBackBuffer()
     dx_->PreDraw();
 }
 
-// ★ ルートシグネチャ作成（共有）
 void RenderManager::CreateCopyImageRootSignature()
 {
     D3D12_DESCRIPTOR_RANGE range{};
@@ -132,7 +189,6 @@ void RenderManager::CreateCopyImageRootSignature()
     assert(SUCCEEDED(hr));
 }
 
-// ★ 各エフェクト用PSOを作成するヘルパー
 void RenderManager::CreatePipelineState(
     const wchar_t* psPath,
     Microsoft::WRL::ComPtr<ID3D12PipelineState>& outPSO)
@@ -141,25 +197,19 @@ void RenderManager::CreatePipelineState(
     auto ps = dx_->CompileShader(psPath, L"ps_6_0");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
-
     desc.pRootSignature = copyImageRootSignature_.Get();
     desc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
     desc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
-
     desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-
     desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     desc.DepthStencilState.DepthEnable = FALSE;
     desc.DepthStencilState.StencilEnable = FALSE;
-
     desc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
     desc.NumRenderTargets = 1;
     desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     desc.SampleDesc.Count = 1;
-
     desc.InputLayout.pInputElementDescs = nullptr;
     desc.InputLayout.NumElements = 0;
 
@@ -169,59 +219,140 @@ void RenderManager::CreatePipelineState(
     assert(SUCCEEDED(hr));
 }
 
-// ★ オフスクリーンをバックバッファへ描画（現在選択中のエフェクトを適用）
-void RenderManager::DrawOffscreenToBackBuffer()
+void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex)
 {
-    assert(offscreen_);
-
     auto* cmd = dx_->GetCommandList();
 
-    // SRVヒープを明示的に再セット
-    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
-    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
-
-    // RenderTexture を読む状態へ
-    dx_->TransitionResource(
-        offscreen_->GetResource(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-    );
-
-    // 現在のモードに対応するPSOを選択
-    int modeIndex = static_cast<int>(currentMode_);
+    const int modeIndex = static_cast<int>(mode);
     assert(modeIndex >= 0 && modeIndex < kEffectCount);
 
     cmd->SetGraphicsRootSignature(copyImageRootSignature_.Get());
     cmd->SetPipelineState(pipelineStates_[modeIndex].Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->SetGraphicsRootDescriptorTable(0, srv_->GetGPUDescriptionHandle(srcSrvIndex));
+    cmd->DrawInstanced(3, 1, 0, 0);
+}
 
-    cmd->SetGraphicsRootDescriptorTable(
-        0,
-        srv_->GetGPUDescriptionHandle(offscreen_->GetSrvIndex())
+void RenderManager::DrawFullscreenPassToBackBuffer(
+    PostEffectMode mode,
+    uint32_t srcSrvIndex,
+    ID3D12Resource* srcResource)
+{
+    dx_->TransitionResource(
+        srcResource,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
 
-    cmd->DrawInstanced(3, 1, 0, 0);
+    dx_->SetBackBufferRenderTarget();
+    DrawFullscreenPass(mode, srcSrvIndex);
 
     dx_->TransitionResource(
-        offscreen_->GetResource(),
+        srcResource,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_STATE_RENDER_TARGET
     );
 }
 
-// ★ ImGui でポストエフェクトを切り替える
+void RenderManager::DrawFullscreenPassToBuffer(
+    PostEffectMode mode,
+    uint32_t srcSrvIndex,
+    ID3D12Resource* srcResource,
+    OffscreenPass& dst)
+{
+    dx_->TransitionResource(
+        srcResource,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
+    dst.Begin();
+    DrawFullscreenPass(mode, srcSrvIndex);
+
+    dx_->TransitionResource(
+        srcResource,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_RENDER_TARGET
+    );
+}
+
+void RenderManager::DrawOffscreenToBackBuffer()
+{
+    assert(offscreen_);
+    assert(postBuffers_[0]);
+    assert(postBuffers_[1]);
+
+    auto* cmd = dx_->GetCommandList();
+    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
+    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+
+    int lastEffect = -1;
+    for (int i = 1; i < kEffectCount; ++i) {
+        if (enabledEffects_[i]) {
+            lastEffect = i;
+        }
+    }
+
+    if (lastEffect < 0) {
+        DrawFullscreenPassToBackBuffer(
+            PostEffectMode::FullScreen,
+            offscreen_->GetSrvIndex(),
+            offscreen_->GetResource()
+        );
+        return;
+    }
+
+    ID3D12Resource* srcResource = offscreen_->GetResource();
+    uint32_t srcSrvIndex = offscreen_->GetSrvIndex();
+    int bufferIndex = 0;
+
+    for (int i = 1; i < kEffectCount; ++i) {
+        if (!enabledEffects_[i]) {
+            continue;
+        }
+
+        const PostEffectMode mode = static_cast<PostEffectMode>(i);
+        if (i == lastEffect) {
+            DrawFullscreenPassToBackBuffer(mode, srcSrvIndex, srcResource);
+        } else {
+            OffscreenPass& dst = *postBuffers_[bufferIndex];
+            DrawFullscreenPassToBuffer(mode, srcSrvIndex, srcResource, dst);
+            srcResource = dst.GetResource();
+            srcSrvIndex = dst.GetSrvIndex();
+            bufferIndex = 1 - bufferIndex;
+        }
+    }
+}
+
 void RenderManager::DrawImGui()
 {
 #ifdef USE_IMGUI
     ImGui::Begin("Post Effect");
 
-    int current = static_cast<int>(currentMode_);
-    if (ImGui::Combo("Effect##posteffect", &current, kEffectNames, kEffectCount)) {
-        currentMode_ = static_cast<PostEffectMode>(current);
+    if (ImGui::Button("Clear Effects")) {
+        SetMode(PostEffectMode::FullScreen);
     }
 
     ImGui::Separator();
-    ImGui::Text("Current: %s", kEffectNames[current]);
+    for (int i = 1; i < kEffectCount; ++i) {
+        bool enabled = enabledEffects_[i];
+        if (ImGui::Checkbox(kEffectNames[i], &enabled)) {
+            SetEffectEnabled(static_cast<PostEffectMode>(i), enabled);
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Current Chain:");
+    bool any = false;
+    for (int i = 1; i < kEffectCount; ++i) {
+        if (enabledEffects_[i]) {
+            ImGui::BulletText("%s", kEffectNames[i]);
+            any = true;
+        }
+    }
+    if (!any) {
+        ImGui::BulletText("%s", kEffectNames[0]);
+    }
 
     ImGui::End();
 #endif

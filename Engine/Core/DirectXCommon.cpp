@@ -542,7 +542,7 @@ void DirectXCommon::DethCriptorHeapSpawn() {
 	descriptorSizeDSV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
 	// RTVヒープ作成（2個）
-	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 3, false);
+	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 5, false);
 
 	
 }
@@ -973,6 +973,14 @@ void DirectXCommon::PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clear
 }
 
 // RenderTextureを描画対象から外す後の処理
+void DirectXCommon::SetBackBufferRenderTarget()
+{
+	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
+	commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], FALSE, &dsvHandle);
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissorRect);
+}
+
 void DirectXCommon::TransitionResource(
 	ID3D12Resource* resource,
 	D3D12_RESOURCE_STATES before,

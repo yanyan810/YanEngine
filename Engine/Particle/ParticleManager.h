@@ -132,6 +132,7 @@ public:
     void Update(float deltaTime, const Camera& camera);
     void UpdateCompute(ID3D12GraphicsCommandList* computeCmd);
     void Draw(ID3D12GraphicsCommandList* cmd);
+    void ClearGroups();
     void DrawImGui(); // ★追加
 
     void Save(const std::string& filename);

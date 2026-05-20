@@ -41,8 +41,8 @@ static const char* GetPlayerModelPath(Player::PlayerModelSet set) {
     case Player::PlayerModelSet::HumanWalk:      return "human/walk.gltf";
     case Player::PlayerModelSet::HumanSneakWalk: return "human/sneakWalk.gltf";
     case Player::PlayerModelSet::GltfWalkGlb:    return "gltf/walk.glb";
-    case Player::PlayerModelSet::GltfTestGltf:   return "gltf/test.gltf";
-    case Player::PlayerModelSet::Player2Gltf:    return "Player/player2.gltf";
+    case Player::PlayerModelSet::GltfTestGltf:   return "Player/test.gltf";
+    case Player::PlayerModelSet::Player2Gltf:    return "Player/player.gltf";
     default:                             return "human/walk.gltf";
     }
 }
@@ -66,7 +66,7 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
 
     currentModelSet_ = PlayerModelSet::Player2Gltf;
     model_->SetModel("Player/player.gltf"); // あなたの実パスに合わせる
-    model_->SetModel("Player/player2.gltf");
+    //model_->SetModel("Player/player2.gltf");
     model_->PlayAnimation("Idle", true);
     model_->SetUseEnvironmentMap(false);
     model_->SetEnvironmentCoefficient(1.0f);

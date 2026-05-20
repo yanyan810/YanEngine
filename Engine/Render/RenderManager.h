@@ -37,7 +37,10 @@ public:
 
     // 現在のモードを取得・設定
     PostEffectMode GetMode() const { return currentMode_; }
-    void SetMode(PostEffectMode mode) { currentMode_ = mode; }
+    void SetMode(PostEffectMode mode);
+    void SetEffectEnabled(PostEffectMode mode, bool enabled);
+    bool IsEffectEnabled(PostEffectMode mode) const;
+    void ClearEffects();
 
     uint32_t GetOffscreenSrvIndex() const;
     OffscreenPass* GetOffscreen() const { return offscreen_.get(); }
@@ -48,12 +51,16 @@ private:
     void CreatePipelineState(
         const wchar_t* psPath,
         Microsoft::WRL::ComPtr<ID3D12PipelineState>& outPSO);
+    void DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex);
+    void DrawFullscreenPassToBackBuffer(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* srcResource);
+    void DrawFullscreenPassToBuffer(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* srcResource, OffscreenPass& dst);
 
 private:
     DirectXCommon* dx_ = nullptr;
     SrvManager* srv_ = nullptr;
 
     std::unique_ptr<OffscreenPass> offscreen_;
+    std::array<std::unique_ptr<OffscreenPass>, 2> postBuffers_;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> copyImageRootSignature_;
 
@@ -63,4 +70,5 @@ private:
 
     // 現在選択中のエフェクト
     PostEffectMode currentMode_ = PostEffectMode::FullScreen;
+    std::array<bool, kEffectCount> enabledEffects_{};
 };

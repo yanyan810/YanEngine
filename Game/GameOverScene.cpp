@@ -137,7 +137,9 @@ void GameOverScene::OnEnter(GameApp& app) {
     videoPlane_->SetCamera(camera_.get());
 
     // ★ このシーンではVignetteを適用
-    app.Render()->SetMode(PostEffectMode::Vignette);
+    app.Render()->SetMode(PostEffectMode::FullScreen);
+    app.Render()->SetEffectEnabled(PostEffectMode::Vignette, true);
+    app.Render()->SetEffectEnabled(PostEffectMode::BoxFilter, true);
 }
 
 void GameOverScene::OnExit(GameApp& app) {
