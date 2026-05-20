@@ -73,7 +73,7 @@ void DebugScene::Update(GameApp& app, float dt)
     }
 }
 
-void DebugScene::Draw(GameApp& app)
+void DebugScene::DrawRender(GameApp& app)
 {
     auto* cmd = app.Dx()->GetCommandList();
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -82,6 +82,10 @@ void DebugScene::Draw(GameApp& app)
     for (auto& obj : levelObjects_) {
         obj->Draw();
     }
+}
+
+void DebugScene::Draw(GameApp& /*app*/)
+{
 }
 
 void DebugScene::DrawImGui(GameApp& /*app*/)
