@@ -18,8 +18,9 @@ struct VSOutput {
 float GetDepth(float2 uv) {
     uint width, height;
     gDepthTexture.GetDimensions(width, height);
-    uint3 texCoord = uint3(uv.x * (width - 1.0f), uv.y * (height - 1.0f), 0);
-    return gDepthTexture.Load(texCoord).r;
+    int x = clamp(int(uv.x * (width - 1.0f)), 0, int(width - 1));
+    int y = clamp(int(uv.y * (height - 1.0f)), 0, int(height - 1));
+    return gDepthTexture.Load(int3(x, y, 0)).r;
 }
 
 // 深度の勾配（微分）からスクリーン空間の法線を概算する

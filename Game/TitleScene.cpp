@@ -721,7 +721,7 @@ void TitleScene::DrawImGui(GameApp& app) {
 				curObj->SetOutlineColor(color);
 			}
 			float thickness = curObj->GetOutlineThickness();
-			if (ImGui::SliderFloat("Outline Thickness", &thickness, 0.0f, 0.1f)) {
+			if (ImGui::SliderFloat("Outline Thickness", &thickness, 0.0f, 1.0f)) {
 				curObj->SetOutlineThickness(thickness);
 			}
 		}

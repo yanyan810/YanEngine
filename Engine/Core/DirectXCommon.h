@@ -19,7 +19,7 @@ public:
 	void	Initialize(WinApp* winApp);
 
 	//描画前処理
-	void PreDraw();
+	void PreDraw(bool clearDepth = true);
 	//描画後処理
 	void PostDraw();
 	void WaitForGPU();

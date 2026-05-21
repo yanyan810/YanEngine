@@ -712,7 +712,7 @@ void DirectXCommon::UpdateFixFPS() {
 }
 
 
-void DirectXCommon::PreDraw() {
+void DirectXCommon::PreDraw(bool clearDepth) {
 	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
 
 	// Present 竊・RenderTarget
@@ -730,7 +730,9 @@ void DirectXCommon::PreDraw() {
 	// 繧ｯ繝ｪ繧｢
 	const float clearColor[4] = { 0.10f, 0.25f, 0.50f, 1.0f };
 	commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
-	commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	if (clearDepth) {
+		commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	}
 
 	// VP/Scissor
 	commandList->RSSetViewports(1, &viewport);
