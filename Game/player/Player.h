@@ -85,6 +85,8 @@ public:
     //void UpdateTitleAttackDemo(float dt, float intervalSec = 1.0f);
     void SetTitleTransform(const Vector3& t, const Vector3& r, const Vector3& s);
 
+    Object3d* GetModelObject() const { return model_.get(); }
+
 private:
     void UpdateMove_(float dt, const Input& input);
     void ApplyPhysics_(float dt);

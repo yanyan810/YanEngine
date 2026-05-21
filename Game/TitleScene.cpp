@@ -514,11 +514,6 @@ void TitleScene::DrawRender(GameApp& app)
 
 	//if (primitiveObj_) primitiveObj_->Draw();
 
-	if (particle_) {
-		app.ParticleCom()->SetGraphicsPipelineState();
-		particle_->Draw();
-	}
-
 	// GPU Particle 描画
 	// Disabled: debug GPU particle draw is not required in TitleScene.
 
@@ -702,6 +697,34 @@ void TitleScene::DrawImGui(GameApp& app) {
 		ImGui::DragFloat3("T", &cur->pos.x, 0.1f);
 		ImGui::DragFloat3("R", &cur->rot.x, 0.01f);
 		ImGui::DragFloat3("S", &cur->scale.x, 0.1f, 0.001f, 100.0f);
+	}
+
+	ImGui::Separator();
+	ImGui::Text("Outline Settings");
+	Object3d* curObj = nullptr;
+	switch ((EditTarget)editTarget_) {
+	case EditTarget::SkyDome:     curObj = skyDome_.get(); break;
+	case EditTarget::VideoPlane:  curObj = videoPlane_.get(); break;
+	case EditTarget::Ground:      curObj = ground_.get(); break;
+	case EditTarget::TitlePlayer: curObj = titlePlayer ? titlePlayer->GetModelObject() : nullptr; break;
+	default: break;
+	}
+
+	if (curObj) {
+		bool enable = curObj->GetEnableOutline();
+		if (ImGui::Checkbox("Enable Outline", &enable)) {
+			curObj->SetEnableOutline(enable);
+		}
+		if (enable) {
+			Vector4 color = curObj->GetOutlineColor();
+			if (ImGui::ColorEdit3("Outline Color", &color.x)) {
+				curObj->SetOutlineColor(color);
+			}
+			float thickness = curObj->GetOutlineThickness();
+			if (ImGui::SliderFloat("Outline Thickness", &thickness, 0.0f, 1.0f)) {
+				curObj->SetOutlineThickness(thickness);
+			}
+		}
 	}
 
 	ImGui::Separator();

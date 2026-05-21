@@ -18,6 +18,7 @@ static const char* kEffectNames[] = {
     "GaussianBlurX (Horizontal)",
     "GaussianBlurY (Vertical)",
     "GaussianBlur (Linear)",
+    "Outline (Depth & Normal)",
 };
 
 static const wchar_t* kEffectPSPaths[] = {
@@ -27,7 +28,8 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/BoxFilter.PS.hlsl",
     L"resources/shaders/GaussianBlurX.PS.hlsl",
     L"resources/shaders/GaussianBlurY.PS.hlsl",
-    L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur自体はダミー
+    L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur閾ｪ菴薙・繝繝溘・
+    L"resources/shaders/Outline.PS.hlsl",
 };
 
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
@@ -75,10 +77,21 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
 
     CreateCopyImageRootSignature();
 
-    // GaussianFilter用の定数バッファを作成
+    // GaussianFilter逕ｨ縺ｮ螳壽焚繝舌ャ繝輔ぃ繧剃ｽ懈・
     gaussianFilterCB_ = dx_->CreateBufferResource((sizeof(GaussianFilterParameter) + 0xff) & ~0xff);
     gaussianFilterCB_->Map(0, nullptr, reinterpret_cast<void**>(&gaussianFilterCBData_));
     gaussianFilterCBData_->sigma = sigma_;
+
+    // Outline逕ｨ縺ｮ螳壽焚繝舌ャ繝輔ぃ繧剃ｽ懈・
+    outlineCB_ = dx_->CreateBufferResource((sizeof(OutlineParameter) + 0xff) & ~0xff);
+    outlineCB_->Map(0, nullptr, reinterpret_cast<void**>(&outlineCBData_));
+    outlineCBData_->color = outlineColor_;
+    outlineCBData_->thickness = outlineThickness_;
+    outlineCBData_->threshold = outlineThreshold_;
+
+    // 豺ｱ蠎ｦ繝舌ャ繝輔ぃ逕ｨ縺ｮSRV繧剃ｽ懈・
+    depthSrvIndex_ = srv_->Allocate();
+    srv_->CreateSRVTexture2D(depthSrvIndex_, dx_->GetDepthStencilResource(), DXGI_FORMAT_R32_FLOAT, 1);
 
     for (int i = 0; i < kEffectCount; ++i) {
         CreatePipelineState(kEffectPSPaths[i], pipelineStates_[i]);
@@ -161,24 +174,42 @@ void RenderManager::BeginBackBuffer()
 
 void RenderManager::CreateCopyImageRootSignature()
 {
-    D3D12_DESCRIPTOR_RANGE range{};
-    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors = 1;
-    range.BaseShaderRegister = 0;
-    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    D3D12_DESCRIPTOR_RANGE range0{};
+    range0.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    range0.NumDescriptors = 1;
+    range0.BaseShaderRegister = 0; // t0
+    range0.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[2]{};
-    // [0]: SRV (t0)
+    D3D12_DESCRIPTOR_RANGE range1{};
+    range1.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    range1.NumDescriptors = 1;
+    range1.BaseShaderRegister = 1; // t1
+    range1.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParams[4]{};
+    // [0]: SRV (t0) Color
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParams[0].DescriptorTable.NumDescriptorRanges = 1;
-    rootParams[0].DescriptorTable.pDescriptorRanges = &range;
+    rootParams[0].DescriptorTable.pDescriptorRanges = &range0;
 
-    // [1]: CBV (b0)
+    // [1]: CBV (b0) Gaussian Filter
     rootParams[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParams[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParams[1].Descriptor.ShaderRegister = 0;
     rootParams[1].Descriptor.RegisterSpace = 0;
+
+    // [2]: SRV (t1) Depth
+    rootParams[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParams[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParams[2].DescriptorTable.NumDescriptorRanges = 1;
+    rootParams[2].DescriptorTable.pDescriptorRanges = &range1;
+
+    // [3]: CBV (b1) Outline
+    rootParams[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParams[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParams[3].Descriptor.ShaderRegister = 1;
+    rootParams[3].Descriptor.RegisterSpace = 0;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -256,9 +287,13 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
     cmd->SetPipelineState(pipelineStates_[modeIndex].Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->SetGraphicsRootDescriptorTable(0, srv_->GetGPUDescriptionHandle(srcSrvIndex));
+    // Depth (t1)
+    cmd->SetGraphicsRootDescriptorTable(2, srv_->GetGPUDescriptionHandle(depthSrvIndex_));
 
     if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
         cmd->SetGraphicsRootConstantBufferView(1, gaussianFilterCB_->GetGPUVirtualAddress());
+    } else if (mode == PostEffectMode::Outline) {
+        cmd->SetGraphicsRootConstantBufferView(3, outlineCB_->GetGPUVirtualAddress());
     }
 
     cmd->DrawInstanced(3, 1, 0, 0);
@@ -275,7 +310,7 @@ void RenderManager::DrawFullscreenPassToBackBuffer(
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
 
-    dx_->SetBackBufferRenderTarget();
+    dx_->SetBackBufferRenderTargetForPostEffect();
     DrawFullscreenPass(mode, srcSrvIndex);
 
     dx_->TransitionResource(
@@ -297,7 +332,7 @@ void RenderManager::DrawFullscreenPassToBuffer(
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
 
-    dst.Begin();
+    dst.BeginForPostEffect();
     DrawFullscreenPass(mode, srcSrvIndex);
 
     dx_->TransitionResource(
@@ -334,8 +369,17 @@ void RenderManager::DrawOffscreenToBackBuffer()
             offscreen_->GetSrvIndex(),
             offscreen_->GetResource()
         );
+        // ポストエフェクト完了後、後続のUIやスプライト描画のために通常のRTV+DSV状態に戻しておく
+        dx_->SetBackBufferRenderTarget();
         return;
     }
+
+    // 深度バッファをSRVとして読み込むためのバリア
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
 
     ID3D12Resource* srcResource = offscreen_->GetResource();
     uint32_t srcSrvIndex = offscreen_->GetSrvIndex();
@@ -381,6 +425,16 @@ void RenderManager::DrawOffscreenToBackBuffer()
             }
         }
     }
+
+    // 深度バッファを元の状態（書き込み用）に戻す
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE
+    );
+
+    // ポストエフェクト完了後、後続のUIやスプライト描画のために通常のRTV+DSV状態に戻しておく
+    dx_->SetBackBufferRenderTarget();
 }
 
 void RenderManager::DrawImGui()
@@ -407,6 +461,19 @@ void RenderManager::DrawImGui()
             ImGui::Indent();
             if (ImGui::SliderFloat("Sigma", &sigma_, 0.1f, 10.0f)) {
                 gaussianFilterCBData_->sigma = sigma_;
+            }
+            ImGui::Unindent();
+        }
+        if (static_cast<PostEffectMode>(i) == PostEffectMode::Outline && enabled) {
+            ImGui::Indent();
+            if (ImGui::ColorEdit4("Color", &outlineColor_.x)) {
+                outlineCBData_->color = outlineColor_;
+            }
+            if (ImGui::SliderFloat("Thickness", &outlineThickness_, 0.1f, 10.0f)) {
+                outlineCBData_->thickness = outlineThickness_;
+            }
+            if (ImGui::SliderFloat("Threshold", &outlineThreshold_, 0.0f, 1.0f)) {
+                outlineCBData_->threshold = outlineThreshold_;
             }
             ImGui::Unindent();
         }

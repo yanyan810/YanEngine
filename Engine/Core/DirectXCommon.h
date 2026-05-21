@@ -19,7 +19,7 @@ public:
 	void	Initialize(WinApp* winApp);
 
 	//描画前処理
-	void PreDraw();
+	void PreDraw(bool clearDepth = true);
 	//描画後処理
 	void PostDraw();
 	void WaitForGPU();
@@ -53,6 +53,7 @@ public:
 	ID3D12Device* GetDevice() const { return device_.Get(); }
 	ID3D12GraphicsCommandList* GetCommandList() const { return commandList.Get(); }
 	ID3D12GraphicsCommandList* GetComputeCommandList() const { return computeCommandList.Get(); }
+	ID3D12Resource* GetDepthStencilResource() const { return depthStencilResource_.Get(); }
 
 
 
@@ -122,6 +123,12 @@ public:
 		ID3D12Resource* resource,
 		uint32_t rtvIndex,
 		DXGI_FORMAT format);
+
+	// RenderTextureをPostEffect用に設定（DSVなし、クリアなし）
+	void PreDrawPostEffectBuffer(uint32_t rtvIndex);
+
+	// BackBufferをPostEffect用に設定（DSVなし）
+	void SetBackBufferRenderTargetForPostEffect();
 
 	void PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clearColor);
 	void SetBackBufferRenderTarget();

@@ -19,6 +19,7 @@ public:
     );
 
     void Begin();
+    void BeginForPostEffect();
     void End();
 
     ID3D12Resource* GetResource() const { return resource_.Get(); }

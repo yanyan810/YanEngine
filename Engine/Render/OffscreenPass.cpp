@@ -50,6 +50,11 @@ void OffscreenPass::Begin()
     dx_->PreDrawRenderTexture(rtvIndex_, clearColor_);
 }
 
+void OffscreenPass::BeginForPostEffect()
+{
+    dx_->PreDrawPostEffectBuffer(rtvIndex_);
+}
+
 void OffscreenPass::End()
 {
   //  dx_->PreDraw();

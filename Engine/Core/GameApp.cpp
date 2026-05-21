@@ -186,7 +186,7 @@ void GameApp::Draw() {
     render_->EndOffscreen();
 
     // ② BackBufferへ
-    dx_->PreDraw();
+    dx_->PreDraw(false);
 
     ParticleManager::GetInstance()->UpdateCompute(dx_->GetComputeCommandList());
 

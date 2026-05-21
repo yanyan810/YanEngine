@@ -36,6 +36,13 @@ public:
 		float pad; // ★16byte揃え
 	};
 
+	struct OutlineParam {
+		Vector4 color;
+		float thickness;
+		float enable;
+		float pad[2];
+	};
+
 public:
 
 	void Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx);
@@ -128,6 +135,13 @@ public:
 	void SetIsVisible(bool visible) { isVisible_ = visible; }
 	bool GetIsVisible() const { return isVisible_; }
 
+	void SetEnableOutline(bool enable) { enableOutline_ = enable; }
+	bool GetEnableOutline() const { return enableOutline_; }
+	void SetOutlineColor(const Vector4& color) { outlineColor_ = color; }
+	Vector4 GetOutlineColor() const { return outlineColor_; }
+	void SetOutlineThickness(float t) { outlineThickness_ = t; }
+	float GetOutlineThickness() const { return outlineThickness_; }
+
 	void SetPrimitiveCommon(PrimitiveCommon* p) { primitiveCommon_ = p; }
 
 
@@ -185,6 +199,13 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> cameraResource_;
 	CameraGPU* cameraData_ = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> outlineParamResource_;
+	OutlineParam* outlineParamData_ = nullptr;
+	
+	bool enableOutline_ = false;
+	Vector4 outlineColor_ = {1.0f, 0.0f, 0.0f, 1.0f}; // Default Red
+	float outlineThickness_ = 0.05f;
 
 	//テクスチャ
 	std::string texturePath_ = "";

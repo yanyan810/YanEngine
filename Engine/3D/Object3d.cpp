@@ -105,6 +105,14 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 
 	cameraResource_ = dx_->CreateBufferResource(sizeof(CameraGPU));
 	cameraResource_->Map(0, nullptr, reinterpret_cast<void**>(&cameraData_));
+
+	outlineParamResource_ = dx_->CreateBufferResource(sizeof(OutlineParam));
+	outlineParamResource_->Map(0, nullptr, reinterpret_cast<void**>(&outlineParamData_));
+	if (outlineParamData_) {
+		outlineParamData_->color = outlineColor_;
+		outlineParamData_->thickness = outlineThickness_;
+		outlineParamData_->enable = enableOutline_ ? 1.0f : 0.0f;
+	}
 }
 
 void Object3d::Update(float dt)
@@ -166,6 +174,12 @@ void Object3d::Update(float dt)
 	// 4) WorldInverseTranspose
 	Matrix4x4 invW = Matrix4x4::Inverse(worldMatrixModel);
 	transformationMatrixDataModel->WorldInverseTranspose = Matrix4x4::Transpose(invW);
+
+	if (outlineParamData_) {
+		outlineParamData_->color = outlineColor_;
+		outlineParamData_->thickness = outlineThickness_;
+		outlineParamData_->enable = enableOutline_ ? 1.0f : 0.0f;
+	}
 }
 
 
@@ -250,23 +264,24 @@ void Object3d::Draw()
 
 		// =====================================================
 		// スキン付きメッシュ本体 (CS後の頂点バッファを使って描画)
-		// =====================================================
-		// スキン無し(通常のObject3dCommon等)のパイプラインを使用する
-		if (primitiveCommon_) {
-			if (useEnvironmentMap_) {
-				primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+		auto SetNormalPipelineState = [&]() {
+			if (primitiveCommon_) {
+				if (useEnvironmentMap_) {
+					primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				} else {
+					primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				}
 			} else {
-				primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				if (useEnvironmentMap_) {
+					object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
+				} else {
+					object3dCommon->SetGraphicsPipelineState(blendMode_);
+				}
 			}
-		} else {
-			if (useEnvironmentMap_) {
-				object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
-			} else {
-				object3dCommon->SetGraphicsPipelineState(blendMode_);
-			}
-		}
+			cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		};
 
-		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		SetNormalPipelineState();
 
 		// Transform (Root 1)
 		cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
@@ -281,6 +296,12 @@ void Object3d::Draw()
 
 		// Draw skinned (CSで出力された頂点バッファを使用)
 		if (animator_ && animator_->IsPoseReady()) {
+			if (enableOutline_ && object3dCommon) {
+				object3dCommon->SetGraphicsPipelineStateOutline();
+				cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+				model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster());
+				SetNormalPipelineState();
+			}
 			model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster());
 		}
 
@@ -288,21 +309,24 @@ void Object3d::Draw()
 		// スキン無し（剣など）を描く
 		// =====================================================
 		{
-			if (primitiveCommon_) {
-				if (useEnvironmentMap_) {
-					primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+			auto SetNormalPipelineState = [&]() {
+				if (primitiveCommon_) {
+					if (useEnvironmentMap_) {
+						primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+					} else {
+						primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+					}
 				} else {
-					primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+					if (useEnvironmentMap_) {
+						object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
+					} else {
+						object3dCommon->SetGraphicsPipelineState(blendMode_);
+					}
 				}
-			} else {
-				if (useEnvironmentMap_) {
-					object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
-				} else {
-					object3dCommon->SetGraphicsPipelineState(blendMode_);
-				}
-			}
+				cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			};
 
-			cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			SetNormalPipelineState();
 
 			// lights/camera (Rigid側RootSig)
 			cmd->SetGraphicsRootConstantBufferView(3, light_->GetDirectionalLightResource()->GetGPUVirtualAddress());
@@ -358,6 +382,14 @@ void Object3d::Draw()
 					Matrix4x4::Transpose(Matrix4x4::Inverse(world));
 
 				cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
+				
+				if (enableOutline_ && object3dCommon) {
+					object3dCommon->SetGraphicsPipelineStateOutline();
+					cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+					model_->DrawOneMesh(cmd, inst.meshIndex, 2);
+					SetNormalPipelineState();
+				}
+				
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 			}
 
@@ -368,19 +400,24 @@ void Object3d::Draw()
 				Matrix4x4::Transpose(Matrix4x4::Inverse(baseWorld));
 		}
 	} else {
-		if (primitiveCommon_) {
-			if (useEnvironmentMap_) {
-				primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+		auto SetNormalPipelineState = [&]() {
+			if (primitiveCommon_) {
+				if (useEnvironmentMap_) {
+					primitiveCommon_->SetGraphicsPipelineStateEnvMap(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				} else {
+					primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				}
 			} else {
-				primitiveCommon_->SetGraphicsPipelineState(static_cast<PrimitiveCommon::BlendMode>(blendMode_));
+				if (useEnvironmentMap_) {
+					object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
+				} else {
+					object3dCommon->SetGraphicsPipelineState(blendMode_);
+				}
 			}
-		} else {
-			if (useEnvironmentMap_) {
-				object3dCommon->SetGraphicsPipelineStateEnvMap(blendMode_);
-			} else {
-				object3dCommon->SetGraphicsPipelineState(blendMode_);
-			}
-		}
+			cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		};
+
+		SetNormalPipelineState();
 
 		// light/camera CBV
 		cmd->SetGraphicsRootConstantBufferView(3, light_->GetDirectionalLightResource()->GetGPUVirtualAddress());
@@ -433,6 +470,13 @@ void Object3d::Draw()
 				cmd->SetGraphicsRootConstantBufferView(
 					1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
+				if (enableOutline_ && object3dCommon) {
+					object3dCommon->SetGraphicsPipelineStateOutline();
+					cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+					model_->DrawOneMesh(cmd, inst.meshIndex, 2);
+					SetNormalPipelineState();
+				}
+
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 			}
 		} else {
@@ -451,8 +495,23 @@ void Object3d::Draw()
 				//指定されたテクスチャを適応
 				if (useOverrideTexture_) {
 					auto handle = TextureManager::GetInstance()->GetSrvHandleGPU(texturePath_);
+					
+					if (enableOutline_ && object3dCommon) {
+						object3dCommon->SetGraphicsPipelineStateOutline();
+						cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+						model_->Draw(cmd, 1, &handle);
+						SetNormalPipelineState();
+					}
+					
 					model_->Draw(cmd, 1, &handle);
 				} else {
+					if (enableOutline_ && object3dCommon) {
+						object3dCommon->SetGraphicsPipelineStateOutline();
+						cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+						model_->Draw(cmd);
+						SetNormalPipelineState();
+					}
+
 					//モデルにあるテクスチャを適応
 					model_->Draw(cmd);
 				}

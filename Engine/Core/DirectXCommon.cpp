@@ -14,57 +14,57 @@ using namespace StringUtility;
 const uint32_t DirectXCommon::kMaxSRVCount = 512;
 
 /// <summary>
-/// デスクリプタヒープの生成
+/// 繝・せ繧ｯ繝ｪ繝励ち繝偵・繝励・逕滓・
 /// </summary>
-//DescriptorHeapの作成関数
+//DescriptorHeap縺ｮ菴懈・髢｢謨ｰ
 Microsoft::WRL::ComPtr <ID3D12DescriptorHeap>   DirectXCommon::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType,
 	UINT numDescripters, bool shaderVisible) {
 
-	//ディスクリプタヒープの生成
+	//繝・ぅ繧ｹ繧ｯ繝ｪ繝励ち繝偵・繝励・逕滓・
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap = nullptr;
 	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
-	descriptorHeapDesc.Type = heapType; // レンダーターゲットビュー用
-	descriptorHeapDesc.NumDescriptors = numDescripters; // ダブルバッファように2つ。多くても別に損はない
+	descriptorHeapDesc.Type = heapType; // 繝ｬ繝ｳ繝繝ｼ繧ｿ繝ｼ繧ｲ繝・ヨ繝薙Η繝ｼ逕ｨ
+	descriptorHeapDesc.NumDescriptors = numDescripters; // 繝繝悶Ν繝舌ャ繝輔ぃ繧医≧縺ｫ2縺､縲ょ､壹￥縺ｦ繧ょ挨縺ｫ謳阪・縺ｪ縺・
 	descriptorHeapDesc.Flags = shaderVisible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	HRESULT hr = device_->CreateDescriptorHeap(
 		&descriptorHeapDesc, IID_PPV_ARGS(&descriptorHeap));
-	//ディスクリプタヒープが作れなかったので起動できない
+	//繝・ぅ繧ｹ繧ｯ繝ｪ繝励ち繝偵・繝励′菴懊ｌ縺ｪ縺九▲縺溘・縺ｧ襍ｷ蜍輔〒縺阪↑縺・
 	assert(SUCCEEDED(hr));
 	return descriptorHeap;
 }
 
 /// <summary>
-///  深度バッファリソースの設定
+///  豺ｱ蠎ｦ繝舌ャ繝輔ぃ繝ｪ繧ｽ繝ｼ繧ｹ縺ｮ險ｭ螳・
 /// </summary>
 Microsoft::WRL::ComPtr<ID3D12Resource>
-DirectXCommon::CreateDepthStencilResource(int32_t width, int32_t height) {	//生成するResourceの設定
+DirectXCommon::CreateDepthStencilResource(int32_t width, int32_t height) {	//逕滓・縺吶ｋResource縺ｮ險ｭ螳・
 	D3D12_RESOURCE_DESC resourceDesc{};
-	resourceDesc.Width = width;//Textureの幅
-	resourceDesc.Height = height;//Textureの高さ
-	resourceDesc.MipLevels = 1;//mipmapの数
-	resourceDesc.DepthOrArraySize = 1;//奥行きor配列Textureの配列数
-	resourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;//DepthStencilとして利用可能なフォーマット
-	resourceDesc.SampleDesc.Count = 1;//サンプリングカウント。1固定
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;//2次元
+	resourceDesc.Width = width;//Texture縺ｮ蟷・
+	resourceDesc.Height = height;//Texture縺ｮ鬮倥＆
+	resourceDesc.MipLevels = 1;//mipmap縺ｮ謨ｰ
+	resourceDesc.DepthOrArraySize = 1;//螂･陦後″or驟榊・Texture縺ｮ驟榊・謨ｰ
+	resourceDesc.Format = DXGI_FORMAT_R32_TYPELESS;//DepthStencil縺ｨSRV縺ｧ蜈ｱ譛峨☆繧九◆繧√・Typeless繝輔か繝ｼ繝槭ャ繝・
+	resourceDesc.SampleDesc.Count = 1;//繧ｵ繝ｳ繝励Μ繝ｳ繧ｰ繧ｫ繧ｦ繝ｳ繝医・蝗ｺ螳・
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;//2谺｡蜈・
 
-	resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;//DepthStencilとして使う通知
+	resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;//DepthStencil縺ｨ縺励※菴ｿ縺・夂衍
 
-	//理想するHeapの設定
+	//逅・Φ縺吶ｋHeap縺ｮ險ｭ螳・
 	D3D12_HEAP_PROPERTIES heapProperties{};
-	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;//VRAM上に作る
-	//深度値のクリア設定
+	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;//VRAM荳翫↓菴懊ｋ
+	//豺ｱ蠎ｦ蛟､縺ｮ繧ｯ繝ｪ繧｢險ｭ螳・
 	D3D12_CLEAR_VALUE depthClearValue{};
-	depthClearValue.DepthStencil.Depth = 1.0f;//1.0f(最大値)でクリア
-	depthClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;//DepthStencilとして利用可能なフォーマット
-	//Resourceの生成
+	depthClearValue.DepthStencil.Depth = 1.0f;//1.0f(譛螟ｧ蛟､)縺ｧ繧ｯ繝ｪ繧｢
+	depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;//DSV逕ｨ縺ｮ繝輔か繝ｼ繝槭ャ繝・
+	//Resource縺ｮ逕滓・
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 	HRESULT hr = device_->CreateCommittedResource(
-		&heapProperties,//Heapの設定
-		D3D12_HEAP_FLAG_NONE,//Heapの特殊な設定。特になし
-		&resourceDesc,//Resourceの設定
-		D3D12_RESOURCE_STATE_DEPTH_WRITE,//深度値を書き込む状態にしておく
-		&depthClearValue,//Clear最適値
-		IID_PPV_ARGS(&resource));//作成するResourceポインタへのポインタ
+		&heapProperties,//Heap縺ｮ險ｭ螳・
+		D3D12_HEAP_FLAG_NONE,//Heap縺ｮ迚ｹ谿翫↑險ｭ螳壹ら音縺ｫ縺ｪ縺・
+		&resourceDesc,//Resource縺ｮ險ｭ螳・
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,//豺ｱ蠎ｦ蛟､繧呈嶌縺崎ｾｼ繧迥ｶ諷九↓縺励※縺翫￥
+		&depthClearValue,//Clear譛驕ｩ蛟､
+		IID_PPV_ARGS(&resource));//菴懈・縺吶ｋResource繝昴う繝ｳ繧ｿ縺ｸ縺ｮ繝昴う繝ｳ繧ｿ
 	assert(SUCCEEDED(hr));
 
 	resource->SetName(L"DepthStencil");
@@ -74,20 +74,20 @@ DirectXCommon::CreateDepthStencilResource(int32_t width, int32_t height) {	//生
 
 
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetCPUDescriptorHandle(const Microsoft::WRL::ComPtr < ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriporSize, uint32_t index) {
-	//CPU側のディスクリプタハンドルを取得
+	//CPU蛛ｴ縺ｮ繝・ぅ繧ｹ繧ｯ繝ｪ繝励ち繝上Φ繝峨Ν繧貞叙蠕・
 	D3D12_CPU_DESCRIPTOR_HANDLE handleCPU = descriptorHeap->GetCPUDescriptorHandleForHeapStart();
 	handleCPU.ptr += (descriporSize * index);
 	return handleCPU;
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetGPUDescriptorHandle(const Microsoft::WRL::ComPtr < ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriporSize, uint32_t index) {
-	//CPU側のディスクリプタハンドルを取得
+	//CPU蛛ｴ縺ｮ繝・ぅ繧ｹ繧ｯ繝ｪ繝励ち繝上Φ繝峨Ν繧貞叙蠕・
 	D3D12_GPU_DESCRIPTOR_HANDLE handleGPU = descriptorHeap->GetGPUDescriptorHandleForHeapStart();
 	handleGPU.ptr += (descriporSize * index);
 	return handleGPU;
 }
 
-// ---- CPUハンドル取得 ----
+// ---- CPU繝上Φ繝峨Ν蜿門ｾ・----
 
 
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetRTVCPUDescriptorHandle(uint32_t index) {
@@ -98,7 +98,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetDSVCPUDescriptorHandle(uint32_t in
 	return GetCPUDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV, index);
 }
 
-// ---- GPUハンドル取得 ----
+// ---- GPU繝上Φ繝峨Ν蜿門ｾ・----
 
 D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetRTVGPUDescriptorHandle(uint32_t index) {
 	return GetGPUDescriptorHandle(rtvDescriptorHeap.Get(), descriptorSizeRTV, index);
@@ -108,64 +108,64 @@ D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetDSVGPUDescriptorHandle(uint32_t in
 	return GetGPUDescriptorHandle(dsvDescriptorHeap_.Get(), descriptorSizeDSV, index);
 }
 
-//CompileShader関数
+//CompileShader髢｢謨ｰ
 Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompilesSharder(
-	//CompilerするSharderファイルへのパス
+	//Compiler縺吶ｋSharder繝輔ぃ繧､繝ｫ縺ｸ縺ｮ繝代せ
 	const std::wstring& filePath,
-	//Compilerにする使用するProfile
+	//Compiler縺ｫ縺吶ｋ菴ｿ逕ｨ縺吶ｋProfile
 	const wchar_t* profile) {
-	//これからシェーダーをコンパイルする旨をログにだす
+	//縺薙ｌ縺九ｉ繧ｷ繧ｧ繝ｼ繝繝ｼ繧偵さ繝ｳ繝代う繝ｫ縺吶ｋ譌ｨ繧偵Ο繧ｰ縺ｫ縺縺・
 	Log(ConvertString(std::format(L"Compile Shader: {}\n", filePath)));
 
-	//hlslファイルを読む
+	//hlsl繝輔ぃ繧､繝ｫ繧定ｪｭ繧
 	IDxcBlobEncoding* shaderSource = nullptr;
 	HRESULT hr = dxcUtils->LoadFile(filePath.c_str(), nullptr, &shaderSource);
 
-	//読めなかったら止める
+	//隱ｭ繧√↑縺九▲縺溘ｉ豁｢繧√ｋ
 	assert(SUCCEEDED(hr));
 
-	//読み込んだファイルの内容を設定する
+	//隱ｭ縺ｿ霎ｼ繧薙□繝輔ぃ繧､繝ｫ縺ｮ蜀・ｮｹ繧定ｨｭ螳壹☆繧・
 	DxcBuffer shaderSourceBuffer;
 	shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();
 	shaderSourceBuffer.Size = shaderSource->GetBufferSize();
-	shaderSourceBuffer.Encoding = DXC_CP_UTF8;//UTF8の文字コードであることを通知
+	shaderSourceBuffer.Encoding = DXC_CP_UTF8;//UTF8縺ｮ譁・ｭ励さ繝ｼ繝峨〒縺ゅｋ縺薙→繧帝夂衍
 	LPCWSTR arguments[] = {
-	filePath.c_str(),///コンパイル対象のhlslファイル名
-	L"-E", L"main",//エントリーポイントの指定。基本的にmain以外にはしない
-	L"-T", profile,//ShaderProfileの設定
-	L"-Zi",L"-Qembed_debug",//デバッグ用の情報を埋め込む
-	L"-Od",//最適化を外しておく
-	L"-Zpr",//メモリレイアウトは行優先
+	filePath.c_str(),///繧ｳ繝ｳ繝代う繝ｫ蟇ｾ雎｡縺ｮhlsl繝輔ぃ繧､繝ｫ蜷・
+	L"-E", L"main",//繧ｨ繝ｳ繝医Μ繝ｼ繝昴う繝ｳ繝医・謖・ｮ壹ょ渕譛ｬ逧・↓main莉･螟悶↓縺ｯ縺励↑縺・
+	L"-T", profile,//ShaderProfile縺ｮ險ｭ螳・
+	L"-Zi",L"-Qembed_debug",//繝・ヰ繝・げ逕ｨ縺ｮ諠・ｱ繧貞沂繧∬ｾｼ繧
+	L"-Od",//譛驕ｩ蛹悶ｒ螟悶＠縺ｦ縺翫￥
+	L"-Zpr",//繝｡繝｢繝ｪ繝ｬ繧､繧｢繧ｦ繝医・陦悟━蜈・
 	};
 
-	//実際にshederをコンパイルする
+	//螳滄圀縺ｫsheder繧偵さ繝ｳ繝代う繝ｫ縺吶ｋ
 	IDxcResult* shaderResult = nullptr;
 	hr = dxcCompiler->Compile(
-		&shaderSourceBuffer,//読み込んだファイル
-		arguments,//コンパイルオプション
-		_countof(arguments),//コンパイルオプションの数
-		includeHandler,//includeが含まれた諸々
-		IID_PPV_ARGS(&shaderResult));//コンパイル結果
-	//コンパイルエラーではなくdxcが起動できないなどの致命的な状況
+		&shaderSourceBuffer,//隱ｭ縺ｿ霎ｼ繧薙□繝輔ぃ繧､繝ｫ
+		arguments,//繧ｳ繝ｳ繝代う繝ｫ繧ｪ繝励す繝ｧ繝ｳ
+		_countof(arguments),//繧ｳ繝ｳ繝代う繝ｫ繧ｪ繝励す繝ｧ繝ｳ縺ｮ謨ｰ
+		includeHandler,//include縺悟性縺ｾ繧後◆隲ｸ縲・
+		IID_PPV_ARGS(&shaderResult));//繧ｳ繝ｳ繝代う繝ｫ邨先棡
+	//繧ｳ繝ｳ繝代う繝ｫ繧ｨ繝ｩ繝ｼ縺ｧ縺ｯ縺ｪ縺重xc縺瑚ｵｷ蜍輔〒縺阪↑縺・↑縺ｩ縺ｮ閾ｴ蜻ｽ逧・↑迥ｶ豕・
 	assert(SUCCEEDED(hr));
 
-	//警告・エラーが出てたらログに出す
+	//隴ｦ蜻翫・繧ｨ繝ｩ繝ｼ縺悟・縺ｦ縺溘ｉ繝ｭ繧ｰ縺ｫ蜃ｺ縺・
 	IDxcBlobUtf8* shaderError = nullptr;
 	shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr);
 	if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
 		Log(shaderError->GetStringPointer());
-		assert(false); // ← 本当にエラーがある時だけ止まる
+		assert(false); // 竊・譛ｬ蠖薙↓繧ｨ繝ｩ繝ｼ縺後≠繧区凾縺縺第ｭ｢縺ｾ繧・
 	}
 
-	//コンパイル結果から実行用のバイナリ部分を取得
+	//繧ｳ繝ｳ繝代う繝ｫ邨先棡縺九ｉ螳溯｡檎畑縺ｮ繝舌う繝翫Μ驛ｨ蛻・ｒ蜿門ｾ・
 	IDxcBlob* shaderBlob = nullptr;
 	hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
 	assert(SUCCEEDED(hr));
-	//成功したログを出す
+	//謌仙粥縺励◆繝ｭ繧ｰ繧貞・縺・
 	Log(ConvertString(std::format(L"Compile Succeded,path:{},profile\n", filePath, profile)));
-	//もう使わないリソースを解放
+	//繧ゅ≧菴ｿ繧上↑縺・Μ繧ｽ繝ｼ繧ｹ繧定ｧ｣謾ｾ
 	shaderSource->Release();
-	//実行用のバイナリを返却
+	//螳溯｡檎畑縺ｮ繝舌う繝翫Μ繧定ｿ泌唆
 	return shaderBlob;
 
 }
@@ -177,11 +177,11 @@ Microsoft::WRL::ComPtr<ID3D12Resource>DirectXCommon::CreateBufferResource( size_
 	}
 	sizeInBytes = (sizeInBytes + 0xff) & ~0xff;
 
-	// ヒープの設定
+	// 繝偵・繝励・險ｭ螳・
 	D3D12_HEAP_PROPERTIES heapProps{};
 	heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
 
-	// リソースの設定
+	// 繝ｪ繧ｽ繝ｼ繧ｹ縺ｮ險ｭ螳・
 	D3D12_RESOURCE_DESC resourceDesc{};
 	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 	resourceDesc.Width = sizeInBytes;
@@ -201,7 +201,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource>DirectXCommon::CreateBufferResource( size_
 		IID_PPV_ARGS(&buffer));
 	assert(SUCCEEDED(hr));
 
-	// ここで名前を付ける（必要なら引数で名前渡す）
+	// 縺薙％縺ｧ蜷榊燕繧剃ｻ倥￠繧具ｼ亥ｿ・ｦ√↑繧牙ｼ墓焚縺ｧ蜷榊燕貂｡縺呻ｼ・
 	if (FAILED(hr) || !buffer) {
 		HRESULT reason = device_ ? device_->GetDeviceRemovedReason() : E_POINTER;
 		char msg[256]{};
@@ -217,31 +217,31 @@ Microsoft::WRL::ComPtr<ID3D12Resource>DirectXCommon::CreateBufferResource( size_
 
 Microsoft::WRL::ComPtr<ID3D12Resource>DirectXCommon::CreateTextureResource(const DirectX::TexMetadata& metadata) {
 
-	//metadataをもとにResourceの設定
+	//metadata繧偵ｂ縺ｨ縺ｫResource縺ｮ險ｭ螳・
 	D3D12_RESOURCE_DESC resourceDesc{};
-	resourceDesc.Width = UINT(metadata.width);//Textureの幅
-	resourceDesc.Height = UINT(metadata.height);;//高さ
-	resourceDesc.MipLevels = UINT16(metadata.mipLevels);//mipmapの数
-	resourceDesc.DepthOrArraySize = UINT16(metadata.arraySize);;//奥行きor配列Textureの配列数
-	resourceDesc.Format = metadata.format;//TextureのFormat
-	resourceDesc.SampleDesc.Count = 1;//サンプリングカウント。1固定
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION(metadata.dimension);//Textureの次元数。普段使っているのは2次元
+	resourceDesc.Width = UINT(metadata.width);//Texture縺ｮ蟷・
+	resourceDesc.Height = UINT(metadata.height);;//鬮倥＆
+	resourceDesc.MipLevels = UINT16(metadata.mipLevels);//mipmap縺ｮ謨ｰ
+	resourceDesc.DepthOrArraySize = UINT16(metadata.arraySize);;//螂･陦後″or驟榊・Texture縺ｮ驟榊・謨ｰ
+	resourceDesc.Format = metadata.format;//Texture縺ｮFormat
+	resourceDesc.SampleDesc.Count = 1;//繧ｵ繝ｳ繝励Μ繝ｳ繧ｰ繧ｫ繧ｦ繝ｳ繝医・蝗ｺ螳・
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION(metadata.dimension);//Texture縺ｮ谺｡蜈・焚縲よ勸谿ｵ菴ｿ縺｣縺ｦ縺・ｋ縺ｮ縺ｯ2谺｡蜈・
 
-	//利用するHeapの設定。非常に特殊な運用。02_04exで一般的なケースがある
+	//蛻ｩ逕ｨ縺吶ｋHeap縺ｮ險ｭ螳壹る撼蟶ｸ縺ｫ迚ｹ谿翫↑驕狗畑縲・2_04ex縺ｧ荳闊ｬ逧・↑繧ｱ繝ｼ繧ｹ縺後≠繧・
 	D3D12_HEAP_PROPERTIES heapProperties{};
-	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;//細かい設定を行う
-	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;//writeBackポリシーでCPUアクセス可能
-	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;//プロセッサの近くに配置
+	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;//邏ｰ縺九＞險ｭ螳壹ｒ陦後≧
+	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;//writeBack繝昴Μ繧ｷ繝ｼ縺ｧCPU繧｢繧ｯ繧ｻ繧ｹ蜿ｯ閭ｽ
+	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;//繝励Ο繧ｻ繝・し縺ｮ霑代￥縺ｫ驟咲ｽｮ
 
-	//Resourceの生成
+	//Resource縺ｮ逕滓・
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
 	HRESULT hr = device_->CreateCommittedResource(
-		&heapProperties,//Heapの設定
-		D3D12_HEAP_FLAG_NONE,//Heapの特殊な設定。特になし
-		&resourceDesc,//Resourceの設定
-		D3D12_RESOURCE_STATE_COPY_DEST,//初回のResourceState。Textureは基本読むだけ
-		nullptr,//Clear最適地。使わないのでnullptr
-		IID_PPV_ARGS(&resource));//作成するResourceポインタへのポインタ
+		&heapProperties,//Heap縺ｮ險ｭ螳・
+		D3D12_HEAP_FLAG_NONE,//Heap縺ｮ迚ｹ谿翫↑險ｭ螳壹ら音縺ｫ縺ｪ縺・
+		&resourceDesc,//Resource縺ｮ險ｭ螳・
+		D3D12_RESOURCE_STATE_COPY_DEST,//蛻晏屓縺ｮResourceState縲５exture縺ｯ蝓ｺ譛ｬ隱ｭ繧縺縺・
+		nullptr,//Clear譛驕ｩ蝨ｰ縲ゆｽｿ繧上↑縺・・縺ｧnullptr
+		IID_PPV_ARGS(&resource));//菴懈・縺吶ｋResource繝昴う繝ｳ繧ｿ縺ｸ縺ｮ繝昴う繝ｳ繧ｿ
 	assert(SUCCEEDED(hr));
 
 	resource->SetName(L"TextureResource");
@@ -254,7 +254,7 @@ void DirectXCommon::UploadTextureData(
 	const Microsoft::WRL::ComPtr<ID3D12Resource>& texture,
 	const DirectX::ScratchImage& mipImages)
 {
-	// 1) subresource 配列を用意
+	// 1) subresource 驟榊・繧堤畑諢・
 	std::vector<D3D12_SUBRESOURCE_DATA> subresources;
 	DirectX::PrepareUpload(device_.Get(),
 		mipImages.GetImages(),
@@ -262,12 +262,12 @@ void DirectXCommon::UploadTextureData(
 		mipImages.GetMetadata(),
 		subresources);
 
-	// 2) 中間バッファを作成（※この lifetime が超重要）
+	// 2) 荳ｭ髢薙ヰ繝・ヵ繧｡繧剃ｽ懈・・遺ｻ縺薙・ lifetime 縺瑚ｶ・㍾隕・ｼ・
 	const UINT numSubresources = UINT(subresources.size());
 	const UINT64 intermediateSize = GetRequiredIntermediateSize(texture.Get(), 0, numSubresources);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediate = CreateBufferResource(intermediateSize);
 
-	// 3) UpdateSubresources（リソースは COPY_DEST で作ってある想定）
+	// 3) UpdateSubresources・医Μ繧ｽ繝ｼ繧ｹ縺ｯ COPY_DEST 縺ｧ菴懊▲縺ｦ縺ゅｋ諠ｳ螳夲ｼ・
 	UpdateSubresources(commandList.Get(),
 		texture.Get(),
 		intermediate.Get(),
@@ -275,7 +275,7 @@ void DirectXCommon::UploadTextureData(
 		numSubresources,
 		subresources.data());
 
-	// 4) GENERIC_READ へ遷移
+	// 4) GENERIC_READ 縺ｸ驕ｷ遘ｻ
 	D3D12_RESOURCE_BARRIER barrier{};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Transition.pResource = texture.Get();
@@ -284,7 +284,7 @@ void DirectXCommon::UploadTextureData(
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
 	commandList->ResourceBarrier(1, &barrier);
 
-	// 5) ★ここが肝：実行してフェンス待ちするまで intermediate を解放しない
+	// 5) 笘・％縺薙′閧晢ｼ壼ｮ溯｡後＠縺ｦ繝輔ぉ繝ｳ繧ｹ蠕・■縺吶ｋ縺ｾ縺ｧ intermediate 繧定ｧ｣謾ｾ縺励↑縺・
 	HRESULT hr = commandList->Close();                         assert(SUCCEEDED(hr));
 	ID3D12CommandList* lists[] = { commandList.Get() };
 	commandQueue->ExecuteCommandLists(1, lists);
@@ -296,12 +296,12 @@ void DirectXCommon::UploadTextureData(
 		WaitForSingleObject(fenceEvent, INFINITE);
 	}
 
-	// 6) 実行完了後にようやく中間バッファが自動解放されても OK
+	// 6) 螳溯｡悟ｮ御ｺ・ｾ後↓繧医≧繧・￥荳ｭ髢薙ヰ繝・ヵ繧｡縺瑚・蜍戊ｧ｣謾ｾ縺輔ｌ縺ｦ繧・OK
 	hr = commandAllocator->Reset();                            assert(SUCCEEDED(hr));
 	hr = commandList->Reset(commandAllocator.Get(), nullptr);  assert(SUCCEEDED(hr));
 }
 
-// DirectXCommon 側に SrvManager* を持たせる or 引数で渡す
+// DirectXCommon 蛛ｴ縺ｫ SrvManager* 繧呈戟縺溘○繧・or 蠑墓焚縺ｧ貂｡縺・
 void DirectXCommon::SetDescriptorHeaps(ID3D12DescriptorHeap* srvHeap)
 {
 	ID3D12DescriptorHeap* heaps[] = { srvHeap };
@@ -311,12 +311,12 @@ void DirectXCommon::SetDescriptorHeaps(ID3D12DescriptorHeap* srvHeap)
 
 void DirectXCommon::Initialize(WinApp* winApp) {
 
-	//NULL検出
+	//NULL讀懷・
 	assert(winApp);
 
-	//メンバ変数に記録
+	//繝｡繝ｳ繝仙､画焚縺ｫ險倬鹸
 	this->winApp_ = winApp;
-	//FPS固定初期化
+	//FPS蝗ｺ螳壼・譛溷喧
 	InitializeFixFPS();
 
 	DeviceInitialize();
@@ -332,9 +332,9 @@ void DirectXCommon::Initialize(WinApp* winApp) {
 	DXCCompilierSpawn();
 //	ImGuiInitialize();
 
-	HRESULT hr = commandList->Close();                                // いったん閉じる（開いていてもOK）
-	hr = commandAllocator->Reset();                                    // アロケータをリセット
-	hr = commandList->Reset(commandAllocator.Get(), nullptr);          // 開き直す（←重要）
+	HRESULT hr = commandList->Close();                                // 縺・▲縺溘ｓ髢峨§繧具ｼ磯幕縺・※縺・※繧０K・・
+	hr = commandAllocator->Reset();                                    // 繧｢繝ｭ繧ｱ繝ｼ繧ｿ繧偵Μ繧ｻ繝・ヨ
+	hr = commandList->Reset(commandAllocator.Get(), nullptr);          // 髢九″逶ｴ縺呻ｼ遺・驥崎ｦ・ｼ・
 
 	hr = computeCommandList->Close();
 	hr = computeCommandAllocator->Reset();
@@ -358,68 +358,68 @@ void DirectXCommon::DeviceInitialize() {
 
 	Microsoft::WRL::ComPtr<ID3D12Debug1> debugController = nullptr;
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
-		//デバッグレイヤーを有効にする
+		//繝・ヰ繝・げ繝ｬ繧､繝､繝ｼ繧呈怏蜉ｹ縺ｫ縺吶ｋ
 		debugController->EnableDebugLayer();
-		//さらにGPU側でもチェックを行えるようにする
+		//縺輔ｉ縺ｫGPU蛛ｴ縺ｧ繧ゅメ繧ｧ繝・け繧定｡後∴繧九ｈ縺・↓縺吶ｋ
 	//	debugController->SetEnableGPUBasedValidation(TRUE);
 	}
 
 #endif
 
-	//HRESULTWindows系のエラーコードであり、
-	// 関数が成功したかどうかをSUCCEEDEDマクロで判定できる
+	//HRESULTWindows邉ｻ縺ｮ繧ｨ繝ｩ繝ｼ繧ｳ繝ｼ繝峨〒縺ゅｊ縲・
+	// 髢｢謨ｰ縺梧・蜉溘＠縺溘°縺ｩ縺・°繧担UCCEEDED繝槭け繝ｭ縺ｧ蛻､螳壹〒縺阪ｋ
 	hr = CreateDXGIFactory(IID_PPV_ARGS(&dxgiFactory_));
-	//初期化の根本的なエラーが出た場合はプログラムが間違っているか、どうにもできない場合が多いのでasserにしておく
+	//蛻晄悄蛹悶・譬ｹ譛ｬ逧・↑繧ｨ繝ｩ繝ｼ縺悟・縺溷ｴ蜷医・繝励Ο繧ｰ繝ｩ繝縺碁俣驕輔▲縺ｦ縺・ｋ縺九√←縺・↓繧ゅ〒縺阪↑縺・ｴ蜷医′螟壹＞縺ｮ縺ｧasser縺ｫ縺励※縺翫￥
 	assert(SUCCEEDED(hr));
 
-	//使用するアダプタ用の変数,最初にnullptrを入れておく
+	//菴ｿ逕ｨ縺吶ｋ繧｢繝繝励ち逕ｨ縺ｮ螟画焚,譛蛻昴↓nullptr繧貞・繧後※縺翫￥
 	Microsoft::WRL::ComPtr < IDXGIAdapter4> useAdapter = nullptr;
-	//良い順にアダプタを頼む
+	//濶ｯ縺・・↓繧｢繝繝励ち繧帝ｼ繧
 	for (UINT i = 0; dxgiFactory_->EnumAdapterByGpuPreference(i,
 		DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&useAdapter)) !=
 		DXGI_ERROR_NOT_FOUND; i++) {
-		//アダプターの情報を取得する
+		//繧｢繝繝励ち繝ｼ縺ｮ諠・ｱ繧貞叙蠕励☆繧・
 		DXGI_ADAPTER_DESC3 adapterDesc{};
 		hr = useAdapter->GetDesc3(&adapterDesc);
-		assert(SUCCEEDED(hr));//取得できないのは一大事
-		//ソフトウェアのアダプタでなければ採用
+		assert(SUCCEEDED(hr));//蜿門ｾ励〒縺阪↑縺・・縺ｯ荳螟ｧ莠・
+		//繧ｽ繝輔ヨ繧ｦ繧ｧ繧｢縺ｮ繧｢繝繝励ち縺ｧ縺ｪ縺代ｌ縺ｰ謗｡逕ｨ
 		if (!(adapterDesc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE)) {
-			//採用したアダプタの情報をログに出力。wstringの方なので注意
+			//謗｡逕ｨ縺励◆繧｢繝繝励ち縺ｮ諠・ｱ繧偵Ο繧ｰ縺ｫ蜃ｺ蜉帙Ｘstring縺ｮ譁ｹ縺ｪ縺ｮ縺ｧ豕ｨ諢・
 			Log(ConvertString(std::format(L"Use Adapter: {}\n", adapterDesc.Description)));
 			break;
 		}
-		useAdapter = nullptr;//ソフトウェアアダプタの場合は見なかったことにする
+		useAdapter = nullptr;//繧ｽ繝輔ヨ繧ｦ繧ｧ繧｢繧｢繝繝励ち縺ｮ蝣ｴ蜷医・隕九↑縺九▲縺溘％縺ｨ縺ｫ縺吶ｋ
 	}
-	//適切なアダプタが見つからなかったので起動できない
+	//驕ｩ蛻・↑繧｢繝繝励ち縺瑚ｦ九▽縺九ｉ縺ｪ縺九▲縺溘・縺ｧ襍ｷ蜍輔〒縺阪↑縺・
 	assert(useAdapter != nullptr);
 
-	//D3D12Deviceの生成
+	//D3D12Device縺ｮ逕滓・
 
-	//機能レベルとログ出力用の文字列
+	//讖溯・繝ｬ繝吶Ν縺ｨ繝ｭ繧ｰ蜃ｺ蜉帷畑縺ｮ譁・ｭ怜・
 	D3D_FEATURE_LEVEL featureLevels[] = {
 		D3D_FEATURE_LEVEL_12_2,D3D_FEATURE_LEVEL_12_1,D3D_FEATURE_LEVEL_12_0
 	};
 	const char* featureLevelStrings[] = { "12.2","12.1","12.0" };
-	//高い順に生成できるか試していく
+	//鬮倥＞鬆・↓逕滓・縺ｧ縺阪ｋ縺玖ｩｦ縺励※縺・￥
 	for (size_t i = 0; i < _countof(featureLevels); i++) {
-		//採用したアダプターでデバイス生成
+		//謗｡逕ｨ縺励◆繧｢繝繝励ち繝ｼ縺ｧ繝・ヰ繧､繧ｹ逕滓・
 		hr = D3D12CreateDevice(useAdapter.Get(), featureLevels[i], IID_PPV_ARGS(&device_));
-		//生成できたのでログ出力を行ってループを抜ける
+		//逕滓・縺ｧ縺阪◆縺ｮ縺ｧ繝ｭ繧ｰ蜃ｺ蜉帙ｒ陦後▲縺ｦ繝ｫ繝ｼ繝励ｒ謚懊￠繧・
 		if (SUCCEEDED(hr)) {
 			Log(std::format("Use Feature Level: {}\n", featureLevelStrings[i]));
 			break;
 		}
 	}
-	//デバイスの生成がうまくいかなかった場合
+	//繝・ヰ繧､繧ｹ縺ｮ逕滓・縺後≧縺ｾ縺上＞縺九↑縺九▲縺溷ｴ蜷・
 	assert(device_ != nullptr);
-	Log("Complete create D3D12Device!!!\n");//初期化のログを出す
+	Log("Complete create D3D12Device!!!\n");//蛻晄悄蛹悶・繝ｭ繧ｰ繧貞・縺・
 
 #ifdef _DEBUG
 	Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue = nullptr;
 	if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&infoQueue)))) {
 		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
-		// 警告で止めるかどうかは必要に応じて
+		// 隴ｦ蜻翫〒豁｢繧√ｋ縺九←縺・°縺ｯ蠢・ｦ√↓蠢懊§縺ｦ
 		//infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
 
 		D3D12_MESSAGE_ID denyIds[] = {
@@ -443,12 +443,12 @@ void DirectXCommon::CommandInitialize() {
 
 	HRESULT hr;
 
-	//コマンドアロケータを生成する
+	//繧ｳ繝槭Φ繝峨い繝ｭ繧ｱ繝ｼ繧ｿ繧堤函謌舌☆繧・
 
 	hr = device_->CreateCommandAllocator(
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
 		IID_PPV_ARGS(&commandAllocator));
-	//コマンドアロケータの生成がうまくいかなかったので起動できない
+	//繧ｳ繝槭Φ繝峨い繝ｭ繧ｱ繝ｼ繧ｿ縺ｮ逕滓・縺後≧縺ｾ縺上＞縺九↑縺九▲縺溘・縺ｧ襍ｷ蜍輔〒縺阪↑縺・
 	assert(SUCCEEDED(hr));
 
 	hr = device_->CreateCommandAllocator(
@@ -456,7 +456,7 @@ void DirectXCommon::CommandInitialize() {
 		IID_PPV_ARGS(&computeCommandAllocator));
 	assert(SUCCEEDED(hr));
 
-	//コマンドリストを生成する
+	//繧ｳ繝槭Φ繝峨Μ繧ｹ繝医ｒ逕滓・縺吶ｋ
 
 	hr = device_->CreateCommandList(
 		0,
@@ -464,7 +464,7 @@ void DirectXCommon::CommandInitialize() {
 		commandAllocator.Get(),
 		nullptr,
 		IID_PPV_ARGS(&commandList));
-	//コマンドリストの生成がうまくいかなかったので起動できない
+	//繧ｳ繝槭Φ繝峨Μ繧ｹ繝医・逕滓・縺後≧縺ｾ縺上＞縺九↑縺九▲縺溘・縺ｧ襍ｷ蜍輔〒縺阪↑縺・
 	assert(SUCCEEDED(hr));
 
 	hr = device_->CreateCommandList(
@@ -475,12 +475,12 @@ void DirectXCommon::CommandInitialize() {
 		IID_PPV_ARGS(&computeCommandList));
 	assert(SUCCEEDED(hr));
 
-	//コマンドキューを生成する
+	//繧ｳ繝槭Φ繝峨く繝･繝ｼ繧堤函謌舌☆繧・
 
 	D3D12_COMMAND_QUEUE_DESC commandQueueDesc{};
 	hr = device_->CreateCommandQueue(&commandQueueDesc,
 		IID_PPV_ARGS(&commandQueue));
-	//コマンドキュー生成が失敗した場合
+	//繧ｳ繝槭Φ繝峨く繝･繝ｼ逕滓・縺悟､ｱ謨励＠縺溷ｴ蜷・
 	assert(SUCCEEDED(hr));
 }
 
@@ -488,21 +488,21 @@ void DirectXCommon::SwapChainSpawn() {
 
 	HRESULT hr;
 
-	// SwapChainを生成する
-	swapChainDesc.Width = WinApp::kClientWidth;   // 幅
-	swapChainDesc.Height = WinApp::kClientHeight; // 高さ
-	swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // カラー形式
-	swapChainDesc.SampleDesc.Count = 1;              // マルチサンプルしない
-	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; // 描画対象として使う
-	swapChainDesc.BufferCount = 2;                   // ダブルバッファ            // ウィンドウモードで起動
-	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // フリップ後は破棄
-	//コマンドキュー,ウィンドウハンドル,設定を渡して生成する
+	// SwapChain繧堤函謌舌☆繧・
+	swapChainDesc.Width = WinApp::kClientWidth;   // 蟷・
+	swapChainDesc.Height = WinApp::kClientHeight; // 鬮倥＆
+	swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // 繧ｫ繝ｩ繝ｼ蠖｢蠑・
+	swapChainDesc.SampleDesc.Count = 1;              // 繝槭Ν繝√し繝ｳ繝励Ν縺励↑縺・
+	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; // 謠冗判蟇ｾ雎｡縺ｨ縺励※菴ｿ縺・
+	swapChainDesc.BufferCount = 2;                   // 繝繝悶Ν繝舌ャ繝輔ぃ            // 繧ｦ繧｣繝ｳ繝峨え繝｢繝ｼ繝峨〒襍ｷ蜍・
+	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // 繝輔Μ繝・・蠕後・遐ｴ譽・
+	//繧ｳ繝槭Φ繝峨く繝･繝ｼ,繧ｦ繧｣繝ｳ繝峨え繝上Φ繝峨Ν,險ｭ螳壹ｒ貂｡縺励※逕滓・縺吶ｋ
 	Microsoft::WRL::ComPtr<IDXGISwapChain1> tempSwapChain;
 	hr = dxgiFactory_->CreateSwapChainForHwnd(
 		commandQueue.Get(), winApp_->GetHwnd(), &swapChainDesc, nullptr, nullptr, &tempSwapChain);
 	assert(SUCCEEDED(hr));
 
-	// IDXGISwapChain4 へアップキャスト
+	// IDXGISwapChain4 縺ｸ繧｢繝・・繧ｭ繝｣繧ｹ繝・
 	hr = tempSwapChain.As(&swapChain);
 	assert(SUCCEEDED(hr));
 
@@ -512,16 +512,16 @@ void DirectXCommon::SwapChainSpawn() {
 
 void DirectXCommon::DepthBufferSpawn() {
 
-	// 深度ステンシルリソースを生成（メンバに代入）
+	// 豺ｱ蠎ｦ繧ｹ繝・Φ繧ｷ繝ｫ繝ｪ繧ｽ繝ｼ繧ｹ繧堤函謌撰ｼ医Γ繝ｳ繝舌↓莉｣蜈･・・
 	depthStencilResource_ = CreateDepthStencilResource(
 		WinApp::kClientWidth, WinApp::kClientHeight);
 
-	// DSV用のヒープを作成（メンバに代入）
+	// DSV逕ｨ縺ｮ繝偵・繝励ｒ菴懈・・医Γ繝ｳ繝舌↓莉｣蜈･・・
 	dsvDescriptorHeap_ = CreateDescriptorHeap(
 		D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
 
-	// DSVビューの作成
-	dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	// DSV繝薙Η繝ｼ縺ｮ菴懈・
+	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 
@@ -536,12 +536,12 @@ void DirectXCommon::DepthBufferSpawn() {
 
 void DirectXCommon::DethCriptorHeapSpawn() {
 
-	// Descriptor サイズ取得
+	// Descriptor 繧ｵ繧､繧ｺ蜿門ｾ・
 
 	descriptorSizeRTV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	descriptorSizeDSV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-	// RTVヒープ作成（2個）
+	// RTV繝偵・繝嶺ｽ懈・・・蛟具ｼ・
 	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 5, false);
 
 	
@@ -550,18 +550,18 @@ void DirectXCommon::DethCriptorHeapSpawn() {
 void DirectXCommon::RenderTargetViewInitialize() {
 	HRESULT hr;
 
-	// バックバッファ取得（2枚分）
+	// 繝舌ャ繧ｯ繝舌ャ繝輔ぃ蜿門ｾ暦ｼ・譫壼・・・
 	for (UINT i = 0; i < 2; i++) {
 		hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&swapChainResources[i]));
 		assert(SUCCEEDED(hr));
 	}
 
-	// ★ RTVフォーマットを「スワップチェインと揃える」
-	//    → DXGI_FORMAT_R8G8B8A8_UNORM が安全
+	// 笘・RTV繝輔か繝ｼ繝槭ャ繝医ｒ縲後せ繝ｯ繝・・繝√ぉ繧､繝ｳ縺ｨ謠・∴繧九・
+	//    竊・DXGI_FORMAT_R8G8B8A8_UNORM 縺悟ｮ牙・
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 
-	// RTV作成
+	// RTV菴懈・
 	for (UINT i = 0; i < 2; ++i) {
 		rtvHandles[i] = GetCPUDescriptorHandle(rtvDescriptorHeap, descriptorSizeRTV, i);
 		device_->CreateRenderTargetView(
@@ -577,7 +577,7 @@ void DirectXCommon::RenderTargetViewInitialize() {
 
 void DirectXCommon::DepthStencilViewInitialize() {
 
-	dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 
@@ -586,7 +586,7 @@ void DirectXCommon::DepthStencilViewInitialize() {
 		&dsvDesc,
 		dsvDescriptorHeap_->GetCPUDescriptorHandleForHeapStart());
 
-	// RTVとDSVをパイプラインに設定
+	// RTV縺ｨDSV繧偵ヱ繧､繝励Λ繧､繝ｳ縺ｫ險ｭ螳・
 	dsvHandle = GetCPUDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV, 0);
 
 	//commandList->OMSetRenderTargets(1, &rtvHandles[0], FALSE, &dsvHandle);
@@ -609,8 +609,8 @@ void DirectXCommon::FanceInitialize() {
 
 void DirectXCommon::ViewPortInitialize() {
 
-	//ビューポート
-	//クラアント領域のサイズと一緒にして画面全体に表示
+	//繝薙Η繝ｼ繝昴・繝・
+	//繧ｯ繝ｩ繧｢繝ｳ繝磯伜沺縺ｮ繧ｵ繧､繧ｺ縺ｨ荳邱偵↓縺励※逕ｻ髱｢蜈ｨ菴薙↓陦ｨ遉ｺ
 	viewport.Width = WinApp::kClientWidth;
 	viewport.Height = WinApp::kClientHeight;
 	viewport.TopLeftX = 0;
@@ -622,8 +622,8 @@ void DirectXCommon::ViewPortInitialize() {
 
 void DirectXCommon::SizeringInitialize() {
 
-	//シザー矩形
-	//基本的にビューポートと同じ矩形が構成される
+	//繧ｷ繧ｶ繝ｼ遏ｩ蠖｢
+	//蝓ｺ譛ｬ逧・↓繝薙Η繝ｼ繝昴・繝医→蜷後§遏ｩ蠖｢縺梧ｧ区・縺輔ｌ繧・
 	scissorRect.left = 0;
 	scissorRect.right = WinApp::kClientWidth;
 	scissorRect.top = 0;
@@ -635,13 +635,13 @@ void DirectXCommon::DXCCompilierSpawn() {
 
 	HRESULT hr;
 
-	//dxCompireを初期化
+	//dxCompire繧貞・譛溷喧
 	hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
 	assert(SUCCEEDED(hr));
 	hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler));
 	assert(SUCCEEDED(hr));
 
-	//現時点でincludeしないが、includeに対応するために設定しておく	
+	//迴ｾ譎らせ縺ｧinclude縺励↑縺・′縲（nclude縺ｫ蟇ｾ蠢懊☆繧九◆繧√↓險ｭ螳壹＠縺ｦ縺翫￥	
 	hr = dxcUtils->CreateDefaultIncludeHandler(&includeHandler);
 	assert(SUCCEEDED(hr));
 
@@ -649,15 +649,15 @@ void DirectXCommon::DXCCompilierSpawn() {
 }
 
 void DirectXCommon::DXCCompilerSpawn() {
-	// ★既存のミス綴り実装へ転送
+	// 笘・里蟄倥・繝溘せ邯ｴ繧雁ｮ溯｣・∈霆｢騾・
 	DXCCompilierSpawn();
 }
 //
 //void DirectXCommon::ImGuiInitialize() {
 //
 //
-//	//ImGuiの初期化。
-//	//こういうもの
+//	//ImGui縺ｮ蛻晄悄蛹悶・
+//	//縺薙≧縺・≧繧ゅ・
 //	IMGUI_CHECKVERSION();
 //	ImGui::CreateContext();
 //	ImGui::StyleColorsDark();
@@ -682,29 +682,29 @@ void DirectXCommon::UpdateFixFPS() {
 
 	using namespace std::chrono;
 
-	//1/60秒ぴったりの時間
+	//1/60遘偵・縺｣縺溘ｊ縺ｮ譎る俣
 	const microseconds kMinTime(uint64_t(1000000.0f / 60.0f));
-	//1/60秒よりわずかに短い時間
+	//1/60遘偵ｈ繧翫ｏ縺壹°縺ｫ遏ｭ縺・凾髢・
 	const microseconds kMinCheckTime(uint64_t(1000000.0f / 65.0f));
 
-	// 現在時間と前フレームからの経過時間
+	// 迴ｾ蝨ｨ譎る俣縺ｨ蜑阪ヵ繝ｬ繝ｼ繝縺九ｉ縺ｮ邨碁℃譎る俣
 	auto now = steady_clock::now();
 	auto elapsed = duration_cast<microseconds>(now - reference_);
 
-	// まだほとんど時間が経っていなければスリープして60fpsに近づける
+	// 縺ｾ縺縺ｻ縺ｨ繧薙←譎る俣縺檎ｵ後▲縺ｦ縺・↑縺代ｌ縺ｰ繧ｹ繝ｪ繝ｼ繝励＠縺ｦ60fps縺ｫ霑代▼縺代ｋ
 	if (elapsed < kMinCheckTime) {
 		while (steady_clock::now() - reference_ < kMinTime) {
 			std::this_thread::sleep_for(microseconds(1));
 		}
-		// スリープ後の正確な経過時間を測り直す
+		// 繧ｹ繝ｪ繝ｼ繝怜ｾ後・豁｣遒ｺ縺ｪ邨碁℃譎る俣繧呈ｸｬ繧顔峩縺・
 		now = steady_clock::now();
 		elapsed = duration_cast<microseconds>(now - reference_);
 	}
 
-	// 次フレームの基準時間を更新
+	// 谺｡繝輔Ξ繝ｼ繝縺ｮ蝓ｺ貅匁凾髢薙ｒ譖ｴ譁ｰ
 	reference_ = now;
 
-	// FPS 計算（経過秒の逆数）
+	// FPS 險育ｮ暦ｼ育ｵ碁℃遘偵・騾・焚・・
 	if (elapsed.count() > 0) {
 		float elapsedSec = static_cast<float>(elapsed.count()) / 1'000'000.0f;
 		fps_ = 1.0f / elapsedSec;
@@ -712,10 +712,10 @@ void DirectXCommon::UpdateFixFPS() {
 }
 
 
-void DirectXCommon::PreDraw() {
+void DirectXCommon::PreDraw(bool clearDepth) {
 	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
 
-	// Present → RenderTarget
+	// Present 竊・RenderTarget
 	D3D12_RESOURCE_BARRIER barrier{};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Transition.pResource = swapChainResources[backBufferIndex].Get();
@@ -724,13 +724,15 @@ void DirectXCommon::PreDraw() {
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 	commandList->ResourceBarrier(1, &barrier);
 
-	// ★ “今の”バックバッファの RTV をセット（固定 0 を使わない）
+	// 笘・窶應ｻ翫・窶昴ヰ繝・け繝舌ャ繝輔ぃ縺ｮ RTV 繧偵そ繝・ヨ・亥崋螳・0 繧剃ｽｿ繧上↑縺・ｼ・
 	commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], FALSE, &dsvHandle);
 
-	// クリア
+	// 繧ｯ繝ｪ繧｢
 	const float clearColor[4] = { 0.10f, 0.25f, 0.50f, 1.0f };
 	commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
-	commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	if (clearDepth) {
+		commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	}
 
 	// VP/Scissor
 	commandList->RSSetViewports(1, &viewport);
@@ -744,10 +746,10 @@ void DirectXCommon::PreDraw() {
 void DirectXCommon::PostDraw() {
 	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
 
-	// ← このログは誤解を招く名前なので移動＆名前修正（後述）
+	// 竊・縺薙・繝ｭ繧ｰ縺ｯ隱､隗｣繧呈魚縺丞錐蜑阪↑縺ｮ縺ｧ遘ｻ蜍包ｼ・錐蜑堺ｿｮ豁｣・亥ｾ瑚ｿｰ・・
 	// OutputDebugStringA(std::format("[PreDraw] backBufferIndex = {}\n", backBufferIndex).c_str());
 
-	// RenderTarget → Present
+	// RenderTarget 竊・Present
 	D3D12_RESOURCE_BARRIER barrier{};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Transition.pResource = swapChainResources[backBufferIndex].Get();
@@ -776,11 +778,11 @@ void DirectXCommon::PostDraw() {
 	}
 
 	if (hr == DXGI_STATUS_OCCLUDED) {
-		// 画面が隠れている場合。インデックスが進まないのは正常なので待つ
+		// 逕ｻ髱｢縺碁國繧後※縺・ｋ蝣ｴ蜷医ゅう繝ｳ繝・ャ繧ｯ繧ｹ縺碁ｲ縺ｾ縺ｪ縺・・縺ｯ豁｣蟶ｸ縺ｪ縺ｮ縺ｧ蠕・▽
 		Sleep(16);
 	}
 
-	// フェンス待ち → Reset
+	// 繝輔ぉ繝ｳ繧ｹ蠕・■ 竊・Reset
 	fenceValue++;
 	hr = commandQueue->Signal(fence.Get(), fenceValue); assert(SUCCEEDED(hr));
 	if (fence->GetCompletedValue() < fenceValue) {
@@ -793,7 +795,7 @@ void DirectXCommon::PostDraw() {
 	hr = computeCommandAllocator->Reset(); assert(SUCCEEDED(hr));
 	hr = computeCommandList->Reset(computeCommandAllocator.Get(), nullptr); assert(SUCCEEDED(hr));
 
-	// ★ここで「今フレームの Present 後」の index をログ
+	// 笘・％縺薙〒縲御ｻ翫ヵ繝ｬ繝ｼ繝縺ｮ Present 蠕後阪・ index 繧偵Ο繧ｰ
 	const UINT idxAfter = swapChain->GetCurrentBackBufferIndex();
 	OutputDebugStringA(std::format("[After Present] backBufferIndex = {}\n", idxAfter).c_str());
 }
@@ -825,7 +827,7 @@ void DirectXCommon::ReportLiveObjects()
 #if _DEBUG
 	Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
 	if (SUCCEEDED(device_.As(&debugDevice))) {
-		// 詳細レポート（名前も出る）
+		// 隧ｳ邏ｰ繝ｬ繝昴・繝茨ｼ亥錐蜑阪ｂ蜃ｺ繧具ｼ・
 		debugDevice->ReportLiveDeviceObjects(
 			D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL
 		);
@@ -857,7 +859,7 @@ D3D12_BLEND_DESC DirectXCommon::GetBlendDesc() const {
 D3D12_RASTERIZER_DESC DirectXCommon::GetRasterizerDesc() const {
 	D3D12_RASTERIZER_DESC desc{};
 	desc.FillMode = D3D12_FILL_MODE_SOLID;
-	desc.CullMode = D3D12_CULL_MODE_BACK;   // CullMode::None でも OK
+	desc.CullMode = D3D12_CULL_MODE_BACK;   // CullMode::None 縺ｧ繧・OK
 	desc.FrontCounterClockwise = FALSE;
 	desc.DepthClipEnable = TRUE;
 	return desc;
@@ -881,7 +883,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
 }
 
 //=======================
-//RenderTexture関数
+//RenderTexture髢｢謨ｰ
 //=======================
 
 Microsoft::WRL::ComPtr<ID3D12Resource> DirectXCommon::CreateRenderTextureResource(
@@ -925,7 +927,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> DirectXCommon::CreateRenderTextureResourc
 	return resource;
 }
 
-// RenderTexture用のRTVを作成する関数
+// RenderTexture逕ｨ縺ｮRTV繧剃ｽ懈・縺吶ｋ髢｢謨ｰ
 void DirectXCommon::CreateRenderTextureRTV(
 	ID3D12Resource* resource,
 	uint32_t rtvIndex,
@@ -943,7 +945,7 @@ void DirectXCommon::CreateRenderTextureRTV(
 	device_->CreateRenderTargetView(resource, &rtvDesc, handle);
 }
 
-// RenderTextureを描画対象にする前の処理
+// RenderTexture繧呈緒逕ｻ蟇ｾ雎｡縺ｫ縺吶ｋ蜑阪・蜃ｦ逅・
 void DirectXCommon::PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clearColor)
 {
 	D3D12_CPU_DESCRIPTOR_HANDLE handle =
@@ -972,11 +974,31 @@ void DirectXCommon::PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clear
 	commandList->RSSetScissorRects(1, &scissorRect);
 }
 
-// RenderTextureを描画対象から外す後の処理
+void DirectXCommon::PreDrawPostEffectBuffer(uint32_t rtvIndex)
+{
+	D3D12_CPU_DESCRIPTOR_HANDLE handle =
+		GetCPUDescriptorHandle(rtvDescriptorHeap, descriptorSizeRTV, rtvIndex);
+
+	// DSVをバインドしない
+	commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissorRect);
+}
+
+// RenderTextureを描画対象から外す後の処理繧呈緒逕ｻ蟇ｾ雎｡縺九ｉ螟悶☆蠕後・蜃ｦ逅・
 void DirectXCommon::SetBackBufferRenderTarget()
 {
 	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
 	commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], FALSE, &dsvHandle);
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissorRect);
+}
+
+void DirectXCommon::SetBackBufferRenderTargetForPostEffect()
+{
+	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
+	// DSVをバインドしない
+	commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], FALSE, nullptr);
 	commandList->RSSetViewports(1, &viewport);
 	commandList->RSSetScissorRects(1, &scissorRect);
 }
