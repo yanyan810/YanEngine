@@ -7,6 +7,7 @@ void Object3dCommon::Initialize(DirectXCommon* dxCommon) {
 
     CreateGraphicsPipelineState();
     CreateEnvMapGraphicsPipelineState();
+    CreateOutlineGraphicsPipelineState();
 
 }
 
@@ -23,7 +24,7 @@ void Object3dCommon::CreateRootSignature() {
     rangeEnv.BaseShaderRegister = 2;
     rangeEnv.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER params[8]{};
+    D3D12_ROOT_PARAMETER params[9]{};
 
     // b0 material
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -66,6 +67,11 @@ void Object3dCommon::CreateRootSignature() {
     params[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     params[7].DescriptorTable.NumDescriptorRanges = 1;
     params[7].DescriptorTable.pDescriptorRanges = &rangeEnv;
+
+    // b5 outline param
+    params[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[8].Descriptor.ShaderRegister = 5;
 
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -194,7 +200,7 @@ void Object3dCommon::CreateGraphicsPipelineState() {
         psoDesc.SampleDesc.Count = 1;
         psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
         HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso_[i]));
         if (FAILED(hr)) {
@@ -309,7 +315,7 @@ void Object3dCommon::CreateEnvMapGraphicsPipelineState() {
         psoDesc.DepthStencilState = ds;
         psoDesc.NumRenderTargets = 1;
         psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
         psoDesc.SampleDesc.Count = 1;
         psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -322,9 +328,61 @@ void Object3dCommon::CreateEnvMapGraphicsPipelineState() {
 
 void Object3dCommon::SetGraphicsPipelineStateEnvMap(BlendMode mode) {
     auto* cmd = dx_->GetCommandList();
-
     cmd->SetGraphicsRootSignature(rootSignature_.Get());
     const int idx = static_cast<int>(mode);
     cmd->SetPipelineState(envMapPso_[idx].Get());
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void Object3dCommon::CreateOutlineGraphicsPipelineState() {
+    if (!rootSignature_) {
+        CreateRootSignature();
+    }
+
+    Microsoft::WRL::ComPtr<IDxcBlob> vs = dx_->CompilesSharder(L"resources/shaders/Object3dOutline.VS.hlsl", L"vs_6_0");
+    Microsoft::WRL::ComPtr<IDxcBlob> ps = dx_->CompilesSharder(L"resources/shaders/Object3dOutline.PS.hlsl", L"ps_6_0");
+
+    D3D12_BLEND_DESC blend{};
+    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    blend.RenderTarget[0].BlendEnable = TRUE;
+    blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+
+    D3D12_RASTERIZER_DESC rast{};
+    rast.CullMode = D3D12_CULL_MODE_FRONT; // ★裏面だけを描画（インバースハル）
+    rast.FillMode = D3D12_FILL_MODE_SOLID;
+
+    D3D12_DEPTH_STENCIL_DESC ds{};
+    ds.DepthEnable = TRUE;
+    ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = rootSignature_.Get();
+    psoDesc.InputLayout = inputLayout_;
+    psoDesc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    psoDesc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    psoDesc.BlendState = blend;
+    psoDesc.RasterizerState = rast;
+    psoDesc.DepthStencilState = ds;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc.Count = 1;
+    psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+    HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&outlinePso_));
+    assert(SUCCEEDED(hr));
+}
+
+void Object3dCommon::SetGraphicsPipelineStateOutline() {
+    auto* cmd = dx_->GetCommandList();
+    cmd->SetGraphicsRootSignature(rootSignature_.Get());
+    cmd->SetPipelineState(outlinePso_.Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

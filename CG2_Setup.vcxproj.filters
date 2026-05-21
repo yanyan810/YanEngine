@@ -577,7 +577,10 @@
       <Filter>shaders</Filter>
     </FxCompile>
     <FxCompile Include="resources\shaders\GaussianBlurX.PS.hlsl">
-      <Filter>shaders</Filter>
+      <Filter>Shader\PostEffect</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\Outline.PS.hlsl">
+      <Filter>Shader\PostEffect</Filter>
     </FxCompile>
     <FxCompile Include="resources\shaders\GaussianBlurY.PS.hlsl">
       <Filter>shaders</Filter>

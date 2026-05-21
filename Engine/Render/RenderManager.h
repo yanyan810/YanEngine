@@ -20,6 +20,7 @@ enum class PostEffectMode {
     GaussianBlurX,   // Gaussian（水平方向）- 内部処理用
     GaussianBlurY,   // Gaussian（垂直方向）- 内部処理用
     GaussianBlur,    // Gaussian（統合） - UI・外部インターフェース用
+    Outline,         // アウトライン抽出（深度・法線ベース）
 
     Count            // 種類の数（番兵）
 };
@@ -81,4 +82,21 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> gaussianFilterCB_;
     GaussianFilterParameter* gaussianFilterCBData_ = nullptr;
     float sigma_ = 4.0f;
+
+    // Outline用の定数バッファ
+    struct OutlineParameter {
+        Vector4 color;             // アウトラインの色
+        float thickness;           // サンプリング幅（太さ）
+        float threshold;           // エッジ検出の閾値
+        float _pad[2];
+    };
+    Microsoft::WRL::ComPtr<ID3D12Resource> outlineCB_;
+    OutlineParameter* outlineCBData_ = nullptr;
+
+    Vector4 outlineColor_ = { 0.0f, 0.0f, 0.0f, 1.0f }; // 黒
+    float outlineThickness_ = 1.0f;
+    float outlineThreshold_ = 0.5f;
+
+    // 深度バッファ読み込み用のSRVインデックス
+    uint32_t depthSrvIndex_ = 0;
 };

@@ -317,7 +317,7 @@ void ParticleCommon::CreateGraphicsPipelineState(BlendMode mode)
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
     const int idx = static_cast<int>(mode);
     HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(
