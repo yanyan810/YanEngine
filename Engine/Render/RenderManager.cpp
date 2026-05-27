@@ -19,6 +19,7 @@ static const char* kEffectNames[] = {
     "GaussianBlurY (Vertical)",
     "GaussianBlur (Linear)",
     "Outline (Depth & Normal)",
+    "RadialBlur",
 };
 
 static const wchar_t* kEffectPSPaths[] = {
@@ -28,8 +29,9 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/BoxFilter.PS.hlsl",
     L"resources/shaders/GaussianBlurX.PS.hlsl",
     L"resources/shaders/GaussianBlurY.PS.hlsl",
-    L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur閾ｪ菴薙・繝繝溘・
+    L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur閾ｪ菴薙・繝€繝溘・
     L"resources/shaders/Outline.PS.hlsl",
+    L"resources/shaders/RadialBlur.PS.hlsl",
 };
 
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
@@ -88,6 +90,13 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     outlineCBData_->color = outlineColor_;
     outlineCBData_->thickness = outlineThickness_;
     outlineCBData_->threshold = outlineThreshold_;
+
+    // RadialBlur用の定数バッファを作成
+    radialBlurCB_ = dx_->CreateBufferResource((sizeof(RadialBlurParameter) + 0xff) & ~0xff);
+    radialBlurCB_->Map(0, nullptr, reinterpret_cast<void**>(&radialBlurCBData_));
+    radialBlurCBData_->center = radialBlurCenter_;
+    radialBlurCBData_->numSamples = radialBlurNumSamples_;
+    radialBlurCBData_->blurWidth = radialBlurWidth_;
 
     // 豺ｱ蠎ｦ繝舌ャ繝輔ぃ逕ｨ縺ｮSRV繧剃ｽ懈・
     depthSrvIndex_ = srv_->Allocate();
@@ -186,7 +195,7 @@ void RenderManager::CreateCopyImageRootSignature()
     range1.BaseShaderRegister = 1; // t1
     range1.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[4]{};
+    D3D12_ROOT_PARAMETER rootParams[5]{};
     // [0]: SRV (t0) Color
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -210,6 +219,12 @@ void RenderManager::CreateCopyImageRootSignature()
     rootParams[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParams[3].Descriptor.ShaderRegister = 1;
     rootParams[3].Descriptor.RegisterSpace = 0;
+
+    // [4]: CBV (b2) RadialBlur
+    rootParams[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParams[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParams[4].Descriptor.ShaderRegister = 2;
+    rootParams[4].Descriptor.RegisterSpace = 0;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -294,6 +309,8 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
         cmd->SetGraphicsRootConstantBufferView(1, gaussianFilterCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::Outline) {
         cmd->SetGraphicsRootConstantBufferView(3, outlineCB_->GetGPUVirtualAddress());
+    } else if (mode == PostEffectMode::RadialBlur) {
+        cmd->SetGraphicsRootConstantBufferView(4, radialBlurCB_->GetGPUVirtualAddress());
     }
 
     cmd->DrawInstanced(3, 1, 0, 0);
@@ -474,6 +491,19 @@ void RenderManager::DrawImGui()
             }
             if (ImGui::SliderFloat("Threshold", &outlineThreshold_, 0.0f, 1.0f)) {
                 outlineCBData_->threshold = outlineThreshold_;
+            }
+            ImGui::Unindent();
+        }
+        if (static_cast<PostEffectMode>(i) == PostEffectMode::RadialBlur && enabled) {
+            ImGui::Indent();
+            if (ImGui::SliderFloat2("Center", &radialBlurCenter_.x, 0.0f, 1.0f)) {
+                radialBlurCBData_->center = radialBlurCenter_;
+            }
+            if (ImGui::SliderInt("NumSamples", &radialBlurNumSamples_, 0, 50)) {
+                radialBlurCBData_->numSamples = radialBlurNumSamples_;
+            }
+            if (ImGui::SliderFloat("BlurWidth", &radialBlurWidth_, 0.0f, 0.1f)) {
+                radialBlurCBData_->blurWidth = radialBlurWidth_;
             }
             ImGui::Unindent();
         }
