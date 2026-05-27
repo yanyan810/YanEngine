@@ -22,6 +22,7 @@ enum class PostEffectMode {
     GaussianBlur,    // Gaussian（統合） - UI・外部インターフェース用
     Outline,         // アウトライン抽出（深度・法線ベース）
     RadialBlur,      // 放射状ブラー
+    Dissolve,        // ディゾルブ
 
     Count            // 種類の数（番兵）
 };
@@ -110,6 +111,24 @@ private:
     Vector2 radialBlurCenter_ = { 0.5f, 0.5f };
     int32_t radialBlurNumSamples_ = 10;
     float radialBlurWidth_ = 0.01f;
+
+    // Dissolve用の定数バッファ
+    struct DissolveParameter {
+        Vector4 edgeColor;
+        float threshold;
+        float edgeWidth;
+        float _pad[2];
+        Vector4 backgroundColor; // 抜けた部分の色
+    };
+    Microsoft::WRL::ComPtr<ID3D12Resource> dissolveCB_;
+    DissolveParameter* dissolveCBData_ = nullptr;
+
+    Vector4 dissolveEdgeColor_ = { 1.0f, 0.0f, 0.0f, 1.0f }; // 赤色
+    float dissolveThreshold_ = 0.5f;
+    float dissolveEdgeWidth_ = 0.05f;
+    Vector4 dissolveBackgroundColor_ = { 0.0f, 1.0f, 0.0f, 1.0f }; // 初期値は緑色
+
+    uint32_t noiseSrvIndex_ = 0;
 
     // 深度バッファ読み込み用のSRVインデックス
     uint32_t depthSrvIndex_ = 0;

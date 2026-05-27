@@ -19,7 +19,7 @@ static void ApplyAnimation(Model::Skeleton& skeleton, const Animation& animation
 
 		const NodeAnimation& na = it->second;
 
-		// “そのジョイントの元値” から始める（カーブが無い成分は維持）
+		// 遯ｶ諛岩落邵ｺ・ｮ郢ｧ・ｸ郢晢ｽｧ郢ｧ・､郢晢ｽｳ郢晏現繝ｻ陷医・ﾂ・､遯ｶ繝ｻ邵ｺ荵晢ｽ芽沂荵晢ｽ∫ｹｧ蜈ｷ・ｼ蛹ｻ縺咲ｹ晢ｽｼ郢晄じ窶ｲ霎滂ｽ｡邵ｺ繝ｻ繝ｻ陋ｻ繝ｻ繝ｻ驍ｯ・ｭ隰悶・・ｼ繝ｻ
 		Vector3 t = joint.transform.translate;
 		Quaternion r = joint.transform.rotate;
 		Vector3 s = joint.transform.scale;
@@ -43,7 +43,7 @@ static uint32_t CalcTotalVertexCount(const Model::ModelData& modelData) {
 }
 
 void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx) {
-	// ★Object3dCommon から拾う
+	// 隨倥・bject3dCommon 邵ｺ荵晢ｽ芽ｫ｡・ｾ邵ｺ繝ｻ
 	SrvManager* srv = object3dCommon ? object3dCommon->GetSrvManager() : nullptr;
 	SkinningCommon* skin = object3dCommon ? object3dCommon->GetSkinningCommon() : nullptr;
 
@@ -51,7 +51,7 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx) {
 }
 
 void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, SrvManager* srv, SkinningCommon* skinCom) {
-	// 初期化処理
+	// 陋ｻ譎・ｄ陋ｹ髢繝ｻ騾・・
 	this->object3dCommon = object3dCommon;
 	dx_ = dx;
 	srvManager_ = srv;
@@ -67,18 +67,18 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 		OutputDebugStringA("[Object3d] Initialize failed: transformationMatrixResourceModel is null.\n");
 		return;
 	}
-	//書き込むためのアドレスを取得
+	//隴厄ｽｸ邵ｺ蟠趣ｽｾ・ｼ郢ｧﾂ邵ｺ貅假ｽ∫ｸｺ・ｮ郢ｧ・｢郢晏ｳｨﾎ樒ｹｧ・ｹ郢ｧ雋槫徐陟輔・
 	transformationMatrixResourceModel->Map(0, nullptr,
 		reinterpret_cast<void**>(&transformationMatrixDataModel));
-	//単位行列を書き込んでおく
+	//陷雁・ｽｽ蟠趣ｽ｡謔溘・郢ｧ蜻亥ｶ檎ｸｺ蟠趣ｽｾ・ｼ郢ｧ阮吶堤ｸｺ鄙ｫ・･
 	transformationMatrixDataModel->WVP = Matrix4x4::MakeIdentity4x4();
 	transformationMatrixDataModel->World = Matrix4x4::MakeIdentity4x4();
 
-	// ライト関連の初期化
+	// 郢晢ｽｩ郢ｧ・､郢晉｣ｯ譛ｪ鬨ｾ・｣邵ｺ・ｮ陋ｻ譎・ｄ陋ｹ繝ｻ
 	light_ = std::make_unique<Object3dLight>();
 	light_->Initialize(dx);
 
-	// アニメーターの初期化
+	// 郢ｧ・｢郢昜ｹ斟鍋ｹ晢ｽｼ郢ｧ・ｿ郢晢ｽｼ邵ｺ・ｮ陋ｻ譎・ｄ陋ｹ繝ｻ
 	animator_ = std::make_unique<Animator>();
 	if (model_) {
 		animator_->Initialize(model_);
@@ -93,7 +93,7 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 		}
 	}
 
-	//Transform変数
+	//Transform陞溽判辟・
 	transform = { {1.0f,1.0f,1.0f},
 				  {0.0f,0.0f,0.0f},
 				  {0.0f,0.0f,0.0f} };
@@ -106,18 +106,26 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 	cameraResource_ = dx_->CreateBufferResource(sizeof(CameraGPU));
 	cameraResource_->Map(0, nullptr, reinterpret_cast<void**>(&cameraData_));
 
-	outlineParamResource_ = dx_->CreateBufferResource(sizeof(OutlineParam));
-	outlineParamResource_->Map(0, nullptr, reinterpret_cast<void**>(&outlineParamData_));
-	if (outlineParamData_) {
-		outlineParamData_->color = outlineColor_;
-		outlineParamData_->thickness = outlineThickness_;
-		outlineParamData_->enable = enableOutline_ ? 1.0f : 0.0f;
+	effectParamResource_ = dx_->CreateBufferResource(sizeof(EffectParam));
+	effectParamResource_->Map(0, nullptr, reinterpret_cast<void**>(&effectParamData_));
+	if (effectParamData_) {
+		effectParamData_->outlineColor = outlineColor_;
+		effectParamData_->outlineThickness = outlineThickness_;
+		effectParamData_->enableOutline = enableOutline_ ? 1.0f : 0.0f;
+		effectParamData_->dissolveThreshold = dissolveThreshold_;
+		effectParamData_->enableDissolve = enableDissolve_ ? 1.0f : 0.0f;
+		effectParamData_->dissolveEdgeWidth = dissolveEdgeWidth_;
+		effectParamData_->dissolveEdgeColor = dissolveEdgeColor_;
+	}
+	
+	if (!maskTexturePath_.empty()) {
+		TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
 	}
 }
 
 void Object3d::Update(float dt)
 {
-	// 1) 通常のWorld（Object3dのTransform）
+	// 1) 鬨ｾ螢ｼ・ｸ・ｸ邵ｺ・ｮWorld繝ｻ繝ｻbject3d邵ｺ・ｮTransform繝ｻ繝ｻ
 	Matrix4x4 worldMatrixModel = Matrix4x4::MakeAffineMatrix(
 		transform.scale, transform.rotate, transform.translate);
 
@@ -127,7 +135,7 @@ void Object3d::Update(float dt)
 	}
 
 
-	// 2) glTF/FBX/OBJ共通：ModelのRootNode行列を適用（Rigidのみ）
+	// 2) glTF/FBX/OBJ陷茨ｽｱ鬨ｾ螟ｲ・ｼ蜩ｺodel邵ｺ・ｮRootNode髯ｦ謔溘・郢ｧ蟶昶・騾包ｽｨ繝ｻ繝ｻigid邵ｺ・ｮ邵ｺ・ｿ繝ｻ繝ｻ
 	if (model_) {
 		if (!model_->HasSkinning()) {
 			const Matrix4x4& root = model_->GetRootLocalMatrix();
@@ -140,7 +148,7 @@ void Object3d::Update(float dt)
 		camera_ = object3dCommon->GetDefaultCamera();
 	}
 
-	// ★ボーン点表示更新（Line/Sphere無し版）
+	// 隨倥・繝ｻ郢晢ｽｼ郢晢ｽｳ霓､・ｹ髯ｦ・ｨ驕会ｽｺ隴厄ｽｴ隴・ｽｰ繝ｻ繝ｻine/Sphere霎滂ｽ｡邵ｺ遉ｼ豐ｿ繝ｻ繝ｻ
 	if (debugDrawBones_ && model_ && model_->HasSkinning() && animator_ && animator_->IsPoseReady()) {
 		const auto& poseSkeleton = animator_->GetPoseSkeleton();
 		for (size_t i = 0; i < poseSkeleton.joints.size() && i < boneMarkers_.size(); ++i) {
@@ -175,10 +183,18 @@ void Object3d::Update(float dt)
 	Matrix4x4 invW = Matrix4x4::Inverse(worldMatrixModel);
 	transformationMatrixDataModel->WorldInverseTranspose = Matrix4x4::Transpose(invW);
 
-	if (outlineParamData_) {
-		outlineParamData_->color = outlineColor_;
-		outlineParamData_->thickness = outlineThickness_;
-		outlineParamData_->enable = enableOutline_ ? 1.0f : 0.0f;
+	if (effectParamData_) {
+		effectParamData_->outlineColor = outlineColor_;
+		effectParamData_->outlineThickness = outlineThickness_;
+		effectParamData_->enableOutline = enableOutline_ ? 1.0f : 0.0f;
+		effectParamData_->dissolveThreshold = dissolveThreshold_;
+		effectParamData_->enableDissolve = enableDissolve_ ? 1.0f : 0.0f;
+		effectParamData_->dissolveEdgeWidth = dissolveEdgeWidth_;
+		effectParamData_->dissolveEdgeColor = dissolveEdgeColor_;
+	}
+	
+	if (!maskTexturePath_.empty()) {
+		TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
 	}
 }
 
@@ -204,7 +220,7 @@ void Object3d::Draw()
 	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
 	// ------------------------------------------------------------
-	// EnvMap SRV を RootParameter 7 にセットする共通処理
+	// EnvMap SRV 郢ｧ繝ｻRootParameter 7 邵ｺ・ｫ郢ｧ・ｻ郢昴・繝ｨ邵ｺ蜷ｶ・玖怦・ｱ鬨ｾ螢ｼ繝ｻ騾・・
 	// ------------------------------------------------------------
 	auto BindEnvironmentMapIfNeeded = [&]() {
 		if (!useEnvironmentMap_) {
@@ -216,7 +232,7 @@ void Object3d::Draw()
 			return;
 		}
 
-		// 未ロードならロード
+		// 隴幢ｽｪ郢晢ｽｭ郢晢ｽｼ郢晏ｳｨ竊醍ｹｧ蟲ｨﾎ溽ｹ晢ｽｼ郢昴・
 		TextureManager::GetInstance()->LoadTexture(environmentTexturePath_);
 
 		// RootParameter 7 : t2
@@ -228,7 +244,7 @@ void Object3d::Draw()
 
 	if (model_->HasSkinning()) {
 		// =====================================================
-		// Compute Shader によるスキニング処理
+		// Compute Shader 邵ｺ・ｫ郢ｧ蛹ｻ・狗ｹｧ・ｹ郢ｧ・ｭ郢昜ｹ斟ｦ郢ｧ・ｰ陷・ｽｦ騾・・
 		// =====================================================
 		if (animator_ && animator_->IsPoseReady()) {
 			auto& skinCluster = animator_->GetSkinCluster();
@@ -263,7 +279,7 @@ void Object3d::Draw()
 		}
 
 		// =====================================================
-		// スキン付きメッシュ本体 (CS後の頂点バッファを使って描画)
+		// 郢ｧ・ｹ郢ｧ・ｭ郢晢ｽｳ闔牙･窶ｳ郢晢ｽ｡郢昴・縺咏ｹ晢ｽ･隴幢ｽｬ闖ｴ繝ｻ(CS陟募ｾ後・鬯・ｉ縺帷ｹ晁・繝｣郢晁ｼ斐＜郢ｧ蜑・ｽｽ・ｿ邵ｺ・｣邵ｺ・ｦ隰蜀怜愛)
 		auto SetNormalPipelineState = [&]() {
 			if (primitiveCommon_) {
 				if (useEnvironmentMap_) {
@@ -286,7 +302,7 @@ void Object3d::Draw()
 		// Transform (Root 1)
 		cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
-		// Lights / Camera (Root 3..6 等、PrimitiveCommon/Object3dCommon のシグネチャに合わせる)
+		// Lights / Camera (Root 3..6 驕ｲ蟲ｨﾂ・｣rimitiveCommon/Object3dCommon 邵ｺ・ｮ郢ｧ・ｷ郢ｧ・ｰ郢晞亂繝｡郢晢ｽ｣邵ｺ・ｫ陷ｷ蛹ｻ・冗ｸｺ蟶呻ｽ・
 		cmd->SetGraphicsRootConstantBufferView(3, light_->GetDirectionalLightResource()->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(4, cameraResource_->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootConstantBufferView(5, light_->GetPointLightResource()->GetGPUVirtualAddress());
@@ -294,19 +310,29 @@ void Object3d::Draw()
 
 		BindEnvironmentMapIfNeeded();
 
-		// Draw skinned (CSで出力された頂点バッファを使用)
+		if (!maskTexturePath_.empty()) {
+			cmd->SetGraphicsRootDescriptorTable(9, TextureManager::GetInstance()->GetSrvHandleGPU(maskTexturePath_));
+		}
+
+		// Draw skinned (CS邵ｺ・ｧ陷・ｽｺ陷牙ｸ呻ｼ・ｹｧ蠕娯螺鬯・ｉ縺帷ｹ晁・繝｣郢晁ｼ斐＜郢ｧ蜑・ｽｽ・ｿ騾包ｽｨ)
 		if (animator_ && animator_->IsPoseReady()) {
 			if (enableOutline_ && object3dCommon) {
 				object3dCommon->SetGraphicsPipelineStateOutline();
-				cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+				cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 				model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster());
 				SetNormalPipelineState();
 			}
+			
+			if (!maskTexturePath_.empty()) {
+				cmd->SetGraphicsRootDescriptorTable(9, TextureManager::GetInstance()->GetSrvHandleGPU(maskTexturePath_));
+			}
+			cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
+			
 			model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster());
 		}
 
 		// =====================================================
-		// スキン無し（剣など）を描く
+		// 郢ｧ・ｹ郢ｧ・ｭ郢晢ｽｳ霎滂ｽ｡邵ｺ證ｦ・ｼ莠･谿ｴ邵ｺ・ｪ邵ｺ・ｩ繝ｻ蟲ｨ・定ｬ荳奇ｿ･
 		// =====================================================
 		{
 			auto SetNormalPipelineState = [&]() {
@@ -328,7 +354,7 @@ void Object3d::Draw()
 
 			SetNormalPipelineState();
 
-			// lights/camera (Rigid側RootSig)
+			// lights/camera (Rigid陋幢ｽｴRootSig)
 			cmd->SetGraphicsRootConstantBufferView(3, light_->GetDirectionalLightResource()->GetGPUVirtualAddress());
 			cmd->SetGraphicsRootConstantBufferView(4, cameraResource_->GetGPUVirtualAddress());
 			cmd->SetGraphicsRootConstantBufferView(5, light_->GetPointLightResource()->GetGPUVirtualAddress());
@@ -336,6 +362,11 @@ void Object3d::Draw()
 
 			// EnvMap (Root 7 : t2)
 			BindEnvironmentMapIfNeeded();
+
+		if (!maskTexturePath_.empty()) {
+			cmd->SetGraphicsRootDescriptorTable(9, TextureManager::GetInstance()->GetSrvHandleGPU(maskTexturePath_));
+		}
+		cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 
 			// Material / VB / IB
 			cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
@@ -346,7 +377,7 @@ void Object3d::Draw()
 			const Matrix4x4 baseWorld = transformationMatrixDataModel->World;
 
 			// -------------------------------------------------
-			// その他の非スキンを描く
+			// 邵ｺ譏ｴ繝ｻ闔画じ繝ｻ鬮ｱ讒ｭ縺帷ｹｧ・ｭ郢晢ｽｳ郢ｧ蜻育ｷ堤ｸｺ繝ｻ
 			// -------------------------------------------------
 			const Animation* anim = nullptr;
 			float animTime = 0.0f;
@@ -385,15 +416,20 @@ void Object3d::Draw()
 				
 				if (enableOutline_ && object3dCommon) {
 					object3dCommon->SetGraphicsPipelineStateOutline();
-					cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+					cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 					model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 					SetNormalPipelineState();
 				}
 				
+				if (!maskTexturePath_.empty()) {
+					cmd->SetGraphicsRootDescriptorTable(9, TextureManager::GetInstance()->GetSrvHandleGPU(maskTexturePath_));
+				}
+				cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
+
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 			}
 
-			// 戻す
+			// 隰鯉ｽｻ邵ｺ繝ｻ
 			transformationMatrixDataModel->World = baseWorld;
 			transformationMatrixDataModel->WVP = Matrix4x4::Multiply(baseWorld, vp);
 			transformationMatrixDataModel->WorldInverseTranspose =
@@ -428,12 +464,17 @@ void Object3d::Draw()
 		// EnvMap (Root 7 : t2)
 		BindEnvironmentMapIfNeeded();
 
+		if (!maskTexturePath_.empty()) {
+			cmd->SetGraphicsRootDescriptorTable(9, TextureManager::GetInstance()->GetSrvHandleGPU(maskTexturePath_));
+		}
+		cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
+
 		// VB/IB/Material
 		cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());
 		cmd->IASetIndexBuffer(&model_->GetIBV());
 		cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
 
-		// ---- ノードアニメがあるなら node毎に描く ----
+		// ---- 郢晏ｼｱ繝ｻ郢晏ｳｨ縺・ｹ昜ｹ斟鍋ｸｺ蠕娯旺郢ｧ荵昶・郢ｧ繝ｻnode雎亥ｼｱ竊楢ｬ荳奇ｿ･ ----
 		if (animator_ && animator_->HasAnimation()) {
 
 			const auto& anims = model_->GetAnimations();
@@ -472,7 +513,7 @@ void Object3d::Draw()
 
 				if (enableOutline_ && object3dCommon) {
 					object3dCommon->SetGraphicsPipelineStateOutline();
-					cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+					cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 					model_->DrawOneMesh(cmd, inst.meshIndex, 2);
 					SetNormalPipelineState();
 				}
@@ -492,13 +533,13 @@ void Object3d::Draw()
 				video_->EndFrame(cmd);
 			} else {
 
-				//指定されたテクスチャを適応
+				//隰悶・・ｮ螢ｹ・・ｹｧ蠕娯螺郢昴・縺醍ｹｧ・ｹ郢昶・ﾎ慕ｹｧ蟶昶・陟｢繝ｻ
 				if (useOverrideTexture_) {
 					auto handle = TextureManager::GetInstance()->GetSrvHandleGPU(texturePath_);
 					
 					if (enableOutline_ && object3dCommon) {
 						object3dCommon->SetGraphicsPipelineStateOutline();
-						cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+						cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 						model_->Draw(cmd, 1, &handle);
 						SetNormalPipelineState();
 					}
@@ -507,12 +548,12 @@ void Object3d::Draw()
 				} else {
 					if (enableOutline_ && object3dCommon) {
 						object3dCommon->SetGraphicsPipelineStateOutline();
-						cmd->SetGraphicsRootConstantBufferView(8, outlineParamResource_->GetGPUVirtualAddress());
+						cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 						model_->Draw(cmd);
 						SetNormalPipelineState();
 					}
 
-					//モデルにあるテクスチャを適応
+					//郢晢ｽ｢郢昴・ﾎ晉ｸｺ・ｫ邵ｺ繧・ｽ狗ｹ昴・縺醍ｹｧ・ｹ郢昶・ﾎ慕ｹｧ蟶昶・陟｢繝ｻ
 					model_->Draw(cmd);
 				}
 			}
@@ -575,10 +616,15 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 	cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
 	cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
+	if (!maskTexturePath_.empty()) {
+		cmd->SetGraphicsRootDescriptorTable(9, TextureManager::GetInstance()->GetSrvHandleGPU(maskTexturePath_));
+	}
+	cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
+
 	model_->Draw(cmd, 1, &srv);
 }
 
-//テクスチャを指定
+//郢昴・縺醍ｹｧ・ｹ郢昶・ﾎ慕ｹｧ蜻域ｬ陞ｳ繝ｻ
 void Object3d::SetTexture(const std::string& path)
 {
 	texturePath_ = path;
@@ -614,7 +660,7 @@ void Object3d::SetModel(const std::string& filePath) {
 	}
 
 	if (model_->HasSkinning() && animator_) {
-		// ==== boneMarkers 作成（デバッグ用） ====
+		// ==== boneMarkers 闖ｴ諛医・繝ｻ蛹ｻ繝ｧ郢晁・繝｣郢ｧ・ｰ騾包ｽｨ繝ｻ繝ｻ====
 		const auto& skel = animator_->GetPoseSkeleton();
 		boneMarkers_.reserve(skel.joints.size());
 
@@ -630,7 +676,7 @@ void Object3d::SetModel(const std::string& filePath) {
 	}
 
 	swordNodeIndex_ = -1;
-	swordMeshIndex_ = 2; // まずは固定でOK（あとで検索にしてもいい）
+	swordMeshIndex_ = 2; // 邵ｺ・ｾ邵ｺ螢ｹ繝ｻ陜暦ｽｺ陞ｳ螢ｹ縲丹K繝ｻ蛹ｻ竕邵ｺ・ｨ邵ｺ・ｧ隶諛・ｽｴ・｢邵ｺ・ｫ邵ｺ蜉ｱ窶ｻ郢ｧ繧・ｼ樒ｸｺ繝ｻ・ｼ繝ｻ
 
 	if (model_) {
 		swordNodeIndex_ = model_->FindNodeIndexByName("sword");
@@ -657,11 +703,11 @@ Matrix4x4 Object3d::GetJointWorldMatrix(const std::string& jointName) const
 	}
 	const int32_t jointIndex = it->second;
 
-	// Object3d の World（Updateで使ってるのと同じ）
+	// Object3d 邵ｺ・ｮ World繝ｻ繝ｻpdate邵ｺ・ｧ闖ｴ・ｿ邵ｺ・｣邵ｺ・ｦ郢ｧ荵昴・邵ｺ・ｨ陷ｷ蠕個ｧ繝ｻ繝ｻ
 	Matrix4x4 worldMatrixModel = Matrix4x4::MakeAffineMatrix(
 		transform.scale, transform.rotate, transform.translate);
 
-	// ★あなたの行列系は「jointWorld = skeletonSpace * objectWorld」で統一してる
+	// 隨倥・竕邵ｺ・ｪ邵ｺ貅倥・髯ｦ謔溘・驍会ｽｻ邵ｺ・ｯ邵ｲ譯ＰintWorld = skeletonSpace * objectWorld邵ｲ髦ｪ縲帝お・ｱ闕ｳﾂ邵ｺ蜉ｱ窶ｻ郢ｧ繝ｻ
 	Matrix4x4 jointWorld =
 		Matrix4x4::Multiply(poseSkeleton.joints[jointIndex].skeletonSpaceMatrix, worldMatrixModel);
 

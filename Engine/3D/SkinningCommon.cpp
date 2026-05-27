@@ -29,10 +29,16 @@ void SkinningCommon::CreateRootSignature()
     D3D12_DESCRIPTOR_RANGE rangeEnv{};
     rangeEnv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     rangeEnv.NumDescriptors = 1;
-    rangeEnv.BaseShaderRegister = 2;
+    rangeEnv.BaseShaderRegister = 2; // t2
     rangeEnv.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER params[9]{};
+    D3D12_DESCRIPTOR_RANGE rangeMask{};
+    rangeMask.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rangeMask.NumDescriptors = 1;
+    rangeMask.BaseShaderRegister = 3; // t3
+    rangeMask.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER params[11]{};
 
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -66,12 +72,21 @@ void SkinningCommon::CreateRootSignature()
 
     params[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-    params[7].Descriptor.ShaderRegister = 4;
+    params[7].Descriptor.ShaderRegister = 4; // b4
 
     params[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     params[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     params[8].DescriptorTable.NumDescriptorRanges = 1;
     params[8].DescriptorTable.pDescriptorRanges = &rangeEnv;
+
+    params[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[9].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[9].Descriptor.ShaderRegister = 5; // b5 (EffectParam)
+
+    params[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    params[10].DescriptorTable.NumDescriptorRanges = 1;
+    params[10].DescriptorTable.pDescriptorRanges = &rangeMask;
 
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;

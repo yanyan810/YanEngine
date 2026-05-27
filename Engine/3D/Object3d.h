@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "MathStruct.h"
 #include <string>
 #include <vector>
@@ -33,14 +33,22 @@ public:
 
 	struct CameraGPU {
 		Vector3 worldPosition;
-		float pad; // ★16byte揃え
+		float pad; // 笘・6byte謠・∴
 	};
 
-	struct OutlineParam {
-		Vector4 color;
-		float thickness;
-		float enable;
+	struct EffectParam {
+		// Outline
+		Vector4 outlineColor;
+		float outlineThickness;
+		float enableOutline;
 		float pad[2];
+
+		// Dissolve
+		Vector4 dissolveEdgeColor;
+		float dissolveThreshold;
+		float dissolveEdgeWidth;
+		float enableDissolve;
+		float pad2;
 	};
 
 public:
@@ -57,18 +65,18 @@ public:
 
 	void SetModel(const std::string& filePath);
 
-	// ===== Transform 用 setter =====
+	// ===== Transform 逕ｨ setter =====
 public:
 	void SetScale(const Vector3& s) { transform.scale = s; }
 	void SetRotate(const Vector3& r) { transform.rotate = r; }
 	void SetTranslate(const Vector3& t) { transform.translate = t; }
 
-	// ===== Transform 用 getter =====
+	// ===== Transform 逕ｨ getter =====
 	const Vector3& GetScale()     const { return transform.scale; }
 	const Vector3& GetRotate()    const { return transform.rotate; }
 	const Vector3& GetTranslate() const { return transform.translate; }
 
-	// 光源用セッター・ゲッター (Object3dLightに委譲)
+	// 蜈画ｺ千畑繧ｻ繝・ち繝ｼ繝ｻ繧ｲ繝・ち繝ｼ (Object3dLight縺ｫ蟋碑ｭｲ)
 	void SetLightColor(const Vector4& color) { light_->SetDirectionalLightColor(color); }
 	void SetDirection(const Vector3& direction) { light_->SetDirectionalLightDirection(direction); }
 	void SetIntensity(float intensity) { light_->SetDirectionalLightIntensity(intensity); }
@@ -94,10 +102,10 @@ public:
 		return (model_ && model_->GetMaterial()) ? model_->GetMaterial()->shininess : 0.0f;
 	}
 
-	//ブレンド設定
+	//繝悶Ξ繝ｳ繝芽ｨｭ螳・
 	void SetBlendMode(Object3dCommon::BlendMode m) { blendMode_ = m; }
 
-	//色関係
+	//濶ｲ髢｢菫・
 	void SetMaterialColor(const Vector4& c) {
 		if (model_) {
 			model_->SetMaterialColor(c);
@@ -107,17 +115,17 @@ public:
 		return model_ ? model_->GetMaterialColor() : Vector4{ 1,1,1,1 };
 	}
 
-	//カメラセッター
+	//繧ｫ繝｡繝ｩ繧ｻ繝・ち繝ｼ
 	void SetCamera(Camera* camera) { camera_ = camera; }
 
-	//ポイントライトセッター
+	//繝昴う繝ｳ繝医Λ繧､繝医そ繝・ち繝ｼ
 	void SetPointLightColor(const Vector4& c) { light_->SetPointLightColor(c); }
 	void SetPointLightPos(const Vector3& p) { light_->SetPointLightPos(p); }
 	void SetPointLightIntensity(float i) { light_->SetPointLightIntensity(i); }
 	void SetPointLightRadius(float r) { light_->SetPointLightRadius(r); }
 	void SetPointLightDecay(float d) { light_->SetPointLightDecay(d); }
 
-	//スポットライトセッター
+	//繧ｹ繝昴ャ繝医Λ繧､繝医そ繝・ち繝ｼ
 	void SetSpotLightColor(const Vector4& c) { light_->SetSpotLightColor(c); }
 	void SetSpotLightPos(const Vector3& p) { light_->SetSpotLightPos(p); }
 	void SetSpotLightIntensity(float i) { light_->SetSpotLightIntensity(i); }
@@ -127,7 +135,7 @@ public:
 	void SetSpotLightCosAngle(float c) { light_->SetSpotLightCosAngle(c); }
 	void SetSpotLightCosFalloffStart(float c) { light_->SetSpotLightCosFalloffStart(c); }
 
-	//テクスチャを指定
+	//繝・け繧ｹ繝√Ε繧呈欠螳・
 	void SetTexture(const std::string& path);
 
 	Model* GetModel() const { return model_; }
@@ -142,6 +150,17 @@ public:
 	void SetOutlineThickness(float t) { outlineThickness_ = t; }
 	float GetOutlineThickness() const { return outlineThickness_; }
 
+	void SetEnableDissolve(bool enable) { enableDissolve_ = enable; }
+	bool GetEnableDissolve() const { return enableDissolve_; }
+	void SetDissolveThreshold(float t) { dissolveThreshold_ = t; }
+	float GetDissolveThreshold() const { return dissolveThreshold_; }
+	void SetDissolveEdgeWidth(float w) { dissolveEdgeWidth_ = w; }
+	float GetDissolveEdgeWidth() const { return dissolveEdgeWidth_; }
+	void SetDissolveEdgeColor(const Vector4& color) { dissolveEdgeColor_ = color; }
+	Vector4 GetDissolveEdgeColor() const { return dissolveEdgeColor_; }
+
+	void SetMaskTexturePath(const std::string& path) { maskTexturePath_ = path; TextureManager::GetInstance()->LoadTexture(path); }
+
 	void SetPrimitiveCommon(PrimitiveCommon* p) { primitiveCommon_ = p; }
 
 
@@ -152,7 +171,7 @@ public:
 
 public:
 
-	//環境マップ
+	//迺ｰ蠅・・繝・・
 	void SetUseEnvironmentMap(bool use) { useEnvironmentMap_ = use; }
 	bool GetUseEnvironmentMap() const { return useEnvironmentMap_; }
 
@@ -171,7 +190,7 @@ public:
 	}
 
 private:
-	//環境マップ
+	//迺ｰ蠅・・繝・・
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
 
@@ -187,27 +206,33 @@ private:
 
 	Model* model_ = nullptr;
 
-	//モデル用のTransformationMatrix用のリソースを作る。Matrix4x4 一つ分のサイズを用意する
+	//繝｢繝・Ν逕ｨ縺ｮTransformationMatrix逕ｨ縺ｮ繝ｪ繧ｽ繝ｼ繧ｹ繧剃ｽ懊ｋ縲・atrix4x4 荳縺､蛻・・繧ｵ繧､繧ｺ繧堤畑諢上☆繧・
 	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResourceModel;/* = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));*/
-	//データを書き込む
+	//繝・・繧ｿ繧呈嶌縺崎ｾｼ繧
 	TransformationMatrix* transformationMatrixDataModel = nullptr;
 
 	Transform transform;
 	Transform cameraTransform;
-	//カメラ
+	//繧ｫ繝｡繝ｩ
 	Camera* camera_ = nullptr;
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> cameraResource_;
 	CameraGPU* cameraData_ = nullptr;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> outlineParamResource_;
-	OutlineParam* outlineParamData_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> effectParamResource_;
+	EffectParam* effectParamData_ = nullptr;
 	
 	bool enableOutline_ = false;
 	Vector4 outlineColor_ = {1.0f, 0.0f, 0.0f, 1.0f}; // Default Red
 	float outlineThickness_ = 0.05f;
 
-	//テクスチャ
+	bool enableDissolve_ = false;
+	float dissolveThreshold_ = 0.5f;
+	float dissolveEdgeWidth_ = 0.05f;
+	Vector4 dissolveEdgeColor_ = { 1.0f, 0.0f, 0.0f, 1.0f }; // 蛻晄悄蛟､:襍､
+	std::string maskTexturePath_ = "resources/noise0.png";
+
+	//繝・け繧ｹ繝√Ε
 	std::string texturePath_ = "";
 	bool useOverrideTexture_ = false;
 	
@@ -216,12 +241,12 @@ private:
 
 public:
 	//=============
-	//アニメーション
+	//繧｢繝九Γ繝ｼ繧ｷ繝ｧ繝ｳ
 	//=============
 
 	void PlayAnimation(const std::string& animName = "", bool loop = true) { if(animator_) animator_->PlayAnimation(animName, loop); }
 
-	// ★ クロスフェード（fadeSec秒かけて animName へ滑らかに遷移）
+	// 笘・繧ｯ繝ｭ繧ｹ繝輔ぉ繝ｼ繝会ｼ・adeSec遘偵°縺代※ animName 縺ｸ貊代ｉ縺九↓驕ｷ遘ｻ・・
 	void CrossFadeTo(const std::string& animName, float fadeSec = 0.2f, bool loop = true) { if(animator_) animator_->CrossFadeTo(animName, fadeSec, loop); }
 
 	bool IsAnimationFinished() const { return animator_ ? animator_->IsAnimationFinished() : true; }
@@ -236,7 +261,7 @@ public:
 
 	bool HasAnimation() const { return animator_ ? animator_->HasAnimation() : false; }
 
-	//デバッグ用
+	//繝・ヰ繝・げ逕ｨ
 	void SetDebugDrawBones(bool enable) { debugDrawBones_ = enable; }
 	void SetBoneMarkerModel(const std::string& path) { boneMarkerModel_ = path; }
 
@@ -248,11 +273,11 @@ private:
 	std::string boneMarkerModel_ = "cube/cube.obj";
 	std::vector<std::unique_ptr<Object3d>> boneMarkers_;
 
-	SrvManager* srvManager_ = nullptr; // ★参照
+	SrvManager* srvManager_ = nullptr; // 笘・盾辣ｧ
 
 private:
-	int32_t swordNodeIndex_ = -1;   // ノード index
-	uint32_t swordMeshIndex_ = 2;   // 今ログ的に sword は mesh[2]
+	int32_t swordNodeIndex_ = -1;   // 繝弱・繝・index
+	uint32_t swordMeshIndex_ = 2;   // 莉翫Ο繧ｰ逧・↓ sword 縺ｯ mesh[2]
 
 
 public:

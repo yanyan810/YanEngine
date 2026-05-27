@@ -24,7 +24,13 @@ void Object3dCommon::CreateRootSignature() {
     rangeEnv.BaseShaderRegister = 2;
     rangeEnv.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER params[9]{};
+    D3D12_DESCRIPTOR_RANGE rangeMask{};
+    rangeMask.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    rangeMask.NumDescriptors = 1;
+    rangeMask.BaseShaderRegister = 3; // t3
+    rangeMask.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER params[10]{};
 
     // b0 material
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -68,10 +74,16 @@ void Object3dCommon::CreateRootSignature() {
     params[7].DescriptorTable.NumDescriptorRanges = 1;
     params[7].DescriptorTable.pDescriptorRanges = &rangeEnv;
 
-    // b5 outline param
+    // b5 effect param
     params[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     params[8].Descriptor.ShaderRegister = 5;
+
+    // t3 mask texture
+    params[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[9].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    params[9].DescriptorTable.NumDescriptorRanges = 1;
+    params[9].DescriptorTable.pDescriptorRanges = &rangeMask;
 
     D3D12_STATIC_SAMPLER_DESC samp{};
     samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
