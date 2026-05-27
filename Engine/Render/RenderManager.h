@@ -21,6 +21,7 @@ enum class PostEffectMode {
     GaussianBlurY,   // Gaussian（垂直方向）- 内部処理用
     GaussianBlur,    // Gaussian（統合） - UI・外部インターフェース用
     Outline,         // アウトライン抽出（深度・法線ベース）
+    RadialBlur,      // 放射状ブラー
 
     Count            // 種類の数（番兵）
 };
@@ -96,6 +97,19 @@ private:
     Vector4 outlineColor_ = { 0.0f, 0.0f, 0.0f, 1.0f }; // 黒
     float outlineThickness_ = 1.0f;
     float outlineThreshold_ = 0.5f;
+
+    // RadialBlur用の定数バッファ
+    struct RadialBlurParameter {
+        Vector2 center;
+        int32_t numSamples;
+        float blurWidth;
+    };
+    Microsoft::WRL::ComPtr<ID3D12Resource> radialBlurCB_;
+    RadialBlurParameter* radialBlurCBData_ = nullptr;
+
+    Vector2 radialBlurCenter_ = { 0.5f, 0.5f };
+    int32_t radialBlurNumSamples_ = 10;
+    float radialBlurWidth_ = 0.01f;
 
     // 深度バッファ読み込み用のSRVインデックス
     uint32_t depthSrvIndex_ = 0;
