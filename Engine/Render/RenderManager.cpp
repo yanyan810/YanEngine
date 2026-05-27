@@ -3,6 +3,7 @@
 #include "DirectXCommon.h"
 #include "SrvManager.h"
 #include "WinApp.h"
+#include "TextureManager.h"
 
 #include <cassert>
 
@@ -20,6 +21,7 @@ static const char* kEffectNames[] = {
     "GaussianBlur (Linear)",
     "Outline (Depth & Normal)",
     "RadialBlur",
+    "Dissolve",
 };
 
 static const wchar_t* kEffectPSPaths[] = {
@@ -32,6 +34,7 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur閾ｪ菴薙・繝€繝溘・
     L"resources/shaders/Outline.PS.hlsl",
     L"resources/shaders/RadialBlur.PS.hlsl",
+    L"resources/shaders/Dissolve.PS.hlsl",
 };
 
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
@@ -97,6 +100,18 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     radialBlurCBData_->center = radialBlurCenter_;
     radialBlurCBData_->numSamples = radialBlurNumSamples_;
     radialBlurCBData_->blurWidth = radialBlurWidth_;
+
+    // Dissolve用の定数バッファを作成
+    dissolveCB_ = dx_->CreateBufferResource((sizeof(DissolveParameter) + 0xff) & ~0xff);
+    dissolveCB_->Map(0, nullptr, reinterpret_cast<void**>(&dissolveCBData_));
+    dissolveCBData_->edgeColor = dissolveEdgeColor_;
+    dissolveCBData_->threshold = dissolveThreshold_;
+    dissolveCBData_->edgeWidth = dissolveEdgeWidth_;
+    dissolveCBData_->backgroundColor = dissolveBackgroundColor_;
+
+    // ノイズテクスチャのロードとSRVインデックス取得
+    TextureManager::GetInstance()->LoadTexture("resources/noise0.png");
+    noiseSrvIndex_ = TextureManager::GetInstance()->GetSrvIndex("resources/noise0.png");
 
     // 豺ｱ蠎ｦ繝舌ャ繝輔ぃ逕ｨ縺ｮSRV繧剃ｽ懈・
     depthSrvIndex_ = srv_->Allocate();
@@ -195,7 +210,7 @@ void RenderManager::CreateCopyImageRootSignature()
     range1.BaseShaderRegister = 1; // t1
     range1.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[5]{};
+    D3D12_ROOT_PARAMETER rootParams[6]{};
     // [0]: SRV (t0) Color
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -225,6 +240,12 @@ void RenderManager::CreateCopyImageRootSignature()
     rootParams[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParams[4].Descriptor.ShaderRegister = 2;
     rootParams[4].Descriptor.RegisterSpace = 0;
+
+    // [5]: CBV (b3) Dissolve
+    rootParams[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParams[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParams[5].Descriptor.ShaderRegister = 3;
+    rootParams[5].Descriptor.RegisterSpace = 0;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -302,8 +323,9 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
     cmd->SetPipelineState(pipelineStates_[modeIndex].Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->SetGraphicsRootDescriptorTable(0, srv_->GetGPUDescriptionHandle(srcSrvIndex));
-    // Depth (t1)
-    cmd->SetGraphicsRootDescriptorTable(2, srv_->GetGPUDescriptionHandle(depthSrvIndex_));
+    // Depth or Mask (t1)
+    uint32_t t1SrvIndex = (mode == PostEffectMode::Dissolve) ? noiseSrvIndex_ : depthSrvIndex_;
+    cmd->SetGraphicsRootDescriptorTable(2, srv_->GetGPUDescriptionHandle(t1SrvIndex));
 
     if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
         cmd->SetGraphicsRootConstantBufferView(1, gaussianFilterCB_->GetGPUVirtualAddress());
@@ -311,6 +333,8 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
         cmd->SetGraphicsRootConstantBufferView(3, outlineCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::RadialBlur) {
         cmd->SetGraphicsRootConstantBufferView(4, radialBlurCB_->GetGPUVirtualAddress());
+    } else if (mode == PostEffectMode::Dissolve) {
+        cmd->SetGraphicsRootConstantBufferView(5, dissolveCB_->GetGPUVirtualAddress());
     }
 
     cmd->DrawInstanced(3, 1, 0, 0);
@@ -504,6 +528,22 @@ void RenderManager::DrawImGui()
             }
             if (ImGui::SliderFloat("BlurWidth", &radialBlurWidth_, 0.0f, 0.1f)) {
                 radialBlurCBData_->blurWidth = radialBlurWidth_;
+            }
+            ImGui::Unindent();
+        }
+        if (static_cast<PostEffectMode>(i) == PostEffectMode::Dissolve && enabled) {
+            ImGui::Indent();
+            if (ImGui::ColorEdit4("EdgeColor", &dissolveEdgeColor_.x)) {
+                dissolveCBData_->edgeColor = dissolveEdgeColor_;
+            }
+            if (ImGui::SliderFloat("Threshold", &dissolveThreshold_, 0.0f, 1.0f)) {
+                dissolveCBData_->threshold = dissolveThreshold_;
+            }
+            if (ImGui::SliderFloat("EdgeWidth", &dissolveEdgeWidth_, 0.0f, 0.2f)) {
+                dissolveCBData_->edgeWidth = dissolveEdgeWidth_;
+            }
+            if (ImGui::ColorEdit4("BackgroundColor", &dissolveBackgroundColor_.x)) {
+                dissolveCBData_->backgroundColor = dissolveBackgroundColor_;
             }
             ImGui::Unindent();
         }

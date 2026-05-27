@@ -54,11 +54,27 @@ struct SpotLight
     float pad;
 };
 
+struct EffectParam {
+    // Outline
+    float4 outlineColor;
+    float outlineThickness;
+    float enableOutline;
+    float2 pad0;
+
+    // Dissolve
+    float4 dissolveEdgeColor;
+    float dissolveThreshold;
+    float dissolveEdgeWidth;
+    float enableDissolve;
+    float pad1;
+};
+
 // =====================
 // Resources
 // =====================
 Texture2D gTexture : register(t1);
 TextureCube gEnvironmentTexture : register(t2);
+Texture2D gMaskTexture : register(t3);
 SamplerState gSampler : register(s0);
 
 ConstantBuffer<Material> gMaterial : register(b0);
@@ -66,6 +82,7 @@ ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
 ConstantBuffer<Camera> gCamera : register(b2);
 ConstantBuffer<PointLight> gPointLight : register(b3);
 ConstantBuffer<SpotLight> gSpotLight : register(b4);
+ConstantBuffer<EffectParam> gEffect : register(b5);
 
 // =====================
 // Pixel Shader
@@ -80,14 +97,23 @@ PixelShaderOutput main(VertexShaderOutput input)
     PixelShaderOutput output;
 
     float4 uv = mul(float4(input.texcoord, 0, 1), gMaterial.uvTransform);
-    float4 tex = gTexture.Sample(gSampler, uv.xy);
+    float4 texColor = gTexture.Sample(gSampler, uv.xy);
 
-    output.color = gMaterial.color * tex;
+    // Dissolve処理
+    float edgeFactor = 0.0f;
+    if (gEffect.enableDissolve != 0.0f) {
+        float mask = gMaskTexture.Sample(gSampler, uv.xy).r;
+        if (mask <= gEffect.dissolveThreshold) {
+            discard;
+        }
+        edgeFactor = 1.0f - smoothstep(gEffect.dissolveThreshold, gEffect.dissolveThreshold + gEffect.dissolveEdgeWidth, mask);
+    }
 
     if (gMaterial.enableLighting == 0)
     {
-        // ライティングなしでも環境マップだけ少し足したいならここで加算してもOK
-        output.color.a = gMaterial.color.a * tex.a;
+        output.color = gMaterial.color * texColor;
+        output.color.rgb += edgeFactor * gEffect.dissolveEdgeColor.rgb;
+        output.color.a = gMaterial.color.a * texColor.a;
         return output;
     }
 
@@ -106,7 +132,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         : saturate(NdotLd);
 
     float3 diffuseD =
-        gMaterial.color.rgb * tex.rgb *
+        gMaterial.color.rgb * texColor.rgb *
         gDirectionalLight.color.rgb *
         diffD * gDirectionalLight.intensity;
 
@@ -130,7 +156,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         : saturate(dot(N, Lp));
 
     float3 pointCol = gPointLight.color.rgb * gPointLight.intensity * attenP;
-    float3 diffuseP = gMaterial.color.rgb * tex.rgb * pointCol * diffP;
+    float3 diffuseP = gMaterial.color.rgb * texColor.rgb * pointCol * diffP;
 
     float3 Hp = normalize(Lp + V);
     float specP = pow(saturate(dot(N, Hp)), max(gMaterial.shininess, 1.0f));
@@ -164,7 +190,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         attenS *
         falloff;
 
-    float3 diffuseS = gMaterial.color.rgb * tex.rgb * spotCol * diffS;
+    float3 diffuseS = gMaterial.color.rgb * texColor.rgb * spotCol * diffS;
 
     float3 Hs = normalize(Ls + V);
     float specS = pow(saturate(dot(N, Hs)), max(gMaterial.shininess, 1.0f));
@@ -173,26 +199,25 @@ PixelShaderOutput main(VertexShaderOutput input)
     // ---------------------
     // Environment Map
     // ---------------------
-    // カメラ→点 方向
     float3 cameraToPos = normalize(input.worldPosition - gCamera.worldPosition);
     float3 reflected = reflect(cameraToPos, N);
     float3 envColor = gEnvironmentTexture.Sample(gSampler, reflected).rgb;
 
-    float3 diffuseSum =
-        diffuseD + diffuseP + diffuseS;
+    // ---------------------
+    // Final
+    // ---------------------
+    float3 finalDiffuse = diffuseD + diffuseP + diffuseS;
+    float3 finalSpecular = specularD + specularP + specularS;
 
-    float3 specularSum =
-        specularD + specularP + specularS;
+    float3 baseColor = gMaterial.color.rgb * texColor.rgb;
+    float3 finalColor = lerp(baseColor, envColor, gMaterial.environmentCoefficient);
 
-    // 映り込みは specular 側に混ぜる方が自然
-    output.color.rgb =
-        diffuseSum +
-        specularSum +
-        envColor * gMaterial.environmentCoefficient;
+    output.color.rgb = finalColor * (finalDiffuse) + finalSpecular;
 
-    output.color.a = gMaterial.color.a * tex.a;
-    
-  //  output.color.rgb = envColor;
+    // Dissolveのエッジ色を加算
+    output.color.rgb += edgeFactor * gEffect.dissolveEdgeColor.rgb;
+
+    output.color.a = gMaterial.color.a * texColor.a;
     
     return output;
 }

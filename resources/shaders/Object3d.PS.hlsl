@@ -52,10 +52,27 @@ struct SpotLight
     float cosFalloffStart; // 内側（100%）
 };
 
+struct EffectParam {
+    // Outline
+    float4 outlineColor;
+    float outlineThickness;
+    float enableOutline;
+    float2 pad0;
+
+    // Dissolve
+    float4 dissolveEdgeColor;
+    float dissolveThreshold;
+    float dissolveEdgeWidth;
+    float enableDissolve;
+    float pad1;
+};
+
 // =====================
 // Resources
 // =====================
 Texture2D gTexture : register(t1);
+Texture2D gEnvTexture : register(t2);
+Texture2D gMaskTexture : register(t3);
 SamplerState gSampler : register(s0);
 
 ConstantBuffer<Material> gMaterial : register(b0);
@@ -63,6 +80,7 @@ ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
 ConstantBuffer<Camera> gCamera : register(b2);
 ConstantBuffer<PointLight> gPointLight : register(b3);
 ConstantBuffer<SpotLight> gSpotLight : register(b4);
+ConstantBuffer<EffectParam> gEffect : register(b5);
 
 // =====================
 // Pixel Shader
@@ -80,13 +98,22 @@ PixelShaderOutput main(VertexShaderOutput input)
     float4 uv = mul(float4(input.texcoord, 0, 1), gMaterial.uvTransform);
     float4 tex = gTexture.Sample(gSampler, uv.xy);
 
-    //if (tex.a == 0.0f)
-    //    discard;
+    // Dissolve処理
+    float edgeFactor = 0.0f;
+    if (gEffect.enableDissolve != 0.0f) {
+        float mask = gMaskTexture.Sample(gSampler, uv.xy).r;
+        if (mask <= gEffect.dissolveThreshold) {
+            discard;
+        }
+        edgeFactor = 1.0f - smoothstep(gEffect.dissolveThreshold, gEffect.dissolveThreshold + gEffect.dissolveEdgeWidth, mask);
+    }
 
     output.color = gMaterial.color * tex;
 
-    if (gMaterial.enableLighting == 0)
+    if (gMaterial.enableLighting == 0) {
+        output.color.rgb += edgeFactor * gEffect.dissolveEdgeColor.rgb;
         return output;
+    }
 
     // =====================
     // Common vectors
@@ -203,6 +230,9 @@ PixelShaderOutput main(VertexShaderOutput input)
         diffuseD + specularD +
         diffuseP + specularP +
         diffuseS + specularS;
+
+    // Dissolveのエッジ色を加算 (自発光のように)
+    output.color.rgb += edgeFactor * gEffect.dissolveEdgeColor.rgb;
 
     output.color.a = gMaterial.color.a * tex.a;
     return output;

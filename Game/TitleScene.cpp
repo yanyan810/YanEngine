@@ -122,6 +122,10 @@ void TitleScene::OnEnter(GameApp& app) {
 	ground_->SetEnvironmentCoefficient(0.5f);//環境マップの影響度（0.0f〜1.0f）
 	//ground_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
 
+	ground_->SetEnableDissolve(true);
+	ground_->SetDissolveThreshold(0.5f);
+	ground_->SetMaskTexturePath("resources/noise0.png");
+
 	skybox_ = std::make_unique<Skybox>();
 	skybox_->Initialize(app.SkyboxCom(), app.Dx());
 	skybox_->SetCamera(camera_.get());

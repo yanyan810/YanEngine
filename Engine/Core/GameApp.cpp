@@ -72,6 +72,8 @@ bool GameApp::Initialize_() {
     srv_ = std::make_unique<SrvManager>();
     srv_->Initialize(dx_.get());
 
+    TextureManager::GetInstance()->Initialize(dx_.get(), srv_.get());
+
 	//RenderManagerを作る
     render_ = std::make_unique<RenderManager>();
     render_->Initialize(dx_.get(), srv_.get());
@@ -79,7 +81,6 @@ bool GameApp::Initialize_() {
     spriteCommon_ = std::make_unique<SpriteCommon>();
     spriteCommon_->Initialize(dx_.get());
 
-    TextureManager::GetInstance()->Initialize(dx_.get(), srv_.get());
     ModelManager::GetInstance()->Initialize(dx_.get());
 
     objCommon_ = std::make_unique<Object3dCommon>();

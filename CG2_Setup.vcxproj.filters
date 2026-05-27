@@ -63,40 +63,13 @@
       <UniqueIdentifier>{a1b2c3d4-0004-0001-0001-000000000001}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
-
   <!-- ===== .cpp ファイル ===== -->
   <ItemGroup>
     <!-- エントリポイント -->
     <ClCompile Include="main.cpp">
       <Filter>Engine\Core</Filter>
     </ClCompile>
-
     <!-- Engine\Core: DirectX基盤・ウィンドウ・ログ -->
-    <ClCompile Include="Engine\WinApp.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\DirectXCommon.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\SrvManager.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\GameApp.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Logger.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\CrashHandler.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\D3DResourceLeakChecker.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\ImGuiManagaer.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-
     <!-- Engine\3D: 3Dモデル・オブジェクト・アニメーション -->
     <ClCompile Include="Engine\3D\Model.cpp">
       <Filter>Engine\3D</Filter>
@@ -134,13 +107,6 @@
     <ClCompile Include="Engine\3D\VideoPlayerMF.cpp">
       <Filter>Engine\3D</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\SkinnedModel.cpp">
-      <Filter>Engine\3D</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\GeometryGenerator.cpp">
-      <Filter>Engine\3D</Filter>
-    </ClCompile>
-
     <!-- Engine\2D: スプライト・テクスチャ -->
     <ClCompile Include="Engine\2D\Sprite.cpp">
       <Filter>Engine\2D</Filter>
@@ -151,23 +117,8 @@
     <ClCompile Include="Engine\2D\TextureManager.cpp">
       <Filter>Engine\2D</Filter>
     </ClCompile>
-
     <!-- Engine\Particle: パーティクル -->
-    <ClCompile Include="Engine\Particle.cpp">
-      <Filter>Engine\Particle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\ParticleCommon.cpp">
-      <Filter>Engine\Particle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\ParticleManager.cpp">
-      <Filter>Engine\Particle</Filter>
-    </ClCompile>
-
     <!-- Engine\Scene: シーン管理 -->
-    <ClCompile Include="Engine\SceneManager.cpp">
-      <Filter>Engine\Scene</Filter>
-    </ClCompile>
-
     <!-- Engine\Camera: カメラ -->
     <ClCompile Include="Engine\Camera\Camera.cpp">
       <Filter>Engine\Camera</Filter>
@@ -175,17 +126,14 @@
     <ClCompile Include="Engine\Camera\DebugCamera.cpp">
       <Filter>Engine\Camera</Filter>
     </ClCompile>
-
     <!-- Engine\Input: 入力 -->
     <ClCompile Include="Engine\Input\Input.cpp">
       <Filter>Engine\Input</Filter>
     </ClCompile>
-
     <!-- Engine\Audio: サウンド -->
     <ClCompile Include="Engine\Audio\AudioSystem.cpp">
       <Filter>Engine\Audio</Filter>
     </ClCompile>
-
     <!-- Engine\Render: レンダリング -->
     <ClCompile Include="Engine\Render\RenderManager.cpp">
       <Filter>Engine\Render</Filter>
@@ -193,12 +141,7 @@
     <ClCompile Include="Engine\Render\OffscreenPass.cpp">
       <Filter>Engine\Render</Filter>
     </ClCompile>
-
     <!-- Engine\Level: レベルローダー -->
-    <ClCompile Include="Engine\LevelLoader.cpp">
-      <Filter>Engine\Level</Filter>
-    </ClCompile>
-
     <!-- Engine\math: 数学ライブラリ -->
     <ClCompile Include="Engine\math\Matrix4x4.cpp">
       <Filter>Engine\math</Filter>
@@ -206,12 +149,7 @@
     <ClCompile Include="Engine\math\Vector3.cpp">
       <Filter>Engine\math</Filter>
     </ClCompile>
-
     <!-- Engine\Utility: ユーティリティ -->
-    <ClCompile Include="Engine\StringUtility.cpp">
-      <Filter>Engine\Utility</Filter>
-    </ClCompile>
-
     <!-- Game\Scene: ゲームシーン -->
     <ClCompile Include="Game\GameScene.cpp">
       <Filter>Game\Scene</Filter>
@@ -231,7 +169,6 @@
     <ClCompile Include="Game\GameClearScene.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
-
     <!-- Game\Player: プレイヤー -->
     <ClCompile Include="Game\player\Player.cpp">
       <Filter>Game\Player</Filter>
@@ -239,7 +176,6 @@
     <ClCompile Include="Game\player\PlayerCombo.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
-
     <!-- Game\Enemy: エネミー -->
     <ClCompile Include="Game\enemy\Enemy.cpp">
       <Filter>Game\Enemy</Filter>
@@ -250,7 +186,6 @@
     <ClCompile Include="Game\enemy\BossAI.cpp">
       <Filter>Game\Enemy</Filter>
     </ClCompile>
-
     <!-- externals\imgui -->
     <ClCompile Include="externals\imgui\imgui.cpp">
       <Filter>externals\imgui</Filter>
@@ -273,36 +208,27 @@
     <ClCompile Include="externals\imgui\imgui_widgets.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3D\GeometryGenerator.cpp" />
+    <ClCompile Include="Engine\Core\D3DResourceLeakChecker.cpp" />
+    <ClCompile Include="Engine\Core\CrashHandler.cpp" />
+    <ClCompile Include="Engine\Core\DirectXCommon.cpp" />
+    <ClCompile Include="Engine\Particle\Particle.cpp" />
+    <ClCompile Include="Engine\Particle\ParticleCommon.cpp" />
+    <ClCompile Include="Engine\3D\SkinnedModel.cpp" />
+    <ClCompile Include="Engine\Core\SrvManager.cpp" />
+    <ClCompile Include="Engine\Utility\Logger.cpp" />
+    <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
+    <ClCompile Include="Engine\Core\GameApp.cpp" />
+    <ClCompile Include="Engine\Utility\StringUtility.cpp" />
+    <ClCompile Include="Engine\Core\WinApp.cpp" />
+    <ClCompile Include="Engine\Particle\ParticleManager.cpp" />
+    <ClCompile Include="Engine\Core\SceneManager.cpp" />
+    <ClCompile Include="Engine\Level\LevelLoader.cpp" />
+    <ClCompile Include="Game\DebugScene.cpp" />
   </ItemGroup>
-
   <!-- ===== .h ファイル ===== -->
   <ItemGroup>
     <!-- Engine\Core -->
-    <ClInclude Include="Engine\WinApp.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\DirectXCommon.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\SrvManager.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\GameApp.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Logger.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\CrashHandler.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\D3DResourceLeakChecker.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\ImGuiManagaer.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-
     <!-- Engine\3D -->
     <ClInclude Include="Engine\3D\Model.h">
       <Filter>Engine\3D</Filter>
@@ -349,16 +275,6 @@
     <ClInclude Include="Engine\3D\VideoPlayerMF.h">
       <Filter>Engine\3D</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\SkinnedModel.h">
-      <Filter>Engine\3D</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\GeometryGenerator.h">
-      <Filter>Engine\3D</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\LightingParam.h">
-      <Filter>Engine\3D</Filter>
-    </ClInclude>
-
     <!-- Engine\2D -->
     <ClInclude Include="Engine\2D\Sprite.h">
       <Filter>Engine\2D</Filter>
@@ -369,26 +285,8 @@
     <ClInclude Include="Engine\2D\TextureManager.h">
       <Filter>Engine\2D</Filter>
     </ClInclude>
-
     <!-- Engine\Particle -->
-    <ClInclude Include="Engine\Particle.h">
-      <Filter>Engine\Particle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\ParticleCommon.h">
-      <Filter>Engine\Particle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\ParticleManager.h">
-      <Filter>Engine\Particle</Filter>
-    </ClInclude>
-
     <!-- Engine\Scene -->
-    <ClInclude Include="Engine\SceneManager.h">
-      <Filter>Engine\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\IScene.h">
-      <Filter>Engine\Scene</Filter>
-    </ClInclude>
-
     <!-- Engine\Camera -->
     <ClInclude Include="Engine\Camera\Camera.h">
       <Filter>Engine\Camera</Filter>
@@ -396,17 +294,14 @@
     <ClInclude Include="Engine\Camera\DebugCamera.h">
       <Filter>Engine\Camera</Filter>
     </ClInclude>
-
     <!-- Engine\Input -->
     <ClInclude Include="Engine\Input\Input.h">
       <Filter>Engine\Input</Filter>
     </ClInclude>
-
     <!-- Engine\Audio -->
     <ClInclude Include="Engine\Audio\AudioSystem.h">
       <Filter>Engine\Audio</Filter>
     </ClInclude>
-
     <!-- Engine\Render -->
     <ClInclude Include="Engine\Render\RenderManager.h">
       <Filter>Engine\Render</Filter>
@@ -414,12 +309,7 @@
     <ClInclude Include="Engine\Render\OffscreenPass.h">
       <Filter>Engine\Render</Filter>
     </ClInclude>
-
     <!-- Engine\Level -->
-    <ClInclude Include="Engine\LevelLoader.h">
-      <Filter>Engine\Level</Filter>
-    </ClInclude>
-
     <!-- Engine\math -->
     <ClInclude Include="Engine\math\MathStruct.h">
       <Filter>Engine\math</Filter>
@@ -439,12 +329,7 @@
     <ClInclude Include="Engine\math\Mesh.h">
       <Filter>Engine\math</Filter>
     </ClInclude>
-
     <!-- Engine\Utility -->
-    <ClInclude Include="Engine\StringUtility.h">
-      <Filter>Engine\Utility</Filter>
-    </ClInclude>
-
     <!-- Game\Scene -->
     <ClInclude Include="Game\GameScene.h">
       <Filter>Game\Scene</Filter>
@@ -464,7 +349,6 @@
     <ClInclude Include="Game\GameClearScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
-
     <!-- Game\Player -->
     <ClInclude Include="Game\player\Player.h">
       <Filter>Game\Player</Filter>
@@ -472,7 +356,6 @@
     <ClInclude Include="Game\player\PlayerCombo.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
-
     <!-- Game\Enemy -->
     <ClInclude Include="Game\enemy\Enemy.h">
       <Filter>Game\Enemy</Filter>
@@ -483,7 +366,6 @@
     <ClInclude Include="Game\enemy\BossAI.h">
       <Filter>Game\Enemy</Filter>
     </ClInclude>
-
     <!-- externals\imgui -->
     <ClInclude Include="externals\imgui\imconfig.h">
       <Filter>externals\imgui</Filter>
@@ -509,8 +391,26 @@
     <ClInclude Include="externals\imgui\imstb_truetype.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\3D\GeometryGenerator.h" />
+    <ClInclude Include="Engine\3D\LightingParam.h" />
+    <ClInclude Include="Engine\Core\D3DResourceLeakChecker.h" />
+    <ClInclude Include="Engine\Core\CrashHandler.h" />
+    <ClInclude Include="Engine\Core\DirectXCommon.h" />
+    <ClInclude Include="Engine\Core\IScene.h" />
+    <ClInclude Include="Engine\Particle\Particle.h" />
+    <ClInclude Include="Engine\Particle\ParticleCommon.h" />
+    <ClInclude Include="Engine\3D\SkinnedModel.h" />
+    <ClInclude Include="Engine\Core\SrvManager.h" />
+    <ClInclude Include="Engine\Utility\Logger.h" />
+    <ClInclude Include="Engine\Utility\StringUtility.h" />
+    <ClInclude Include="Engine\Core\WinApp.h" />
+    <ClInclude Include="Engine\Particle\ParticleManager.h" />
+    <ClInclude Include="Engine\Core\ImGuiManagaer.h" />
+    <ClInclude Include="Engine\Core\SceneManager.h" />
+    <ClInclude Include="Engine\Level\LevelLoader.h" />
+    <ClInclude Include="Engine\Core\GameApp.h" />
+    <ClInclude Include="Game\DebugScene.h" />
   </ItemGroup>
-
   <!-- ===== シェーダーファイル ===== -->
   <ItemGroup>
     <FxCompile Include="resources\shaders\Object3d.VS.hlsl">
@@ -576,17 +476,15 @@
     <FxCompile Include="resources\shaders\EmitParticle.CS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
-    <FxCompile Include="resources\shaders\GaussianBlurX.PS.hlsl">
-      <Filter>Shader\PostEffect</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\Outline.PS.hlsl">
-      <Filter>Shader\PostEffect</Filter>
-    </FxCompile>
     <FxCompile Include="resources\shaders\GaussianBlurY.PS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
+    <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl" />
+    <FxCompile Include="resources\shaders\GaussianBlurX.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Vignette.PS.hlsl" />
+    <FxCompile Include="resources\shaders\RadialBlur.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Dissolve.PS.hlsl" />
   </ItemGroup>
-
   <!-- ===== hlsli (インクルード) ===== -->
   <ItemGroup>
     <None Include="resources\shaders\Object3d.hlsli">
@@ -605,7 +503,6 @@
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>
-
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">
       <Filter>externals\imgui</Filter>
