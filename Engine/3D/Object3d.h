@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "MathStruct.h"
 #include <string>
 #include <vector>
@@ -49,6 +49,11 @@ public:
 		float dissolveEdgeWidth;
 		float enableDissolve;
 		float pad2;
+
+		// Random
+		float enableRandom;
+		float randomTime;
+		float pad3[2];
 	};
 
 public:
@@ -159,6 +164,10 @@ public:
 	void SetDissolveEdgeColor(const Vector4& color) { dissolveEdgeColor_ = color; }
 	Vector4 GetDissolveEdgeColor() const { return dissolveEdgeColor_; }
 
+	void SetEnableRandom(bool enable) { enableRandom_ = enable; }
+	bool GetEnableRandom() const { return enableRandom_; }
+	void SetRandomTime(float time) { randomTime_ = time; }
+
 	void SetMaskTexturePath(const std::string& path) { maskTexturePath_ = path; TextureManager::GetInstance()->LoadTexture(path); }
 
 	void SetPrimitiveCommon(PrimitiveCommon* p) { primitiveCommon_ = p; }
@@ -229,8 +238,11 @@ private:
 	bool enableDissolve_ = false;
 	float dissolveThreshold_ = 0.5f;
 	float dissolveEdgeWidth_ = 0.05f;
-	Vector4 dissolveEdgeColor_ = { 1.0f, 0.0f, 0.0f, 1.0f }; // 蛻晄悄蛟､:襍､
+	Vector4 dissolveEdgeColor_ = { 1.0f, 0.0f, 0.0f, 1.0f }; // 初期値:赤
 	std::string maskTexturePath_ = "resources/noise0.png";
+
+	bool enableRandom_ = false;
+	float randomTime_ = 0.0f;
 
 	//繝・け繧ｹ繝√Ε
 	std::string texturePath_ = "";

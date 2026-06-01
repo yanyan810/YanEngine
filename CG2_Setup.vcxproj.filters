@@ -484,6 +484,7 @@
     <FxCompile Include="resources\shaders\Vignette.PS.hlsl" />
     <FxCompile Include="resources\shaders\RadialBlur.PS.hlsl" />
     <FxCompile Include="resources\shaders\Dissolve.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Random.PS.hlsl" />
   </ItemGroup>
   <!-- ===== hlsli (インクルード) ===== -->
   <ItemGroup>

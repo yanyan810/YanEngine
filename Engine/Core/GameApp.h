@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <memory>
 #include "SceneManager.h"
 #include "Input.h"
@@ -13,7 +13,7 @@ class PrimitiveCommon;
 class ParticleCommon;
 class ImGuiManagaer;
 class SkinningCommon;
-#include "RenderManager.h" // PostEffectMode を全シーンで使えるようにする
+#include "RenderManager.h" // PostEffectMode 繧貞・繧ｷ繝ｼ繝ｳ縺ｧ菴ｿ縺医ｋ繧医≧縺ｫ縺吶ｋ
 
 class SceneManager;
 
@@ -25,7 +25,7 @@ public:
     int Run();
     void RequestQuit() { quit_ = true; }
 
-    // 共有システムにアクセス（GameScene から使う）
+    // 蜈ｱ譛峨す繧ｹ繝・Β縺ｫ繧｢繧ｯ繧ｻ繧ｹ・・ameScene 縺九ｉ菴ｿ縺・ｼ・
     WinApp* Win() const { return win_.get(); }
     DirectXCommon* Dx() const { return dx_.get(); }
     SrvManager* Srv() const { return srv_.get(); }
@@ -43,7 +43,7 @@ public:
 
     void Draw();
 
-    //レンダー用ゲッター
+    //繝ｬ繝ｳ繝繝ｼ逕ｨ繧ｲ繝・ち繝ｼ
     RenderManager* Render() const { return render_.get(); }
 
     Input* GetInput() { return input_.get(); }
@@ -71,7 +71,9 @@ private:
     std::unique_ptr<SkinningCommon> skinCom_;
     std::unique_ptr<SkyboxCommon> skyboxCommon_;
 
-	//RenderManagerを持たせる
+	//RenderManager繧呈戟縺溘○繧・
     std::unique_ptr<RenderManager> render_;
+
+    bool isDebugMode_ = false;
 
 };

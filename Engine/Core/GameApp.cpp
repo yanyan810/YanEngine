@@ -45,7 +45,13 @@ int GameApp::Run() {
         imgui_->Begin();
 #endif // DEBUG
 
-        if (input_) input_->Update();
+        if (input_) {
+            input_->Update();
+            // F1キーでデバッグモードの切り替え
+            if (input_->IsKeyTrigger(DIK_F2)) {
+                isDebugMode_ = !isDebugMode_;
+            }
+        }
 
         // Update
         sceneMgr_->Update(*this, dt);
@@ -201,8 +207,10 @@ void GameApp::Draw() {
 
 #ifdef USE_IMGUI
     if (imgui_) {
-        sceneMgr_->DrawImGui(*this);
-        render_->DrawImGui(); // ポストエフェクト切り替えUI
+        if (isDebugMode_) {
+            sceneMgr_->DrawImGui(*this);
+            render_->DrawImGui(); // ポストエフェクト切り替えUI
+        }
         imgui_->End(dx_->GetCommandList());
     }
 #endif
