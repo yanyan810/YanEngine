@@ -689,5 +689,46 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::DragFloat3("R", &srtVideo_.rot.x, 0.01f);
     ImGui::DragFloat3("S", &srtVideo_.scale.x, 0.1f);
     ImGui::End();
+
+    ImGui::Begin("Object Specific Effects");
+    
+    // Player
+    if (ImGui::CollapsingHeader("Player")) {
+        auto* playerModel = player_->GetModelObject();
+        if (playerModel) {
+            bool pOutline = playerModel->GetEnableOutline();
+            if (ImGui::Checkbox("Outline##Player", &pOutline)) playerModel->SetEnableOutline(pOutline);
+            
+            bool pDissolve = playerModel->GetEnableDissolve();
+            if (ImGui::Checkbox("Dissolve##Player", &pDissolve)) playerModel->SetEnableDissolve(pDissolve);
+            
+            bool pRandom = playerModel->GetEnableRandom();
+            if (ImGui::Checkbox("Random##Player", &pRandom)) playerModel->SetEnableRandom(pRandom);
+            
+            if (pRandom) {
+                playerModel->SetRandomTime((float)ImGui::GetTime());
+            }
+        }
+    }
+    
+    // Ground
+    if (ImGui::CollapsingHeader("Ground")) {
+        if (ground_) {
+            bool gOutline = ground_->GetEnableOutline();
+            if (ImGui::Checkbox("Outline##Ground", &gOutline)) ground_->SetEnableOutline(gOutline);
+            
+            bool gDissolve = ground_->GetEnableDissolve();
+            if (ImGui::Checkbox("Dissolve##Ground", &gDissolve)) ground_->SetEnableDissolve(gDissolve);
+            
+            bool gRandom = ground_->GetEnableRandom();
+            if (ImGui::Checkbox("Random##Ground", &gRandom)) ground_->SetEnableRandom(gRandom);
+            
+            if (gRandom) {
+                ground_->SetRandomTime((float)ImGui::GetTime());
+            }
+        }
+    }
+    
+    ImGui::End();
 #endif // USE_IMGUI
 }

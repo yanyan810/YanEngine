@@ -116,6 +116,9 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 		effectParamData_->enableDissolve = enableDissolve_ ? 1.0f : 0.0f;
 		effectParamData_->dissolveEdgeWidth = dissolveEdgeWidth_;
 		effectParamData_->dissolveEdgeColor = dissolveEdgeColor_;
+		
+		effectParamData_->enableRandom = enableRandom_ ? 1.0f : 0.0f;
+		effectParamData_->randomTime = randomTime_;
 	}
 	
 	if (!maskTexturePath_.empty()) {
@@ -191,6 +194,9 @@ void Object3d::Update(float dt)
 		effectParamData_->enableDissolve = enableDissolve_ ? 1.0f : 0.0f;
 		effectParamData_->dissolveEdgeWidth = dissolveEdgeWidth_;
 		effectParamData_->dissolveEdgeColor = dissolveEdgeColor_;
+		
+		effectParamData_->enableRandom = enableRandom_ ? 1.0f : 0.0f;
+		effectParamData_->randomTime = randomTime_;
 	}
 	
 	if (!maskTexturePath_.empty()) {

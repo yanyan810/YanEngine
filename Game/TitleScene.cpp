@@ -729,6 +729,23 @@ void TitleScene::DrawImGui(GameApp& app) {
 				curObj->SetOutlineThickness(thickness);
 			}
 		}
+
+		ImGui::Separator();
+		ImGui::Text("Dissolve Settings");
+		bool enableD = curObj->GetEnableDissolve();
+		if (ImGui::Checkbox("Enable Dissolve", &enableD)) {
+			curObj->SetEnableDissolve(enableD);
+		}
+
+		ImGui::Separator();
+		ImGui::Text("Random Settings");
+		bool enableR = curObj->GetEnableRandom();
+		if (ImGui::Checkbox("Enable Random", &enableR)) {
+			curObj->SetEnableRandom(enableR);
+		}
+		if (enableR) {
+			curObj->SetRandomTime((float)ImGui::GetTime());
+		}
 	}
 
 	ImGui::Separator();

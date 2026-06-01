@@ -23,6 +23,7 @@ enum class PostEffectMode {
     Outline,         // アウトライン抽出（深度・法線ベース）
     RadialBlur,      // 放射状ブラー
     Dissolve,        // ディゾルブ
+    Random,          // 乱数ノイズ
 
     Count            // 種類の数（番兵）
 };
@@ -127,6 +128,14 @@ private:
     float dissolveThreshold_ = 0.5f;
     float dissolveEdgeWidth_ = 0.05f;
     Vector4 dissolveBackgroundColor_ = { 0.0f, 1.0f, 0.0f, 1.0f }; // 初期値は緑色
+
+    // Random用の定数バッファ
+    struct RandomParameter {
+        float time;
+        float _pad[3];
+    };
+    Microsoft::WRL::ComPtr<ID3D12Resource> randomCB_;
+    RandomParameter* randomCBData_ = nullptr;
 
     uint32_t noiseSrvIndex_ = 0;
 

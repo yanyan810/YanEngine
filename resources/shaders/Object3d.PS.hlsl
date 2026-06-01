@@ -65,6 +65,11 @@ struct EffectParam {
     float dissolveEdgeWidth;
     float enableDissolve;
     float pad1;
+
+    // Random
+    float enableRandom;
+    float randomTime;
+    float2 pad2;
 };
 
 // =====================
@@ -89,6 +94,14 @@ struct PixelShaderOutput
 {
     float4 color : SV_TARGET0;
 };
+
+// 乱数生成アルゴリズム
+float rand2dTo1d(float2 value, float2 dotDir = float2(12.9898, 78.233)) {
+    float2 smallValue = sin(value);
+    float random = dot(smallValue, dotDir);
+    random = frac(sin(random) * 143758.5453);
+    return random;
+}
 
 PixelShaderOutput main(VertexShaderOutput input)
 {
@@ -233,6 +246,12 @@ PixelShaderOutput main(VertexShaderOutput input)
 
     // Dissolveのエッジ色を加算 (自発光のように)
     output.color.rgb += edgeFactor * gEffect.dissolveEdgeColor.rgb;
+
+    // Random
+    if (gEffect.enableRandom != 0.0f) {
+        float random = rand2dTo1d(input.texcoord * gEffect.randomTime);
+        output.color.rgb *= random;
+    }
 
     output.color.a = gMaterial.color.a * tex.a;
     return output;
