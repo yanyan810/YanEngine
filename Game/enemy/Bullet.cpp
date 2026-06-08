@@ -28,6 +28,9 @@ void BulletManager::Spawn(const Vector3& pos, int dir, int damage) {
     b.model->Initialize(objCommon_, dx_);
     b.model->SetCamera(cam_);
     b.model->SetModel("enemy/shooter/bullet/bullet.obj");
+    b.model->SetUseEnvironmentMap(true);
+    b.model->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
+    b.model->SetEnvironmentCoefficient(1.0f);
 
     // ★ここで初期見た目を確定（push_backの前！）
     const float s = 0.25f;
