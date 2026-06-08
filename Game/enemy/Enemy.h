@@ -78,6 +78,9 @@ public:
     EnemyType GetType() const { return type_; }
     int GetHP() const { return hp_; }
     void AddHP(int delta) { hp_ += delta; if (hp_ < 0) hp_ = 0; if (hp_ == 0) alive_ = false; }
+    void SetHP(int hp) { hp_ = std::clamp(hp, 0, maxHp_); alive_ = hp_ > 0; }
+    bool WasHitByPlayerAttack(unsigned int attackSerial) const { return lastPlayerAttackSerial_ == attackSerial; }
+    void MarkHitByPlayerAttack(unsigned int attackSerial) { lastPlayerAttackSerial_ = attackSerial; }
 
     Vector3 GetPos() const { return pos_; }
     Vector3 GetVel() const { return vel_; }
@@ -252,6 +255,7 @@ private:
     int lastAtkFrame_ = -1;
 
     bool lockMove_ = false;
+    unsigned int lastPlayerAttackSerial_ = 0;
 
     MeleeState prevMeleeState_ = MeleeState::Approach;
 

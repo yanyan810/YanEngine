@@ -202,6 +202,12 @@ void DebugAITestScene::DrawImGui(GameApp& app) {
 
     ImGui::Text("Logs:");
     ImGui::TextWrapped("%s", app.DebugAI() ? app.DebugAI()->Logger().DirectoryPath().c_str() : "");
+    ImGui::Text("Actions:");
+    ImGui::TextWrapped("%s", app.DebugAI() ? app.DebugAI()->ReplayRecorder().ActionLogPath().c_str() : "");
+    ImGui::Text("Initial:");
+    ImGui::TextWrapped("%s", app.DebugAI() ? app.DebugAI()->ReplayRecorder().InitialStatePath().c_str() : "");
+    ImGui::Text("Replay:");
+    ImGui::TextWrapped("%s", app.DebugAI() ? app.DebugAI()->ReplayPlayer().ReplayPath().c_str() : "");
     ImGui::End();
 #endif
 }

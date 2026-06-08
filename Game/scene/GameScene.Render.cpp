@@ -148,7 +148,8 @@ void GameScene::DrawImGui(GameApp& app) {
 
     const DebugGameState debugState = CaptureDebugState();
     ImGui::Begin("Game Debug AI");
-    ImGui::Text("F8: %s", debugAIEnabled_ ? "Enabled" : "Disabled");
+    ImGui::Text("F7 Replay: %s", app.DebugAI() && app.DebugAI()->IsReplayPlaying() ? "Playing" : "Stopped");
+    ImGui::Text("F8 Random Bot: %s", debugAIEnabled_ ? "Enabled" : "Disabled");
     ImGui::Text("Frame: %llu", debugState.frameNumber);
     ImGui::Text("Player HP: %d", debugState.playerHp);
     ImGui::Text("Enemy HP: %d", debugState.enemyHp);
@@ -159,6 +160,12 @@ void GameScene::DrawImGui(GameApp& app) {
         debugState.playerPosition.z);
     if (app.DebugAI()) {
         ImGui::TextWrapped("Logs: %s", app.DebugAI()->Logger().DirectoryPath().c_str());
+        ImGui::TextWrapped("Actions: %s", app.DebugAI()->ReplayRecorder().ActionLogPath().c_str());
+        ImGui::TextWrapped("Initial: %s", app.DebugAI()->ReplayRecorder().InitialStatePath().c_str());
+        ImGui::TextWrapped("Replay: %s", app.DebugAI()->ReplayPlayer().ReplayPath().c_str());
+        ImGui::Text("Replay Step: %zu / %zu",
+            app.DebugAI()->ReplayPlayer().NextIndex(),
+            app.DebugAI()->ReplayPlayer().ActionCount());
     }
     ImGui::End();
 #endif // USE_IMGUI

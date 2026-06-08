@@ -94,6 +94,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
 void Player::StartAttackAction_(PlayerAttackType type, int horizontal) {
     action_ = PlayerAction::Attack;
     attackType_ = type;
+    ++attackSerial_;
     crouching_ = false;
     fastFalling_ = false;
     guarding_ = false;
@@ -167,6 +168,44 @@ bool Player::GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) con
         pos_.z
     };
     return true;
+}
+
+bool Player::GetAttackHitBox(AABB& outHitBox) const {
+    Vector3 center{};
+    Vector3 halfSize{};
+    if (!GetAttackDebugHitBox_(center, halfSize)) {
+        return false;
+    }
+
+    outHitBox.min = {
+        center.x - halfSize.x,
+        center.y - halfSize.y,
+        center.z - halfSize.z,
+    };
+    outHitBox.max = {
+        center.x + halfSize.x,
+        center.y + halfSize.y,
+        center.z + halfSize.z,
+    };
+    return true;
+}
+
+int Player::GetAttackDamage() const {
+    switch (attackType_) {
+    case PlayerAttackType::Weak:
+        return 8;
+    case PlayerAttackType::Tilt:
+        return 12;
+    case PlayerAttackType::Smash:
+        return 20;
+    case PlayerAttackType::NeutralSpecial:
+        return 14;
+    case PlayerAttackType::SideSpecial:
+        return 18;
+    case PlayerAttackType::None:
+    default:
+        return 0;
+    }
 }
 
 void Player::ApplyActionCommand_(const PlayerInputCommand& command) {

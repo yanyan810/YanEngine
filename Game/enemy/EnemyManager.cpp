@@ -16,6 +16,46 @@ bool Intersect3(const EnemyManager::AABB3& a, const EnemyManager::AABB3& b) {
 		(std::abs(a.y - b.y) <= (a.hy + b.hy)) &&
 		(std::abs(a.z - b.z) <= (a.hz + b.hz));
 }
+
+EnemyManager::AABB3 ToAABB3(const AABB& a) {
+	EnemyManager::AABB3 b{};
+	b.x = (a.min.x + a.max.x) * 0.5f;
+	b.y = (a.min.y + a.max.y) * 0.5f;
+	b.z = (a.min.z + a.max.z) * 0.5f;
+	b.hx = (a.max.x - a.min.x) * 0.5f;
+	b.hy = (a.max.y - a.min.y) * 0.5f;
+	b.hz = (a.max.z - a.min.z) * 0.5f;
+	return b;
+}
+
+const char* DebugEnemyTypeName(EnemyType type) {
+	switch (type) {
+	case EnemyType::Melee:
+		return "Melee";
+	case EnemyType::Shooter:
+		return "Shooter";
+	case EnemyType::Boss:
+		return "Boss";
+	default:
+		return "Unknown";
+	}
+}
+
+bool TryParseDebugEnemyType(const std::string& typeName, EnemyType& outType) {
+	if (typeName == "Melee") {
+		outType = EnemyType::Melee;
+		return true;
+	}
+	if (typeName == "Shooter") {
+		outType = EnemyType::Shooter;
+		return true;
+	}
+	if (typeName == "Boss") {
+		outType = EnemyType::Boss;
+		return true;
+	}
+	return false;
+}
 }
 
 float EnemyManager::RandRange_(float a, float b) {
@@ -51,6 +91,9 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 void EnemyManager::Clear() {
 	enemies_.clear();
 	meleeHitboxes_.clear();
+	healDrops_.clear();
+	pendingSpawns_.clear();
+	bossDefeated_ = false;
 	bullets_.Clear();
 }
 
@@ -59,6 +102,75 @@ void EnemyManager::Spawn(EnemyType type, const Vector3& posXYZ) {
 	e.Initialize(objCommon_, dx_, cam_, type, posXYZ);
 	e.SetLighting(light_);
 	enemies_.push_back(std::move(e));
+}
+
+void EnemyManager::ApplyPlayerAttack(Player& player) {
+	AABB attackBox{};
+	const unsigned int attackSerial = player.GetAttackSerial();
+	const int damage = player.GetAttackDamage();
+	if (attackSerial == 0 || damage <= 0 || !player.GetAttackHitBox(attackBox)) {
+		return;
+	}
+
+	const AABB3 attackBox3 = ToAABB3(attackBox);
+	for (auto& enemy : enemies_) {
+		if (!enemy.IsAlive() || enemy.WasHitByPlayerAttack(attackSerial)) {
+			continue;
+		}
+		if (!Intersect3(attackBox3, ToAABB3(enemy.GetBodyAABB()))) {
+			continue;
+		}
+
+		const float knockDir = (enemy.GetPos3D().x >= player.GetPos3D().x) ? 1.0f : -1.0f;
+		enemy.ApplyHit2D(8.0f * knockDir, 8.0f, true, damage);
+		enemy.MarkHitByPlayerAttack(attackSerial);
+	}
+}
+
+void EnemyManager::AppendDebugEnemyStates(std::vector<DebugEnemyState>& outStates) const {
+	for (const Enemy& enemy : enemies_) {
+		if (!enemy.IsAlive()) {
+			continue;
+		}
+
+		DebugEnemyState state;
+		state.type = DebugEnemyTypeName(enemy.GetType());
+		state.hp = enemy.GetHP();
+		state.position = enemy.GetPos3D();
+		state.pendingSpawn = false;
+		state.spawnDelay = 0.0f;
+		outStates.push_back(state);
+	}
+
+	for (const PendingSpawn& pending : pendingSpawns_) {
+		DebugEnemyState state;
+		state.type = DebugEnemyTypeName(pending.type);
+		state.hp = 0;
+		state.pendingSpawn = true;
+		state.spawnDelay = pending.t;
+		outStates.push_back(state);
+	}
+}
+
+void EnemyManager::RestoreDebugEnemyStates(const std::vector<DebugEnemyState>& states) {
+	Clear();
+
+	for (const DebugEnemyState& state : states) {
+		EnemyType type{};
+		if (!TryParseDebugEnemyType(state.type, type)) {
+			continue;
+		}
+
+		if (state.pendingSpawn) {
+			QueueSpawn(type, state.spawnDelay);
+			continue;
+		}
+
+		Spawn(type, state.position);
+		if (!enemies_.empty()) {
+			enemies_.back().SetHP(state.hp);
+		}
+	}
 }
 
 void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player) {
@@ -75,17 +187,6 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			[](const MeleeHitbox& h) { return h.life <= 0.0f; }),
 		meleeHitboxes_.end()
 	);
-
-	auto ToAABB3 = [](const AABB& a)->AABB3 {
-		AABB3 b{};
-		b.x = (a.min.x + a.max.x) * 0.5f;
-		b.y = (a.min.y + a.max.y) * 0.5f;
-		b.z = (a.min.z + a.max.z) * 0.5f;
-		b.hx = (a.max.x - a.min.x) * 0.5f;
-		b.hy = (a.max.y - a.min.y) * 0.5f;
-		b.hz = (a.max.z - a.min.z) * 0.5f;
-		return b;
-		};
 
 	// 霑第磁繝偵ャ繝医・繝・け繧ｹ vs 繝励Ξ繧､繝､繝ｼ
 	const AABB3 playerBody3 = ToAABB3(player.GetBodyAABB());

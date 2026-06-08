@@ -4,11 +4,44 @@
 
 void DebugAIManager::Initialize(const std::string& logDirectory) {
     logger_.Open(logDirectory);
+    replayRecorder_.Open(logger_.DirectoryPath());
 }
 
 void DebugAIManager::Shutdown() {
     logger_.WriteReport();
+    replayRecorder_.Close();
     logger_.Close();
+}
+
+void DebugAIManager::SetEnabled(bool enabled) {
+    enabled_ = enabled;
+    if (!enabled_) {
+        StopReplay();
+    }
+}
+
+bool DebugAIManager::StartLatestReplay() {
+    if (adapter_ == nullptr) {
+        return false;
+    }
+    if (!replayPlayer_.LoadLatestFromDirectory(logger_.DirectoryPath())) {
+        return false;
+    }
+
+    if (replayPlayer_.HasInitialState()) {
+        adapter_->RestoreDebugState(replayPlayer_.InitialState());
+    }
+
+    const DebugGameState state = adapter_->CaptureDebugState();
+    replayPlayer_.Start(state.frameNumber);
+    replayMode_ = true;
+    enabled_ = true;
+    return true;
+}
+
+void DebugAIManager::StopReplay() {
+    replayPlayer_.Stop();
+    replayMode_ = false;
 }
 
 void DebugAIManager::Tick(float dt) {
@@ -16,10 +49,33 @@ void DebugAIManager::Tick(float dt) {
         return;
     }
 
+    DebugAction* executedAction = nullptr;
+
+    if (replayMode_) {
+        DebugGameState currentState = adapter_->CaptureDebugState();
+        DebugReplayAction replayAction;
+        while (replayPlayer_.PopDueAction(currentState.frameNumber, replayAction)) {
+            const DebugGameState beforeState = currentState;
+            adapter_->ExecuteDebugAction(replayAction.action);
+            lastAction_ = replayAction.action;
+            executedAction = &lastAction_;
+            currentState = adapter_->CaptureDebugState();
+            replayRecorder_.RecordAction(beforeState, replayAction.action, currentState);
+        }
+
+        if (!replayPlayer_.IsPlaying() && replayPlayer_.IsFinished()) {
+            replayMode_ = false;
+            enabled_ = false;
+        }
+
+        logger_.LogFrame(currentState, executedAction);
+        DetectIssues_(currentState, dt);
+        return;
+    }
+
     DebugGameState beforeState = adapter_->CaptureDebugState();
 
     DebugAction chosenAction;
-    DebugAction* executedAction = nullptr;
     if (bot_.ChooseAction(beforeState, chosenAction)) {
         adapter_->ExecuteDebugAction(chosenAction);
         lastAction_ = chosenAction;
@@ -27,8 +83,24 @@ void DebugAIManager::Tick(float dt) {
     }
 
     DebugGameState afterState = adapter_->CaptureDebugState();
+    if (executedAction != nullptr) {
+        replayRecorder_.RecordAction(beforeState, *executedAction, afterState);
+    }
     logger_.LogFrame(afterState, executedAction);
     DetectIssues_(afterState, dt);
+}
+
+void DebugAIManager::RecordExternalAction(
+    const DebugGameState& stateBefore,
+    const DebugAction& action,
+    const DebugGameState& stateAfter) {
+
+    if (action.name.empty()) {
+        return;
+    }
+
+    lastAction_ = action;
+    replayRecorder_.RecordAction(stateBefore, action, stateAfter);
 }
 
 void DebugAIManager::DetectIssues_(const DebugGameState& state, float dt) {
@@ -95,6 +167,7 @@ void DebugAIManager::AddIssue_(DebugIssueSeverity severity, const DebugGameState
     issue.frameNumber = state.frameNumber;
     issue.sceneName = state.sceneName;
     issue.lastAction = lastAction_;
+    issue.replayPath = replayRecorder_.SaveRecentReplayForIssue(issue);
     logger_.LogIssue(issue);
 }
 

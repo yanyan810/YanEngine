@@ -1,6 +1,8 @@
 #pragma once
 
 #include "DebugLogger.h"
+#include "DebugReplayPlayer.h"
+#include "DebugReplayRecorder.h"
 #include "IGameDebugAdapter.h"
 #include "RandomDebugBot.h"
 
@@ -13,13 +15,23 @@ public:
     void Initialize(const std::string& logDirectory = "generated/debug_ai");
     void Shutdown();
 
-    void SetEnabled(bool enabled) { enabled_ = enabled; }
+    void SetEnabled(bool enabled);
     bool IsEnabled() const { return enabled_; }
 
     void SetAdapter(IGameDebugAdapter* adapter) { adapter_ = adapter; }
     void Tick(float dt);
+    void RecordExternalAction(
+        const DebugGameState& stateBefore,
+        const DebugAction& action,
+        const DebugGameState& stateAfter);
+
+    bool StartLatestReplay();
+    void StopReplay();
+    bool IsReplayPlaying() const { return replayMode_ && replayPlayer_.IsPlaying(); }
 
     const DebugLogger& Logger() const { return logger_; }
+    const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
+    const DebugReplayPlayer& ReplayPlayer() const { return replayPlayer_; }
 
 private:
     void DetectIssues_(const DebugGameState& state, float dt);
@@ -33,7 +45,10 @@ private:
     IGameDebugAdapter* adapter_ = nullptr;
     RandomDebugBot bot_;
     DebugLogger logger_;
+    DebugReplayRecorder replayRecorder_;
+    DebugReplayPlayer replayPlayer_;
     DebugAction lastAction_;
+    bool replayMode_ = false;
 
     std::string lastStableStateKey_;
     std::string lastProgressKey_;
