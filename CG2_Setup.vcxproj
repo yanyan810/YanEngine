@@ -95,7 +95,7 @@
       </LinkTimeCodeGeneration>
       <LinkTimeCodeGenerationObjectFile />
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Debug</AdditionalLibraryDirectories>
-      <AdditionalDependencies>assimp-vc143-mtd.lib;imgui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>assimp-vc143-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreLinkEvent>
       <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
@@ -160,7 +160,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <LinkTimeCodeGeneration />
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Release</AdditionalLibraryDirectories>
-      <AdditionalDependencies>assimp-vc143-mt.lib;imgui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreLinkEvent>
       <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
@@ -190,16 +190,17 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="externals\imgui\imgui.cpp" />
     <ClCompile Include="externals\imgui\imgui_demo.cpp" />
     <ClCompile Include="externals\imgui\imgui_draw.cpp" />
-    <ClCompile Include="externals\imgui\imgui_impl_dx12.cpp" />
-    <ClCompile Include="externals\imgui\imgui_impl_win32.cpp" />
+    <ClCompile Include="externals\imgui\backends\imgui_impl_dx12.cpp" />
+    <ClCompile Include="externals\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="externals\imgui\imgui_tables.cpp" />
     <ClCompile Include="externals\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="Game\GameClearScene.cpp" />
-    <ClCompile Include="Game\GameOverScene.cpp" />
-    <ClCompile Include="Game\ParticleTestScene.cpp" />
+    <ClCompile Include="Game\scene\GameClearScene.cpp" />
+    <ClCompile Include="Game\scene\GameOverScene.cpp" />
+    <ClCompile Include="Game\scene\ParticleTestScene.cpp" />
     <ClCompile Include="Game\enemy\BossAI.cpp" />
     <ClCompile Include="Game\enemy\Bullet.cpp" />
     <ClCompile Include="Game\enemy\Enemy.cpp" />
+    <ClCompile Include="Game\enemy\EnemyManager.cpp" />
     <ClCompile Include="Engine\Core\D3DResourceLeakChecker.cpp" />
     <ClCompile Include="Engine\Core\CrashHandler.cpp" />
     <ClCompile Include="Engine\Audio\AudioSystem.cpp" />
@@ -213,7 +214,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Logger.cpp" />
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
-    <ClCompile Include="Game\GameScene.cpp" />
+    <ClCompile Include="Game\scene\GameScene.cpp" />
+    <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp" />
+    <ClCompile Include="Game\scene\GameScene.Render.cpp" />
+    <ClCompile Include="Game\scene\GameScene.UI.cpp" />
+    <ClCompile Include="Game\scene\GameScene.Update.cpp" />
     <ClCompile Include="main.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">MaxSpeed</Optimization>
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">false</WholeProgramOptimization>
@@ -226,11 +231,13 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Particle\ParticleManager.cpp" />
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
-    <ClCompile Include="Game\TitleScene.cpp" />
-    <ClCompile Include="Game\player\PlayerCombo.cpp" />
+    <ClCompile Include="Game\scene\TitleScene.cpp" />
     <ClCompile Include="Game\player\Player.cpp" />
-    <ClCompile Include="Game\TestScene.cpp" />
-    <ClCompile Include="Game\DebugScene.cpp" />
+    <ClCompile Include="Game\player\PlayerInput.cpp" />
+    <ClCompile Include="Game\player\PlayerMovement.cpp" />
+    <ClCompile Include="Game\player\PlayerPresentation.cpp" />
+    <ClCompile Include="Game\scene\TestScene.cpp" />
+    <ClCompile Include="Game\scene\DebugScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl">
@@ -431,18 +438,19 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Render\RenderManager.h" />
     <ClInclude Include="externals\imgui\imconfig.h" />
     <ClInclude Include="externals\imgui\imgui.h" />
-    <ClInclude Include="externals\imgui\imgui_impl_dx12.h" />
-    <ClInclude Include="externals\imgui\imgui_impl_win32.h" />
+    <ClInclude Include="externals\imgui\backends\imgui_impl_dx12.h" />
+    <ClInclude Include="externals\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="externals\imgui\imgui_internal.h" />
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
-    <ClInclude Include="Game\GameClearScene.h" />
-    <ClInclude Include="Game\GameOverScene.h" />
-    <ClInclude Include="Game\ParticleTestScene.h" />
+    <ClInclude Include="Game\scene\GameClearScene.h" />
+    <ClInclude Include="Game\scene\GameOverScene.h" />
+    <ClInclude Include="Game\scene\ParticleTestScene.h" />
     <ClInclude Include="Game\enemy\BossAI.h" />
     <ClInclude Include="Game\enemy\Bullet.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />
+    <ClInclude Include="Game\enemy\EnemyManager.h" />
     <ClInclude Include="Engine\Core\D3DResourceLeakChecker.h" />
     <ClInclude Include="Engine\Core\CrashHandler.h" />
     <ClInclude Include="Engine\Audio\AudioSystem.h" />
@@ -467,12 +475,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Core\SceneManager.h" />
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
-    <ClInclude Include="Game\GameScene.h" />
-    <ClInclude Include="Game\TitleScene.h" />
-    <ClInclude Include="Game\player\PlayerCombo.h" />
+    <ClInclude Include="Game\scene\GameScene.h" />
+    <ClInclude Include="Game\scene\TitleScene.h" />
     <ClInclude Include="Game\player\Player.h" />
-    <ClInclude Include="Game\TestScene.h" />
-    <ClInclude Include="Game\DebugScene.h" />
+    <ClInclude Include="Game\scene\TestScene.h" />
+    <ClInclude Include="Game\scene\DebugScene.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="externals\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">

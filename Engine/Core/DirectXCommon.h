@@ -51,6 +51,7 @@ public:
 
 	//getter
 	ID3D12Device* GetDevice() const { return device_.Get(); }
+	ID3D12CommandQueue* GetCommandQueue() const { return commandQueue.Get(); }
 	ID3D12GraphicsCommandList* GetCommandList() const { return commandList.Get(); }
 	ID3D12GraphicsCommandList* GetComputeCommandList() const { return computeCommandList.Get(); }
 	ID3D12Resource* GetDepthStencilResource() const { return depthStencilResource_.Get(); }

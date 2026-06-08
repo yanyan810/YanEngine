@@ -151,33 +151,54 @@
     </ClCompile>
     <!-- Engine\Utility: ユーティリティ -->
     <!-- Game\Scene: ゲームシーン -->
-    <ClCompile Include="Game\GameScene.cpp">
+    <ClCompile Include="Game\scene\GameScene.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Game\TitleScene.cpp">
+    <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Game\ParticleTestScene.cpp">
+    <ClCompile Include="Game\scene\GameScene.Render.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Game\TestScene.cpp">
+    <ClCompile Include="Game\scene\GameScene.UI.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Game\GameOverScene.cpp">
+    <ClCompile Include="Game\scene\GameScene.Update.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Game\GameClearScene.cpp">
+    <ClCompile Include="Game\scene\TitleScene.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\scene\ParticleTestScene.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\scene\TestScene.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\scene\GameOverScene.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\scene\GameClearScene.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
     <!-- Game\Player: プレイヤー -->
     <ClCompile Include="Game\player\Player.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
-    <ClCompile Include="Game\player\PlayerCombo.cpp">
+    <ClCompile Include="Game\player\PlayerInput.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerMovement.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerPresentation.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
     <!-- Game\Enemy: エネミー -->
     <ClCompile Include="Game\enemy\Enemy.cpp">
+      <Filter>Game\Enemy</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\enemy\EnemyManager.cpp">
       <Filter>Game\Enemy</Filter>
     </ClCompile>
     <ClCompile Include="Game\enemy\Bullet.cpp">
@@ -196,10 +217,10 @@
     <ClCompile Include="externals\imgui\imgui_draw.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="externals\imgui\imgui_impl_dx12.cpp">
+    <ClCompile Include="externals\imgui\backends\imgui_impl_dx12.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="externals\imgui\imgui_impl_win32.cpp">
+    <ClCompile Include="externals\imgui\backends\imgui_impl_win32.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
     <ClCompile Include="externals\imgui\imgui_tables.cpp">
@@ -224,7 +245,7 @@
     <ClCompile Include="Engine\Particle\ParticleManager.cpp" />
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
-    <ClCompile Include="Game\DebugScene.cpp" />
+    <ClCompile Include="Game\scene\DebugScene.cpp" />
   </ItemGroup>
   <!-- ===== .h ファイル ===== -->
   <ItemGroup>
@@ -331,33 +352,33 @@
     </ClInclude>
     <!-- Engine\Utility -->
     <!-- Game\Scene -->
-    <ClInclude Include="Game\GameScene.h">
+    <ClInclude Include="Game\scene\GameScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Game\TitleScene.h">
+    <ClInclude Include="Game\scene\TitleScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Game\ParticleTestScene.h">
+    <ClInclude Include="Game\scene\ParticleTestScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Game\TestScene.h">
+    <ClInclude Include="Game\scene\TestScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Game\GameOverScene.h">
+    <ClInclude Include="Game\scene\GameOverScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Game\GameClearScene.h">
+    <ClInclude Include="Game\scene\GameClearScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
     <!-- Game\Player -->
     <ClInclude Include="Game\player\Player.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
-    <ClInclude Include="Game\player\PlayerCombo.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
     <!-- Game\Enemy -->
     <ClInclude Include="Game\enemy\Enemy.h">
+      <Filter>Game\Enemy</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\enemy\EnemyManager.h">
       <Filter>Game\Enemy</Filter>
     </ClInclude>
     <ClInclude Include="Game\enemy\Bullet.h">
@@ -373,10 +394,10 @@
     <ClInclude Include="externals\imgui\imgui.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="externals\imgui\imgui_impl_dx12.h">
+    <ClInclude Include="externals\imgui\backends\imgui_impl_dx12.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="externals\imgui\imgui_impl_win32.h">
+    <ClInclude Include="externals\imgui\backends\imgui_impl_win32.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="externals\imgui\imgui_internal.h">
@@ -409,7 +430,7 @@
     <ClInclude Include="Engine\Core\SceneManager.h" />
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
-    <ClInclude Include="Game\DebugScene.h" />
+    <ClInclude Include="Game\scene\DebugScene.h" />
   </ItemGroup>
   <!-- ===== シェーダーファイル ===== -->
   <ItemGroup>

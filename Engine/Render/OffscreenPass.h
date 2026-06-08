@@ -21,6 +21,8 @@ public:
     void Begin();
     void BeginForPostEffect();
     void End();
+    void TransitionToRenderTarget();
+    void TransitionToShaderResource();
 
     ID3D12Resource* GetResource() const { return resource_.Get(); }
     uint32_t GetSrvIndex() const { return srvIndex_; }
@@ -39,4 +41,5 @@ private:
 
     DXGI_FORMAT format_ = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     Vector4 clearColor_{ 0.0f, 0.0f, 0.0f, 1.0f };
+    D3D12_RESOURCE_STATES currentState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
 };

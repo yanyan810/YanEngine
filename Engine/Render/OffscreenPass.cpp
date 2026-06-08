@@ -47,15 +47,35 @@ void OffscreenPass::Initialize(
 
 void OffscreenPass::Begin()
 {
+    TransitionToRenderTarget();
     dx_->PreDrawRenderTexture(rtvIndex_, clearColor_);
 }
 
 void OffscreenPass::BeginForPostEffect()
 {
+    TransitionToRenderTarget();
     dx_->PreDrawPostEffectBuffer(rtvIndex_);
 }
 
 void OffscreenPass::End()
 {
-  //  dx_->PreDraw();
+    TransitionToShaderResource();
+}
+
+void OffscreenPass::TransitionToRenderTarget()
+{
+    if (currentState_ == D3D12_RESOURCE_STATE_RENDER_TARGET) {
+        return;
+    }
+    dx_->TransitionResource(resource_.Get(), currentState_, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    currentState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
+}
+
+void OffscreenPass::TransitionToShaderResource()
+{
+    if (currentState_ == D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
+        return;
+    }
+    dx_->TransitionResource(resource_.Get(), currentState_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    currentState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 }

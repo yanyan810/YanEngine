@@ -413,6 +413,7 @@ void RenderManager::DrawOffscreenToBackBuffer()
     auto* cmd = dx_->GetCommandList();
     ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
     cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+    offscreen_->TransitionToRenderTarget();
 
     int lastEffect = -1;
     for (int i = 1; i < kEffectCount; ++i) {
