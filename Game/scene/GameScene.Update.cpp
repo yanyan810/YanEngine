@@ -2,6 +2,7 @@
 #include "GameApp.h"
 
 #include "Camera.h"
+#include "DebugAI/DebugAIManager.h"
 #include "Sprite.h"
 #include "SpriteCommon.h"
 #include "Object3d.h"
@@ -31,6 +32,16 @@ void GameScene::Update(GameApp& app, float dt) {
 
     if (input_->IsKeyTrigger(DIK_F8)) {
         SetDebugAIEnabled_(app, !debugAIEnabled_);
+    }
+
+    if (input_->IsKeyTrigger(DIK_F7)) {
+        if (app.DebugAI() && app.DebugAI()->StartLatestReplay()) {
+            debugAIEnabled_ = true;
+        }
+    }
+
+    if (app.DebugAI() && !app.DebugAI()->IsEnabled()) {
+        debugAIEnabled_ = false;
     }
 
     camera_->Update();
@@ -137,8 +148,16 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
 
+        DebugAction manualAction;
+        const bool recordManualAction =
+            app.DebugAI() &&
+            !app.DebugAI()->IsEnabled() &&
+            CaptureManualDebugAction_(manualAction);
+        const DebugGameState manualStateBefore = recordManualAction ? CaptureDebugState() : DebugGameState{};
+
         if (player_) {
             player_->Update(dt, *input_, enemyMgr_);
+            enemyMgr_.ApplyPlayerAttack(*player_);
         }
 
 
@@ -186,6 +205,10 @@ void GameScene::Update(GameApp& app, float dt) {
 
         if (player_) {
             UpdateHPDigits_(player_->GetHP());
+        }
+
+        if (recordManualAction) {
+            app.DebugAI()->RecordExternalAction(manualStateBefore, manualAction, CaptureDebugState());
         }
 
         if (player_->IsDead()) {

@@ -214,6 +214,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Logger.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugReplayRecorder.cpp" />
     <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp" />
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
@@ -472,6 +474,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Utility\Logger.h" />
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h" />
     <ClInclude Include="Engine\DebugAI\DebugLogger.h" />
+    <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h" />
+    <ClInclude Include="Engine\DebugAI\DebugReplayRecorder.h" />
     <ClInclude Include="Engine\DebugAI\DebugTypes.h" />
     <ClInclude Include="Engine\DebugAI\IGameDebugAdapter.h" />
     <ClInclude Include="Engine\DebugAI\RandomDebugBot.h" />

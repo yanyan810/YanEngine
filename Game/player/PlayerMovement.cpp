@@ -95,6 +95,11 @@ void Player::Damage(int d) {
     }
 }
 
+void Player::SetHP(int hp) {
+    hp_ = std::clamp(hp, 0, GetMaxHP());
+    dead_ = hp_ <= 0;
+}
+
 void Player::SetSpawnPos(const Vector3& p) {
     pos_ = p;
     vel_ = { 0,0,0 };

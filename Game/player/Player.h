@@ -65,6 +65,9 @@ public:
     void QueueDebugCommand(const PlayerInputCommand& command);
     void Draw();
     void DrawDebugHitBoxes(EnemyManager& enemyMgr);
+    bool GetAttackHitBox(AABB& outHitBox) const;
+    int GetAttackDamage() const;
+    unsigned int GetAttackSerial() const { return attackSerial_; }
 
     // ★I/O 攻撃中など「一定時間移動不可」にする
     void LockMove(float sec) { if (sec > moveLockSec_) moveLockSec_ = sec; }
@@ -89,6 +92,7 @@ public:
     void AddHP(int heal);
 
     void Damage(int Damage);
+    void SetHP(int hp);
 
     float GetX() const { return pos_.x; }
 
@@ -211,6 +215,7 @@ private:
     bool isMoving = false;
     bool hasDebugCommand_ = false;
     PlayerInputCommand debugCommand_{};
+    unsigned int attackSerial_ = 0;
 
     // Player.h
     std::string curAnim_ = "";

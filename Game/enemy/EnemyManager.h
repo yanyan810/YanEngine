@@ -6,6 +6,7 @@
 #include "Bullet.h"
 #include "Player.h"
 #include "LightingParam.h"
+#include "DebugAI/DebugTypes.h"
 
 class Object3dCommon;
 class DirectXCommon;
@@ -37,6 +38,10 @@ public:
 
     std::vector<Enemy>& GetEnemies() { return enemies_; }
     const std::vector<Enemy>& GetEnemies() const { return enemies_; }
+
+    void ApplyPlayerAttack(Player& player);
+    void AppendDebugEnemyStates(std::vector<DebugEnemyState>& outStates) const;
+    void RestoreDebugEnemyStates(const std::vector<DebugEnemyState>& states);
 
     void SetDebugDrawMeleeHitbox(bool enable) { debugDrawMeleeHitbox_ = enable; }
 

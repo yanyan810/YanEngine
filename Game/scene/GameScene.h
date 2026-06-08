@@ -40,12 +40,14 @@ public:
     void UpdateBossHPDigits_(int hp);
 
     DebugGameState CaptureDebugState() const;
+    bool RestoreDebugState(const DebugGameState& state);
     void ExecuteDebugAction(const DebugAction& action);
 
 private:
     void SetupDebugAI_(GameApp& app);
     void ShutdownDebugAI_(GameApp& app);
     void SetDebugAIEnabled_(GameApp& app, bool enabled);
+    bool CaptureManualDebugAction_(DebugAction& outAction) const;
 
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Sprite> sprite_;

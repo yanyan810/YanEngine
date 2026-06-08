@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <dinput.h>
 #include <string>
 
 namespace {
@@ -22,6 +23,10 @@ public:
 
     void ExecuteDebugAction(const DebugAction& action) override {
         scene_.ExecuteDebugAction(action);
+    }
+
+    bool RestoreDebugState(const DebugGameState& state) override {
+        return scene_.RestoreDebugState(state);
     }
 
 private:
@@ -62,6 +67,20 @@ DebugGameState GameScene::CaptureDebugState() const {
     state.sceneName = "Game";
     state.frameNumber = debugFrameNumber_;
     state.fps = 60.0f;
+    switch (phase_) {
+    case Phase::IntroVideo:
+        state.gamePhase = "IntroVideo";
+        break;
+    case Phase::Battle:
+        state.gamePhase = "Battle";
+        break;
+    case Phase::OutroVideo:
+        state.gamePhase = "OutroVideo";
+        break;
+    default:
+        state.gamePhase = "Unknown";
+        break;
+    }
 
     if (player_) {
         state.playerHp = player_->GetHP();
@@ -79,6 +98,7 @@ DebugGameState GameScene::CaptureDebugState() const {
             firstAliveEnemyHp = enemy.GetHP();
         }
     }
+    enemyMgr_.AppendDebugEnemyStates(state.enemies);
 
     if (const Enemy* boss = enemyMgr_.GetBoss()) {
         state.enemyHp = boss->GetHP();
@@ -91,7 +111,7 @@ DebugGameState GameScene::CaptureDebugState() const {
         { "MoveLeft" },
         { "MoveRight" },
         { "MoveForward" },
-        { "MoveBack" },
+        { "Down" },
         { "Jump" },
         { "AttackWeak" },
         { "AttackSpecial" },
@@ -124,6 +144,48 @@ DebugGameState GameScene::CaptureDebugState() const {
     return state;
 }
 
+bool GameScene::RestoreDebugState(const DebugGameState& state) {
+    if (state.sceneName != "Game") {
+        return false;
+    }
+
+    debugFrameNumber_ = state.frameNumber;
+    isPaused_ = false;
+    pauseSel_ = PauseSel::Close;
+    introTime_ = 0.0f;
+    outroTime_ = 0.0f;
+
+    if (state.gamePhase == "IntroVideo") {
+        phase_ = Phase::IntroVideo;
+    } else if (state.gamePhase == "OutroVideo") {
+        phase_ = Phase::OutroVideo;
+    } else {
+        phase_ = Phase::Battle;
+    }
+
+    if (player_) {
+        player_->SetSpawnPos(state.playerPosition);
+        player_->SetHP(state.playerHp);
+    }
+
+    if (!state.enemies.empty()) {
+        enemyMgr_.RestoreDebugEnemyStates(state.enemies);
+    } else if (Enemy* boss = enemyMgr_.GetBoss()) {
+        boss->SetHP(state.enemyHp);
+    } else {
+        for (Enemy& enemy : enemyMgr_.GetEnemies()) {
+            if (!enemy.IsAlive()) {
+                continue;
+            }
+            enemy.SetHP(state.enemyHp);
+            break;
+        }
+    }
+
+    enemyMgr_.ClearBossDefeatedFlag();
+    return true;
+}
+
 void GameScene::ExecuteDebugAction(const DebugAction& action) {
     if (action.name == "SkipIntro") {
         if (phase_ == Phase::IntroVideo) {
@@ -147,9 +209,11 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     } else if (action.name == "MoveForward") {
         command.action = Player::PlayerAction::Move;
         command.depth = +1;
-    } else if (action.name == "MoveBack") {
-        command.action = Player::PlayerAction::Move;
-        command.depth = -1;
+    } else if (action.name == "Down" || action.name == "MoveBack") {
+        command.action = player_->IsOnGround()
+            ? Player::PlayerAction::Crouch
+            : Player::PlayerAction::FastFall;
+        command.down = true;
     } else if (action.name == "Jump") {
         command.action = Player::PlayerAction::Jump;
         command.jumpTriggered = true;
@@ -169,5 +233,46 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     }
 
     player_->QueueDebugCommand(command);
+}
+
+bool GameScene::CaptureManualDebugAction_(DebugAction& outAction) const {
+    if (!input_ || phase_ != Phase::Battle || isPaused_) {
+        return false;
+    }
+
+    if (input_->IsKeyTrigger(DIK_U)) {
+        outAction = { "AttackWeak" };
+        return true;
+    }
+    if (input_->IsKeyTrigger(DIK_I)) {
+        outAction = { "AttackSpecial" };
+        return true;
+    }
+    if (input_->IsKeyTrigger(DIK_SPACE)) {
+        outAction = { "Jump" };
+        return true;
+    }
+    if (input_->IsKeyPressed(DIK_H)) {
+        outAction = { "Guard" };
+        return true;
+    }
+    if (input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A)) {
+        outAction = { "MoveLeft" };
+        return true;
+    }
+    if (input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D)) {
+        outAction = { "MoveRight" };
+        return true;
+    }
+    if (input_->IsKeyPressed(DIK_UP) || input_->IsKeyPressed(DIK_W)) {
+        outAction = { "MoveForward" };
+        return true;
+    }
+    if (input_->IsKeyPressed(DIK_DOWN) || input_->IsKeyPressed(DIK_S)) {
+        outAction = { "Down" };
+        return true;
+    }
+
+    return false;
 }
 

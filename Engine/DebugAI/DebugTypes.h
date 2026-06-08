@@ -18,6 +18,14 @@ struct DebugMapBounds {
     bool enabled = false;
 };
 
+struct DebugEnemyState {
+    std::string type;
+    int hp = 0;
+    Vector3 position = {};
+    bool pendingSpawn = false;
+    float spawnDelay = 0.0f;
+};
+
 struct DebugGameState {
     std::string sceneName;
     unsigned long long frameNumber = 0;
@@ -27,6 +35,8 @@ struct DebugGameState {
     int enemyCount = 0;
     Vector3 playerPosition = {};
     float fps = 60.0f;
+    std::string gamePhase;
+    std::vector<DebugEnemyState> enemies;
 
     std::vector<DebugAction> availableActions;
     DebugMapBounds mapBounds;
@@ -47,5 +57,6 @@ struct DebugIssue {
     unsigned long long frameNumber = 0;
     std::string sceneName;
     DebugAction lastAction;
+    std::string replayPath;
 };
 

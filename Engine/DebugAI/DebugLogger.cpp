@@ -57,7 +57,8 @@ void DebugLogger::LogIssue(const DebugIssue& issue) {
         << "\"message\":\"" << EscapeJson_(issue.message) << "\","
         << "\"frame\":" << issue.frameNumber << ","
         << "\"scene\":\"" << EscapeJson_(issue.sceneName) << "\","
-        << "\"lastAction\":\"" << EscapeJson_(ActionToString_(issue.lastAction)) << "\""
+        << "\"lastAction\":\"" << EscapeJson_(ActionToString_(issue.lastAction)) << "\","
+        << "\"replayPath\":\"" << EscapeJson_(issue.replayPath) << "\""
         << "}\n";
     issueLog_.flush();
     WriteReport();
@@ -82,6 +83,7 @@ void DebugLogger::WriteReport() {
         report << "Frame: " << issue.frameNumber << "\n";
         report << "Scene: " << issue.sceneName << "\n";
         report << "LastAction: " << ActionToString_(issue.lastAction) << "\n\n";
+        report << "ReplayPath: " << issue.replayPath << "\n\n";
     }
 }
 
