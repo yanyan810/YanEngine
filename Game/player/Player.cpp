@@ -1,14 +1,12 @@
-#include "Player.h"
+﻿#include "Player.h"
 #include "Object3d.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
 #include "Camera.h"
 
-#include "Enemy.h" 
+#include "EnemyManager.h"
 
-#include "PlayerCombo.h"
-
-// ===== Base model sets（まずはモデル種類で分離） =====
+// ===== Base model sets・医∪縺壹・繝｢繝・Ν遞ｮ鬘槭〒蛻・屬・・=====
 static const char* kHumanWalk_Set[] = {
     "human/walk.gltf",
 };
@@ -48,12 +46,12 @@ static const char* GetPlayerModelPath(Player::PlayerModelSet set) {
 }
 
 void Player::ChangeModelSet_(Player::PlayerModelSet set) {
-    if (currentModelSet_ == set) return; // ★同じなら何もしない
+    if (currentModelSet_ == set) return; // 笘・酔縺倥↑繧我ｽ輔ｂ縺励↑縺・
 
     currentModelSet_ = set;
 
     model_->SetModel(GetPlayerModelPath(set));
-    model_->PlayAnimation("", true); // gltf / glb 先頭アニメ再生
+    model_->PlayAnimation("", true); // gltf / glb 蜈磯ｭ繧｢繝九Γ蜀咲函
 }
 
 
@@ -61,11 +59,11 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     cam_ = cam;
 
     model_ = std::make_unique<Object3d>();
-    model_->Initialize(objCommon, dx);   // ←共通化できてればこれだけでOK
+    model_->Initialize(objCommon, dx);   // 竊仙・騾壼喧縺ｧ縺阪※繧後・縺薙ｌ縺縺代〒OK
     model_->SetCamera(cam_);
 
     currentModelSet_ = PlayerModelSet::Player2Gltf;
-    model_->SetModel("Player/player.gltf"); // あなたの実パスに合わせる
+    model_->SetModel("Player/player.gltf"); // 縺ゅ↑縺溘・螳溘ヱ繧ｹ縺ｫ蜷医ｏ縺帙ｋ
     //model_->SetModel("Player/player2.gltf");
     model_->PlayAnimation("Idle", true);
     model_->SetUseEnvironmentMap(false);
@@ -73,21 +71,20 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     model_->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
     curAnim_ = "Idle";
 
-    // 見た目初期反映
+    // 隕九◆逶ｮ蛻晄悄蜿肴丐
     model_->SetTranslate({ pos_.x, pos_.y, pos_.z });
-
-    combo_ = std::make_unique<PlayerCombo>();
-    combo_->Reset();
 
     if (model_) {
         model_->SetMaterialColor(normalColor_);
     }
 
-    // デバッグ用cubeが必要なら（スキンじゃないなら cube.obj でOK）
+    // 繝・ヰ繝・げ逕ｨcube縺悟ｿ・ｦ√↑繧会ｼ医せ繧ｭ繝ｳ縺倥ｃ縺ｪ縺・↑繧・cube.obj 縺ｧOK・・
     debugAtkCube_ = std::make_unique<Object3d>();
     debugAtkCube_->Initialize(objCommon, dx);
     debugAtkCube_->SetCamera(cam_);
     debugAtkCube_->SetModel("cube/cube.obj");
+    debugAtkCube_->SetEnableLighting(0);
+    debugAtkCube_->SetMaterialColor({ 0.1f, 1.0f, 0.2f, 0.65f });
 
     debugEnemyCube_ = std::make_unique<Object3d>();
     debugEnemyCube_->Initialize(objCommon, dx);
@@ -101,21 +98,21 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     shadow_->Initialize(objCommon, dx);
     shadow_->SetCamera(cam_);
 
-    // 影は「板ポリ」モデルを使う（resources/plane.obj 等）
-    shadow_->SetModel("plane/plane.obj"); // ←あなたの環境の板モデルに合わせて
+    // 蠖ｱ縺ｯ縲梧攸繝昴Μ縲阪Δ繝・Ν繧剃ｽｿ縺・ｼ・esources/plane.obj 遲会ｼ・
+    shadow_->SetModel("plane/plane.obj"); // 竊舌≠縺ｪ縺溘・迺ｰ蠅・・譚ｿ繝｢繝・Ν縺ｫ蜷医ｏ縺帙※
 
-    shadow_->SetEnableLighting(0); // ★ライト計算しない
+    shadow_->SetEnableLighting(0); // 笘・Λ繧､繝郁ｨ育ｮ励＠縺ｪ縺・
     shadow_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
 
-    // 影の色（黒 + α） ※ここでは初期値
+    // 蠖ｱ縺ｮ濶ｲ・磯ｻ・+ ﾎｱ・・窶ｻ縺薙％縺ｧ縺ｯ蛻晄悄蛟､
     shadow_->SetMaterialColor({ 255,255,255, shadowMaxAlpha_ });
 
-    //剣
+    //蜑｣
     swordObj_ = std::make_unique<Object3d>();
     swordObj_->Initialize(objCommon, dx);
     swordObj_->SetModel("Player/sword.obj");
     swordObj_->SetCamera(cam_);
-    swordObj_->SetTranslate({ 0,0,0 }); // 初期確認用
+    swordObj_->SetTranslate({ 0,0,0 }); // 蛻晄悄遒ｺ隱咲畑
 
 
 }
@@ -127,36 +124,27 @@ void Player::SetCamera(Camera* cam) {
 }
 
 void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
+    (void)enemyMgr;
 
     isMoving = false;
-    bool isAttacking = combo_ && combo_->IsAttacking(); // ←無ければ後述
+    UpdateActionTimer_(dt);
 
-
-
-    // ★移動ロック更新
+    // 笘・ｧｻ蜍輔Ο繝・け譖ｴ譁ｰ
     if (moveLockSec_ > 0.0f) {
         moveLockSec_ -= dt;
         if (moveLockSec_ < 0.0f) moveLockSec_ = 0.0f;
     }
 
-    // ★I / O 押下した瞬間に移動ロック
-    if (combo_) {
-        if (input.IsKeyTrigger(DIK_I)) {
-            LockMove(combo_->PreviewAttackDuration(!onGround_, 0, AttackBtn::Weak));
-        }
-        if (input.IsKeyTrigger(DIK_O)) {
-            LockMove(combo_->PreviewAttackDuration(!onGround_, 0, AttackBtn::Strong));
-        }
-    }
+    const PlayerInputCommand command = ResolveInput_(input);
 
-    // --- ジャンプ（Y） ---
-    if (onGround_ && input.IsKeyTrigger(DIK_SPACE)) {
+    // --- 繧ｸ繝｣繝ｳ繝暦ｼ・・・---
+    if (command.jumpTriggered && onGround_ && actionTimer_ <= 0.0f && !command.guard) {
         onGround_ = false;
         vel_.y = jumpVel_;
     }
 
-    // 1) 移動入力（ロック中は無視）
-    if (!IsMoveLocked()) {
+    // 1) 遘ｻ蜍募・蜉幢ｼ医Ο繝・け荳ｭ縺ｯ辟｡隕厄ｼ・
+    if (!IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
         UpdateMove_(dt, input);
     }
     else {
@@ -164,102 +152,38 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         vel_.z = 0.0f;
     }
 
-    // 3) コンボ（速度/位置を書き換える可能性がある）
-    if (combo_) {
-        Vector2 p{ pos_.x, pos_.y };
-        Vector2 v{ vel_.x, vel_.y };
-
-        combo_->Update(dt, input, p, v, onGround_, facing_, pos_.z, enemyMgr);
-
-        vel_.x = v.x;
-        vel_.y = v.y;
-        pos_.x = p.x;
-        pos_.y = p.y;
+    ApplyActionCommand_(command);
+    if (command.down) {
+        vel_.z = 0.0f;
     }
+    PlayActionAnimation_(command);
 
-    // combo_->Update の後に取り直す
-    isAttacking = combo_ && combo_->IsAttacking();
-
-    if (model_) {
-        const bool atkITrig = input.IsKeyTrigger(DIK_I);
-        const bool atkOTrig = input.IsKeyTrigger(DIK_O);
-
-        const bool inAttackAnim = (curAnim_ == "Attak_I" || curAnim_ == "Attak_O");
-
-        // ★1) まず「攻撃開始トリガー」を最優先（このフレームで必ず再生開始）
-        if (!inAttackAnim) {
-            if (atkITrig) {
-                model_->CrossFadeTo("Attak_I", 0.10f, false);
-                curAnim_ = "Attak_I";
-            } else if (atkOTrig) {
-                model_->CrossFadeTo("Attak_O", 0.10f, false);
-                curAnim_ = "Attak_O";
-            }
-        }
-
-        // ★2) 攻撃中か判定（コンボ or アニメどちらか）
-        const bool inAttack = isAttacking || inAttackAnim;
-
-        if (inAttack) {
-            // 攻撃中：終わったら戻す（入力では上書きしない）
-            if (model_->IsAnimationFinished()) {
-                if (isMoving) {
-                    if (curAnim_ != "Walk") {
-                        model_->CrossFadeTo("Walk", 0.20f, true);
-                        curAnim_ = "Walk";
-                    }
-                } else {
-                    if (curAnim_ != "Idle") {
-                        model_->CrossFadeTo("Idle", 0.20f, true);
-                        curAnim_ = "Idle";
-                    }
-                }
-            }
-        } else {
-            // ★3) 通常（Idle/Walk）
-            if (isMoving) {
-                if (curAnim_ != "Walk") {
-                    model_->CrossFadeTo("Walk", 0.20f, true);
-                    curAnim_ = "Walk";
-                }
-            } else {
-                if (curAnim_ != "Idle") {
-                    model_->CrossFadeTo("Idle", 0.20f, true);
-                    curAnim_ = "Idle";
-                }
-            }
-        }
-    }
-
-   
-
-
-    // 2) 物理（重力・座標更新）
+    // 2) 迚ｩ逅・ｼ磯㍾蜉帙・蠎ｧ讓呎峩譁ｰ・・
     ApplyPhysics_(dt);
 
-    // 当たり判定更新
+    // 蠖薙◆繧雁愛螳壽峩譁ｰ
     UpdateBody_();
 
-    // 4) 見た目（pos_確定後に反映）
+    // 4) 隕九◆逶ｮ・・os_遒ｺ螳壼ｾ後↓蜿肴丐・・
     UpdateModel_();
 
-    // ★ blob shadow 更新
+    // 笘・blob shadow 譖ｴ譁ｰ
     if (shadow_) {
-        // 地面y=0前提（あなたの地面が -5 とかなら groundY を合わせて）
+        // 蝨ｰ髱｢y=0蜑肴署・医≠縺ｪ縺溘・蝨ｰ髱｢縺・-5 縺ｨ縺九↑繧・groundY 繧貞粋繧上○縺ｦ・・
         const float groundY = 0.0f;
 
-        float height = pos_.y - groundY;          // 高さ
-        float h01 = std::clamp(height / 5.0f, 0.0f, 1.0f); // 5.0f は好みで
+        float height = pos_.y - groundY;          // 鬮倥＆
+        float h01 = std::clamp(height / 5.0f, 0.0f, 1.0f); // 5.0f 縺ｯ螂ｽ縺ｿ縺ｧ
 
-        // 高いほど影を薄く
+        // 鬮倥＞縺ｻ縺ｩ蠖ｱ繧定埋縺・
         float alpha = shadowMaxAlpha_ * (1.0f - h01);
         alpha = std::max(alpha, shadowMinAlpha_);
 
-        // 高いほど少し広げる（ふわっと）
+        // 鬮倥＞縺ｻ縺ｩ蟆代＠蠎・￡繧具ｼ医・繧上▲縺ｨ・・
         float s = shadowBaseScale_ * (1.0f + 0.25f * h01);
 
         shadow_->SetTranslate({ pos_.x, groundY + shadowLiftY_, pos_.z });
-        shadow_->SetRotate({ -0.0f, 0.0f, 0.0f }); // X軸 -90度で地面に寝かせる（planeがXZ平面なら不要）
+        shadow_->SetRotate({ -0.0f, 0.0f, 0.0f }); // X霆ｸ -90蠎ｦ縺ｧ蝨ｰ髱｢縺ｫ蟇昴°縺帙ｋ・・lane縺傾Z蟷ｳ髱｢縺ｪ繧我ｸ崎ｦ・ｼ・
         shadow_->SetScale({ s, s, s });
 
         shadow_->SetMaterialColor({ 0,0,0, alpha });
@@ -267,9 +191,9 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         shadow_->Update(dt);
     }
 
-    // ★ここで Object3d 更新（WVP / palette更新）
+    // 笘・％縺薙〒 Object3d 譖ｴ譁ｰ・・VP / palette譖ｴ譁ｰ・・
     if (model_) model_->Update(dt);
-    // ===== 剣追従（スキンのボーンから取る）=====
+    // ===== 蜑｣霑ｽ蠕難ｼ医せ繧ｭ繝ｳ縺ｮ繝懊・繝ｳ縺九ｉ蜿悶ｋ・・====
     if (model_ && swordObj_) {
 
         const char* handJointName = "RightHand";
@@ -278,8 +202,8 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
             "RightHand",
             "hand.R",
             "Hand.R",
-            "ボーン.017",
-            "ボーン.005",
+            "繝懊・繝ｳ.017",
+            "繝懊・繝ｳ.005",
         };
         for (const char* candidate : candidates) {
             if (model_->HasJoint(candidate)) {
@@ -290,10 +214,10 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
         Matrix4x4 handW = model_->GetJointWorldMatrix(handJointName);
 
-        // 手の位置（あなたの行列は translation が m[3][0..2]）
+        // 謇九・菴咲ｽｮ・医≠縺ｪ縺溘・陦悟・縺ｯ translation 縺・m[3][0..2]・・
         Vector3 handPos{ handW.m[3][0], handW.m[3][1], handW.m[3][2] };
 
-        // 位置オフセット（手の中での微調整）
+        // 菴咲ｽｮ繧ｪ繝輔そ繝・ヨ・域焔縺ｮ荳ｭ縺ｧ縺ｮ蠕ｮ隱ｿ謨ｴ・・
         Vector3 offset{ 0.0f, 0.0f, 0.0f };
         Vector3 swordScale{ 0.15f, 0.15f, 0.15f };
 
@@ -304,14 +228,14 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
             handPos.z + offset.z
             });
 
-        // （まず位置だけでOK。回転も合わせたいなら次で追加）
+        // ・医∪縺壻ｽ咲ｽｮ縺縺代〒OK縲ょ屓霆｢繧ょ粋繧上○縺溘＞縺ｪ繧画ｬ｡縺ｧ霑ｽ蜉・・
     }
 
 
     //static bool once = true;
     //if (once && swordObj_) {
     //    once = false;
-    //    swordObj_->SetTranslate({ 5.0f, 0.0f, 15.0f }); // 明らかにズレる値
+    //    swordObj_->SetTranslate({ 5.0f, 0.0f, 15.0f }); // 譏弱ｉ縺九↓繧ｺ繝ｬ繧句､
     //}
 
     if (swordObj_) {
@@ -323,7 +247,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 	if (swordObj_) swordObj_->Update(dt);
     if (debugAtkCube_) debugAtkCube_->Update(dt);
 
-    // 被弾フラッシュ
+    // 陲ｫ蠑ｾ繝輔Λ繝・す繝･
     if (hitFlashSec_ > 0.0f) {
         hitFlashSec_ -= dt;
         if (hitFlashSec_ < 0.0f) hitFlashSec_ = 0.0f;
@@ -334,261 +258,12 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     }
 
 
-    // ライト
+    // 繝ｩ繧､繝・
     SetLighting(light_);
 
     OutputDebugStringA(("[PlayerAnim] " + curAnim_ + "\n").c_str());
 
-#ifdef USE_IMGUI
-    if (combo_) {
-        combo_->DebugImGui();
-    }
-#endif
-
-
 }
 
 
 
-void Player::UpdateMove_(float /*dt*/, const Input& input) {
-    // --- 左右（X） ---
-    float mx = 0.0f;
-    if (input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A))  mx -= 1.0f, isMoving = true;
-    if (input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D))  mx += 1.0f, isMoving = true;
-
-    if (mx < -0.1f) facing_ = -1;
-    if (mx > +0.1f) facing_ = +1;
-
-    vel_.x = mx * moveSpeed_;
-
-    // --- 奥行き（Z） ---
-    float mz = 0.0f;
-    if (input.IsKeyPressed(DIK_UP) || input.IsKeyPressed(DIK_W)) mz += 1.0f, isMoving = true; // 奥へ +Z
-    if (input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S)) mz -= 1.0f, isMoving = true; // 手前へ -Z
-
-    vel_.z = mz * depthSpeed_;
-
-
-}
-
-void Player::ApplyPhysics_(float dt) {
-    // 重力（Yだけ）
-    if (!onGround_) {
-        vel_.y -= gravity_ * dt;
-    }
-
-    // 位置更新（X/Y/Z）
-    pos_.x += vel_.x * dt;
-    pos_.y += vel_.y * dt;
-    pos_.z += vel_.z * dt;
-
-    // 地面（y=0）
-    if (pos_.y <= 0.0f) {
-        pos_.y = 0.0f;
-        vel_.y = 0.0f;
-        onGround_ = true;
-    }
-
-    // 奥行き制限
-    const float zNear = -15.0f; // 手前（DIK_DOWNで行く側）
-    const float zFar = 20.0f; // 奥（DIK_UPで行く側）
-    pos_.z = std::clamp(pos_.z, zNear, zFar);
-
-    // ★ Zに応じて X の範囲を変える
-    const float xMaxNear = 15.0f; // 手前での左右幅（狭く）
-    const float xMaxFar = 20.0f; // 奥での左右幅（広く）
-
-    float t = (pos_.z - zNear) / (zFar - zNear); // 0:手前 → 1:奥
-    t = std::clamp(t, 0.0f, 1.0f);
-
-    // 線形補間（Lerp）
-    float xMax = xMaxNear + (xMaxFar - xMaxNear) * t;
-
-    // X制限
-    pos_.x = std::clamp(pos_.x, -xMax, xMax);
-
-}
-
-void Player::Damage(int d) {
-    if (dead_) return;
-    hp_ -= d;
-    if (hp_ <= 0) {
-        hp_ = 0;
-        dead_ = true;
-    }
-}
-
-void Player::SetSpawnPos(const Vector3& p) {
-    pos_ = p;
-    vel_ = { 0,0,0 };
-    onGround_ = true;
-
-    UpdateBody_();
-    UpdateModel_(); // 見た目も即反映
-}
-
-void Player::UpdateModel_() {
-    if (!model_) return;
-
-    // 位置
-    model_->SetTranslate({ pos_.x, pos_.y, pos_.z });
-
-    // ★向き反転（Xスケールを反転）
-    const float sx = (facing_ > 0) ? 1.0f : -1.0f;
-    model_->SetScale({ sx, 1.0f, 1.0f });
-
-
-}
-
-
-void Player::Draw() {
-    if (shadow_) shadow_->Draw();
-    if (model_) model_->Draw();
-    if (swordObj_) swordObj_->Draw();
-}
-
-void Player::DrawDebugHitBoxes(EnemyManager& enemyMgr) {
-    if (!combo_ || !debugAtkCube_) return;
-
-    AABB3 hb{};
-    if (combo_->GetDebugHitBox3(hb)) {
-        // hb は center + half なので、そのまま
-        debugAtkCube_->SetTranslate({ hb.x, hb.y, hb.z });
-
-        // cube.obj は元が 2x2x2（-1..+1）
-        // → scale = halfSize をそのまま入れれば一致
-        debugAtkCube_->SetScale({ hb.hx, hb.hy, hb.hz });
-
-
-        debugAtkCube_->Draw();
-    }
-}
-
-
-void Player::UpdateBody_() {
-    // ここはあなたの見た目サイズに合わせて調整
-    const float hx = 0.4f;
-    const float hy = 0.9f;
-    const float hz = 0.6f;
-
-    body_.min = { pos_.x - hx, pos_.y,         pos_.z - hz };
-    body_.max = { pos_.x + hx, pos_.y + hy * 2,  pos_.z + hz };
-}
-
-void Player::AddHP(int heal) {
-    hp_ += heal;
-    if (hp_ > GetMaxHP()) hp_ = GetMaxHP();
-}
-
-void Player::SetLighting(const LightingParam& p)
-{
-    light_ = p;
-    if (!model_) return;
-
-    model_->SetEnableLighting(light_.lightingMode);
-
-    model_->SetDirection(light_.dir);
-    model_->SetIntensity(light_.dirIntensity);
-    model_->SetLightColor(light_.dirColor);
-
-    model_->SetPointLightPos(light_.pointPos);
-    model_->SetPointLightIntensity(light_.pointIntensity);
-    model_->SetPointLightColor(light_.pointColor);
-    model_->SetPointLightRadius(light_.pointRadius);
-    model_->SetPointLightDecay(light_.pointDecay);
-
-    light_.spotFalloffStartDeg = std::min(light_.spotFalloffStartDeg, light_.spotAngleDeg - 0.1f);
-
-    const float cosOuter = std::cosf(light_.spotAngleDeg * (std::numbers::pi_v<float> / 180.0f));
-    const float cosInner = std::cosf(light_.spotFalloffStartDeg * (std::numbers::pi_v<float> / 180.0f));
-
-    model_->SetSpotLightPos(light_.spotPos);
-    model_->SetSpotLightDirection(light_.spotDir);
-    model_->SetSpotLightIntensity(light_.spotIntensity);
-    model_->SetSpotLightDistance(light_.spotDistance);
-    model_->SetSpotLightDecay(light_.spotDecay);
-    model_->SetSpotLightCosAngle(cosOuter);
-    model_->SetSpotLightCosFalloffStart(cosInner);
-    model_->SetSpotLightColor({ light_.spotColor.x, light_.spotColor.y, light_.spotColor.z, 1.0f });
-    if (!swordObj_) return;
-
-    swordObj_->SetEnableLighting(light_.lightingMode);
-
-    swordObj_->SetDirection(light_.dir);
-    swordObj_->SetIntensity(light_.dirIntensity);
-    swordObj_->SetLightColor(light_.dirColor);
-
-    swordObj_->SetPointLightPos(light_.pointPos);
-    swordObj_->SetPointLightIntensity(light_.pointIntensity);
-    swordObj_->SetPointLightColor(light_.pointColor);
-    swordObj_->SetPointLightRadius(light_.pointRadius);
-    swordObj_->SetPointLightDecay(light_.pointDecay);
-
-    light_.spotFalloffStartDeg = std::min(light_.spotFalloffStartDeg, light_.spotAngleDeg - 0.1f);
-
-  
-    swordObj_->SetSpotLightPos(light_.spotPos);
-    swordObj_->SetSpotLightDirection(light_.spotDir);
-    swordObj_->SetSpotLightIntensity(light_.spotIntensity);
-    swordObj_->SetSpotLightDistance(light_.spotDistance);
-    swordObj_->SetSpotLightDecay(light_.spotDecay);
-    swordObj_->SetSpotLightCosAngle(cosOuter);
-    swordObj_->SetSpotLightCosFalloffStart(cosInner);
-    swordObj_->SetSpotLightColor({ light_.spotColor.x, light_.spotColor.y, light_.spotColor.z, 1.0f });
-
-}
-
-
-void Player::ResetTitleAttackDemo()
-{
-    titleDemoTimer_ = 0.0f;
-    titleDemoNextIsI_ = true;
-
-    // 見た目もリセットしたければ
-    if (model_) {
-        model_->PlayAnimation("", true);
-        curAnim_ = "Idle";
-    }
-}
-
-void Player::UpdateTitleAttackDemo(float dt, float intervalSec)
-{
-    if (!model_) return;
-
-    // interval の安全策
-    if (intervalSec < 0.05f) intervalSec = 0.05f;
-
-    // まずアニメ時間を進める（←これ超重要）
-    model_->Update(dt);
-
-    // 攻撃アニメ中なら「終わるまで待つ」
-    const bool inAttackAnim = (curAnim_ == "Attak_I" || curAnim_ == "Attak_O");
-    if (inAttackAnim) {
-        if (model_->IsAnimationFinished()) {
-            model_->CrossFadeTo("Idle", 0.20f, true);
-            curAnim_ = "Idle";
-        }
-        return;
-    }
-
-    // 次の攻撃タイミング
-    titleDemoTimer_ += dt;
-    if (titleDemoTimer_ >= intervalSec) {
-        titleDemoTimer_ = 0.0f;
-
-        if (titleDemoNextIsI_) {
-            model_->CrossFadeTo("Attak_I", 0.10f, false);
-            curAnim_ = "Attak_I";
-        } else {
-            model_->CrossFadeTo("Attak_O", 0.10f, false);
-            curAnim_ = "Attak_O";
-        }
-        titleDemoNextIsI_ = !titleDemoNextIsI_;
-    }
-}
-void Player::SetTitleTransform(const Vector3& t, const Vector3& r, const Vector3& s)
-{
-    model_->SetTranslate(t);
-    model_->SetRotate(r);
-    model_->SetScale(s);
-}

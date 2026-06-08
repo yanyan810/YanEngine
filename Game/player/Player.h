@@ -15,9 +15,6 @@ class Camera;
 class EnemyManager;
 
 // あなたが既に作ったコンボクラスに差し替えてOK
-// 例: #include "PlayerCombo.h"
-class PlayerCombo;
-
 class Player {
 public:
 
@@ -30,6 +27,34 @@ public:
     };
 
     enum class ModelId { Walk, I0, I1, I2, O0, O1, O2 /*など*/ };
+
+    enum class PlayerAction {
+        Idle,
+        Move,
+        Jump,
+        Crouch,
+        FastFall,
+        Guard,
+        Attack,
+    };
+
+    enum class PlayerAttackType {
+        None,
+        Weak,
+        Tilt,
+        Smash,
+        NeutralSpecial,
+        SideSpecial,
+    };
+
+    struct PlayerInputCommand {
+        PlayerAction action = PlayerAction::Idle;
+        PlayerAttackType attackType = PlayerAttackType::None;
+        int horizontal = 0;
+        bool down = false;
+        bool jumpTriggered = false;
+        bool guard = false;
+    };
 
 
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
@@ -53,9 +78,6 @@ public:
     int  GetFacing() const { return facing_; }
 
     // デバッグ可視化用（ヒットボックス取り出しに使える）
-    PlayerCombo* GetCombo() { return combo_.get(); }
-    const PlayerCombo* GetCombo() const { return combo_.get(); }
-
     //void ClampToScreenX_(const Camera& cam, float marginNdc /*例:0.08f*/);
 
     AABB GetBodyAABB() const { return body_; }
@@ -86,8 +108,18 @@ public:
     void SetTitleTransform(const Vector3& t, const Vector3& r, const Vector3& s);
 
     Object3d* GetModelObject() const { return model_.get(); }
+    PlayerAction GetCurrentAction() const { return action_; }
+    PlayerAttackType GetCurrentAttackType() const { return attackType_; }
 
 private:
+    PlayerInputCommand ResolveInput_(const Input& input);
+    void UpdateSmashInputWindow_(const Input& input);
+    void ApplyActionCommand_(const PlayerInputCommand& command);
+    void StartAttackAction_(PlayerAttackType type, int horizontal);
+    void UpdateActionTimer_(float dt);
+    void PlayActionAnimation_(const PlayerInputCommand& command);
+    bool GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
+
     void UpdateMove_(float dt, const Input& input);
     void ApplyPhysics_(float dt);
     void UpdateModel_();
@@ -117,6 +149,18 @@ private:
     // ★移動ロック（秒）: >0 の間は移動入力を無視する
     float moveLockSec_ = 0.0f;
 
+    static constexpr int kSmashInputWindowFrames_ = 5;
+    int recentHorizontalDir_ = 0;
+    int recentHorizontalFrames_ = 0;
+
+    PlayerAction action_ = PlayerAction::Idle;
+    PlayerAttackType attackType_ = PlayerAttackType::None;
+    float actionTimer_ = 0.0f;
+    bool guarding_ = false;
+    bool crouching_ = false;
+    bool fastFalling_ = false;
+    float fastFallSpeed_ = 28.0f;
+
     // パラメータ
     float moveSpeed_ = 10.0f;
     float depthSpeed_ = 14.0f;
@@ -127,8 +171,6 @@ private:
     int hp_ = 100;
 
     // コンボ（あなたの既存クラスに差し替える）
-    std::unique_ptr<PlayerCombo> combo_;
-
     AABB body_{};
 
     float hitFlashSec_ = 0.0f;

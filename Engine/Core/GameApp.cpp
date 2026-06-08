@@ -1,12 +1,12 @@
 #include "GameApp.h"
 #include "SceneManager.h"
-#include "GameScene.h"  
-#include "TitleScene.h"
-#include "TestScene.h"
-#include "ParticleTestScene.h"
-#include "GameOverScene.h"
-#include "GameClearScene.h"
-#include "DebugScene.h"
+#include "scene/GameScene.h"
+#include "scene/TitleScene.h"
+#include "scene/TestScene.h"
+#include "scene/ParticleTestScene.h"
+#include "scene/GameOverScene.h"
+#include "scene/GameClearScene.h"
+#include "scene/DebugScene.h"
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -48,9 +48,6 @@ int GameApp::Run() {
         if (input_) {
             input_->Update();
             // F1キーでデバッグモードの切り替え
-            if (input_->IsKeyTrigger(DIK_F2)) {
-                isDebugMode_ = !isDebugMode_;
-            }
         }
 
         // Update
@@ -111,6 +108,7 @@ bool GameApp::Initialize_() {
 #ifdef USE_IMGUI
     imgui_ = std::make_unique<ImGuiManagaer>();
     imgui_->Initialize(win_.get(), dx_.get(), srv_.get());
+    imgui_->SetSceneTexture(render_->GetOffscreenSrvIndex());
 #endif
 
     // GameApp::Initialize など
@@ -190,27 +188,27 @@ void GameApp::Draw() {
     // ① Offscreenへ描く
     render_->BeginOffscreen();
     sceneMgr_->DrawRender(*this);
+    sceneMgr_->Draw3D(*this);
+    sceneMgr_->Draw2D(*this);
+    sceneMgr_->Draw(*this);
     render_->EndOffscreen();
 
     // ② BackBufferへ
     dx_->PreDraw(false);
 
     ParticleManager::GetInstance()->UpdateCompute(dx_->GetComputeCommandList());
+#ifndef USE_IMGUI
+    render_->DrawOffscreenToBackBuffer();
+#endif
 
     // ③ Offscreenの中身を画面へ貼る
-    render_->DrawOffscreenToBackBuffer();
 
     // ④ 直接描く3D/2D/最終演出
-    sceneMgr_->Draw3D(*this);
-    sceneMgr_->Draw2D(*this);
-    sceneMgr_->Draw(*this);
 
 #ifdef USE_IMGUI
     if (imgui_) {
-        if (isDebugMode_) {
             sceneMgr_->DrawImGui(*this);
             render_->DrawImGui(); // ポストエフェクト切り替えUI
-        }
         imgui_->End(dx_->GetCommandList());
     }
 #endif

@@ -74,6 +74,4 @@ private:
 	//RenderManager繧呈戟縺溘○繧・
     std::unique_ptr<RenderManager> render_;
 
-    bool isDebugMode_ = false;
-
 };

@@ -1,0 +1,275 @@
+#include "Player.h"
+#include "Input.h"
+#include "Object3d.h"
+
+#include <algorithm>
+#include <dinput.h>
+
+void Player::UpdateSmashInputWindow_(const Input& input) {
+    const bool leftTrigger = input.IsKeyTrigger(DIK_LEFT) || input.IsKeyTrigger(DIK_A);
+    const bool rightTrigger = input.IsKeyTrigger(DIK_RIGHT) || input.IsKeyTrigger(DIK_D);
+
+    if (leftTrigger != rightTrigger) {
+        recentHorizontalDir_ = rightTrigger ? +1 : -1;
+        recentHorizontalFrames_ = kSmashInputWindowFrames_;
+        return;
+    }
+
+    if (recentHorizontalFrames_ > 0) {
+        --recentHorizontalFrames_;
+        if (recentHorizontalFrames_ == 0) {
+            recentHorizontalDir_ = 0;
+        }
+    }
+}
+
+Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
+    UpdateSmashInputWindow_(input);
+
+    PlayerInputCommand command{};
+
+    const bool left = input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A);
+    const bool right = input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D);
+    const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
+
+    if (left != right) {
+        command.horizontal = right ? +1 : -1;
+    }
+    command.down = down;
+    command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE);
+    command.guard = input.IsKeyPressed(DIK_H);
+
+    const bool weakTriggered = input.IsKeyTrigger(DIK_U);
+    const bool specialTriggered = input.IsKeyTrigger(DIK_I);
+
+    if (command.guard) {
+        command.action = PlayerAction::Guard;
+        return command;
+    }
+
+    if (weakTriggered) {
+        command.action = PlayerAction::Attack;
+
+        const bool smashWindow =
+            command.horizontal != 0 &&
+            recentHorizontalFrames_ > 0 &&
+            recentHorizontalDir_ == command.horizontal;
+
+        if (smashWindow) {
+            command.attackType = PlayerAttackType::Smash;
+        } else if (command.horizontal != 0) {
+            command.attackType = PlayerAttackType::Tilt;
+        } else {
+            command.attackType = PlayerAttackType::Weak;
+        }
+        return command;
+    }
+
+    if (specialTriggered) {
+        command.action = PlayerAction::Attack;
+        command.attackType = (command.horizontal != 0)
+            ? PlayerAttackType::SideSpecial
+            : PlayerAttackType::NeutralSpecial;
+        return command;
+    }
+
+    if (down) {
+        command.action = onGround_ ? PlayerAction::Crouch : PlayerAction::FastFall;
+        return command;
+    }
+
+    if (command.jumpTriggered && onGround_) {
+        command.action = PlayerAction::Jump;
+        return command;
+    }
+
+    command.action = (command.horizontal != 0) ? PlayerAction::Move : PlayerAction::Idle;
+    return command;
+}
+
+void Player::StartAttackAction_(PlayerAttackType type, int horizontal) {
+    action_ = PlayerAction::Attack;
+    attackType_ = type;
+    crouching_ = false;
+    fastFalling_ = false;
+    guarding_ = false;
+
+    if (horizontal != 0) {
+        facing_ = horizontal;
+    }
+
+    switch (type) {
+    case PlayerAttackType::Weak:
+        actionTimer_ = 0.28f;
+        break;
+    case PlayerAttackType::Tilt:
+        actionTimer_ = 0.38f;
+        break;
+    case PlayerAttackType::Smash:
+        actionTimer_ = 0.55f;
+        break;
+    case PlayerAttackType::NeutralSpecial:
+        actionTimer_ = 0.45f;
+        break;
+    case PlayerAttackType::SideSpecial:
+        actionTimer_ = 0.50f;
+        break;
+    case PlayerAttackType::None:
+    default:
+        actionTimer_ = 0.0f;
+        break;
+    }
+
+    LockMove(actionTimer_);
+}
+
+bool Player::GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const {
+    if (action_ != PlayerAction::Attack || attackType_ == PlayerAttackType::None) {
+        return false;
+    }
+
+    float offsetX = 0.9f;
+    outHalfSize = { 0.55f, 0.75f, 0.45f };
+
+    switch (attackType_) {
+    case PlayerAttackType::Weak:
+        offsetX = 0.9f;
+        outHalfSize = { 0.55f, 0.70f, 0.45f };
+        break;
+    case PlayerAttackType::Tilt:
+        offsetX = 1.15f;
+        outHalfSize = { 0.80f, 0.80f, 0.50f };
+        break;
+    case PlayerAttackType::Smash:
+        offsetX = 1.45f;
+        outHalfSize = { 1.15f, 0.95f, 0.60f };
+        break;
+    case PlayerAttackType::NeutralSpecial:
+        offsetX = 1.00f;
+        outHalfSize = { 0.75f, 0.85f, 0.55f };
+        break;
+    case PlayerAttackType::SideSpecial:
+        offsetX = 1.55f;
+        outHalfSize = { 1.25f, 0.85f, 0.65f };
+        break;
+    case PlayerAttackType::None:
+    default:
+        return false;
+    }
+
+    outCenter = {
+        pos_.x + offsetX * static_cast<float>(facing_),
+        pos_.y + outHalfSize.y,
+        pos_.z
+    };
+    return true;
+}
+
+void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
+    guarding_ = command.action == PlayerAction::Guard;
+    crouching_ = command.action == PlayerAction::Crouch;
+    fastFalling_ = command.action == PlayerAction::FastFall;
+
+    if (command.horizontal != 0 && command.action != PlayerAction::Attack) {
+        facing_ = command.horizontal;
+    }
+
+    switch (command.action) {
+    case PlayerAction::Attack:
+        if (actionTimer_ <= 0.0f) {
+            StartAttackAction_(command.attackType, command.horizontal);
+        }
+        break;
+
+    case PlayerAction::Guard:
+        action_ = PlayerAction::Guard;
+        attackType_ = PlayerAttackType::None;
+        vel_.x = 0.0f;
+        vel_.z = 0.0f;
+        break;
+
+    case PlayerAction::Crouch:
+        action_ = PlayerAction::Crouch;
+        attackType_ = PlayerAttackType::None;
+        vel_.x = 0.0f;
+        break;
+
+    case PlayerAction::FastFall:
+        action_ = PlayerAction::FastFall;
+        attackType_ = PlayerAttackType::None;
+        vel_.y = std::min(vel_.y, -fastFallSpeed_);
+        break;
+
+    case PlayerAction::Jump:
+        action_ = PlayerAction::Jump;
+        attackType_ = PlayerAttackType::None;
+        break;
+
+    case PlayerAction::Move:
+        if (actionTimer_ <= 0.0f) {
+            action_ = PlayerAction::Move;
+            attackType_ = PlayerAttackType::None;
+        }
+        break;
+
+    case PlayerAction::Idle:
+    default:
+        if (actionTimer_ <= 0.0f) {
+            action_ = PlayerAction::Idle;
+            attackType_ = PlayerAttackType::None;
+        }
+        break;
+    }
+}
+
+void Player::UpdateActionTimer_(float dt) {
+    if (actionTimer_ <= 0.0f) return;
+
+    actionTimer_ -= dt;
+    if (actionTimer_ <= 0.0f) {
+        actionTimer_ = 0.0f;
+        attackType_ = PlayerAttackType::None;
+        if (action_ == PlayerAction::Attack) {
+            action_ = isMoving ? PlayerAction::Move : PlayerAction::Idle;
+        }
+    }
+}
+
+void Player::PlayActionAnimation_(const PlayerInputCommand& command) {
+    if (!model_) return;
+
+    auto playIfChanged = [&](const char* anim, bool loop) {
+        if (curAnim_ == anim) return;
+        model_->CrossFadeTo(anim, 0.10f, loop);
+        curAnim_ = anim;
+    };
+
+    if (action_ == PlayerAction::Attack) {
+        switch (attackType_) {
+        case PlayerAttackType::Weak:
+        case PlayerAttackType::Tilt:
+        case PlayerAttackType::Smash:
+            playIfChanged("Attak_I", false);
+            break;
+        case PlayerAttackType::NeutralSpecial:
+        case PlayerAttackType::SideSpecial:
+            playIfChanged("Attak_O", false);
+            break;
+        case PlayerAttackType::None:
+        default:
+            break;
+        }
+        return;
+    }
+
+    if (action_ == PlayerAction::Guard || action_ == PlayerAction::Crouch) {
+        playIfChanged("Idle", true);
+        return;
+    }
+
+    if (isMoving || command.horizontal != 0) {
+        playIfChanged("Walk", true);
+    } else {
+        playIfChanged("Idle", true);
+    }
+}

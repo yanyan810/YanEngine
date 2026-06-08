@@ -1,4 +1,4 @@
-#include "Enemy.h"
+﻿#include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
 #include "Camera.h"
@@ -7,14 +7,14 @@
 #include <cmath>
 
 static float CalcXMaxByZ_Boss(float z) {
-	// ★ボスはプレイヤーより Z 範囲を狭く
-	// 例：プレイヤー (-15..20) → ボス (-10..15)
+	// 笘・・繧ｹ縺ｯ繝励Ξ繧､繝､繝ｼ繧医ｊ Z 遽・峇繧堤強縺・
+	// 萓具ｼ壹・繝ｬ繧､繝､繝ｼ (-15..20) 竊・繝懊せ (-10..15)
 	const float zNear = -10.0f;
 	const float zFar = 15.0f;
 
-	// ★X幅も少し狭める（好み）
-	const float xMaxNear = 13.0f; // 手前側
-	const float xMaxFar = 17.0f; // 奥側
+	// 笘・蟷・ｂ蟆代＠迢ｭ繧√ｋ・亥･ｽ縺ｿ・・
+	const float xMaxNear = 13.0f; // 謇句燕蛛ｴ
+	const float xMaxFar = 17.0f; // 螂･蛛ｴ
 
 	float t = (z - zNear) / (zFar - zNear);
 	t = std::clamp(t, 0.0f, 1.0f);
@@ -23,11 +23,11 @@ static float CalcXMaxByZ_Boss(float z) {
 
 
 struct AttackHitboxParam {
-	float rangeX = 0.0f;  // 前に出す距離
-	float liftY = 0.0f;  // 上下オフセット（+で上、-で下）
-	float hx = 0.8f;  // 半幅
-	float hy = 1.0f;  // 高さ（下端から上へ）
-	float hz = 0.6f;  // Z厚み（±）
+	float rangeX = 0.0f;  // 蜑阪↓蜃ｺ縺呵ｷ晞屬
+	float liftY = 0.0f;  // 荳贋ｸ九が繝輔そ繝・ヨ・・縺ｧ荳翫・縺ｧ荳具ｼ・
+	float hx = 0.8f;  // 蜊雁ｹ・
+	float hy = 1.0f;  // 鬮倥＆・井ｸ狗ｫｯ縺九ｉ荳翫∈・・
+	float hz = 0.6f;  // Z蜴壹∩・按ｱ・・
 };
 
 inline AABB MakeAttackHitboxAABB(
@@ -42,14 +42,6 @@ inline AABB MakeAttackHitboxAABB(
 	hit.max = { cx + p.hx, attackerPos.y + p.liftY + p.hy, attackerPos.z + p.hz };
 	return hit;
 }
-
-inline bool Intersect3(const EnemyManager::AABB3& a, const EnemyManager::AABB3& b) {
-	return (std::abs(a.x - b.x) <= (a.hx + b.hx)) &&
-		(std::abs(a.y - b.y) <= (a.hy + b.hy)) &&
-		(std::abs(a.z - b.z) <= (a.hz + b.hz));
-}
-
-
 
 void Enemy::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam,
 	EnemyType type, const Vector3& spawnXYZ) {
@@ -84,7 +76,7 @@ void Enemy::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam
 	model_->Initialize(objCommon, dx);
 	model_->SetCamera(cam);
 
-	// 仮モデル（あるものに差し替えてOK）
+	// 莉ｮ繝｢繝・Ν・医≠繧九ｂ縺ｮ縺ｫ蟾ｮ縺玲崛縺医※OK・・
 	//model_->SetModel("cube/cube.obj");
 
 	UpdateBody_();
@@ -107,7 +99,7 @@ void Enemy::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam
 	debugHitboxCube_->SetCamera(cam);
 	//debugHitboxCube_->SetModel("cube/cube.obj");
 
-	//ボス用
+	//繝懊せ逕ｨ
 	meleeKind_ = MeleeKind::Normal;
 
 	auto* mgr = ModelManager::GetInstance();
@@ -119,31 +111,31 @@ void Enemy::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam
 		ChangeAnimIfChanged_(meleeAnimIdle_, true);
 		prevMeleeState_ = meleeState_;
 	} else if (type_ == EnemyType::Shooter) {
-		model_->SetModel("enemy/shooter/enemyShooter.gltf"); // ←パスはあなたのresources構成に合わせて
+		model_->SetModel("enemy/shooter/enemyShooter.gltf"); // 竊舌ヱ繧ｹ縺ｯ縺ゅ↑縺溘・resources讒区・縺ｫ蜷医ｏ縺帙※
 
 		currentAnim_.clear();
 		currentAnimLoop_ = true;
 
-		// Idle（日本語名）をループ
+		// Idle・域律譛ｬ隱槫錐・峨ｒ繝ｫ繝ｼ繝・
 		ChangeAnimIfChanged_(shooterAnimIdle_, true);
 
 		prevShooterState_ = shooterState_;
 	} else {
-		// ★Boss
-		model_->SetModel("enemy/boss/boss.gltf");   // ← あなたの resources 構成に合わせて
+		// 笘・oss
+		model_->SetModel("enemy/boss/boss.gltf");   // 竊・縺ゅ↑縺溘・ resources 讒区・縺ｫ蜷医ｏ縺帙※
 		currentAnim_.clear();
 		currentAnimLoop_ = true;
 
-		// 初期は Idle
+		// 蛻晄悄縺ｯ Idle
 		ChangeAnimIfChanged_("Idle", true);
 	}
 
 
-	// Initializeの最後付近（モデル決めた後）
+	// Initialize縺ｮ譛蠕御ｻ倩ｿ托ｼ医Δ繝・Ν豎ｺ繧√◆蠕鯉ｼ・
 	UpdateBody_();
 
-	// ★初期位置を即反映（重要）
-	UpdateModel_(0.0f);     // privateなら、ここだけは呼べる位置なのでOK
+	// 笘・・譛滉ｽ咲ｽｮ繧貞叉蜿肴丐・磯㍾隕・ｼ・
+	UpdateModel_(0.0f);     // private縺ｪ繧峨√％縺薙□縺代・蜻ｼ縺ｹ繧倶ｽ咲ｽｮ縺ｪ縺ｮ縺ｧOK
 	if (model_) model_->Update(0.0f);
 
 
@@ -152,7 +144,7 @@ void Enemy::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam
 void Enemy::ChangeAnimIfChanged_(const char* name, bool loop) {
 	if (!model_ || !name) return;
 
-	// 同じなら何もしない（毎フレームリスタート防止）
+	// 蜷後§縺ｪ繧我ｽ輔ｂ縺励↑縺・ｼ域ｯ弱ヵ繝ｬ繝ｼ繝繝ｪ繧ｹ繧ｿ繝ｼ繝磯亟豁｢・・
 	if (currentAnim_ == name && currentAnimLoop_ == loop) return;
 
 	currentAnim_ = name;
@@ -173,13 +165,13 @@ void Enemy::StartOneShot_(const char* name, float lengthSec) {
 void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 	if (!alive_) return;
 
-	// ★Test用：完全停止
+	// 笘・est逕ｨ・壼ｮ悟・蛛懈ｭ｢
 	if (frozen_) {
 		vel_ = { 0,0,0 };
 		requestMeleeAttack_ = false;
 		requestShoot_ = false;
 
-		// 見た目と当たり判定は更新しておく（攻撃判定がちゃんと当たる）
+		// 隕九◆逶ｮ縺ｨ蠖薙◆繧雁愛螳壹・譖ｴ譁ｰ縺励※縺翫￥・域判謦・愛螳壹′縺｡繧・ｓ縺ｨ蠖薙◆繧具ｼ・
 		UpdateBody_();
 		UpdateModel_(dt);
 		return;
@@ -195,7 +187,7 @@ void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 	if (meleeTimer_ > 0.0f) meleeTimer_ -= dt;
 	//if (shootTimer_ > 0.0f) shootTimer_ -= dt;
 
-// 先に OneShot タイマーだけ進める（重要）
+// 蜈医↓ OneShot 繧ｿ繧､繝槭・縺縺鷹ｲ繧√ｋ・磯㍾隕・ｼ・
 	if (oneShotPlaying_) {
 		oneShotTimer_ -= dt;
 		if (oneShotTimer_ <= 0.0f) {
@@ -203,21 +195,21 @@ void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 		}
 	}
 
-	// ★OneShot中は移動を止める（ここが肝）
+	// 笘・neShot荳ｭ縺ｯ遘ｻ蜍輔ｒ豁｢繧√ｋ・医％縺薙′閧晢ｼ・
 	if (oneShotPlaying_) {
 		vel_.x = 0.0f;
 		vel_.z = 0.0f;
 
-		// 空中で吹き飛んでる最中なら Y は止めない方が自然なので、基本は触らない
-		// ただ「地上攻撃中は完全停止」にしたいなら onGround_ の時だけ止める
+		// 遨ｺ荳ｭ縺ｧ蜷ｹ縺埼｣帙ｓ縺ｧ繧区怙荳ｭ縺ｪ繧・Y 縺ｯ豁｢繧√↑縺・婿縺瑚・辟ｶ縺ｪ縺ｮ縺ｧ縲∝渕譛ｬ縺ｯ隗ｦ繧峨↑縺・
+		// 縺溘□縲悟慍荳頑判謦・ｸｭ縺ｯ螳悟・蛛懈ｭ｢縲阪↓縺励◆縺・↑繧・onGround_ 縺ｮ譎ゅ□縺第ｭ｢繧√ｋ
 		if (onGround_) {
 			vel_.y = 0.0f;
 		}
 	}
 
 
-	// AIは「OneShot中は止める」
-	// ただしBossは例外にしたいなら条件を調整
+	// AI縺ｯ縲薫neShot荳ｭ縺ｯ豁｢繧√ｋ縲・
+	// 縺溘□縺唯oss縺ｯ萓句､悶↓縺励◆縺・↑繧画擅莉ｶ繧定ｪｿ謨ｴ
 	if (!aiDisabled_ && !oneShotPlaying_) {
 		if (!hitstun_ || type_ == EnemyType::Boss) {
 			if (type_ == EnemyType::Melee) UpdateAI_Melee_(dt, playerXY, playerZ);
@@ -226,7 +218,7 @@ void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 		}
 	}
 
-	// ★Boss Rush中の向きは速度で固定（Charge中は維持）
+	// 笘・oss Rush荳ｭ縺ｮ蜷代″縺ｯ騾溷ｺｦ縺ｧ蝗ｺ螳夲ｼ・harge荳ｭ縺ｯ邯ｭ謖・ｼ・
 	if (type_ == EnemyType::Boss) {
 		const auto st = bossAI_.GetState();
 
@@ -235,17 +227,17 @@ void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 		} else if (st == BossAI::State::Rush_ExitLeft) {
 			facing_ = -1;
 		}
-		// Rush_Charge は向き維持（何もしない）
+		// Rush_Charge 縺ｯ蜷代″邯ｭ謖・ｼ井ｽ輔ｂ縺励↑縺・ｼ・
 	}
 
 
-	// ★被弾フラッシュ更新
+	// 笘・｢ｫ蠑ｾ繝輔Λ繝・す繝･譖ｴ譁ｰ
 	if (hitFlashSec_ > 0.0f) {
 		hitFlashSec_ -= dt;
 		if (hitFlashSec_ < 0.0f) hitFlashSec_ = 0.0f;
 	}
 
-	// ★色反映（毎フレームでOK）
+	// 笘・牡蜿肴丐・域ｯ弱ヵ繝ｬ繝ｼ繝縺ｧOK・・
 	if (model_) {
 		if (hitFlashSec_ > 0.0f) model_->SetMaterialColor(hitColor_);
 		else                      model_->SetMaterialColor(normalColor_);
@@ -255,7 +247,7 @@ void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 
 
 
-	// ★物理は常に回す（吹き飛びたいので）
+	// 笘・黄逅・・蟶ｸ縺ｫ蝗槭☆・亥聖縺埼｣帙・縺溘＞縺ｮ縺ｧ・・
 	ApplyPhysics_(dt);
 	UpdateBody_();
 	UpdateModel_(dt);
@@ -291,7 +283,7 @@ EnemyHitResult Enemy::ApplyHit2D(float knockVx, float launchVy, bool requestHits
 	}
 
 	// =========================
-// ★ダメージ（invincible なら減らさない）
+// 笘・ム繝｡繝ｼ繧ｸ・・nvincible 縺ｪ繧画ｸ帙ｉ縺輔↑縺・ｼ・
 // =========================
 	if (!invincible_) {
 		const int d = std::max(0, damage);
@@ -306,7 +298,7 @@ EnemyHitResult Enemy::ApplyHit2D(float knockVx, float launchVy, bool requestHits
 	}
 
 
-	hitFlashSec_ = std::max(hitFlashSec_, 0.20f); // 0.2秒赤く
+	hitFlashSec_ = std::max(hitFlashSec_, 0.20f); // 0.2遘定ｵ､縺・
 
 	if (type_ == EnemyType::Melee) {
 		StartOneShot_(meleeAnimDamage_, 0.20f);
@@ -316,7 +308,7 @@ EnemyHitResult Enemy::ApplyHit2D(float knockVx, float launchVy, bool requestHits
 
 
 	// =========================
-	// ★攻撃（AI）リセット：殴られたら最初から
+	// 笘・判謦・ｼ・I・峨Μ繧ｻ繝・ヨ・壽ｮｴ繧峨ｌ縺溘ｉ譛蛻昴°繧・
 	// =========================
 	meleeState_ = MeleeState::Approach;
 	meleeWindup_ = 0.0f;
@@ -330,7 +322,7 @@ EnemyHitResult Enemy::ApplyHit2D(float knockVx, float launchVy, bool requestHits
 	requestShoot_ = false;
 
 	// =========================
-	// ★吹き飛ばし（ここは invincible でも効かせる）
+	// 笘・聖縺埼｣帙・縺暦ｼ医％縺薙・ invincible 縺ｧ繧ょ柑縺九○繧具ｼ・
 	// =========================
 	vel_.x = knockVx;
 	vel_.y = launchVy;
@@ -352,7 +344,7 @@ void Enemy::UpdateAI_Melee_(float dt, const Vector2& playerXY, float playerZ) {
 	const float dz = playerZ - pos_.z;
 	const float adz = std::abs(dz);
 
-	// Z追従（今のまま）
+	// Z霑ｽ蠕難ｼ井ｻ翫・縺ｾ縺ｾ・・
 	if (adz > zFollowDeadZone_) vel_.z = (dz > 0) ? depthSpeed_ : -depthSpeed_;
 	else                       vel_.z = 0.0f;
 
@@ -361,11 +353,11 @@ void Enemy::UpdateAI_Melee_(float dt, const Vector2& playerXY, float playerZ) {
 
 	switch (meleeState_) {
 	case MeleeState::Approach:
-		// ★XかZどっちかでも足りないなら「近づく」
+		// 笘・縺技縺ｩ縺｣縺｡縺九〒繧りｶｳ繧翫↑縺・↑繧峨瑚ｿ代▼縺上・
 		if (!inX || !inZ) {
 			vel_.x = (dx > 0) ? moveSpeed_ : -moveSpeed_;
 		} else {
-			// ★XZ両方OKの時だけ攻撃準備
+			// 笘・Z荳｡譁ｹOK縺ｮ譎ゅ□縺第判謦・ｺ門ｙ
 			vel_.x = 0.0f;
 			meleeWindup_ = meleeWindupTime_;
 			meleeState_ = MeleeState::Windup;
@@ -375,7 +367,7 @@ void Enemy::UpdateAI_Melee_(float dt, const Vector2& playerXY, float playerZ) {
 	case MeleeState::Windup:
 		vel_.x = 0.0f;
 
-		// ★溜め中に距離が崩れたらキャンセルして追い直す（重要）
+		// 笘・ｺ懊ａ荳ｭ縺ｫ霍晞屬縺悟ｴｩ繧後◆繧峨く繝｣繝ｳ繧ｻ繝ｫ縺励※霑ｽ縺・峩縺呻ｼ磯㍾隕・ｼ・
 		if (!inX || !inZ) {
 			meleeState_ = MeleeState::Approach;
 			break;
@@ -420,7 +412,7 @@ static float CalcXMaxByZ(float z) {
 
 void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 {
-	// 死亡/ひるみ中は撃たない（好みで）
+	// 豁ｻ莠｡/縺ｲ繧九∩荳ｭ縺ｯ謦・◆縺ｪ縺・ｼ亥･ｽ縺ｿ縺ｧ・・
 	if (!alive_) return;
 	if (hitstun_) {
 		vel_.x = 0.0f;
@@ -428,7 +420,7 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 		return;
 	}
 
-	// ★Fire/Damage など OneShot 中はAI停止（動かない）
+	// 笘・ire/Damage 縺ｪ縺ｩ OneShot 荳ｭ縺ｯAI蛛懈ｭ｢・亥虚縺九↑縺・ｼ・
 	if (oneShotPlaying_) {
 		vel_.x = 0.0f;
 		vel_.y = 0.0f;
@@ -437,11 +429,11 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 	}
 
 
-	// プレイヤー方向
+	// 繝励Ξ繧､繝､繝ｼ譁ｹ蜷・
 	const float dx = playerXY.x - pos_.x;
 	const float dy = playerXY.y - pos_.y;
 
-	// 向き更新
+	// 蜷代″譖ｴ譁ｰ
 	auto CalcFacingToPlayer = [&]() {
 		return (playerXY.x < pos_.x) ? -1 : +1;
 		};
@@ -449,7 +441,7 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 	if (type_ != EnemyType::Boss) {
 		facing_ = CalcFacingToPlayer();
 	} else {
-		// ★ボスはRush中だけ向きを固定（パカパカ防止）
+		// 笘・・繧ｹ縺ｯRush荳ｭ縺縺大髄縺阪ｒ蝗ｺ螳夲ｼ医ヱ繧ｫ繝代き髦ｲ豁｢・・
 		const auto st = bossAI_.GetState();
 
 		const bool isRush =
@@ -461,53 +453,53 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 		if (!isRush) {
 			facing_ = CalcFacingToPlayer();
 		}
-		// isRush の時は facing_ をここでは更新しない
+		// isRush 縺ｮ譎ゅ・ facing_ 繧偵％縺薙〒縺ｯ譖ｴ譁ｰ縺励↑縺・
 	}
 
 
 	// =========================
-// ★ステージ境界へ戻す（X/Zが制限外なら、入るまで移動）
+// 笘・せ繝・・繧ｸ蠅・阜縺ｸ謌ｻ縺呻ｼ・/Z縺悟宛髯仙､悶↑繧峨∝・繧九∪縺ｧ遘ｻ蜍包ｼ・
 // =========================
 	{
-		// Playerと同じZ制限
+		// Player縺ｨ蜷後§Z蛻ｶ髯・
 		const float zNear = -10.0f;
 		const float zFar = 20.0f;
 
-		// Zはプレイヤーへ追従してるけど、まず制限内に収めたい
+		// Z縺ｯ繝励Ξ繧､繝､繝ｼ縺ｸ霑ｽ蠕薙＠縺ｦ繧九￠縺ｩ縲√∪縺壼宛髯仙・縺ｫ蜿弱ａ縺溘＞
 		const float zClamped = std::clamp(pos_.z, zNear, zFar);
 
-		// Zの制限外なら、まずZを制限内へ押し戻す（優先）
+		// Z縺ｮ蛻ｶ髯仙､悶↑繧峨√∪縺啝繧貞宛髯仙・縺ｸ謚ｼ縺玲綾縺呻ｼ亥━蜈茨ｼ・
 		if (pos_.z != zClamped) {
 			const float targetZ = zClamped;
 			const float dz = targetZ - pos_.z;
 			vel_.z = (dz > 0.0f) ? depthSpeed_ : -depthSpeed_;
 			vel_.x = 0.0f;
 			vel_.y = 0.0f;
-			return; // ★このフレームは「戻る」だけ
+			return; // 笘・％縺ｮ繝輔Ξ繝ｼ繝縺ｯ縲梧綾繧九阪□縺・
 		}
 
-		// X制限（Shooterは少し内側に入れたいなら margin）
-		const float margin = 0.5f; // 0でもOK。内側に寄せたいなら少し
+		// X蛻ｶ髯撰ｼ・hooter縺ｯ蟆代＠蜀・・縺ｫ蜈･繧後◆縺・↑繧・margin・・
+		const float margin = 0.5f; // 0縺ｧ繧０K縲ょ・蛛ｴ縺ｫ蟇・○縺溘＞縺ｪ繧牙ｰ代＠
 		const float xMax = CalcXMaxByZ(pos_.z) - margin;
 
 		const float xClamped = std::clamp(pos_.x, -xMax, xMax);
 
 		if (pos_.x != xClamped) {
-			// Xが外なら、境界へ戻る
+			// X縺悟､悶↑繧峨∝｢・阜縺ｸ謌ｻ繧・
 			const float targetX = xClamped;
 			const float dxTo = targetX - pos_.x;
 
-			// 速度で戻す（moveSpeed_ を使う）
+			// 騾溷ｺｦ縺ｧ謌ｻ縺呻ｼ・oveSpeed_ 繧剃ｽｿ縺・ｼ・
 			vel_.x = (dxTo > 0.0f) ? moveSpeed_ : -moveSpeed_;
 			vel_.y = 0.0f;
-			// vel_.z は既にプレイヤー追従の設定があるならそのままでもOK
-			// ただし「戻る優先」にしたいなら vel_.z = 0 にしても良い
-			return; // ★このフレームは「戻る」だけ
+			// vel_.z 縺ｯ譌｢縺ｫ繝励Ξ繧､繝､繝ｼ霑ｽ蠕薙・險ｭ螳壹′縺ゅｋ縺ｪ繧峨◎縺ｮ縺ｾ縺ｾ縺ｧ繧０K
+			// 縺溘□縺励梧綾繧句━蜈医阪↓縺励◆縺・↑繧・vel_.z = 0 縺ｫ縺励※繧り憶縺・
+			return; // 笘・％縺ｮ繝輔Ξ繝ｼ繝縺ｯ縲梧綾繧九阪□縺・
 		}
 	}
 
 
-	// ★Z追従（チャージ中はしない）
+	// 笘・霑ｽ蠕難ｼ医メ繝｣繝ｼ繧ｸ荳ｭ縺ｯ縺励↑縺・ｼ・
 	if (shooterState_ != ShooterState::Windup) {
 		const float dz = playerZ - pos_.z;
 		if (std::abs(dz) > zFollowDeadZone_) {
@@ -518,15 +510,15 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 	}
 
 
-	// ShooterState：簡易ステートマシン
+	// ShooterState・夂ｰ｡譏薙せ繝・・繝医・繧ｷ繝ｳ
 	switch (shooterState_) {
 	case ShooterState::Retreat:
 	{
-		// ★プレイヤーが近づいても動かない
+		// 笘・・繝ｬ繧､繝､繝ｼ縺瑚ｿ代▼縺・※繧ょ虚縺九↑縺・
 		vel_.x = 0.0f;
 		vel_.y = 0.0f;
 
-		// すぐ狙いへ（またはAim固定でもOK）
+		// 縺吶＄迢吶＞縺ｸ・医∪縺溘・Aim蝗ｺ螳壹〒繧０K・・
 		shooterState_ = ShooterState::Aim;
 	}
 	break;
@@ -535,7 +527,7 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 
 	case ShooterState::Aim:
 	{
-		// Y がある程度揃ってたら溜めへ（揃ってなくても撃つなら条件外す）
+		// Y 縺後≠繧狗ｨ句ｺｦ謠・▲縺ｦ縺溘ｉ貅懊ａ縺ｸ・域純縺｣縺ｦ縺ｪ縺上※繧よ茶縺､縺ｪ繧画擅莉ｶ螟悶☆・・
 		if (std::abs(dy) <= shooterAlignYEps_) {
 			shooterState_ = ShooterState::Windup;
 			shootWindup_ = shootWindupTime_;
@@ -555,7 +547,7 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 		shootWindup_ -= dt;
 		if (shootWindup_ <= 0.0f) {
 
-			// 発射要求
+			// 逋ｺ蟆・ｦ∵ｱ・
 			requestShoot_ = true;
 
 			shootMuzzlePos_.x = pos_.x + 1.0f * float(facing_);
@@ -564,11 +556,11 @@ void Enemy::UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ)
 
 			shootDir_ = facing_;
 
-			// ★ここで Fire を開始（発射した瞬間）
-			const float fireLen = 0.35f; // 見た目で調整（0.25だと短いかも）
+			// 笘・％縺薙〒 Fire 繧帝幕蟋具ｼ育匱蟆・＠縺溽椪髢難ｼ・
+			const float fireLen = 0.35f; // 隕九◆逶ｮ縺ｧ隱ｿ謨ｴ・・.25縺縺ｨ遏ｭ縺・°繧ゑｼ・
 			StartOneShot_(shooterAnimFire_, fireLen);
 
-			// ★Cooldown は Fire より短くしない（ここ超重要）
+			// 笘・ooldown 縺ｯ Fire 繧医ｊ遏ｭ縺上＠縺ｪ縺・ｼ医％縺楢ｶ・㍾隕・ｼ・
 			shooterState_ = ShooterState::Cooldown;
 			shootTimer_ = std::max(shootCooldown_, fireLen);
 		}
@@ -606,7 +598,7 @@ void Enemy::ApplyPhysics_(float dt) {
 	pos_.y += vel_.y * dt;
 	pos_.z += vel_.z * dt;
 
-	// 地面
+	// 蝨ｰ髱｢
 	if (pos_.y <= 0.0f) {
 		pos_.y = 0.0f;
 		vel_.y = 0.0f;
@@ -614,7 +606,7 @@ void Enemy::ApplyPhysics_(float dt) {
 		airborne_ = false;
 	}
 
-	// ★ボスだけ：ステージ範囲にクランプ（Z範囲はプレイヤーより狭く）
+	// 笘・・繧ｹ縺縺托ｼ壹せ繝・・繧ｸ遽・峇縺ｫ繧ｯ繝ｩ繝ｳ繝暦ｼ・遽・峇縺ｯ繝励Ξ繧､繝､繝ｼ繧医ｊ迢ｭ縺擾ｼ・
 	if (type_ == EnemyType::Boss) {
 		const float zNearBoss = -10.0f;
 		const float zFarBoss = 15.0f;
@@ -629,12 +621,12 @@ void Enemy::ApplyPhysics_(float dt) {
 
 
 void Enemy::UpdateBody_() {
-	// 足元基準の簡易AABB（ボスは大きく）
-	float hx = 0.4f, hy = 0.75f, hz = 0.6f;         // ★hz追加
+	// 雜ｳ蜈・渕貅悶・邁｡譏鄭ABB・医・繧ｹ縺ｯ螟ｧ縺阪￥・・
+	float hx = 0.4f, hy = 0.75f, hz = 0.6f;         // 笘・z霑ｽ蜉
 	if (type_ == EnemyType::Boss) { hx = 1.2f; hy = 2.0f; hz = 1.4f; }
 
-	body_.min = { pos_.x - hx, pos_.y,           pos_.z - hz };   // ★Zもpos_.z基準
-	body_.max = { pos_.x + hx, pos_.y + hy * 2.0f, pos_.z + hz }; // ★Zもpos_.z基準
+	body_.min = { pos_.x - hx, pos_.y,           pos_.z - hz };   // 笘・繧Ｑos_.z蝓ｺ貅・
+	body_.max = { pos_.x + hx, pos_.y + hy * 2.0f, pos_.z + hz }; // 笘・繧Ｑos_.z蝓ｺ貅・
 }
 
 void Enemy::UpdateModel_(float dt) {
@@ -644,7 +636,7 @@ void Enemy::UpdateModel_(float dt) {
 
 	float flipX = (facing_ > 0) ? 1.0f : -1.0f;
 
-	// ★boss.gltf が「逆向き」なら見た目だけ反転補正
+	// 笘・oss.gltf 縺後碁・髄縺阪阪↑繧芽ｦ九◆逶ｮ縺縺大渚霆｢陬懈ｭ｣
 	if (type_ == EnemyType::Boss) {
 		flipX *= -1.0f;
 	}
@@ -652,10 +644,10 @@ void Enemy::UpdateModel_(float dt) {
 	if (type_ == EnemyType::Boss) model_->SetScale({ 2.0f * flipX, 2.0f, 2.0f });
 	else                         model_->SetScale({ 1.0f * flipX, 1.0f, 1.0f });
 
-	// ===== Melee は「アニメ」で切替（モデル差し替えしない）=====
+	// ===== Melee 縺ｯ縲後い繝九Γ縲阪〒蛻・崛・医Δ繝・Ν蟾ｮ縺玲崛縺医＠縺ｪ縺・ｼ・====
 	if (type_ == EnemyType::Melee) {
 
-		// 攻撃中判定（あなたの既存ロジック）
+		// 謾ｻ謦・ｸｭ蛻､螳夲ｼ医≠縺ｪ縺溘・譌｢蟄倥Ο繧ｸ繝・け・・
 		const bool isAttacking =
 			(meleeState_ == MeleeState::Windup || meleeState_ == MeleeState::Attack);
 
@@ -665,39 +657,39 @@ void Enemy::UpdateModel_(float dt) {
 			(std::abs(vel_.z) > moveEps) ||
 			(std::abs(vel_.y) > moveEps);
 
-		// ---- 1) OneShot 再生中（攻撃/被弾など）なら時間で終わらせる
+		// ---- 1) OneShot 蜀咲函荳ｭ・域判謦・陲ｫ蠑ｾ縺ｪ縺ｩ・峨↑繧画凾髢薙〒邨ゅｏ繧峨○繧・
 		//if (oneShotPlaying_) {
 		//	oneShotTimer_ -= dt;
 		//	if (oneShotTimer_ <= 0.0f) {
 		//		oneShotPlaying_ = false;
 		//	} else {
-		//		// OneShot中は他に切り替えない
+		//		// OneShot荳ｭ縺ｯ莉悶↓蛻・ｊ譖ｿ縺医↑縺・
 		//		return;
 		//	}
 		//}
 
 		if (oneShotPlaying_) {
-			// タイマー減算は Update() 側だけでやる
-			return; // OneShot中は他に切り替えない
+			// 繧ｿ繧､繝槭・貂帷ｮ励・ Update() 蛛ｴ縺縺代〒繧・ｋ
+			return; // OneShot荳ｭ縺ｯ莉悶↓蛻・ｊ譖ｿ縺医↑縺・
 		}
 
 
-		// ---- 2) 状態遷移の瞬間だけ Attack を開始（毎フレーム開始しない）
+		// ---- 2) 迥ｶ諷矩・遘ｻ縺ｮ迸ｬ髢薙□縺・Attack 繧帝幕蟋具ｼ域ｯ弱ヵ繝ｬ繝ｼ繝髢句ｧ九＠縺ｪ縺・ｼ・
 		if ((meleeState_ == MeleeState::Windup || meleeState_ == MeleeState::Attack) &&
 			!(prevMeleeState_ == MeleeState::Windup || prevMeleeState_ == MeleeState::Attack)) {
 
-			const float atkLen = float(kMeleeAttackFrames_) / kAnimFps_; // 40fを秒へ
+			const float atkLen = float(kMeleeAttackFrames_) / kAnimFps_; // 40f繧堤ｧ偵∈
 			StartOneShot_(meleeAnimAttack_, atkLen);
 
 
-			// ★ここで即return：このフレームでIdle/Walkに上書きしない
+			// 笘・％縺薙〒蜊ｳreturn・壹％縺ｮ繝輔Ξ繝ｼ繝縺ｧIdle/Walk縺ｫ荳頑嶌縺阪＠縺ｪ縺・
 			prevMeleeState_ = meleeState_;
 			return;
 		}
 		prevMeleeState_ = meleeState_;
 
 
-		// ---- 3) 通常時：Walk / Idle
+		// ---- 3) 騾壼ｸｸ譎ゑｼ啗alk / Idle
 		if (isMoving) {
 			ChangeAnimIfChanged_(meleeAnimWalk_, true);
 		} else {
@@ -707,7 +699,7 @@ void Enemy::UpdateModel_(float dt) {
 		return;
 	}
 
-	// ===== Shooter は「アニメ」で切替（モデル差し替えしない）=====
+	// ===== Shooter 縺ｯ縲後い繝九Γ縲阪〒蛻・崛・医Δ繝・Ν蟾ｮ縺玲崛縺医＠縺ｪ縺・ｼ・====
 	if (type_ == EnemyType::Shooter) {
 
 		const float moveEps = 0.05f;
@@ -716,16 +708,16 @@ void Enemy::UpdateModel_(float dt) {
 			(std::abs(vel_.z) > moveEps) ||
 			(std::abs(vel_.y) > moveEps);
 
-		// ---- 1) OneShot 再生中は他へ切り替えない
-	// ---- 1) OneShot 再生中は他へ切り替えない（タイマー減算は Update() 側）
+		// ---- 1) OneShot 蜀咲函荳ｭ縺ｯ莉悶∈蛻・ｊ譖ｿ縺医↑縺・
+	// ---- 1) OneShot 蜀咲函荳ｭ縺ｯ莉悶∈蛻・ｊ譖ｿ縺医↑縺・ｼ医ち繧､繝槭・貂帷ｮ励・ Update() 蛛ｴ・・
 		if (oneShotPlaying_) {
 			return;
 		}
 
-		// ---- 2) 状態に応じてアニメ決める
+		// ---- 2) 迥ｶ諷九↓蠢懊§縺ｦ繧｢繝九Γ豎ｺ繧√ｋ
 		switch (shooterState_) {
 		case ShooterState::Windup:
-			// 溜め：Charge（ループ）
+			// 貅懊ａ・咾harge・医Ν繝ｼ繝暦ｼ・
 			ChangeAnimIfChanged_(shooterAnimCharge_, true);
 			break;
 
@@ -733,18 +725,18 @@ void Enemy::UpdateModel_(float dt) {
 		case ShooterState::Aim:
 		case ShooterState::Retreat:
 		default:
-			// それ以外：動いてたらWalk / 止まってたらIdle
+			// 縺昴ｌ莉･螟厄ｼ壼虚縺・※縺溘ｉWalk / 豁｢縺ｾ縺｣縺ｦ縺溘ｉIdle
 			if (isMoving) ChangeAnimIfChanged_(shooterAnimWalk_, true);
 			else          ChangeAnimIfChanged_(shooterAnimIdle_, true);
 			break;
 		}
 
-		//// ---- 3) 「撃つ瞬間」に Fire を 1回だけ再生
-		//// Windup -> Cooldown に遷移した瞬間を「発射」扱いにする
+		//// ---- 3) 縲梧茶縺､迸ｬ髢薙阪↓ Fire 繧・1蝗槭□縺大・逕・
+		//// Windup -> Cooldown 縺ｫ驕ｷ遘ｻ縺励◆迸ｬ髢薙ｒ縲檎匱蟆・肴桶縺・↓縺吶ｋ
 		//if (prevShooterState_ == ShooterState::Windup &&
 		//	shooterState_ == ShooterState::Cooldown) {
 
-		//	// Fireの長さは仮。見た目で調整
+		//	// Fire縺ｮ髟ｷ縺輔・莉ｮ縲りｦ九◆逶ｮ縺ｧ隱ｿ謨ｴ
 		//	StartOneShot_(shooterAnimFire_, 0.25f);
 		//}
 
@@ -753,21 +745,21 @@ void Enemy::UpdateModel_(float dt) {
 	}
 
 
-	// ===== Boss は glTF アニメで切替 =====
+	// ===== Boss 縺ｯ glTF 繧｢繝九Γ縺ｧ蛻・崛 =====
 	if (type_ == EnemyType::Boss) {
 
-		// ★OneShot中は他に切り替えない（Meleeと同じ方針）
+		// 笘・neShot荳ｭ縺ｯ莉悶↓蛻・ｊ譖ｿ縺医↑縺・ｼ・elee縺ｨ蜷後§譁ｹ驥晢ｼ・
 		if (oneShotPlaying_) {
 			return;
 		}
 
-		// BossAI の State を見て切り替える
-		// ※BossAI::GetState() を追加した前提
+		// BossAI 縺ｮ State 繧定ｦ九※蛻・ｊ譖ｿ縺医ｋ
+		// 窶ｻBossAI::GetState() 繧定ｿｽ蜉縺励◆蜑肴署
 		const auto st = bossAI_.GetState();
 
 		switch (st) {
 		case BossAI::State::Wander: {
-			// Wander中は移動してるなら Walk、止まってるなら Idle
+			// Wander荳ｭ縺ｯ遘ｻ蜍輔＠縺ｦ繧九↑繧・Walk縲∵ｭ｢縺ｾ縺｣縺ｦ繧九↑繧・Idle
 			const float moveEps = 0.05f;
 			const bool isMoving =
 				(std::abs(vel_.x) > moveEps) ||
@@ -779,13 +771,13 @@ void Enemy::UpdateModel_(float dt) {
 		} break;
 
 		case BossAI::State::Drop_Windup:
-			ChangeAnimIfChanged_("Drop_Windup", true); // ループでOK
+			ChangeAnimIfChanged_("Drop_Windup", true); // 繝ｫ繝ｼ繝励〒OK
 			break;
 		case BossAI::State::Drop_Fall:
 			ChangeAnimIfChanged_("Drop_Fall", true);
 			break;
 		case BossAI::State::Drop_Land:
-			ChangeAnimIfChanged_("Drop_Land", false);  // 1回っぽくしたいなら false
+			ChangeAnimIfChanged_("Drop_Land", false);  // 1蝗槭▲縺ｽ縺上＠縺溘＞縺ｪ繧・false
 			break;
 
 		case BossAI::State::Melee_Dash:
@@ -813,7 +805,7 @@ void Enemy::UpdateModel_(float dt) {
 
 		case BossAI::State::Super50:
 		case BossAI::State::Super25:
-			// とりあえず溜め演出＝Idle
+			// 縺ｨ繧翫≠縺医★貅懊ａ貍泌・・扞dle
 			ChangeAnimIfChanged_("Idle", true);
 			break;
 		}
@@ -828,392 +820,3 @@ void Enemy::UpdateModel_(float dt) {
 }
 
 
-// -------- EnemyManager --------
-
-float EnemyManager::RandRange_(float a, float b) {
-	return a + (b - a) * Rand01_();
-}
-
-void EnemyManager::QueueSpawn(EnemyType type, float delaySec) {
-	if (enemies_.size() >= maxAlive_) {
-		return; // ★上限なら予約しない（B）
-	}
-	pendingSpawns_.push_back({ type, delaySec });
-}
-
-
-void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam) {
-	objCommon_ = objCommon;
-	dx_ = dx;
-	cam_ = cam;
-
-	enemies_.clear();
-	meleeHitboxes_.clear();
-
-	debugHitboxCube_ = std::make_unique<Object3d>();
-	debugHitboxCube_->Initialize(objCommon_, dx_);
-	debugHitboxCube_->SetCamera(cam_);
-	debugHitboxCube_->SetModel("heal/heal.obj");
-
-	//弾
-	bullets_.Initialize(objCommon_, dx_, cam_);
-
-}
-
-void EnemyManager::Clear() {
-	enemies_.clear();
-	meleeHitboxes_.clear();
-	bullets_.Clear();
-}
-
-void EnemyManager::Spawn(EnemyType type, const Vector3& posXYZ) {
-	Enemy e;
-	e.Initialize(objCommon_, dx_, cam_, type, posXYZ);
-	e.SetLighting(light_);
-	enemies_.push_back(std::move(e));
-}
-
-void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player) {
-	// 1) 敵本体の更新
-	for (auto& e : enemies_) {
-		e.Update(dt, playerXY, playerZ); // ← もし使うなら引数を戻してOK
-		e.SetLighting(light_);
-	}
-
-	// 2) 近接ヒットボックス寿命更新
-	for (auto& h : meleeHitboxes_) h.life -= dt;
-	meleeHitboxes_.erase(
-		std::remove_if(meleeHitboxes_.begin(), meleeHitboxes_.end(),
-			[](const MeleeHitbox& h) { return h.life <= 0.0f; }),
-		meleeHitboxes_.end()
-	);
-
-	auto ToAABB3 = [](const AABB& a)->AABB3 {
-		AABB3 b{};
-		b.x = (a.min.x + a.max.x) * 0.5f;
-		b.y = (a.min.y + a.max.y) * 0.5f;
-		b.z = (a.min.z + a.max.z) * 0.5f;
-		b.hx = (a.max.x - a.min.x) * 0.5f;
-		b.hy = (a.max.y - a.min.y) * 0.5f;
-		b.hz = (a.max.z - a.min.z) * 0.5f;
-		return b;
-		};
-
-	// 近接ヒットボックス vs プレイヤー
-	const AABB3 playerBody3 = ToAABB3(player.GetBodyAABB());
-
-	for (auto& h : meleeHitboxes_) {
-		if (Intersect3(h.box, playerBody3)) {
-			player.TriggerHitFlash(0.25f); // 好きな秒数
-			player.Damage(h.damage);
-
-			// 1回当たったら消すなら
-			h.life = 0.0f;
-		}
-	}
-
-
-	// 3) 攻撃要求を回収
-	for (auto& e : enemies_) {
-
-		// ---- Shooter：弾発射要求 ----
-		Vector3 muzzle{};
-		int dir = +1;
-		if (e.ConsumeShootRequest(muzzle, dir)) {
-
-			OutputDebugStringA("[Shoot] request OK\n");
-
-			bullets_.Spawn(muzzle, dir, 7);
-		}
-
-		// ---- Melee：近接攻撃ヒットボックス生成 ----
-		MeleeKind kind{};
-		if (e.ConsumeMeleeRequest(kind)) {
-
-			Vector3 ep = e.GetPos3D();
-			const bool isBoss = e.IsBoss();
-
-			// ★ 先に保険：非ボスは必ず Normal
-			if (!isBoss) {
-				kind = MeleeKind::Normal;
-			}
-
-			int facing = (playerXY.x < ep.x) ? -1 : +1;
-			const float zCenter = ep.z;
-
-			float offX = 1.2f, offY = 0.0f;
-			float halfX = 0.6f, halfY = 0.5f, halfZ = 0.5f;
-			float life = 0.10f;
-
-			int dmg = 1;
-
-			switch (kind) {
-			case MeleeKind::Normal:
-
-				dmg = 5;
-
-				break;
-
-			case MeleeKind::Land:
-
-				dmg = 10;
-
-				offX = 0.0f; halfX = 2.2f; halfY = 1.3f; halfZ = 1.2f; life = 0.08f;
-				break;
-
-			case MeleeKind::Rush:
-
-				dmg = 10;
-
-				offX = 0.8f; halfX = 1.4f; halfY = 1.0f; halfZ = 1.2f; life = 0.06f;
-				break;
-			}
-
-
-
-			AABB3 hb{};
-			hb.x = ep.x + offX * float(facing);
-			hb.y = ep.y + offY;
-			hb.z = zCenter;
-			hb.hx = halfX;
-			hb.hy = halfY;
-			hb.hz = halfZ;
-
-			meleeHitboxes_.push_back({ hb, life, dmg });
-		}
-
-	}
-
-	// 4) 死亡削除（★削除直前に回復ドロップ抽選）
-	enemies_.erase(std::remove_if(enemies_.begin(), enemies_.end(),
-		[this](const Enemy& e) {
-			if (!e.IsAlive()) {
-
-				// ★ボス死亡フラグ
-				if (e.GetType() == EnemyType::Boss) {
-					bossDefeated_ = true;
-					// ボスは復活予約しない・回復ドロップもしないならここでreturnでもOK
-				}
-
-				// ★回復ドロップ抽選（ボスはTrySpawnHealDrop_側で弾いてる）
-				TrySpawnHealDrop_(e);
-
-				// ★Melee / Shooter が倒されたら予約スポーン
-				if (e.GetType() == EnemyType::Melee || e.GetType() == EnemyType::Shooter) {
-					QueueSpawn(e.GetType(), respawnDelay_);
-				}
-
-				return true;
-			}
-			return false;
-		}), enemies_.end());
-
-
-	bullets_.Update(dt, player);
-
-	UpdateHealDrops_(dt, player);
-
-	UpdatePendingSpawns_(dt, playerXY, playerZ);
-
-
-}
-
-void EnemyManager::Draw() {
-
-	DrawHealDrops_();
-
-	for (auto& e : enemies_) e.Draw();
-
-	for (auto& e : enemies_) {
-		if (e.IsBoss()) {
-			Vector3 p = e.GetPos3D();
-			char buf[128];
-			sprintf_s(buf, "[Boss] pos=(%.2f, %.2f, %.2f)\n", p.x, p.y, p.z);
-			OutputDebugStringA(buf);
-		}
-	}
-
-
-	bullets_.Draw();
-
-	//if (debugDrawMeleeHitbox_ && debugHitboxCube_) {
-	//	for (const auto& h : meleeHitboxes_) {
-	//		const auto& b = h.box; // AABB3（center + half）
-
-	//		// center はそのまま使える
-	//		Vector3 center{ b.x, b.y, b.z };
-
-	//		// Object3d の cube は「scale が全サイズ」なら 2倍する
-	//		// （あなたの実装が半幅スケールならここは調整）
-	//		Vector3 size{ b.hx * 2.0f, b.hy * 2.0f, b.hz * 2.0f };
-
-	//		debugHitboxCube_->SetTranslate(center);
-	//		debugHitboxCube_->SetScale(size);
-	//		debugHitboxCube_->Update();
-	//		debugHitboxCube_->Draw();
-	//	}
-	//}
-
-
-
-}
-
-// 0..1
-float EnemyManager::Rand01_() {
-	return float(std::rand()) / float(RAND_MAX);
-}
-
-void EnemyManager::TrySpawnHealDrop_(const Enemy& e) {
-	// ボスは落とさない
-	if (e.GetType() != EnemyType::Melee && e.GetType() != EnemyType::Shooter) return;
-
-	// 確率
-	if (Rand01_() > healDropChance_) return;
-
-	HealDrop d;
-	d.pos = e.GetPos3D();
-	d.life = 10.0f;
-	d.radius = 0.6f;
-	d.amount = healDropAmount_;
-	healDrops_.push_back(d);
-}
-
-void EnemyManager::UpdateHealDrops_(float dt, Player& player) {
-	const Vector3 p = player.GetPos3D();
-
-	for (auto& d : healDrops_) {
-		d.life -= dt;
-		if (d.life <= 0.0f) continue;
-
-		const float dx = p.x - d.pos.x;
-		const float dy = p.y - d.pos.y;
-		const float dz = p.z - d.pos.z;
-
-		const float r = d.radius;
-		if ((dx * dx + dy * dy + dz * dz) <= (r * r)) {
-			player.AddHP(d.amount);
-
-			// ★デバッグログ（回復したか確認）
-			char buf[128];
-			sprintf_s(buf, "[Heal] +%d hp -> %d\n", d.amount, player.GetHP());
-			OutputDebugStringA(buf);
-
-			d.life = 0.0f;
-		}
-	}
-
-	healDrops_.erase(
-		std::remove_if(healDrops_.begin(), healDrops_.end(),
-			[](const HealDrop& d) { return d.life <= 0.0f; }),
-		healDrops_.end()
-	);
-}
-
-
-void EnemyManager::DrawHealDrops_() {
-	// 見た目は「キューブ」で代用（手軽）
-	// 既に debugHitboxCube_ を持ってるのでそれを流用できます
-	if (!debugHitboxCube_) return;
-
-	for (auto& d : healDrops_) {
-		// ここはあなたの Object3d の使い方に合わせてください
-		// 例：位置だけ置いて描画（色替えできるなら緑っぽく）
-		debugHitboxCube_->SetTranslate(d.pos);
-		debugHitboxCube_->SetScale({ 0.4f, 0.4f, 0.4f });
-
-		debugHitboxCube_->Draw();
-	}
-}
-
-Vector3 EnemyManager::MakeOutsideSpawnPos_(const Vector2& playerXY, float playerZ) {
-	const float halfW = 12.0f;   // 画面の半分幅（調整）
-	const float pad = 3.0f;    // 画面外にどれだけ出すか
-	const float xRand = 3.0f;    // 外側でのばらつき
-	const float yRand = 0.0f;    // Yのばらつき
-
-	const bool fromLeft = (std::rand() % 2) == 0;
-
-	float x;
-	if (fromLeft) {
-		x = RandRange_(playerXY.x - halfW - pad - xRand,
-			playerXY.x - halfW - pad);
-	} else {
-		x = RandRange_(playerXY.x + halfW + pad,
-			playerXY.x + halfW + pad + xRand);
-	}
-
-	float y = RandRange_(playerXY.y - yRand, playerXY.y + yRand);
-
-	// Zは見た目用なら playerZ に合わせるのが無難
-	return Vector3{ x, y, playerZ };
-}
-
-void EnemyManager::UpdatePendingSpawns_(float dt, const Vector2& playerXY, float playerZ) {
-	// タイマー更新
-	for (auto& p : pendingSpawns_) p.t -= dt;
-
-	// ★上限に達してるなら予約を全部捨てる（B）
-	if (enemies_.size() >= maxAlive_) {
-		pendingSpawns_.clear();
-		return;
-	}
-
-	// t<=0 のものを、空きがある分だけスポーン
-	for (size_t i = 0; i < pendingSpawns_.size();) {
-		if (enemies_.size() >= maxAlive_) {
-			// 途中で上限に達したら、残り予約は捨てる（B）
-			pendingSpawns_.clear();
-			return;
-		}
-
-		if (pendingSpawns_[i].t <= 0.0f) {
-			EnemyType type = pendingSpawns_[i].type;
-			Vector3 pos = MakeOutsideSpawnPos_(playerXY, playerZ);
-			Spawn(type, pos);
-
-			pendingSpawns_.erase(pendingSpawns_.begin() + i);
-		} else {
-			++i;
-		}
-	}
-}
-
-void Enemy::SetLighting(const LightingParam& p)
-{
-	light_ = p;
-	if (!model_) return;
-
-	model_->SetEnableLighting(light_.lightingMode);
-
-	model_->SetDirection(light_.dir);
-	model_->SetIntensity(light_.dirIntensity);
-	model_->SetLightColor(light_.dirColor);
-
-	model_->SetPointLightPos(light_.pointPos);
-	model_->SetPointLightIntensity(light_.pointIntensity);
-	model_->SetPointLightColor(light_.pointColor);
-	model_->SetPointLightRadius(light_.pointRadius);
-	model_->SetPointLightDecay(light_.pointDecay);
-
-	light_.spotFalloffStartDeg = std::min(light_.spotFalloffStartDeg, light_.spotAngleDeg - 0.1f);
-
-	const float cosOuter = std::cosf(light_.spotAngleDeg * (std::numbers::pi_v<float> / 180.0f));
-	const float cosInner = std::cosf(light_.spotFalloffStartDeg * (std::numbers::pi_v<float> / 180.0f));
-
-	model_->SetSpotLightPos(light_.spotPos);
-	model_->SetSpotLightDirection(light_.spotDir);
-	model_->SetSpotLightIntensity(light_.spotIntensity);
-	model_->SetSpotLightDistance(light_.spotDistance);
-	model_->SetSpotLightDecay(light_.spotDecay);
-	model_->SetSpotLightCosAngle(cosOuter);
-	model_->SetSpotLightCosFalloffStart(cosInner);
-	model_->SetSpotLightColor({ light_.spotColor.x, light_.spotColor.y, light_.spotColor.z, 1.0f });
-}
-
-void EnemyManager::SetLighting(const LightingParam& p)
-{
-	light_ = p;
-	for (auto& e : enemies_) {
-		e.SetLighting(light_);
-	}
-}
