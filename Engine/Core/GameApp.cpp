@@ -7,6 +7,7 @@
 #include "scene/GameOverScene.h"
 #include "scene/GameClearScene.h"
 #include "scene/DebugScene.h"
+#include "scene/DebugAITestScene.h"
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -19,6 +20,7 @@
 #include "ParticleCommon.h"
 #include "ParticleManager.h"
 #include "ImGuiManagaer.h"
+#include "../DebugAI/DebugAIManager.h"
 
 
 #include "RenderManager.h"
@@ -48,6 +50,10 @@ int GameApp::Run() {
         if (input_) {
             input_->Update();
             // F1キーでデバッグモードの切り替え
+        }
+
+        if (debugAI_) {
+            debugAI_->Tick(dt);
         }
 
         // Update
@@ -121,6 +127,8 @@ bool GameApp::Initialize_() {
     input_->Initialize(win_.get());
     input_->Update(); // 初回
 
+    debugAI_ = std::make_unique<DebugAIManager>();
+    debugAI_->Initialize();
 
     WarmupAssets_();
 
@@ -131,8 +139,9 @@ bool GameApp::Initialize_() {
     sceneMgr_->Register("Test",      [] { return std::make_unique<TestScene>();     }); 
     sceneMgr_->Register("ParticleTest", [] { return std::make_unique<ParticleTestScene>(); });
     sceneMgr_->Register("GameOver",  [] { return std::make_unique<GameOverScene>(); }); 
-	sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
+    sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
     sceneMgr_->Register("Debug",     [] { return std::make_unique<DebugScene>();    });
+    sceneMgr_->Register("DebugAITest", [] { return std::make_unique<DebugAITestScene>(); });
 
     // ★DebugScene から起動する（確認後は "Title" に戻す）
     sceneMgr_->Change(*this, "Title");
@@ -147,6 +156,7 @@ void GameApp::Finalize_() {
     // Scene 終了（必要ならここで current_->OnExit 呼んでもOK）
 
     if (imgui_) imgui_->Shutdown();
+    if (debugAI_) debugAI_->Shutdown();
 
     ParticleManager::GetInstance()->Finalize();
     TextureManager::GetInstance()->Finalize();
@@ -158,6 +168,7 @@ void GameApp::Finalize_() {
 
     sceneMgr_.reset();
     input_.reset();
+    debugAI_.reset();
     skyboxCommon_.reset();
     imgui_.reset();
     primitiveCommon_.reset();
@@ -176,6 +187,9 @@ void GameApp::Update(float dt) {
 
     input_->Update();
 
+    if (debugAI_) {
+        debugAI_->Tick(dt);
+    }
 
     sceneMgr_->Update(*this, dt); // ここがあるかが重要
 }

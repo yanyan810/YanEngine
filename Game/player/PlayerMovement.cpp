@@ -7,6 +7,7 @@
 #include "EnemyManager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <numbers>
 
@@ -29,6 +30,22 @@ void Player::UpdateMove_(float /*dt*/, const Input& input) {
     vel_.z = mz * depthSpeed_;
 
 
+}
+
+void Player::UpdateMove_(float /*dt*/, const PlayerInputCommand& command) {
+    float mx = static_cast<float>(command.horizontal);
+    mx = std::clamp(mx, -1.0f, 1.0f);
+
+    if (mx < -0.1f) facing_ = -1;
+    if (mx > +0.1f) facing_ = +1;
+
+    vel_.x = mx * moveSpeed_;
+
+    float mz = static_cast<float>(command.depth);
+    mz = std::clamp(mz, -1.0f, 1.0f);
+    vel_.z = mz * depthSpeed_;
+
+    isMoving = std::abs(mx) > 0.1f || std::abs(mz) > 0.1f;
 }
 
 void Player::ApplyPhysics_(float dt) {

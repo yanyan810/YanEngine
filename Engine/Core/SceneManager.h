@@ -23,6 +23,7 @@ public:
     void DrawImGui(GameApp& app);
 
     IScene* Current() { return current_.get(); }
+    const std::string& CurrentName() const { return currentName_; }
 
 private:
     std::unordered_map<std::string, Factory> factories_;

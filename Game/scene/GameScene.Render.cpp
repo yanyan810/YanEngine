@@ -2,6 +2,7 @@
 #include "GameApp.h"
 
 #include "Camera.h"
+#include "DebugAI/DebugAIManager.h"
 #include "Sprite.h"
 #include "SpriteCommon.h"
 #include "Object3d.h"
@@ -143,6 +144,22 @@ void GameScene::DrawImGui(GameApp& app) {
         }
     }
     
+    ImGui::End();
+
+    const DebugGameState debugState = CaptureDebugState();
+    ImGui::Begin("Game Debug AI");
+    ImGui::Text("F8: %s", debugAIEnabled_ ? "Enabled" : "Disabled");
+    ImGui::Text("Frame: %llu", debugState.frameNumber);
+    ImGui::Text("Player HP: %d", debugState.playerHp);
+    ImGui::Text("Enemy HP: %d", debugState.enemyHp);
+    ImGui::Text("Enemy Count: %d", debugState.enemyCount);
+    ImGui::Text("Player Pos: %.2f, %.2f, %.2f",
+        debugState.playerPosition.x,
+        debugState.playerPosition.y,
+        debugState.playerPosition.z);
+    if (app.DebugAI()) {
+        ImGui::TextWrapped("Logs: %s", app.DebugAI()->Logger().DirectoryPath().c_str());
+    }
     ImGui::End();
 #endif // USE_IMGUI
 }

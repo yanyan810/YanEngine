@@ -10,9 +10,12 @@
 
 #include "EnemyManager.h"
 #include "Player.h"
+#include "DebugAI/DebugTypes.h"
 
 
 #include "VideoPlayerMF.h"
+
+class IGameDebugAdapter;
 
 class GameScene : public IScene {
 public:
@@ -36,7 +39,14 @@ public:
 
     void UpdateBossHPDigits_(int hp);
 
+    DebugGameState CaptureDebugState() const;
+    void ExecuteDebugAction(const DebugAction& action);
+
 private:
+    void SetupDebugAI_(GameApp& app);
+    void ShutdownDebugAI_(GameApp& app);
+    void SetDebugAIEnabled_(GameApp& app, bool enabled);
+
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Sprite> sprite_;
     std::unique_ptr<Object3d> objA_;
@@ -56,6 +66,9 @@ private:
 
     //enemy 
     EnemyManager enemyMgr_;
+    std::unique_ptr<IGameDebugAdapter> debugAdapter_;
+    bool debugAIEnabled_ = false;
+    unsigned long long debugFrameNumber_ = 0;
 
     // 数字テクスチャ（0..9）
     std::string numTex_[10];

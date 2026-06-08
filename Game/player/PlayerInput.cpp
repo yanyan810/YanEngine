@@ -31,11 +31,15 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     const bool left = input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A);
     const bool right = input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D);
     const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
+    const bool up = input.IsKeyPressed(DIK_UP) || input.IsKeyPressed(DIK_W);
 
     if (left != right) {
         command.horizontal = right ? +1 : -1;
     }
     command.down = down;
+    if (up != down) {
+        command.depth = up ? +1 : -1;
+    }
     command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE);
     command.guard = input.IsKeyPressed(DIK_H);
 

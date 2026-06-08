@@ -13,6 +13,7 @@ class PrimitiveCommon;
 class ParticleCommon;
 class ImGuiManagaer;
 class SkinningCommon;
+class DebugAIManager;
 #include "RenderManager.h" // PostEffectMode 繧貞・繧ｷ繝ｼ繝ｳ縺ｧ菴ｿ縺医ｋ繧医≧縺ｫ縺吶ｋ
 
 class SceneManager;
@@ -48,6 +49,7 @@ public:
 
     Input* GetInput() { return input_.get(); }
     const Input* GetInput() const { return input_.get(); }
+    DebugAIManager* DebugAI() const { return debugAI_.get(); }
 
 private:
     bool Initialize_();
@@ -70,6 +72,7 @@ private:
     std::unique_ptr<Input> input_; 
     std::unique_ptr<SkinningCommon> skinCom_;
     std::unique_ptr<SkyboxCommon> skyboxCommon_;
+    std::unique_ptr<DebugAIManager> debugAI_;
 
 	//RenderManager繧呈戟縺溘○繧・
     std::unique_ptr<RenderManager> render_;

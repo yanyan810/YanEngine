@@ -21,11 +21,16 @@
 
 void GameScene::Update(GameApp& app, float dt) {
     if (!input_) return; // 蠢ｵ縺ｮ縺溘ａ
+    ++debugFrameNumber_;
     
     // ESC 縺ｧ邨ゆｺ・
     if (input_->IsKeyTrigger(DIK_ESCAPE)) {
         app.RequestQuit();
         return;
+    }
+
+    if (input_->IsKeyTrigger(DIK_F8)) {
+        SetDebugAIEnabled_(app, !debugAIEnabled_);
     }
 
     camera_->Update();

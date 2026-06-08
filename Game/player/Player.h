@@ -51,6 +51,7 @@ public:
         PlayerAction action = PlayerAction::Idle;
         PlayerAttackType attackType = PlayerAttackType::None;
         int horizontal = 0;
+        int depth = 0;
         bool down = false;
         bool jumpTriggered = false;
         bool guard = false;
@@ -61,6 +62,7 @@ public:
     void SetCamera(Camera* cam);
 
     void Update(float dt, const Input& input, EnemyManager& enemyMgr);
+    void QueueDebugCommand(const PlayerInputCommand& command);
     void Draw();
     void DrawDebugHitBoxes(EnemyManager& enemyMgr);
 
@@ -121,6 +123,7 @@ private:
     bool GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
 
     void UpdateMove_(float dt, const Input& input);
+    void UpdateMove_(float dt, const PlayerInputCommand& command);
     void ApplyPhysics_(float dt);
     void UpdateModel_();
 
@@ -206,6 +209,8 @@ private:
     PlayerModelSet currentModelSet_ = PlayerModelSet::HumanWalk;
 
     bool isMoving = false;
+    bool hasDebugCommand_ = false;
+    PlayerInputCommand debugCommand_{};
 
     // Player.h
     std::string curAnim_ = "";

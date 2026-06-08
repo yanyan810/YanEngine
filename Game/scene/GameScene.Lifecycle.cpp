@@ -2,6 +2,7 @@
 #include "GameApp.h"
 
 #include "Camera.h"
+#include "DebugAI/IGameDebugAdapter.h"
 #include "Sprite.h"
 #include "SpriteCommon.h"
 #include "Object3d.h"
@@ -243,10 +244,13 @@ void GameScene::OnEnter(GameApp& app) {
      prevTab_ = false;
      pauseSel_ = PauseSel::Close;
 
+     SetupDebugAI_(app);
 
 }
 
 void GameScene::OnExit(GameApp& app) {
+    ShutdownDebugAI_(app);
+
     if (auto* input = app.GetInput()) {
         input->SetCameraControlEnabled(false);
     }

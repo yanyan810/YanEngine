@@ -135,7 +135,9 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         if (moveLockSec_ < 0.0f) moveLockSec_ = 0.0f;
     }
 
-    const PlayerInputCommand command = ResolveInput_(input);
+    const bool useDebugCommand = hasDebugCommand_;
+    const PlayerInputCommand command = useDebugCommand ? debugCommand_ : ResolveInput_(input);
+    hasDebugCommand_ = false;
 
     // --- 繧ｸ繝｣繝ｳ繝暦ｼ・・・---
     if (command.jumpTriggered && onGround_ && actionTimer_ <= 0.0f && !command.guard) {
@@ -145,7 +147,11 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     // 1) 遘ｻ蜍募・蜉幢ｼ医Ο繝・け荳ｭ縺ｯ辟｡隕厄ｼ・
     if (!IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
-        UpdateMove_(dt, input);
+        if (useDebugCommand) {
+            UpdateMove_(dt, command);
+        } else {
+            UpdateMove_(dt, input);
+        }
     }
     else {
         vel_.x = 0.0f;
@@ -263,6 +269,11 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     OutputDebugStringA(("[PlayerAnim] " + curAnim_ + "\n").c_str());
 
+}
+
+void Player::QueueDebugCommand(const PlayerInputCommand& command) {
+    debugCommand_ = command;
+    hasDebugCommand_ = true;
 }
 
 

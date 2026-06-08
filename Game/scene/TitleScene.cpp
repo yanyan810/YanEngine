@@ -311,6 +311,11 @@ void TitleScene::Update(GameApp& app, float dt) {
 		return;
 	}
 
+	if (input->IsKeyTrigger(DIK_F9)) {
+		RequestChangeScene_("DebugAITest");
+		return;
+	}
+
 	switch (state_) {
 	case State::Idle:
 		if (spaceTrig) {

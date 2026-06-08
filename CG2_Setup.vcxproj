@@ -212,9 +212,13 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Core\SrvManager.cpp" />
     <ClCompile Include="Engine\Input\Input.cpp" />
     <ClCompile Include="Engine\Utility\Logger.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugLogger.cpp" />
+    <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp" />
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
     <ClCompile Include="Game\scene\GameScene.cpp" />
+    <ClCompile Include="Game\scene\GameScene.DebugAI.cpp" />
     <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp" />
     <ClCompile Include="Game\scene\GameScene.Render.cpp" />
     <ClCompile Include="Game\scene\GameScene.UI.cpp" />
@@ -238,6 +242,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Game\player\PlayerPresentation.cpp" />
     <ClCompile Include="Game\scene\TestScene.cpp" />
     <ClCompile Include="Game\scene\DebugScene.cpp" />
+    <ClCompile Include="Game\scene\DebugAITestScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl">
@@ -465,6 +470,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Core\SrvManager.h" />
     <ClInclude Include="Engine\Input\Input.h" />
     <ClInclude Include="Engine\Utility\Logger.h" />
+    <ClInclude Include="Engine\DebugAI\DebugAIManager.h" />
+    <ClInclude Include="Engine\DebugAI\DebugLogger.h" />
+    <ClInclude Include="Engine\DebugAI\DebugTypes.h" />
+    <ClInclude Include="Engine\DebugAI\IGameDebugAdapter.h" />
+    <ClInclude Include="Engine\DebugAI\RandomDebugBot.h" />
     <ClInclude Include="Engine\math\Matrix4x4.h" />
     <ClInclude Include="Engine\math\Vector3.h" />
     <ClInclude Include="Engine\Utility\StringUtility.h" />
@@ -480,6 +490,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Game\player\Player.h" />
     <ClInclude Include="Game\scene\TestScene.h" />
     <ClInclude Include="Game\scene\DebugScene.h" />
+    <ClInclude Include="Game\scene\DebugAITestScene.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="externals\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">

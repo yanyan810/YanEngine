@@ -41,6 +41,9 @@
     <Filter Include="Engine\Utility">
       <UniqueIdentifier>{a1b2c3d4-0001-0001-0001-000000000013}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\DebugAI">
+      <UniqueIdentifier>{a1b2c3d4-0001-0001-0001-000000000014}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Game">
       <UniqueIdentifier>{a1b2c3d4-0002-0001-0001-000000000001}</UniqueIdentifier>
     </Filter>
@@ -154,6 +157,9 @@
     <ClCompile Include="Game\scene\GameScene.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
+    <ClCompile Include="Game\scene\GameScene.DebugAI.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
     <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
@@ -238,6 +244,15 @@
     <ClCompile Include="Engine\3D\SkinnedModel.cpp" />
     <ClCompile Include="Engine\Core\SrvManager.cpp" />
     <ClCompile Include="Engine\Utility\Logger.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\DebugLogger.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
     <ClCompile Include="Engine\Utility\StringUtility.cpp" />
@@ -246,6 +261,9 @@
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
     <ClCompile Include="Game\scene\DebugScene.cpp" />
+    <ClCompile Include="Game\scene\DebugAITestScene.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
   </ItemGroup>
   <!-- ===== .h ファイル ===== -->
   <ItemGroup>
@@ -423,6 +441,21 @@
     <ClInclude Include="Engine\3D\SkinnedModel.h" />
     <ClInclude Include="Engine\Core\SrvManager.h" />
     <ClInclude Include="Engine\Utility\Logger.h" />
+    <ClInclude Include="Engine\DebugAI\DebugAIManager.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugLogger.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugTypes.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\IGameDebugAdapter.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\RandomDebugBot.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Utility\StringUtility.h" />
     <ClInclude Include="Engine\Core\WinApp.h" />
     <ClInclude Include="Engine\Particle\ParticleManager.h" />
@@ -431,6 +464,9 @@
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
     <ClInclude Include="Game\scene\DebugScene.h" />
+    <ClInclude Include="Game\scene\DebugAITestScene.h">
+      <Filter>Game\Scene</Filter>
+    </ClInclude>
   </ItemGroup>
   <!-- ===== シェーダーファイル ===== -->
   <ItemGroup>
