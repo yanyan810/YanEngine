@@ -12,6 +12,7 @@ public:
     void Close();
 
     void LogFrame(const DebugGameState& state, const DebugAction* action);
+    void LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message);
     void LogIssue(const DebugIssue& issue);
     void WriteReport();
 
@@ -26,6 +27,7 @@ private:
 private:
     std::ofstream frameLog_;
     std::ofstream issueLog_;
+    std::ofstream eventLog_;
     std::string directoryPath_;
     std::vector<DebugIssue> issues_;
 };

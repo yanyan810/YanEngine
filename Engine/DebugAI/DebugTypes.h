@@ -18,12 +18,25 @@ struct DebugMapBounds {
     bool enabled = false;
 };
 
-struct DebugEnemyState {
+struct DebugEntityState {
+    std::string id;
+    std::string category;
     std::string type;
     int hp = 0;
+    int damage = 0;
     Vector3 position = {};
-    bool pendingSpawn = false;
-    float spawnDelay = 0.0f;
+    Vector3 velocity = {};
+    bool alive = true;
+    bool pending = false;
+    float delay = 0.0f;
+    float life = 0.0f;
+};
+
+struct DebugSpawnOverride {
+    unsigned long long frameNumber = 0;
+    std::string type;
+    Vector3 position = {};
+    int hp = 0;
 };
 
 struct DebugGameState {
@@ -36,7 +49,8 @@ struct DebugGameState {
     Vector3 playerPosition = {};
     float fps = 60.0f;
     std::string gamePhase;
-    std::vector<DebugEnemyState> enemies;
+    unsigned int randomSeed = 0;
+    std::vector<DebugEntityState> entities;
 
     std::vector<DebugAction> availableActions;
     DebugMapBounds mapBounds;

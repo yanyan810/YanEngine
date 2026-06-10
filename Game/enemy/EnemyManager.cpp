@@ -69,6 +69,10 @@ void EnemyManager::QueueSpawn(EnemyType type, float delaySec) {
 	pendingSpawns_.push_back({ type, delaySec });
 }
 
+void EnemyManager::SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides) {
+	replaySpawnOverrides_ = overrides;
+}
+
 
 void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam) {
 	objCommon_ = objCommon;
@@ -127,50 +131,66 @@ void EnemyManager::ApplyPlayerAttack(Player& player) {
 	}
 }
 
-void EnemyManager::AppendDebugEnemyStates(std::vector<DebugEnemyState>& outStates) const {
+void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const {
+	int entityIndex = 0;
 	for (const Enemy& enemy : enemies_) {
 		if (!enemy.IsAlive()) {
 			continue;
 		}
 
-		DebugEnemyState state;
+		DebugEntityState state;
+		state.id = "enemy_" + std::to_string(entityIndex++);
+		state.category = "Enemy";
 		state.type = DebugEnemyTypeName(enemy.GetType());
 		state.hp = enemy.GetHP();
 		state.position = enemy.GetPos3D();
-		state.pendingSpawn = false;
-		state.spawnDelay = 0.0f;
-		outStates.push_back(state);
+		state.alive = true;
+		state.pending = false;
+		state.delay = 0.0f;
+		outEntities.push_back(state);
 	}
 
+	int pendingIndex = 0;
 	for (const PendingSpawn& pending : pendingSpawns_) {
-		DebugEnemyState state;
+		DebugEntityState state;
+		state.id = "pending_spawn_" + std::to_string(pendingIndex++);
+		state.category = "PendingSpawn";
 		state.type = DebugEnemyTypeName(pending.type);
 		state.hp = 0;
-		state.pendingSpawn = true;
-		state.spawnDelay = pending.t;
-		outStates.push_back(state);
+		state.alive = true;
+		state.pending = true;
+		state.delay = pending.t;
+		outEntities.push_back(state);
 	}
+
+	bullets_.AppendDebugEntities(outEntities);
 }
 
-void EnemyManager::RestoreDebugEnemyStates(const std::vector<DebugEnemyState>& states) {
+void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& entities) {
 	Clear();
 
-	for (const DebugEnemyState& state : states) {
+	for (const DebugEntityState& entity : entities) {
+		if (entity.category != "Enemy" && entity.category != "PendingSpawn") {
+			continue;
+		}
+
 		EnemyType type{};
-		if (!TryParseDebugEnemyType(state.type, type)) {
+		if (!TryParseDebugEnemyType(entity.type, type)) {
 			continue;
 		}
 
-		if (state.pendingSpawn) {
-			QueueSpawn(type, state.spawnDelay);
+		if (entity.pending || entity.category == "PendingSpawn") {
+			QueueSpawn(type, entity.delay);
 			continue;
 		}
 
-		Spawn(type, state.position);
+		Spawn(type, entity.position);
 		if (!enemies_.empty()) {
-			enemies_.back().SetHP(state.hp);
+			enemies_.back().SetHP(entity.hp);
 		}
 	}
+
+	bullets_.RestoreDebugEntities(entities);
 }
 
 void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player) {
@@ -457,7 +477,24 @@ void EnemyManager::UpdatePendingSpawns_(float dt, const Vector2& playerXY, float
 
 		if (pendingSpawns_[i].t <= 0.0f) {
 			EnemyType type = pendingSpawns_[i].type;
-			Vector3 pos = MakeOutsideSpawnPos_(playerXY, playerZ);
+			Vector3 pos{};
+			bool hasReplayOverride = false;
+			for (size_t overrideIndex = 0; overrideIndex < replaySpawnOverrides_.size(); ++overrideIndex) {
+				EnemyType overrideType{};
+				if (!TryParseDebugEnemyType(replaySpawnOverrides_[overrideIndex].type, overrideType)) {
+					continue;
+				}
+				if (overrideType != type) {
+					continue;
+				}
+				pos = replaySpawnOverrides_[overrideIndex].position;
+				replaySpawnOverrides_.erase(replaySpawnOverrides_.begin() + overrideIndex);
+				hasReplayOverride = true;
+				break;
+			}
+			if (!hasReplayOverride) {
+				pos = MakeOutsideSpawnPos_(playerXY, playerZ);
+			}
 			Spawn(type, pos);
 
 			pendingSpawns_.erase(pendingSpawns_.begin() + i);

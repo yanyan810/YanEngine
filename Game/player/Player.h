@@ -63,6 +63,7 @@ public:
 
     void Update(float dt, const Input& input, EnemyManager& enemyMgr);
     void QueueDebugCommand(const PlayerInputCommand& command);
+    void SetExternalInputBlocked(bool blocked) { externalInputBlocked_ = blocked; }
     void Draw();
     void DrawDebugHitBoxes(EnemyManager& enemyMgr);
     bool GetAttackHitBox(AABB& outHitBox) const;
@@ -214,6 +215,7 @@ private:
 
     bool isMoving = false;
     bool hasDebugCommand_ = false;
+    bool externalInputBlocked_ = false;
     PlayerInputCommand debugCommand_{};
     unsigned int attackSerial_ = 0;
 

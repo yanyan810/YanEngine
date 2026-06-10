@@ -10,6 +10,8 @@ bool DebugReplayPlayer::Load(const std::string& replayPath) {
     }
 
     std::vector<DebugReplayAction> loaded;
+    std::vector<DebugReplayCheckpoint> loadedCheckpoints;
+    std::vector<DebugSpawnOverride> loadedSpawnOverrides;
     DebugGameState loadedInitialState;
     bool loadedHasInitialState = false;
     std::string line;
@@ -23,7 +25,20 @@ bool DebugReplayPlayer::Load(const std::string& replayPath) {
 
         DebugReplayAction action;
         if (ParseActionLine_(line, action)) {
-            loaded.push_back(action);
+            AppendSpawnOverridesFromAction_(action, loadedSpawnOverrides);
+            const unsigned int durationFrames = action.durationFrames > 0 ? action.durationFrames : 1;
+            for (unsigned int i = 0; i < durationFrames; ++i) {
+                DebugReplayAction expandedAction = action;
+                expandedAction.recordedFrame = action.recordedFrame + i;
+                expandedAction.durationFrames = 1;
+                loaded.push_back(expandedAction);
+            }
+            continue;
+        }
+
+        DebugReplayCheckpoint checkpoint;
+        if (ParseCheckpointLine_(line, checkpoint)) {
+            loadedCheckpoints.push_back(checkpoint);
         }
     }
 
@@ -32,11 +47,14 @@ bool DebugReplayPlayer::Load(const std::string& replayPath) {
     }
 
     actions_ = std::move(loaded);
+    checkpoints_ = std::move(loadedCheckpoints);
+    spawnOverrides_ = std::move(loadedSpawnOverrides);
     initialState_ = loadedInitialState;
     hasInitialState_ = loadedHasInitialState;
     replayPath_ = std::filesystem::absolute(replayPath).string();
     playing_ = false;
     nextIndex_ = 0;
+    nextCheckpointIndex_ = 0;
     firstRecordedFrame_ = actions_.front().recordedFrame;
     replayStartFrame_ = 0;
     return true;
@@ -65,6 +83,7 @@ void DebugReplayPlayer::Start(unsigned long long currentFrame) {
 
     playing_ = true;
     nextIndex_ = 0;
+    nextCheckpointIndex_ = 0;
     replayStartFrame_ = currentFrame;
     firstRecordedFrame_ = actions_.front().recordedFrame;
 }
@@ -96,6 +115,26 @@ bool DebugReplayPlayer::PopDueAction(unsigned long long currentFrame, DebugRepla
     return true;
 }
 
+bool DebugReplayPlayer::PopDueCheckpoint(unsigned long long currentFrame, DebugReplayCheckpoint& outCheckpoint) {
+    if (!playing_ || nextCheckpointIndex_ >= checkpoints_.size()) {
+        return false;
+    }
+
+    const DebugReplayCheckpoint& next = checkpoints_[nextCheckpointIndex_];
+    const unsigned long long offset = next.recordedFrame >= firstRecordedFrame_
+        ? next.recordedFrame - firstRecordedFrame_
+        : 0;
+    const unsigned long long targetFrame = replayStartFrame_ + offset + 1;
+
+    if (currentFrame < targetFrame) {
+        return false;
+    }
+
+    outCheckpoint = next;
+    ++nextCheckpointIndex_;
+    return true;
+}
+
 bool DebugReplayPlayer::ParseActionLine_(const std::string& line, DebugReplayAction& outAction) const {
     std::string type;
     if (!ExtractString_(line, "\"type\"", type) || type != "action") {
@@ -111,8 +150,109 @@ bool DebugReplayPlayer::ParseActionLine_(const std::string& line, DebugReplayAct
     ExtractString_(line, "\"targetId\"", outAction.action.targetId);
     ExtractInt_(line, "\"intParam\"", outAction.action.intParam);
     ExtractFloat_(line, "\"floatParam\"", outAction.action.floatParam);
+    int durationFrames = 1;
+    if (ExtractInt_(line, "\"durationFrames\"", durationFrames) && durationFrames > 0) {
+        outAction.durationFrames = static_cast<unsigned int>(durationFrames);
+    } else {
+        outAction.durationFrames = 1;
+    }
+
+    const size_t beforeKey = line.find("\"before\"");
+    const size_t afterKey = line.find("\"after\"");
+    if (beforeKey != std::string::npos) {
+        const size_t beforeEnd = afterKey != std::string::npos ? afterKey : line.size();
+        ParseStateSummary_(line.substr(beforeKey, beforeEnd - beforeKey), outAction.stateBefore);
+    }
+    if (afterKey != std::string::npos) {
+        ParseStateSummary_(line.substr(afterKey), outAction.stateAfter);
+    }
 
     return !outAction.action.name.empty();
+}
+
+bool DebugReplayPlayer::ParseStateSummary_(const std::string& text, DebugGameState& outState) const {
+    ExtractUnsignedLongLong_(text, "\"frame\"", outState.frameNumber);
+    ExtractString_(text, "\"scene\"", outState.sceneName);
+    ExtractInt_(text, "\"playerHp\"", outState.playerHp);
+    ExtractInt_(text, "\"enemyHp\"", outState.enemyHp);
+    ExtractInt_(text, "\"enemyCount\"", outState.enemyCount);
+    ExtractFloat_(text, "\"x\"", outState.playerPosition.x);
+    ExtractFloat_(text, "\"y\"", outState.playerPosition.y);
+    ExtractFloat_(text, "\"z\"", outState.playerPosition.z);
+    ExtractFloat_(text, "\"fps\"", outState.fps);
+    ExtractString_(text, "\"phase\"", outState.gamePhase);
+    unsigned long long randomSeed = 0;
+    if (ExtractUnsignedLongLong_(text, "\"randomSeed\"", randomSeed)) {
+        outState.randomSeed = static_cast<unsigned int>(randomSeed);
+    }
+    ParseEntityStates_(text, outState.entities);
+    return !outState.sceneName.empty();
+}
+
+void DebugReplayPlayer::AppendSpawnOverridesFromAction_(
+    const DebugReplayAction& action,
+    std::vector<DebugSpawnOverride>& outOverrides) const {
+    if (action.durationFrames != 1) {
+        return;
+    }
+    if (action.stateAfter.entities.empty()) {
+        return;
+    }
+
+    for (const DebugEntityState& afterEntity : action.stateAfter.entities) {
+        if (afterEntity.category != "Enemy" || afterEntity.type == "Boss") {
+            continue;
+        }
+
+        bool existedBefore = false;
+        for (const DebugEntityState& beforeEntity : action.stateBefore.entities) {
+            if (beforeEntity.id == afterEntity.id && beforeEntity.category == "Enemy") {
+                existedBefore = true;
+                break;
+            }
+        }
+        if (existedBefore) {
+            continue;
+        }
+
+        DebugSpawnOverride overrideState;
+        overrideState.frameNumber = action.stateAfter.frameNumber;
+        overrideState.type = afterEntity.type;
+        overrideState.position = afterEntity.position;
+        overrideState.hp = afterEntity.hp;
+        outOverrides.push_back(overrideState);
+    }
+}
+
+bool DebugReplayPlayer::ParseCheckpointLine_(const std::string& line, DebugReplayCheckpoint& outCheckpoint) const {
+    std::string type;
+    if (!ExtractString_(line, "\"type\"", type) || type != "checkpoint") {
+        return false;
+    }
+
+    if (!ExtractUnsignedLongLong_(line, "\"frame\"", outCheckpoint.recordedFrame)) {
+        return false;
+    }
+
+    DebugGameState state;
+    ExtractUnsignedLongLong_(line, "\"frame\"", state.frameNumber);
+    ExtractString_(line, "\"scene\"", state.sceneName);
+    ExtractInt_(line, "\"playerHp\"", state.playerHp);
+    ExtractInt_(line, "\"enemyHp\"", state.enemyHp);
+    ExtractInt_(line, "\"enemyCount\"", state.enemyCount);
+    ExtractFloat_(line, "\"x\"", state.playerPosition.x);
+    ExtractFloat_(line, "\"y\"", state.playerPosition.y);
+    ExtractFloat_(line, "\"z\"", state.playerPosition.z);
+    ExtractFloat_(line, "\"fps\"", state.fps);
+    ExtractString_(line, "\"phase\"", state.gamePhase);
+    unsigned long long randomSeed = 0;
+    if (ExtractUnsignedLongLong_(line, "\"randomSeed\"", randomSeed)) {
+        state.randomSeed = static_cast<unsigned int>(randomSeed);
+    }
+    ParseEntityStates_(line, state.entities);
+
+    outCheckpoint.state = state;
+    return !outCheckpoint.state.sceneName.empty();
 }
 
 bool DebugReplayPlayer::ParseInitialStateLine_(const std::string& line, DebugGameState& outState) const {
@@ -131,15 +271,23 @@ bool DebugReplayPlayer::ParseInitialStateLine_(const std::string& line, DebugGam
     ExtractFloat_(line, "\"z\"", outState.playerPosition.z);
     ExtractFloat_(line, "\"fps\"", outState.fps);
     ExtractString_(line, "\"phase\"", outState.gamePhase);
-    ParseEnemyStates_(line, outState.enemies);
+    unsigned long long randomSeed = 0;
+    if (ExtractUnsignedLongLong_(line, "\"randomSeed\"", randomSeed)) {
+        outState.randomSeed = static_cast<unsigned int>(randomSeed);
+    }
+    ParseEntityStates_(line, outState.entities);
 
     return !outState.sceneName.empty();
 }
 
-void DebugReplayPlayer::ParseEnemyStates_(const std::string& line, std::vector<DebugEnemyState>& outEnemies) const {
-    outEnemies.clear();
+void DebugReplayPlayer::ParseEntityStates_(const std::string& line, std::vector<DebugEntityState>& outEntities) const {
+    outEntities.clear();
 
-    const size_t keyPos = line.find("\"enemies\"");
+    size_t keyPos = line.find("\"entities\"");
+    const bool legacyEnemies = keyPos == std::string::npos;
+    if (legacyEnemies) {
+        keyPos = line.find("\"enemies\"");
+    }
     if (keyPos == std::string::npos) {
         return;
     }
@@ -177,16 +325,41 @@ void DebugReplayPlayer::ParseEnemyStates_(const std::string& line, std::vector<D
             --objectDepth;
             if (objectDepth == 0 && objectStart != std::string::npos) {
                 const std::string objectText = line.substr(objectStart, i - objectStart + 1);
-                DebugEnemyState enemy;
-                ExtractString_(objectText, "\"type\"", enemy.type);
-                ExtractInt_(objectText, "\"hp\"", enemy.hp);
-                ExtractFloat_(objectText, "\"x\"", enemy.position.x);
-                ExtractFloat_(objectText, "\"y\"", enemy.position.y);
-                ExtractFloat_(objectText, "\"z\"", enemy.position.z);
-                ExtractBool_(objectText, "\"pendingSpawn\"", enemy.pendingSpawn);
-                ExtractFloat_(objectText, "\"spawnDelay\"", enemy.spawnDelay);
-                if (!enemy.type.empty()) {
-                    outEnemies.push_back(enemy);
+                DebugEntityState entity;
+                ExtractString_(objectText, "\"id\"", entity.id);
+                ExtractString_(objectText, "\"category\"", entity.category);
+                ExtractString_(objectText, "\"type\"", entity.type);
+                ExtractInt_(objectText, "\"hp\"", entity.hp);
+                ExtractInt_(objectText, "\"damage\"", entity.damage);
+                ExtractFloat_(objectText, "\"x\"", entity.position.x);
+                ExtractFloat_(objectText, "\"y\"", entity.position.y);
+                ExtractFloat_(objectText, "\"z\"", entity.position.z);
+                const size_t velocityPos = objectText.find("\"velocity\"");
+                if (velocityPos != std::string::npos) {
+                    const std::string velocityText = objectText.substr(velocityPos);
+                    ExtractFloat_(velocityText, "\"x\"", entity.velocity.x);
+                    ExtractFloat_(velocityText, "\"y\"", entity.velocity.y);
+                    ExtractFloat_(velocityText, "\"z\"", entity.velocity.z);
+                }
+                ExtractBool_(objectText, "\"alive\"", entity.alive);
+                ExtractBool_(objectText, "\"pending\"", entity.pending);
+                ExtractFloat_(objectText, "\"delay\"", entity.delay);
+                ExtractFloat_(objectText, "\"life\"", entity.life);
+
+                bool legacyPendingSpawn = false;
+                float legacySpawnDelay = 0.0f;
+                if (ExtractBool_(objectText, "\"pendingSpawn\"", legacyPendingSpawn)) {
+                    entity.pending = legacyPendingSpawn;
+                }
+                if (ExtractFloat_(objectText, "\"spawnDelay\"", legacySpawnDelay)) {
+                    entity.delay = legacySpawnDelay;
+                }
+                if (legacyEnemies && entity.category.empty()) {
+                    entity.category = entity.pending ? "PendingSpawn" : "Enemy";
+                }
+
+                if (!entity.type.empty()) {
+                    outEntities.push_back(entity);
                 }
                 objectStart = std::string::npos;
             }

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <ctime>
 #include <d3d12.h>
 
 GameScene::~GameScene() = default;
@@ -27,6 +28,9 @@ static float RandRange(float min, float max) {
 }
 
 void GameScene::OnEnter(GameApp& app) {
+    debugRandomSeed_ = static_cast<unsigned int>(std::time(nullptr));
+    std::srand(debugRandomSeed_);
+
     // 繝・け繧ｹ繝√Ε繧・Δ繝・Ν縺ｮ繝ｭ繝ｼ繝会ｼ亥ｿ・ｦ√↑繧ゅ・繧偵％縺薙〒・・
   //  TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
 

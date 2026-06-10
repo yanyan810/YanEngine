@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <dinput.h>
 #include <string>
 
@@ -23,6 +24,10 @@ public:
 
     void ExecuteDebugAction(const DebugAction& action) override {
         scene_.ExecuteDebugAction(action);
+    }
+
+    void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides) override {
+        scene_.SetReplaySpawnOverrides(overrides);
     }
 
     bool RestoreDebugState(const DebugGameState& state) override {
@@ -67,6 +72,7 @@ DebugGameState GameScene::CaptureDebugState() const {
     state.sceneName = "Game";
     state.frameNumber = debugFrameNumber_;
     state.fps = 60.0f;
+    state.randomSeed = debugRandomSeed_;
     switch (phase_) {
     case Phase::IntroVideo:
         state.gamePhase = "IntroVideo";
@@ -98,7 +104,7 @@ DebugGameState GameScene::CaptureDebugState() const {
             firstAliveEnemyHp = enemy.GetHP();
         }
     }
-    enemyMgr_.AppendDebugEnemyStates(state.enemies);
+    enemyMgr_.AppendDebugEntities(state.entities);
 
     if (const Enemy* boss = enemyMgr_.GetBoss()) {
         state.enemyHp = boss->GetHP();
@@ -150,6 +156,10 @@ bool GameScene::RestoreDebugState(const DebugGameState& state) {
     }
 
     debugFrameNumber_ = state.frameNumber;
+    debugRandomSeed_ = state.randomSeed;
+    if (debugRandomSeed_ != 0) {
+        std::srand(debugRandomSeed_);
+    }
     isPaused_ = false;
     pauseSel_ = PauseSel::Close;
     introTime_ = 0.0f;
@@ -168,8 +178,8 @@ bool GameScene::RestoreDebugState(const DebugGameState& state) {
         player_->SetHP(state.playerHp);
     }
 
-    if (!state.enemies.empty()) {
-        enemyMgr_.RestoreDebugEnemyStates(state.enemies);
+    if (!state.entities.empty()) {
+        enemyMgr_.RestoreDebugEntities(state.entities);
     } else if (Enemy* boss = enemyMgr_.GetBoss()) {
         boss->SetHP(state.enemyHp);
     } else {
@@ -184,6 +194,10 @@ bool GameScene::RestoreDebugState(const DebugGameState& state) {
 
     enemyMgr_.ClearBossDefeatedFlag();
     return true;
+}
+
+void GameScene::SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides) {
+    enemyMgr_.SetReplaySpawnOverrides(overrides);
 }
 
 void GameScene::ExecuteDebugAction(const DebugAction& action) {
@@ -217,6 +231,7 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     } else if (action.name == "Jump") {
         command.action = Player::PlayerAction::Jump;
         command.jumpTriggered = true;
+        command.horizontal = std::clamp(action.intParam, -1, 1);
     } else if (action.name == "AttackWeak") {
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::Weak;
@@ -250,6 +265,11 @@ bool GameScene::CaptureManualDebugAction_(DebugAction& outAction) const {
     }
     if (input_->IsKeyTrigger(DIK_SPACE)) {
         outAction = { "Jump" };
+        const bool left = input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A);
+        const bool right = input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D);
+        if (left != right) {
+            outAction.intParam = right ? +1 : -1;
+        }
         return true;
     }
     if (input_->IsKeyPressed(DIK_H)) {

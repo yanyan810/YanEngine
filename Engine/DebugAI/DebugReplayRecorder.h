@@ -8,6 +8,7 @@
 
 struct DebugActionRecord {
     unsigned long long frameNumber = 0;
+    unsigned int durationFrames = 1;
     std::string sceneName;
     DebugAction action;
     DebugGameState stateBefore;
@@ -33,6 +34,13 @@ public:
 
 private:
     void EnsureInitialState_(const DebugGameState& state);
+    void FlushPendingRecord_();
+    void WriteLatestPointer_() const;
+    bool ShouldWriteCheckpoint_(const DebugGameState& state) const;
+    void WriteCheckpoint_(const DebugGameState& state);
+    bool CanMerge_(const DebugActionRecord& nextRecord) const;
+    bool HasNewEnemySpawn_(const DebugGameState& before, const DebugGameState& after) const;
+    bool IsContinuousAction_(const DebugAction& action) const;
     void WriteInitialState_(std::ostream& out, const DebugGameState& state) const;
     void WriteRecord_(std::ostream& out, const DebugActionRecord& record) const;
     void WriteActionJson_(std::ostream& out, const DebugAction& action) const;
@@ -47,7 +55,11 @@ private:
     std::string lastIssueReplayPath_;
     DebugGameState initialState_;
     bool hasInitialState_ = false;
+    bool hasPendingRecord_ = false;
+    DebugActionRecord pendingRecord_;
     std::deque<DebugActionRecord> recentRecords_;
     size_t maxRecentRecords_ = 1800;
     unsigned int issueReplayIndex_ = 0;
+    unsigned long long lastCheckpointFrame_ = 0;
+    unsigned int checkpointIntervalFrames_ = 15;
 };

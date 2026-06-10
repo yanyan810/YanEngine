@@ -24,6 +24,7 @@ public:
         const DebugGameState& stateBefore,
         const DebugAction& action,
         const DebugGameState& stateAfter);
+    void CheckReplayDrift(const DebugGameState& actualState);
 
     bool StartLatestReplay();
     void StopReplay();
@@ -32,6 +33,7 @@ public:
     const DebugLogger& Logger() const { return logger_; }
     const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
     const DebugReplayPlayer& ReplayPlayer() const { return replayPlayer_; }
+    const DebugAction& LastAction() const { return lastAction_; }
 
 private:
     void DetectIssues_(const DebugGameState& state, float dt);

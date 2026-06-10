@@ -5,6 +5,7 @@
 
 #include "Vector3.h"
 #include "AABB.h"
+#include "DebugAI/DebugTypes.h"
 
 class Object3d;
 class Object3dCommon;
@@ -27,6 +28,8 @@ public:
     void Clear() { bullets_.clear(); }
 
     void SetDebugDraw(bool enable) { debugDraw_ = enable; }
+    void AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const;
+    void RestoreDebugEntities(const std::vector<DebugEntityState>& entities);
 
 private:
     struct Bullet {
@@ -47,6 +50,7 @@ private:
     };
 
     void UpdateBody_(Bullet& b);
+    void SpawnDebug_(const Vector3& pos, const Vector3& vel, int damage, float life);
 
     bool IntersectAABB_(const AABB& a, const AABB& b) const;
 

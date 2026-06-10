@@ -9,6 +9,7 @@ bool DebugLogger::Open(const std::string& directoryPath) {
 
     frameLog_.open(directoryPath_ + "/debug_ai_frames.jsonl", std::ios::out | std::ios::trunc);
     issueLog_.open(directoryPath_ + "/debug_ai_issues.jsonl", std::ios::out | std::ios::trunc);
+    eventLog_.open(directoryPath_ + "/debug_ai_events.jsonl", std::ios::out | std::ios::trunc);
     return frameLog_.is_open() && issueLog_.is_open();
 }
 
@@ -18,6 +19,9 @@ void DebugLogger::Close() {
     }
     if (issueLog_.is_open()) {
         issueLog_.close();
+    }
+    if (eventLog_.is_open()) {
+        eventLog_.close();
     }
 }
 
@@ -39,9 +43,31 @@ void DebugLogger::LogFrame(const DebugGameState& state, const DebugAction* actio
         << "\"z\":" << state.playerPosition.z
         << "},"
         << "\"fps\":" << state.fps << ","
+        << "\"entityCount\":" << state.entities.size() << ","
+        << "\"randomSeed\":" << state.randomSeed << ","
         << "\"action\":\"" << EscapeJson_(action ? ActionToString_(*action) : "") << "\""
         << "}\n";
     frameLog_.flush();
+}
+
+void DebugLogger::LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message) {
+    if (!eventLog_.is_open()) {
+        return;
+    }
+
+    eventLog_
+        << "{"
+        << "\"frame\":" << state.frameNumber << ","
+        << "\"scene\":\"" << EscapeJson_(state.sceneName) << "\","
+        << "\"event\":\"" << EscapeJson_(eventName) << "\","
+        << "\"message\":\"" << EscapeJson_(message) << "\","
+        << "\"playerHp\":" << state.playerHp << ","
+        << "\"enemyHp\":" << state.enemyHp << ","
+        << "\"enemyCount\":" << state.enemyCount << ","
+        << "\"entityCount\":" << state.entities.size() << ","
+        << "\"randomSeed\":" << state.randomSeed
+        << "}\n";
+    eventLog_.flush();
 }
 
 void DebugLogger::LogIssue(const DebugIssue& issue) {
