@@ -19,7 +19,8 @@ public:
     bool IsEnabled() const { return enabled_; }
 
     void SetAdapter(IGameDebugAdapter* adapter) { adapter_ = adapter; }
-    void Tick(float dt);
+    void InjectAction();
+    void ProcessAfterUpdate(float dt);
     void RecordExternalAction(
         const DebugGameState& stateBefore,
         const DebugAction& action,
@@ -51,6 +52,10 @@ private:
     DebugReplayPlayer replayPlayer_;
     DebugAction lastAction_;
     bool replayMode_ = false;
+
+    DebugGameState pendingBeforeState_;
+    DebugAction pendingAction_;
+    bool hasPendingAction_ = false;
 
     std::string lastStableStateKey_;
     std::string lastProgressKey_;

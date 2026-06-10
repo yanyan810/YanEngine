@@ -1,4 +1,4 @@
-﻿#include "EnemyManager.h"
+#include "EnemyManager.h"
 #include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -163,6 +163,20 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		outEntities.push_back(state);
 	}
 
+	int healDropIndex = 0;
+	for (const HealDrop& drop : healDrops_) {
+		DebugEntityState state;
+		state.id = "heal_drop_" + std::to_string(healDropIndex++);
+		state.category = "HealDrop";
+		state.type = "Heal";
+		state.hp = drop.amount; // Use hp for amount
+		state.life = drop.life; // Use life for remaining duration
+		state.position = drop.pos;
+		state.alive = true;
+		state.pending = false;
+		outEntities.push_back(state);
+	}
+
 	bullets_.AppendDebugEntities(outEntities);
 }
 
@@ -170,6 +184,16 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 	Clear();
 
 	for (const DebugEntityState& entity : entities) {
+		if (entity.category == "HealDrop") {
+			HealDrop d;
+			d.pos = entity.position;
+			d.life = entity.life;
+			d.amount = entity.hp;
+			d.radius = 0.6f; // Default radius
+			healDrops_.push_back(d);
+			continue;
+		}
+
 		if (entity.category != "Enemy" && entity.category != "PendingSpawn") {
 			continue;
 		}
@@ -492,7 +516,10 @@ void EnemyManager::UpdatePendingSpawns_(float dt, const Vector2& playerXY, float
 				hasReplayOverride = true;
 				break;
 			}
-			if (!hasReplayOverride) {
+			if (hasReplayOverride) {
+				// Consume random numbers to keep RNG sequence identical to recording
+				MakeOutsideSpawnPos_(playerXY, playerZ);
+			} else {
 				pos = MakeOutsideSpawnPos_(playerXY, playerZ);
 			}
 			Spawn(type, pos);

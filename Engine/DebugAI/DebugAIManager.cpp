@@ -220,50 +220,65 @@ void DebugAIManager::StopReplay() {
     replayMode_ = false;
 }
 
-void DebugAIManager::Tick(float dt) {
+void DebugAIManager::InjectAction() {
     if (!enabled_ || adapter_ == nullptr) {
         return;
     }
-
-    DebugAction* executedAction = nullptr;
+    hasPendingAction_ = false;
 
     if (replayMode_) {
         DebugGameState currentState = adapter_->CaptureDebugState();
         DebugReplayAction replayAction;
-        while (replayPlayer_.PopDueAction(currentState.frameNumber, replayAction)) {
-            const DebugGameState beforeState = currentState;
+        if (replayPlayer_.PopDueAction(currentState.frameNumber, replayAction)) {
+            pendingBeforeState_ = currentState;
+            pendingAction_ = replayAction.action;
+            hasPendingAction_ = true;
             adapter_->ExecuteDebugAction(replayAction.action);
             lastAction_ = replayAction.action;
-            executedAction = &lastAction_;
-            currentState = adapter_->CaptureDebugState();
-            replayRecorder_.RecordAction(beforeState, replayAction.action, currentState);
-            logger_.LogEvent(currentState, "ReplayActionResult", BuildStateDiffMessage(beforeState, currentState, replayAction.action));
         }
 
         if (!replayPlayer_.IsPlaying() && replayPlayer_.IsFinished()) {
             replayMode_ = false;
             enabled_ = false;
         }
-
-        logger_.LogFrame(currentState, executedAction);
-        DetectIssues_(currentState, dt);
         return;
     }
 
     DebugGameState beforeState = adapter_->CaptureDebugState();
-
     DebugAction chosenAction;
     if (bot_.ChooseAction(beforeState, chosenAction)) {
+        pendingBeforeState_ = beforeState;
+        pendingAction_ = chosenAction;
+        hasPendingAction_ = true;
         adapter_->ExecuteDebugAction(chosenAction);
         lastAction_ = chosenAction;
-        executedAction = &lastAction_;
+    }
+}
+
+void DebugAIManager::ProcessAfterUpdate(float dt) {
+    if (!enabled_ || adapter_ == nullptr) {
+        return;
     }
 
     DebugGameState afterState = adapter_->CaptureDebugState();
-    if (executedAction != nullptr) {
-        replayRecorder_.RecordAction(beforeState, *executedAction, afterState);
-        logger_.LogEvent(afterState, "BotActionResult", BuildStateDiffMessage(beforeState, afterState, *executedAction));
+    DebugAction* executedAction = nullptr;
+
+    if (hasPendingAction_) {
+        executedAction = &pendingAction_;
+        replayRecorder_.RecordAction(pendingBeforeState_, pendingAction_, afterState);
+        
+        if (replayMode_) {
+            logger_.LogEvent(afterState, "ReplayActionResult", BuildStateDiffMessage(pendingBeforeState_, afterState, pendingAction_));
+        } else {
+            logger_.LogEvent(afterState, "BotActionResult", BuildStateDiffMessage(pendingBeforeState_, afterState, pendingAction_));
+        }
+        hasPendingAction_ = false;
     }
+
+    if (replayMode_) {
+        CheckReplayDrift(afterState);
+    }
+
     logger_.LogFrame(afterState, executedAction);
     DetectIssues_(afterState, dt);
 }

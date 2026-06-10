@@ -248,10 +248,7 @@ bool DebugReplayRecorder::HasNewEnemySpawn_(const DebugGameState& before, const 
 }
 
 bool DebugReplayRecorder::IsContinuousAction_(const DebugAction& action) const {
-    return action.name == "MoveLeft" ||
-        action.name == "MoveRight" ||
-        action.name == "MoveForward" ||
-        action.name == "MoveBack" ||
+    return action.name == "Move" ||
         action.name == "Down" ||
         action.name == "Guard" ||
         action.name == "Wait";

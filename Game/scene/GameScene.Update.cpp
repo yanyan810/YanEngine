@@ -1,4 +1,4 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
 
 #include "Camera.h"
@@ -198,6 +198,10 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
 
+        if (debugAIEnabled_ && app.DebugAI()) {
+            app.DebugAI()->InjectAction();
+        }
+
         DebugAction manualAction;
         const bool recordManualAction =
             app.DebugAI() &&
@@ -222,7 +226,14 @@ void GameScene::Update(GameApp& app, float dt) {
         if (player_) {
             playerZ = player_->GetZ(); // 霑ｽ蜉縺励◆getter
         }
-        enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
+
+        // デバッグリプレイ用の簡易モードフラグ
+        // true にすると敵の更新やスポーンが一時停止し、プレイヤーのみの挙動を確認できます
+        constexpr bool kDebugDisableEnemies = false;
+
+        if (!kDebugDisableEnemies) {
+            enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
+        }
 
         if (bossHpFill_) {
             if (Enemy* boss = enemyMgr_.GetBoss()) {
@@ -262,8 +273,8 @@ void GameScene::Update(GameApp& app, float dt) {
             app.DebugAI()->RecordExternalAction(manualStateBefore, manualAction, CaptureDebugState());
         }
 
-        if (app.DebugAI()) {
-            app.DebugAI()->CheckReplayDrift(CaptureDebugState());
+        if (debugAIEnabled_ && app.DebugAI()) {
+            app.DebugAI()->ProcessAfterUpdate(dt);
         }
 
         if (player_->IsDead()) {

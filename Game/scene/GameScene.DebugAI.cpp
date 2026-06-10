@@ -114,9 +114,7 @@ DebugGameState GameScene::CaptureDebugState() const {
     state.enemyCount = aliveEnemyCount;
 
     state.availableActions = {
-        { "MoveLeft" },
-        { "MoveRight" },
-        { "MoveForward" },
+        { "Move" },
         { "Down" },
         { "Jump" },
         { "AttackWeak" },
@@ -214,15 +212,10 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
 
     Player::PlayerInputCommand command{};
 
-    if (action.name == "MoveLeft") {
+    if (action.name == "Move") {
         command.action = Player::PlayerAction::Move;
-        command.horizontal = -1;
-    } else if (action.name == "MoveRight") {
-        command.action = Player::PlayerAction::Move;
-        command.horizontal = +1;
-    } else if (action.name == "MoveForward") {
-        command.action = Player::PlayerAction::Move;
-        command.depth = +1;
+        command.horizontal = action.intParam;
+        command.depth = static_cast<int>(action.floatParam);
     } else if (action.name == "Down" || action.name == "MoveBack") {
         command.action = player_->IsOnGround()
             ? Player::PlayerAction::Crouch
@@ -276,23 +269,28 @@ bool GameScene::CaptureManualDebugAction_(DebugAction& outAction) const {
         outAction = { "Guard" };
         return true;
     }
-    if (input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A)) {
-        outAction = { "MoveLeft" };
-        return true;
-    }
-    if (input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D)) {
-        outAction = { "MoveRight" };
-        return true;
-    }
-    if (input_->IsKeyPressed(DIK_UP) || input_->IsKeyPressed(DIK_W)) {
-        outAction = { "MoveForward" };
-        return true;
-    }
-    if (input_->IsKeyPressed(DIK_DOWN) || input_->IsKeyPressed(DIK_S)) {
-        outAction = { "Down" };
+
+    const bool left = input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A);
+    const bool right = input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D);
+    const bool up = input_->IsKeyPressed(DIK_UP) || input_->IsKeyPressed(DIK_W);
+    const bool down = input_->IsKeyPressed(DIK_DOWN) || input_->IsKeyPressed(DIK_S);
+
+    if (left || right || up || down) {
+        if (down) {
+            outAction = { "Down" };
+            return true;
+        }
+        outAction = { "Move" };
+        if (left != right) {
+            outAction.intParam = right ? +1 : -1;
+        }
+        if (up != down) {
+            outAction.floatParam = up ? +1.0f : -1.0f;
+        }
         return true;
     }
 
-    return false;
+    outAction = { "Wait" };
+    return true;
 }
 
