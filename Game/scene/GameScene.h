@@ -41,12 +41,14 @@ public:
 
     DebugGameState CaptureDebugState() const;
     bool RestoreDebugState(const DebugGameState& state);
+    void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
     void ExecuteDebugAction(const DebugAction& action);
 
 private:
     void SetupDebugAI_(GameApp& app);
     void ShutdownDebugAI_(GameApp& app);
     void SetDebugAIEnabled_(GameApp& app, bool enabled);
+    bool ProcessDebugAIRequests_(GameApp& app);
     bool CaptureManualDebugAction_(DebugAction& outAction) const;
 
     std::unique_ptr<Camera> camera_;
@@ -70,7 +72,13 @@ private:
     EnemyManager enemyMgr_;
     std::unique_ptr<IGameDebugAdapter> debugAdapter_;
     bool debugAIEnabled_ = false;
+    bool debugRequestStartReplay_ = false;
+    bool debugRequestStopReplay_ = false;
+    bool debugRequestStartBot_ = false;
+    bool debugRequestStopBot_ = false;
+    bool debugRequestRestoreInitialState_ = false;
     unsigned long long debugFrameNumber_ = 0;
+    unsigned int debugRandomSeed_ = 0;
 
     // 数字テクスチャ（0..9）
     std::string numTex_[10];

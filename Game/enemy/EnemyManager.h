@@ -40,12 +40,13 @@ public:
     const std::vector<Enemy>& GetEnemies() const { return enemies_; }
 
     void ApplyPlayerAttack(Player& player);
-    void AppendDebugEnemyStates(std::vector<DebugEnemyState>& outStates) const;
-    void RestoreDebugEnemyStates(const std::vector<DebugEnemyState>& states);
+    void AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const;
+    void RestoreDebugEntities(const std::vector<DebugEntityState>& entities);
 
     void SetDebugDrawMeleeHitbox(bool enable) { debugDrawMeleeHitbox_ = enable; }
 
     void QueueSpawn(EnemyType type, float delaySec);
+    void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
 
     bool IsBossDefeated() const { return bossDefeated_; }
     void ClearBossDefeatedFlag() { bossDefeated_ = false; } // 莉ｻ諢・
@@ -105,6 +106,7 @@ private:
         float t; // 谿九ｊ遘・
     };
     std::vector<PendingSpawn> pendingSpawns_;
+    std::vector<DebugSpawnOverride> replaySpawnOverrides_;
 
     // 隱ｿ謨ｴ
     float spawnInterval_ = 1.0f;   // 1菴薙★縺､貉ｧ縺城俣髫費ｼ亥・譛滓ｹｧ縺咲畑縺ｫ菴ｿ縺・↑繧会ｼ・

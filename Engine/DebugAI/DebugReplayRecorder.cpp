@@ -30,11 +30,15 @@ bool DebugReplayRecorder::Open(const std::string& directoryPath) {
     recentRecords_.clear();
     lastIssueReplayPath_.clear();
     hasInitialState_ = false;
+    hasPendingRecord_ = false;
+    pendingRecord_ = DebugActionRecord{};
     issueReplayIndex_ = 0;
+    lastCheckpointFrame_ = 0;
     return actionLog_.is_open();
 }
 
 void DebugReplayRecorder::Close() {
+    FlushPendingRecord_();
     if (actionLog_.is_open()) {
         actionLog_.close();
     }
@@ -54,20 +58,30 @@ void DebugReplayRecorder::RecordAction(
     record.stateBefore = stateBefore;
     record.stateAfter = stateAfter;
 
-    recentRecords_.push_back(record);
-    while (recentRecords_.size() > maxRecentRecords_) {
-        recentRecords_.pop_front();
+    const bool hasNewEnemySpawn = HasNewEnemySpawn_(stateBefore, stateAfter);
+    if (hasNewEnemySpawn && hasPendingRecord_) {
+        FlushPendingRecord_();
     }
 
-    if (actionLog_.is_open()) {
-        WriteRecord_(actionLog_, record);
-        actionLog_ << "\n";
-        actionLog_.flush();
-
-        std::ofstream latestPath(directoryPath_ + "/debug_ai_latest_action_log.txt", std::ios::out | std::ios::trunc);
-        if (latestPath.is_open()) {
-            latestPath << actionLogPath_;
+    if (CanMerge_(record)) {
+        ++pendingRecord_.durationFrames;
+        pendingRecord_.stateAfter = stateAfter;
+        if (ShouldWriteCheckpoint_(stateAfter)) {
+            FlushPendingRecord_();
+            WriteCheckpoint_(stateAfter);
         }
+        return;
+    }
+
+    FlushPendingRecord_();
+    pendingRecord_ = record;
+    hasPendingRecord_ = true;
+    if (hasNewEnemySpawn) {
+        FlushPendingRecord_();
+    }
+    if (ShouldWriteCheckpoint_(stateAfter)) {
+        FlushPendingRecord_();
+        WriteCheckpoint_(stateAfter);
     }
 }
 
@@ -76,6 +90,7 @@ std::string DebugReplayRecorder::SaveRecentReplayForIssue(const DebugIssue& issu
         return "";
     }
 
+    FlushPendingRecord_();
     ++issueReplayIndex_;
 
     std::ostringstream fileName;
@@ -119,6 +134,7 @@ void DebugReplayRecorder::EnsureInitialState_(const DebugGameState& state) {
 
     initialState_ = state;
     hasInitialState_ = true;
+    lastCheckpointFrame_ = state.frameNumber;
 
     if (actionLog_.is_open()) {
         WriteInitialState_(actionLog_, initialState_);
@@ -131,6 +147,114 @@ void DebugReplayRecorder::EnsureInitialState_(const DebugGameState& state) {
         WriteInitialState_(initialStateFile, initialState_);
         initialStateFile << "\n";
     }
+}
+
+bool DebugReplayRecorder::ShouldWriteCheckpoint_(const DebugGameState& state) const {
+    return state.frameNumber >= lastCheckpointFrame_ + checkpointIntervalFrames_;
+}
+
+void DebugReplayRecorder::WriteCheckpoint_(const DebugGameState& state) {
+    lastCheckpointFrame_ = state.frameNumber;
+    if (!actionLog_.is_open()) {
+        return;
+    }
+
+    actionLog_ << "{"
+        << "\"type\":\"checkpoint\","
+        << "\"frame\":" << state.frameNumber << ","
+        << "\"state\":";
+    WriteStateSummaryJson_(actionLog_, state);
+    actionLog_ << "}\n";
+    actionLog_.flush();
+    WriteLatestPointer_();
+}
+
+void DebugReplayRecorder::FlushPendingRecord_() {
+    if (!hasPendingRecord_) {
+        return;
+    }
+
+    recentRecords_.push_back(pendingRecord_);
+    while (recentRecords_.size() > maxRecentRecords_) {
+        recentRecords_.pop_front();
+    }
+
+    if (actionLog_.is_open()) {
+        WriteRecord_(actionLog_, pendingRecord_);
+        actionLog_ << "\n";
+        actionLog_.flush();
+        WriteLatestPointer_();
+    }
+
+    hasPendingRecord_ = false;
+    pendingRecord_ = DebugActionRecord{};
+}
+
+void DebugReplayRecorder::WriteLatestPointer_() const {
+    if (directoryPath_.empty() || actionLogPath_.empty()) {
+        return;
+    }
+
+    std::ofstream latestPath(directoryPath_ + "/debug_ai_latest_action_log.txt", std::ios::out | std::ios::trunc);
+    if (latestPath.is_open()) {
+        latestPath << actionLogPath_;
+    }
+}
+
+bool DebugReplayRecorder::CanMerge_(const DebugActionRecord& nextRecord) const {
+    if (!hasPendingRecord_ || !IsContinuousAction_(pendingRecord_.action)) {
+        return false;
+    }
+    if (HasNewEnemySpawn_(pendingRecord_.stateBefore, pendingRecord_.stateAfter) ||
+        HasNewEnemySpawn_(nextRecord.stateBefore, nextRecord.stateAfter)) {
+        return false;
+    }
+    if (!IsContinuousAction_(nextRecord.action)) {
+        return false;
+    }
+    if (pendingRecord_.sceneName != nextRecord.sceneName) {
+        return false;
+    }
+    if (pendingRecord_.action.name != nextRecord.action.name ||
+        pendingRecord_.action.targetId != nextRecord.action.targetId ||
+        pendingRecord_.action.intParam != nextRecord.action.intParam ||
+        pendingRecord_.action.floatParam != nextRecord.action.floatParam) {
+        return false;
+    }
+
+    const unsigned long long expectedNextFrame =
+        pendingRecord_.frameNumber + pendingRecord_.durationFrames;
+    return nextRecord.frameNumber == expectedNextFrame;
+}
+
+bool DebugReplayRecorder::HasNewEnemySpawn_(const DebugGameState& before, const DebugGameState& after) const {
+    for (const DebugEntityState& afterEntity : after.entities) {
+        if (afterEntity.category != "Enemy" || afterEntity.type == "Boss") {
+            continue;
+        }
+
+        bool existedBefore = false;
+        for (const DebugEntityState& beforeEntity : before.entities) {
+            if (beforeEntity.id == afterEntity.id && beforeEntity.category == "Enemy") {
+                existedBefore = true;
+                break;
+            }
+        }
+        if (!existedBefore) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DebugReplayRecorder::IsContinuousAction_(const DebugAction& action) const {
+    return action.name == "MoveLeft" ||
+        action.name == "MoveRight" ||
+        action.name == "MoveForward" ||
+        action.name == "MoveBack" ||
+        action.name == "Down" ||
+        action.name == "Guard" ||
+        action.name == "Wait";
 }
 
 void DebugReplayRecorder::WriteInitialState_(std::ostream& out, const DebugGameState& state) const {
@@ -152,6 +276,8 @@ void DebugReplayRecorder::WriteRecord_(std::ostream& out, const DebugActionRecor
     out << "{"
         << "\"type\":\"action\","
         << "\"frame\":" << record.frameNumber << ","
+        << "\"endFrame\":" << (record.frameNumber + record.durationFrames - 1) << ","
+        << "\"durationFrames\":" << record.durationFrames << ","
         << "\"scene\":\"" << EscapeJson_(record.sceneName) << "\","
         << "\"action\":";
     WriteActionJson_(out, record.action);
@@ -185,21 +311,32 @@ void DebugReplayRecorder::WriteStateSummaryJson_(std::ostream& out, const DebugG
         << "},"
         << "\"fps\":" << state.fps << ","
         << "\"phase\":\"" << EscapeJson_(state.gamePhase) << "\","
-        << "\"enemies\":[";
-    for (size_t i = 0; i < state.enemies.size(); ++i) {
-        const DebugEnemyState& enemy = state.enemies[i];
+        << "\"randomSeed\":" << state.randomSeed << ","
+        << "\"entities\":[";
+    for (size_t i = 0; i < state.entities.size(); ++i) {
+        const DebugEntityState& entity = state.entities[i];
         if (i > 0) {
             out << ",";
         }
         out << "{"
-            << "\"type\":\"" << EscapeJson_(enemy.type) << "\","
-            << "\"hp\":" << enemy.hp << ","
-            << "\"pendingSpawn\":" << (enemy.pendingSpawn ? "true" : "false") << ","
-            << "\"spawnDelay\":" << enemy.spawnDelay << ","
+            << "\"id\":\"" << EscapeJson_(entity.id) << "\","
+            << "\"category\":\"" << EscapeJson_(entity.category) << "\","
+            << "\"type\":\"" << EscapeJson_(entity.type) << "\","
+            << "\"hp\":" << entity.hp << ","
+            << "\"damage\":" << entity.damage << ","
+            << "\"alive\":" << (entity.alive ? "true" : "false") << ","
+            << "\"pending\":" << (entity.pending ? "true" : "false") << ","
+            << "\"delay\":" << entity.delay << ","
+            << "\"life\":" << entity.life << ","
             << "\"position\":{"
-            << "\"x\":" << enemy.position.x << ","
-            << "\"y\":" << enemy.position.y << ","
-            << "\"z\":" << enemy.position.z
+            << "\"x\":" << entity.position.x << ","
+            << "\"y\":" << entity.position.y << ","
+            << "\"z\":" << entity.position.z
+            << "},"
+            << "\"velocity\":{"
+            << "\"x\":" << entity.velocity.x << ","
+            << "\"y\":" << entity.velocity.y << ","
+            << "\"z\":" << entity.velocity.z
             << "}"
             << "}";
     }

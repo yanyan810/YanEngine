@@ -45,6 +45,63 @@ void BulletManager::Spawn(const Vector3& pos, int dir, int damage) {
 
 
 
+void BulletManager::SpawnDebug_(const Vector3& pos, const Vector3& vel, int damage, float life) {
+    Bullet b{};
+    b.alive = true;
+    b.pos = pos;
+    b.vel = vel;
+    b.damage = damage;
+    b.life = life;
+
+    b.model = std::make_unique<Object3d>();
+    b.model->Initialize(objCommon_, dx_);
+    b.model->SetCamera(cam_);
+    b.model->SetModel("enemy/shooter/bullet/bullet.obj");
+    b.model->SetUseEnvironmentMap(true);
+    b.model->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
+    b.model->SetEnvironmentCoefficient(1.0f);
+
+    const float s = 0.25f;
+    b.model->SetTranslate(b.pos);
+    b.model->SetScale({ s, s, s });
+    b.model->Update(0.0f);
+
+    UpdateBody_(b);
+    bullets_.push_back(std::move(b));
+}
+
+void BulletManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const {
+    int index = 0;
+    for (const Bullet& bullet : bullets_) {
+        if (!bullet.alive) {
+            continue;
+        }
+
+        DebugEntityState state;
+        state.id = "bullet_" + std::to_string(index++);
+        state.category = "Bullet";
+        state.type = "EnemyBullet";
+        state.position = bullet.pos;
+        state.velocity = bullet.vel;
+        state.damage = bullet.damage;
+        state.life = bullet.life;
+        state.alive = true;
+        outEntities.push_back(state);
+    }
+}
+
+void BulletManager::RestoreDebugEntities(const std::vector<DebugEntityState>& entities) {
+    bullets_.clear();
+
+    for (const DebugEntityState& entity : entities) {
+        if (entity.category != "Bullet" || !entity.alive) {
+            continue;
+        }
+
+        SpawnDebug_(entity.position, entity.velocity, entity.damage, entity.life);
+    }
+}
+
 void BulletManager::Update(float dt, Player& player) {
     // 1) 弾の更新
 

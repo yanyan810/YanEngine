@@ -17,8 +17,41 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <d3d12.h>
+
+namespace {
+
+const char* DebugIssueSeverityLabel(DebugIssueSeverity severity) {
+    switch (severity) {
+    case DebugIssueSeverity::Info:
+        return "Info";
+    case DebugIssueSeverity::Warning:
+        return "Warning";
+    case DebugIssueSeverity::Error:
+        return "Error";
+    default:
+        return "Unknown";
+    }
+}
+
+void DrawDebugActionLine(const char* label, const DebugAction& action) {
+    if (action.name.empty()) {
+        ImGui::Text("%s: none", label);
+        return;
+    }
+
+    ImGui::Text("%s: %s", label, action.name.c_str());
+    if (!action.targetId.empty() || action.intParam != 0 || action.floatParam != 0.0f) {
+        ImGui::Text("  target=%s int=%d float=%.2f",
+            action.targetId.empty() ? "-" : action.targetId.c_str(),
+            action.intParam,
+            action.floatParam);
+    }
+}
+
+}
 
 void GameScene::DrawRender(GameApp& app) {
     auto* cmd = app.Dx()->GetCommandList();
@@ -146,26 +179,107 @@ void GameScene::DrawImGui(GameApp& app) {
     
     ImGui::End();
 
+    DebugAIManager* debugAI = app.DebugAI();
     const DebugGameState debugState = CaptureDebugState();
-    ImGui::Begin("Game Debug AI");
-    ImGui::Text("F7 Replay: %s", app.DebugAI() && app.DebugAI()->IsReplayPlaying() ? "Playing" : "Stopped");
-    ImGui::Text("F8 Random Bot: %s", debugAIEnabled_ ? "Enabled" : "Disabled");
-    ImGui::Text("Frame: %llu", debugState.frameNumber);
-    ImGui::Text("Player HP: %d", debugState.playerHp);
-    ImGui::Text("Enemy HP: %d", debugState.enemyHp);
-    ImGui::Text("Enemy Count: %d", debugState.enemyCount);
-    ImGui::Text("Player Pos: %.2f, %.2f, %.2f",
-        debugState.playerPosition.x,
-        debugState.playerPosition.y,
-        debugState.playerPosition.z);
-    if (app.DebugAI()) {
-        ImGui::TextWrapped("Logs: %s", app.DebugAI()->Logger().DirectoryPath().c_str());
-        ImGui::TextWrapped("Actions: %s", app.DebugAI()->ReplayRecorder().ActionLogPath().c_str());
-        ImGui::TextWrapped("Initial: %s", app.DebugAI()->ReplayRecorder().InitialStatePath().c_str());
-        ImGui::TextWrapped("Replay: %s", app.DebugAI()->ReplayPlayer().ReplayPath().c_str());
+    ImGui::Begin("Debug AI");
+    if (!debugAI) {
+        ImGui::TextUnformatted("DebugAI manager is not available.");
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::CollapsingHeader("Control", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Status: %s", debugAI->IsEnabled() ? "Running" : "Stopped");
+        ImGui::Text("Replay: %s", debugAI->IsReplayPlaying() ? "Playing" : "Stopped");
+
+        if (debugAI->IsReplayPlaying()) {
+            if (ImGui::Button("Stop Replay")) {
+                debugRequestStopReplay_ = true;
+            }
+        } else {
+            if (ImGui::Button("Replay Latest (F7)")) {
+                debugRequestStartReplay_ = true;
+            }
+        }
+
+        ImGui::SameLine();
+        if (debugAI->IsReplayPlaying()) {
+            ImGui::TextDisabled("Random Bot locked during replay");
+        } else if (debugAIEnabled_) {
+            if (ImGui::Button("Stop Random Bot (F8)")) {
+                debugRequestStopBot_ = true;
+            }
+        } else {
+            if (ImGui::Button("Start Random Bot (F8)")) {
+                debugRequestStartBot_ = true;
+            }
+        }
+
+        if (debugAI->ReplayPlayer().HasInitialState()) {
+            if (ImGui::Button("Restore Initial State")) {
+                debugRequestRestoreInitialState_ = true;
+            }
+        } else {
+            ImGui::TextDisabled("Restore Initial State: no replay initial state loaded");
+        }
+    }
+
+    if (ImGui::CollapsingHeader("State", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Scene: %s", debugState.sceneName.c_str());
+        ImGui::Text("Phase: %s", debugState.gamePhase.c_str());
+        ImGui::Text("Frame: %llu", debugState.frameNumber);
+        ImGui::Text("Player HP: %d", debugState.playerHp);
+        ImGui::Text("Enemy HP: %d", debugState.enemyHp);
+        ImGui::Text("Enemy Count: %d", debugState.enemyCount);
+        ImGui::Text("Entities: %zu", debugState.entities.size());
+        ImGui::Text("FPS: %.2f", debugState.fps);
+        ImGui::Text("Random Seed: %u", debugState.randomSeed);
+        ImGui::Text("Player Pos: %.2f, %.2f, %.2f",
+            debugState.playerPosition.x,
+            debugState.playerPosition.y,
+            debugState.playerPosition.z);
+    }
+
+    if (ImGui::CollapsingHeader("Actions", ImGuiTreeNodeFlags_DefaultOpen)) {
+        DrawDebugActionLine("Last Action", debugAI->LastAction());
+        ImGui::Separator();
+        ImGui::Text("Available Actions: %zu", debugState.availableActions.size());
+        for (size_t i = 0; i < debugState.availableActions.size(); ++i) {
+            const DebugAction& action = debugState.availableActions[i];
+            char label[128];
+            std::snprintf(label, sizeof(label), "%02zu: %s", i + 1, action.name.c_str());
+            ImGui::BulletText("%s", label);
+        }
+        ImGui::Separator();
         ImGui::Text("Replay Step: %zu / %zu",
-            app.DebugAI()->ReplayPlayer().NextIndex(),
-            app.DebugAI()->ReplayPlayer().ActionCount());
+            debugAI->ReplayPlayer().NextIndex(),
+            debugAI->ReplayPlayer().ActionCount());
+        ImGui::Text("Checkpoint Step: %zu / %zu",
+            debugAI->ReplayPlayer().NextCheckpointIndex(),
+            debugAI->ReplayPlayer().CheckpointCount());
+    }
+
+    if (ImGui::CollapsingHeader("Issues", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const std::vector<DebugIssue>& issues = debugAI->Logger().Issues();
+        ImGui::Text("Issue Count: %zu", issues.size());
+        const size_t first = issues.size() > 8 ? issues.size() - 8 : 0;
+        for (size_t i = first; i < issues.size(); ++i) {
+            const DebugIssue& issue = issues[i];
+            ImGui::Separator();
+            ImGui::Text("[%s] Frame %llu", DebugIssueSeverityLabel(issue.severity), issue.frameNumber);
+            ImGui::TextWrapped("%s", issue.message.c_str());
+            DrawDebugActionLine("Last Action", issue.lastAction);
+            if (!issue.replayPath.empty()) {
+                ImGui::TextWrapped("Replay: %s", issue.replayPath.c_str());
+            }
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Paths")) {
+        ImGui::TextWrapped("Logs: %s", debugAI->Logger().DirectoryPath().c_str());
+        ImGui::TextWrapped("Actions: %s", debugAI->ReplayRecorder().ActionLogPath().c_str());
+        ImGui::TextWrapped("Initial: %s", debugAI->ReplayRecorder().InitialStatePath().c_str());
+        ImGui::TextWrapped("Replay: %s", debugAI->ReplayPlayer().ReplayPath().c_str());
     }
     ImGui::End();
 #endif // USE_IMGUI

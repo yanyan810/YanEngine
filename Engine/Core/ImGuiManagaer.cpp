@@ -151,6 +151,7 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
 
     ImGui::DockBuilderDockWindow("Sprite Position Control", bottomNode);
     ImGui::DockBuilderDockWindow("Post Effect", bottomNode);
+    ImGui::DockBuilderDockWindow("Debug AI", bottomNode);
     ImGui::DockBuilderDockWindow("VideoPlane SRT", bottomNode);
     ImGui::DockBuilderDockWindow("Object Specific Effects", bottomNode);
     ImGui::DockBuilderDockWindow("Camera Debug", bottomNode);

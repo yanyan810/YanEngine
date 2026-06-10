@@ -136,7 +136,9 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     }
 
     const bool useDebugCommand = hasDebugCommand_;
-    const PlayerInputCommand command = useDebugCommand ? debugCommand_ : ResolveInput_(input);
+    const PlayerInputCommand command = useDebugCommand
+        ? debugCommand_
+        : (externalInputBlocked_ ? PlayerInputCommand{} : ResolveInput_(input));
     hasDebugCommand_ = false;
 
     // --- 繧ｸ繝｣繝ｳ繝暦ｼ・・・---

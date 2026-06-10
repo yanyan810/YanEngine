@@ -20,6 +20,51 @@
 #include <cstdlib>
 #include <d3d12.h>
 
+bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
+    bool stateWasRestored = false;
+    DebugAIManager* debugAI = app.DebugAI();
+    if (!debugAI) {
+        debugRequestStartReplay_ = false;
+        debugRequestStopReplay_ = false;
+        debugRequestStartBot_ = false;
+        debugRequestStopBot_ = false;
+        debugRequestRestoreInitialState_ = false;
+        return false;
+    }
+
+    if (debugRequestStopReplay_) {
+        debugAI->StopReplay();
+        debugAIEnabled_ = false;
+    }
+
+    if (debugRequestRestoreInitialState_ && debugAI->ReplayPlayer().HasInitialState()) {
+        RestoreDebugState(debugAI->ReplayPlayer().InitialState());
+        stateWasRestored = true;
+    }
+
+    if (debugRequestStartReplay_) {
+        if (debugAI->StartLatestReplay()) {
+            debugAIEnabled_ = true;
+            stateWasRestored = true;
+        }
+    }
+
+    if (debugRequestStopBot_) {
+        SetDebugAIEnabled_(app, false);
+    }
+
+    if (debugRequestStartBot_ && !debugAI->IsReplayPlaying()) {
+        SetDebugAIEnabled_(app, true);
+    }
+
+    debugRequestStartReplay_ = false;
+    debugRequestStopReplay_ = false;
+    debugRequestStartBot_ = false;
+    debugRequestStopBot_ = false;
+    debugRequestRestoreInitialState_ = false;
+    return stateWasRestored;
+}
+
 void GameScene::Update(GameApp& app, float dt) {
     if (!input_) return; // 蠢ｵ縺ｮ縺溘ａ
     ++debugFrameNumber_;
@@ -30,19 +75,24 @@ void GameScene::Update(GameApp& app, float dt) {
         return;
     }
 
-    if (input_->IsKeyTrigger(DIK_F8)) {
+    const bool replayShortcutBlocked = app.DebugAI() && app.DebugAI()->IsReplayPlaying();
+
+    if (!replayShortcutBlocked && input_->IsKeyTrigger(DIK_F8)) {
         SetDebugAIEnabled_(app, !debugAIEnabled_);
     }
 
     if (input_->IsKeyTrigger(DIK_F7)) {
-        if (app.DebugAI() && app.DebugAI()->StartLatestReplay()) {
-            debugAIEnabled_ = true;
-        }
+        debugRequestStartReplay_ = true;
     }
 
     if (app.DebugAI() && !app.DebugAI()->IsEnabled()) {
         debugAIEnabled_ = false;
     }
+
+    if (ProcessDebugAIRequests_(app)) {
+        return;
+    }
+    const bool blockExternalGameInput = app.DebugAI() && app.DebugAI()->IsReplayPlaying();
 
     camera_->Update();
 
@@ -58,8 +108,8 @@ void GameScene::Update(GameApp& app, float dt) {
         bool spaceNow = input_->IsKeyPressed(DIK_SPACE);
         bool enterNow = input_->IsKeyPressed(DIK_RETURN);
 
-        bool spaceTrig = input_->IsKeyTrigger(DIK_SPACE);
-        bool enterTrig = input_->IsKeyTrigger(DIK_RETURN);
+        bool spaceTrig = !blockExternalGameInput && input_->IsKeyTrigger(DIK_SPACE);
+        bool enterTrig = !blockExternalGameInput && input_->IsKeyTrigger(DIK_RETURN);
 
         // dt譁ｹ蠑擾ｼ域耳螂ｨ・・
         introTime_ += dt;
@@ -93,7 +143,7 @@ void GameScene::Update(GameApp& app, float dt) {
 
         // --- TAB縺ｧ繝昴・繧ｺ蛻・崛・・attle荳ｭ縺ｮ縺ｿ・・--
         bool tabNow = input_->IsKeyPressed(DIK_TAB);
-        bool tabTrig = input_->IsKeyTrigger(DIK_TAB);
+        bool tabTrig = !blockExternalGameInput && input_->IsKeyTrigger(DIK_TAB);
         prevTab_ = tabNow;
 
         if (tabTrig) {
@@ -111,8 +161,8 @@ void GameScene::Update(GameApp& app, float dt) {
         if (isPaused_) {
 
             // 蟾ｦ蜿ｳ縺ｧ驕ｸ謚橸ｼ・/D or 竊・竊抵ｼ・
-            bool left = input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A);
-            bool right = input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D);
+            bool left = !blockExternalGameInput && (input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A));
+            bool right = !blockExternalGameInput && (input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D));
 
             if (left)  pauseSel_ = PauseSel::Close;
             if (right) pauseSel_ = PauseSel::ToTitle;
@@ -128,8 +178,8 @@ void GameScene::Update(GameApp& app, float dt) {
             bool spaceNow = input_->IsKeyPressed(DIK_SPACE);
 
             // 騾｣謇薙〒證ｴ繧後↑縺・ｈ縺・↓縲後ヨ繝ｪ繧ｬ縲肴桶縺・＠縺溘＞縺ｪ繧・prevEnter_/prevSpace_ 繧呈ｵ∫畑縺励※OK
-            bool enterTrig = input_->IsKeyTrigger(DIK_RETURN);
-            bool spaceTrig = input_->IsKeyTrigger(DIK_SPACE);
+            bool enterTrig = !blockExternalGameInput && input_->IsKeyTrigger(DIK_RETURN);
+            bool spaceTrig = !blockExternalGameInput && input_->IsKeyTrigger(DIK_SPACE);
             prevEnter_ = enterNow;
             prevSpace_ = spaceNow;
 
@@ -156,6 +206,7 @@ void GameScene::Update(GameApp& app, float dt) {
         const DebugGameState manualStateBefore = recordManualAction ? CaptureDebugState() : DebugGameState{};
 
         if (player_) {
+            player_->SetExternalInputBlocked(blockExternalGameInput);
             player_->Update(dt, *input_, enemyMgr_);
             enemyMgr_.ApplyPlayerAttack(*player_);
         }
@@ -211,6 +262,10 @@ void GameScene::Update(GameApp& app, float dt) {
             app.DebugAI()->RecordExternalAction(manualStateBefore, manualAction, CaptureDebugState());
         }
 
+        if (app.DebugAI()) {
+            app.DebugAI()->CheckReplayDrift(CaptureDebugState());
+        }
+
         if (player_->IsDead()) {
             RequestChangeScene_("GameOver");
             return;
@@ -263,7 +318,7 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
         // ・井ｻｻ諢擾ｼ峨せ繝壹・繧ｹ縺ｧ繧ｹ繧ｭ繝・・
-         if (input_->IsKeyTrigger(DIK_SPACE)) {
+         if (!blockExternalGameInput && input_->IsKeyTrigger(DIK_SPACE)) {
              RequestChangeScene_("GameClear");
              return;
          }
