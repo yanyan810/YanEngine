@@ -129,6 +129,9 @@ public:
 
     int GetMaxHP() const { return maxHp_; }
 
+    const BossAI& GetBossAI() const { return bossAI_; }
+    BossAI& GetBossAIMutable() { return bossAI_; }
+
 private:
     void UpdateAI_Melee_(float dt, const Vector2& playerXY, float playerZ);
     void UpdateAI_Shooter_(float dt, const Vector2& playerXY, float playerZ);

@@ -30,6 +30,11 @@ struct DebugEntityState {
     bool pending = false;
     float delay = 0.0f;
     float life = 0.0f;
+    int aiState1 = 0;
+    int aiState2 = 0;
+    float aiFloat1 = 0.0f;
+    float aiFloat2 = 0.0f;
+    float aiFloat3 = 0.0f;
 };
 
 struct DebugSpawnOverride {

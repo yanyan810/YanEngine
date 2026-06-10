@@ -334,7 +334,12 @@ void DebugReplayRecorder::WriteStateSummaryJson_(std::ostream& out, const DebugG
             << "\"x\":" << entity.velocity.x << ","
             << "\"y\":" << entity.velocity.y << ","
             << "\"z\":" << entity.velocity.z
-            << "}"
+            << "},"
+            << "\"aiState1\":" << entity.aiState1 << ","
+            << "\"aiState2\":" << entity.aiState2 << ","
+            << "\"aiFloat1\":" << entity.aiFloat1 << ","
+            << "\"aiFloat2\":" << entity.aiFloat2 << ","
+            << "\"aiFloat3\":" << entity.aiFloat3
             << "}";
     }
     out << "]"

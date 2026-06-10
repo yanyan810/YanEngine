@@ -345,6 +345,11 @@ void DebugReplayPlayer::ParseEntityStates_(const std::string& line, std::vector<
                 ExtractBool_(objectText, "\"pending\"", entity.pending);
                 ExtractFloat_(objectText, "\"delay\"", entity.delay);
                 ExtractFloat_(objectText, "\"life\"", entity.life);
+                ExtractInt_(objectText, "\"aiState1\"", entity.aiState1);
+                ExtractInt_(objectText, "\"aiState2\"", entity.aiState2);
+                ExtractFloat_(objectText, "\"aiFloat1\"", entity.aiFloat1);
+                ExtractFloat_(objectText, "\"aiFloat2\"", entity.aiFloat2);
+                ExtractFloat_(objectText, "\"aiFloat3\"", entity.aiFloat3);
 
                 bool legacyPendingSpawn = false;
                 float legacySpawnDelay = 0.0f;

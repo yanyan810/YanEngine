@@ -144,6 +144,18 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		state.type = DebugEnemyTypeName(enemy.GetType());
 		state.hp = enemy.GetHP();
 		state.position = enemy.GetPos3D();
+		state.velocity = enemy.GetVel();
+		if (enemy.IsBoss()) {
+			const BossAI& bossAI = enemy.GetBossAI();
+			state.aiState1 = static_cast<int>(bossAI.GetState());
+			state.aiState2 = static_cast<int>(bossAI.GetPhase());
+			state.aiFloat1 = bossAI.GetTime();
+			state.aiFloat2 = bossAI.GetStateTime();
+			int flags = 0;
+			if (bossAI.Did50()) flags |= 1;
+			if (bossAI.Did25()) flags |= 2;
+			state.aiFloat3 = static_cast<float>(flags);
+		}
 		state.alive = true;
 		state.pending = false;
 		state.delay = 0.0f;
@@ -210,15 +222,30 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 
 		Spawn(type, entity.position);
 		if (!enemies_.empty()) {
-			enemies_.back().SetHP(entity.hp);
+			Enemy& newEnemy = enemies_.back();
+			newEnemy.SetHP(entity.hp);
+			newEnemy.SetVel(entity.velocity);
+			if (newEnemy.IsBoss()) {
+				int flags = static_cast<int>(entity.aiFloat3);
+				bool did50 = (flags & 1) != 0;
+				bool did25 = (flags & 2) != 0;
+				newEnemy.GetBossAIMutable().RestoreState(
+					static_cast<BossAI::State>(entity.aiState1),
+					static_cast<BossAI::Phase>(entity.aiState2),
+					entity.aiFloat1,
+					entity.aiFloat2,
+					did50,
+					did25
+				);
+			}
 		}
 	}
 
 	bullets_.RestoreDebugEntities(entities);
 }
 
-void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player) {
-	// 1) 謨ｵ譛ｬ菴薙・譖ｴ譁ｰ
+void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn) {
+	// 1) 敵本体の更新
 	for (auto& e : enemies_) {
 		e.Update(dt, playerXY, playerZ); // 竊・繧ゅ＠菴ｿ縺・↑繧牙ｼ墓焚繧呈綾縺励※OK
 		e.SetLighting(light_);
@@ -346,9 +373,9 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 
 	UpdateHealDrops_(dt, player);
 
-	UpdatePendingSpawns_(dt, playerXY, playerZ);
-
-
+	if (!disablePendingSpawn) {
+		UpdatePendingSpawns_(dt, playerXY, playerZ);
+	}
 }
 
 void EnemyManager::Draw() {

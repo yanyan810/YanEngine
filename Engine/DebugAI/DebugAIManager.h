@@ -30,6 +30,7 @@ public:
     bool StartLatestReplay();
     void StopReplay();
     bool IsReplayPlaying() const { return replayMode_ && replayPlayer_.IsPlaying(); }
+    bool IsFirstReplayFrame() const { return isFirstReplayFrame_; }
 
     const DebugLogger& Logger() const { return logger_; }
     const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
@@ -52,6 +53,7 @@ private:
     DebugReplayPlayer replayPlayer_;
     DebugAction lastAction_;
     bool replayMode_ = false;
+    bool isFirstReplayFrame_ = false;
 
     DebugGameState pendingBeforeState_;
     DebugAction pendingAction_;

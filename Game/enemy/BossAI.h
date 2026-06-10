@@ -34,6 +34,19 @@ public:
     // Enemy側（見た目制御）用
     State GetState() const { return st_; }
     Phase GetPhase() const { return phase_; } // 必要なら
+    float GetTime() const { return t_; }
+    float GetStateTime() const { return stateTime_; }
+    bool Did50() const { return did50_; }
+    bool Did25() const { return did25_; }
+
+    void RestoreState(State st, Phase ph, float t, float stateTime, bool did50, bool did25) {
+        st_ = st;
+        phase_ = ph;
+        t_ = t;
+        stateTime_ = stateTime;
+        did50_ = did50;
+        did25_ = did25;
+    }
 
 private:
  

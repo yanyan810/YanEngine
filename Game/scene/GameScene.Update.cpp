@@ -231,8 +231,14 @@ void GameScene::Update(GameApp& app, float dt) {
         // true にすると敵の更新やスポーンが一時停止し、プレイヤーのみの挙動を確認できます
         constexpr bool kDebugDisableEnemies = false;
 
+        // true にすると、Enemy本体はUpdateするが、PendingSpawnのカウントダウンと新規Spawnだけ止める
+        constexpr bool kDebugDisablePendingSpawn = true;
+
+        const bool skipPendingSpawn = kDebugDisablePendingSpawn || 
+            (app.DebugAI() && app.DebugAI()->IsFirstReplayFrame());
+
         if (!kDebugDisableEnemies) {
-            enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
+            enemyMgr_.Update(dt, playerPos2D, playerZ, *player_, skipPendingSpawn);
         }
 
         if (bossHpFill_) {

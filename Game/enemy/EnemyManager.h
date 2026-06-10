@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <memory>
 #include <vector>
 
@@ -32,7 +32,7 @@ public:
     void Clear();
     void Spawn(EnemyType type, const Vector3& posXY);
 
-    void Update(float dt, const Vector2& playerXY, float playerZ, Player& player);
+    	void Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn = false);
 
     void Draw();
 

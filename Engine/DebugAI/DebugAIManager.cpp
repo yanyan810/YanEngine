@@ -25,7 +25,7 @@ std::string BuildStateDiffMessage(const DebugGameState& before, const DebugGameS
     return message.str();
 }
 
-std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameState& actual) {
+std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameState& actual, const std::vector<DebugSpawnOverride>& overrides) {
     std::ostringstream message;
     message
         << "restore"
@@ -41,6 +41,18 @@ std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameS
         << AbsDiff(expected.playerPosition.x, actual.playerPosition.x) << ","
         << AbsDiff(expected.playerPosition.y, actual.playerPosition.y) << ","
         << AbsDiff(expected.playerPosition.z, actual.playerPosition.z) << ")";
+
+    int pendingCount = 0;
+    std::ostringstream pendingDetails;
+    for (const DebugEntityState& entity : actual.entities) {
+        if (entity.category == "PendingSpawn" || entity.pending) {
+            ++pendingCount;
+            pendingDetails << " [" << entity.type << " delay=" << entity.delay << "]";
+        }
+    }
+    message << " | pendingSpawns=" << pendingCount << pendingDetails.str();
+    message << " | overrides=" << overrides.size();
+
     return message.str();
 }
 
@@ -202,22 +214,24 @@ bool DebugAIManager::StartLatestReplay() {
         if (restoreState.frameNumber > 0) {
             --restoreState.frameNumber;
         }
-        adapter_->RestoreDebugState(restoreState);
         adapter_->SetReplaySpawnOverrides(replayPlayer_.SpawnOverrides());
+        adapter_->RestoreDebugState(restoreState);
         const DebugGameState restoredState = adapter_->CaptureDebugState();
-        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState));
+        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState, replayPlayer_.SpawnOverrides()));
     }
 
     const DebugGameState state = adapter_->CaptureDebugState();
     replayPlayer_.Start(state.frameNumber);
     replayMode_ = true;
     enabled_ = true;
+    isFirstReplayFrame_ = true;
     return true;
 }
 
 void DebugAIManager::StopReplay() {
     replayPlayer_.Stop();
     replayMode_ = false;
+    isFirstReplayFrame_ = false;
 }
 
 void DebugAIManager::InjectAction() {
@@ -281,6 +295,8 @@ void DebugAIManager::ProcessAfterUpdate(float dt) {
 
     logger_.LogFrame(afterState, executedAction);
     DetectIssues_(afterState, dt);
+
+    isFirstReplayFrame_ = false;
 }
 
 void DebugAIManager::RecordExternalAction(
