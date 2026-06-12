@@ -20,6 +20,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <d3d12.h>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -43,12 +46,71 @@ void DrawDebugActionLine(const char* label, const DebugAction& action) {
     }
 
     ImGui::Text("%s: %s", label, action.name.c_str());
-    if (!action.targetId.empty() || action.intParam != 0 || action.floatParam != 0.0f) {
-        ImGui::Text("  target=%s int=%d float=%.2f",
+    if (!action.targetId.empty() ||
+        action.intParam != 0 ||
+        action.floatParam != 0.0f ||
+        !action.stringParam.empty() ||
+        action.holdFrames != 1) {
+        ImGui::Text("  target=%s int=%d float=%.2f string=%s hold=%u",
             action.targetId.empty() ? "-" : action.targetId.c_str(),
             action.intParam,
-            action.floatParam);
+            action.floatParam,
+            action.stringParam.empty() ? "-" : action.stringParam.c_str(),
+            action.holdFrames);
     }
+}
+
+struct DebugReplayLogEntry {
+    std::string name;
+    std::string path;
+    std::filesystem::file_time_type lastWriteTime{};
+};
+
+std::vector<DebugReplayLogEntry> CollectReplayActionLogs(const std::string& directoryPath) {
+    std::vector<DebugReplayLogEntry> entries;
+    if (directoryPath.empty()) {
+        return entries;
+    }
+
+    std::error_code error;
+    const std::filesystem::path directory(directoryPath);
+    if (!std::filesystem::exists(directory, error)) {
+        return entries;
+    }
+
+    for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(directory, error)) {
+        if (error || !entry.is_regular_file(error)) {
+            continue;
+        }
+
+        const std::filesystem::path path = entry.path();
+        const std::string fileName = path.filename().string();
+        const bool legacyRunLog =
+            fileName.rfind("debug_ai_actions_run_", 0) == 0 && path.extension() == ".jsonl";
+        const bool sessionRunLog =
+            fileName == "debug_ai_actions.jsonl";
+        if (!legacyRunLog && !sessionRunLog) {
+            continue;
+        }
+
+        std::string displayName = fileName;
+        std::error_code relativeError;
+        const std::filesystem::path relativePath = std::filesystem::relative(path, directory, relativeError);
+        if (!relativeError) {
+            displayName = relativePath.string();
+        }
+
+        entries.push_back({
+            displayName,
+            path.string(),
+            entry.last_write_time(error),
+        });
+    }
+
+    std::sort(entries.begin(), entries.end(), [](const DebugReplayLogEntry& lhs, const DebugReplayLogEntry& rhs) {
+        return lhs.lastWriteTime > rhs.lastWriteTime;
+    });
+    return entries;
 }
 
 }
@@ -191,6 +253,7 @@ void GameScene::DrawImGui(GameApp& app) {
     if (ImGui::CollapsingHeader("Control", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("Status: %s", debugAI->IsEnabled() ? "Running" : "Stopped");
         ImGui::Text("Replay: %s", debugAI->IsReplayPlaying() ? "Playing" : "Stopped");
+        ImGui::Text("Bot: %s", debugAI->CurrentBotName());
 
         if (debugAI->IsReplayPlaying()) {
             if (ImGui::Button("Stop Replay")) {
@@ -198,8 +261,42 @@ void GameScene::DrawImGui(GameApp& app) {
             }
         } else {
             if (ImGui::Button("Replay Latest (F7)")) {
+                debugSelectedReplayPath_.clear();
                 debugRequestStartReplay_ = true;
             }
+        }
+
+        const std::vector<DebugReplayLogEntry> replayLogs =
+            CollectReplayActionLogs(debugAI->Logger().DirectoryPath());
+        if (!replayLogs.empty()) {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Replay File");
+            const std::string selectedReplayName = debugSelectedReplayPath_.empty()
+                ? "(latest)"
+                : std::filesystem::path(debugSelectedReplayPath_).filename().string();
+            ImGui::Text("Selected: %s", selectedReplayName.c_str());
+
+            if (!debugAI->IsReplayPlaying()) {
+                if (ImGui::Button("Replay Selected")) {
+                    debugRequestStartReplay_ = true;
+                }
+            }
+
+            ImGui::BeginChild("ReplayLogList", ImVec2(0.0f, 150.0f), true);
+            if (ImGui::Selectable("(latest)", debugSelectedReplayPath_.empty())) {
+                debugSelectedReplayPath_.clear();
+            }
+            const size_t maxRows = std::min<size_t>(replayLogs.size(), 20);
+            for (size_t i = 0; i < maxRows; ++i) {
+                const DebugReplayLogEntry& entry = replayLogs[i];
+                const bool selected = debugSelectedReplayPath_ == entry.path;
+                if (ImGui::Selectable(entry.name.c_str(), selected)) {
+                    debugSelectedReplayPath_ = entry.path;
+                }
+            }
+            ImGui::EndChild();
+        } else {
+            ImGui::TextDisabled("Replay logs: none");
         }
 
         ImGui::SameLine();
@@ -277,6 +374,7 @@ void GameScene::DrawImGui(GameApp& app) {
 
     if (ImGui::CollapsingHeader("Paths")) {
         ImGui::TextWrapped("Logs: %s", debugAI->Logger().DirectoryPath().c_str());
+        ImGui::TextWrapped("Session: %s", debugAI->Logger().SessionDirectoryPath().c_str());
         ImGui::TextWrapped("Actions: %s", debugAI->ReplayRecorder().ActionLogPath().c_str());
         ImGui::TextWrapped("Initial: %s", debugAI->ReplayRecorder().InitialStatePath().c_str());
         ImGui::TextWrapped("Replay: %s", debugAI->ReplayPlayer().ReplayPath().c_str());

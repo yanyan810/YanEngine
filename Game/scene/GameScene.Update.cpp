@@ -1,4 +1,4 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
 
 #include "Camera.h"
@@ -19,6 +19,49 @@
 #include <cassert>
 #include <cstdlib>
 #include <d3d12.h>
+#include <sstream>
+
+namespace {
+
+const char* PlayerAttackTypeLabel(Player::PlayerAttackType type) {
+    switch (type) {
+    case Player::PlayerAttackType::Weak:
+        return "AttackWeak";
+    case Player::PlayerAttackType::Tilt:
+        return "AttackTilt";
+    case Player::PlayerAttackType::Smash:
+        return "AttackSmash";
+    case Player::PlayerAttackType::NeutralSpecial:
+        return "AttackNeutralSpecial";
+    case Player::PlayerAttackType::SideSpecial:
+        return "AttackSideSpecial";
+    case Player::PlayerAttackType::None:
+    default:
+        return "None";
+    }
+}
+
+std::string BuildPlayerAttackHitMessage(
+    const EnemyManager::PlayerAttackHitEvent& hit,
+    Player::PlayerAttackType attackType) {
+
+    std::ostringstream message;
+    message
+        << "attack=" << PlayerAttackTypeLabel(attackType)
+        << " serial=" << hit.attackSerial
+        << " target=" << hit.targetId
+        << " type=" << hit.targetType
+        << " damage=" << hit.damage
+        << " hp " << hit.hpBefore << "->" << hit.hpAfter
+        << " playerPos=("
+        << hit.playerPosition.x << "," << hit.playerPosition.y << "," << hit.playerPosition.z
+        << ") targetPos=("
+        << hit.targetPosition.x << "," << hit.targetPosition.y << "," << hit.targetPosition.z
+        << ")";
+    return message.str();
+}
+
+}
 
 bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
     bool stateWasRestored = false;
@@ -35,17 +78,23 @@ bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
     if (debugRequestStopReplay_) {
         debugAI->StopReplay();
         debugAIEnabled_ = false;
+        debugManualRecordingActive_ = false;
     }
 
     if (debugRequestRestoreInitialState_ && debugAI->ReplayPlayer().HasInitialState()) {
         RestoreDebugState(debugAI->ReplayPlayer().InitialState());
         stateWasRestored = true;
+        debugManualRecordingActive_ = false;
     }
 
     if (debugRequestStartReplay_) {
-        if (debugAI->StartLatestReplay()) {
+        const bool replayStarted = debugSelectedReplayPath_.empty()
+            ? debugAI->StartLatestReplay()
+            : debugAI->StartReplay(debugSelectedReplayPath_);
+        if (replayStarted) {
             debugAIEnabled_ = true;
             stateWasRestored = true;
+            debugManualRecordingActive_ = false;
         }
     }
 
@@ -198,17 +247,33 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
 
+        if (debugAIEnabled_ && app.DebugAI()) {
+            app.DebugAI()->InjectAction();
+        }
+
         DebugAction manualAction;
         const bool recordManualAction =
             app.DebugAI() &&
             !app.DebugAI()->IsEnabled() &&
             CaptureManualDebugAction_(manualAction);
         const DebugGameState manualStateBefore = recordManualAction ? CaptureDebugState() : DebugGameState{};
+        const unsigned int manualAttackSerialBefore =
+            (recordManualAction && player_) ? player_->GetAttackSerial() : 0;
 
         if (player_) {
             player_->SetExternalInputBlocked(blockExternalGameInput);
             player_->Update(dt, *input_, enemyMgr_);
-            enemyMgr_.ApplyPlayerAttack(*player_);
+            const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
+            if (!playerAttackHits.empty() && app.DebugAI()) {
+                const DebugGameState hitState = CaptureDebugState();
+                const Player::PlayerAttackType attackType = player_->GetCurrentAttackType();
+                for (const auto& hit : playerAttackHits) {
+                    app.DebugAI()->LogEvent(
+                        hitState,
+                        "PlayerAttackHit",
+                        BuildPlayerAttackHitMessage(hit, attackType));
+                }
+            }
         }
 
 
@@ -222,7 +287,20 @@ void GameScene::Update(GameApp& app, float dt) {
         if (player_) {
             playerZ = player_->GetZ(); // 霑ｽ蜉縺励◆getter
         }
-        enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
+
+        // デバッグリプレイ用の簡易モードフラグ
+        // true にすると敵の更新やスポーンが一時停止し、プレイヤーのみの挙動を確認できます
+        constexpr bool kDebugDisableEnemies = false;
+
+        // true にすると、Enemy本体はUpdateするが、PendingSpawnのカウントダウンと新規Spawnだけ止める
+        constexpr bool kDebugDisablePendingSpawn = true;
+
+        const bool skipPendingSpawn = kDebugDisablePendingSpawn || 
+            (app.DebugAI() && app.DebugAI()->IsFirstReplayFrame());
+
+        if (!kDebugDisableEnemies) {
+            enemyMgr_.Update(dt, playerPos2D, playerZ, *player_, skipPendingSpawn);
+        }
 
         if (bossHpFill_) {
             if (Enemy* boss = enemyMgr_.GetBoss()) {
@@ -259,11 +337,17 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
         if (recordManualAction) {
-            app.DebugAI()->RecordExternalAction(manualStateBefore, manualAction, CaptureDebugState());
+            FinalizeRecordedDebugAction_(manualAction, manualAttackSerialBefore);
+            if (manualAction.name != "Wait") {
+                debugManualRecordingActive_ = true;
+            }
+            if (debugManualRecordingActive_) {
+                app.DebugAI()->RecordExternalAction(manualStateBefore, manualAction, CaptureDebugState());
+            }
         }
 
-        if (app.DebugAI()) {
-            app.DebugAI()->CheckReplayDrift(CaptureDebugState());
+        if (debugAIEnabled_ && app.DebugAI()) {
+            app.DebugAI()->ProcessAfterUpdate(dt);
         }
 
         if (player_->IsDead()) {

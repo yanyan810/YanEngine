@@ -7,10 +7,8 @@ bool DebugLogger::Open(const std::string& directoryPath) {
     directoryPath_ = std::filesystem::absolute(directoryPath).string();
     std::filesystem::create_directories(directoryPath_);
 
-    frameLog_.open(directoryPath_ + "/debug_ai_frames.jsonl", std::ios::out | std::ios::trunc);
-    issueLog_.open(directoryPath_ + "/debug_ai_issues.jsonl", std::ios::out | std::ios::trunc);
-    eventLog_.open(directoryPath_ + "/debug_ai_events.jsonl", std::ios::out | std::ios::trunc);
-    return frameLog_.is_open() && issueLog_.is_open();
+    sessionDirectoryPath_ = directoryPath_;
+    return OpenLogFiles_(sessionDirectoryPath_, false);
 }
 
 void DebugLogger::Close() {
@@ -23,6 +21,30 @@ void DebugLogger::Close() {
     if (eventLog_.is_open()) {
         eventLog_.close();
     }
+}
+
+bool DebugLogger::SetSessionDirectory(const std::string& sessionDirectoryPath) {
+    if (sessionDirectoryPath.empty()) {
+        return false;
+    }
+
+    const std::string absolutePath = std::filesystem::absolute(sessionDirectoryPath).string();
+    if (sessionDirectoryPath_ == absolutePath) {
+        return true;
+    }
+
+    Close();
+    sessionDirectoryPath_ = absolutePath;
+    std::filesystem::create_directories(sessionDirectoryPath_);
+    return OpenLogFiles_(sessionDirectoryPath_, true);
+}
+
+bool DebugLogger::OpenLogFiles_(const std::string& directoryPath, bool append) {
+    const std::ios::openmode mode = std::ios::out | (append ? std::ios::app : std::ios::trunc);
+    frameLog_.open(directoryPath + "/debug_ai_frames.jsonl", mode);
+    issueLog_.open(directoryPath + "/debug_ai_issues.jsonl", mode);
+    eventLog_.open(directoryPath + "/debug_ai_events.jsonl", mode);
+    return frameLog_.is_open() && issueLog_.is_open() && eventLog_.is_open();
 }
 
 void DebugLogger::LogFrame(const DebugGameState& state, const DebugAction* action) {
@@ -91,11 +113,14 @@ void DebugLogger::LogIssue(const DebugIssue& issue) {
 }
 
 void DebugLogger::WriteReport() {
-    if (directoryPath_.empty()) {
+    const std::string outputDirectory = sessionDirectoryPath_.empty()
+        ? directoryPath_
+        : sessionDirectoryPath_;
+    if (outputDirectory.empty()) {
         return;
     }
 
-    std::ofstream report(directoryPath_ + "/debug_ai_report.txt", std::ios::out | std::ios::trunc);
+    std::ofstream report(outputDirectory + "/debug_ai_report.txt", std::ios::out | std::ios::trunc);
     if (!report.is_open()) {
         return;
     }

@@ -1,6 +1,7 @@
 #include "DebugAIManager.h"
 
 #include <cmath>
+#include <filesystem>
 #include <sstream>
 
 namespace {
@@ -25,7 +26,7 @@ std::string BuildStateDiffMessage(const DebugGameState& before, const DebugGameS
     return message.str();
 }
 
-std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameState& actual) {
+std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameState& actual, const std::vector<DebugSpawnOverride>& overrides) {
     std::ostringstream message;
     message
         << "restore"
@@ -41,6 +42,18 @@ std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameS
         << AbsDiff(expected.playerPosition.x, actual.playerPosition.x) << ","
         << AbsDiff(expected.playerPosition.y, actual.playerPosition.y) << ","
         << AbsDiff(expected.playerPosition.z, actual.playerPosition.z) << ")";
+
+    int pendingCount = 0;
+    std::ostringstream pendingDetails;
+    for (const DebugEntityState& entity : actual.entities) {
+        if (entity.category == "PendingSpawn" || entity.pending) {
+            ++pendingCount;
+            pendingDetails << " [" << entity.type << " delay=" << entity.delay << "]";
+        }
+    }
+    message << " | pendingSpawns=" << pendingCount << pendingDetails.str();
+    message << " | overrides=" << overrides.size();
+
     return message.str();
 }
 
@@ -77,7 +90,14 @@ bool HasEntityDrift(const DebugEntityState& expected, const DebugEntityState& ac
         std::fabs(expected.delay - actual.delay) > kTimerDrift ||
         std::fabs(expected.life - actual.life) > kTimerDrift ||
         DistanceSq(expected.position, actual.position) > kEntityPositionDriftSq ||
-        DistanceSq(expected.velocity, actual.velocity) > kEntityVelocityDriftSq;
+        DistanceSq(expected.velocity, actual.velocity) > kEntityVelocityDriftSq ||
+        expected.aiState1 != actual.aiState1 ||
+        expected.aiState2 != actual.aiState2 ||
+        std::fabs(expected.aiFloat1 - actual.aiFloat1) > kTimerDrift ||
+        std::fabs(expected.aiFloat2 - actual.aiFloat2) > kTimerDrift ||
+        expected.aiFloat3 != actual.aiFloat3 ||
+        DistanceSq(expected.bossWanderVel, actual.bossWanderVel) > kEntityVelocityDriftSq ||
+        std::fabs(expected.bossWanderChange - actual.bossWanderChange) > kTimerDrift;
 }
 
 void AppendEntityDriftSummary(std::ostringstream& message, const DebugGameState& expected, const DebugGameState& actual) {
@@ -115,6 +135,22 @@ void AppendEntityDriftSummary(std::ostringstream& message, const DebugGameState&
             << ")"
             << " life " << expectedEntity.life << "->" << actualEntity->life
             << " delay " << expectedEntity.delay << "->" << actualEntity->delay;
+        
+        if (expectedEntity.type == "Boss") {
+            message
+                << " bossState " << expectedEntity.aiState1 << "->" << actualEntity->aiState1
+                << " bossPhase " << expectedEntity.aiState2 << "->" << actualEntity->aiState2
+                << " bossTime " << expectedEntity.aiFloat1 << "->" << actualEntity->aiFloat1
+                << " bossStateTime " << expectedEntity.aiFloat2 << "->" << actualEntity->aiFloat2
+                << " bossFlags " << expectedEntity.aiFloat3 << "->" << actualEntity->aiFloat3
+                << " bossWanderVel ("
+                << expectedEntity.bossWanderVel.x << "," << expectedEntity.bossWanderVel.y << "," << expectedEntity.bossWanderVel.z
+                << ")->("
+                << actualEntity->bossWanderVel.x << "," << actualEntity->bossWanderVel.y << "," << actualEntity->bossWanderVel.z
+                << ")"
+                << " bossWanderChange " << expectedEntity.bossWanderChange << "->" << actualEntity->bossWanderChange;
+        }
+
         ++diffCount;
     }
 
@@ -174,6 +210,7 @@ std::string BuildDriftMessage(const DebugGameState& expected, const DebugGameSta
 void DebugAIManager::Initialize(const std::string& logDirectory) {
     logger_.Open(logDirectory);
     replayRecorder_.Open(logger_.DirectoryPath());
+    logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
 }
 
 void DebugAIManager::Shutdown() {
@@ -189,6 +226,14 @@ void DebugAIManager::SetEnabled(bool enabled) {
     }
 }
 
+void DebugAIManager::SetBot(IDebugBot* bot) {
+    bot_ = (bot != nullptr) ? bot : &randomBot_;
+}
+
+void DebugAIManager::ResetBotToRandom() {
+    bot_ = &randomBot_;
+}
+
 bool DebugAIManager::StartLatestReplay() {
     if (adapter_ == nullptr) {
         return false;
@@ -196,76 +241,127 @@ bool DebugAIManager::StartLatestReplay() {
     if (!replayPlayer_.LoadLatestFromDirectory(logger_.DirectoryPath())) {
         return false;
     }
+    logger_.SetSessionDirectory(std::filesystem::path(replayPlayer_.ReplayPath()).parent_path().string());
 
     if (replayPlayer_.HasInitialState()) {
         DebugGameState restoreState = replayPlayer_.InitialState();
         if (restoreState.frameNumber > 0) {
             --restoreState.frameNumber;
         }
-        adapter_->RestoreDebugState(restoreState);
         adapter_->SetReplaySpawnOverrides(replayPlayer_.SpawnOverrides());
+        adapter_->RestoreDebugState(restoreState);
         const DebugGameState restoredState = adapter_->CaptureDebugState();
-        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState));
+        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState, replayPlayer_.SpawnOverrides()));
     }
 
     const DebugGameState state = adapter_->CaptureDebugState();
     replayPlayer_.Start(state.frameNumber);
     replayMode_ = true;
     enabled_ = true;
+    isFirstReplayFrame_ = true;
+    return true;
+}
+
+bool DebugAIManager::StartReplay(const std::string& replayPath) {
+    if (adapter_ == nullptr || replayPath.empty()) {
+        return false;
+    }
+    if (!replayPlayer_.Load(replayPath)) {
+        return false;
+    }
+    logger_.SetSessionDirectory(std::filesystem::path(replayPlayer_.ReplayPath()).parent_path().string());
+
+    if (replayPlayer_.HasInitialState()) {
+        DebugGameState restoreState = replayPlayer_.InitialState();
+        if (restoreState.frameNumber > 0) {
+            --restoreState.frameNumber;
+        }
+        adapter_->SetReplaySpawnOverrides(replayPlayer_.SpawnOverrides());
+        adapter_->RestoreDebugState(restoreState);
+        const DebugGameState restoredState = adapter_->CaptureDebugState();
+        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState, replayPlayer_.SpawnOverrides()));
+    }
+
+    const DebugGameState state = adapter_->CaptureDebugState();
+    replayPlayer_.Start(state.frameNumber);
+    replayMode_ = true;
+    enabled_ = true;
+    isFirstReplayFrame_ = true;
     return true;
 }
 
 void DebugAIManager::StopReplay() {
     replayPlayer_.Stop();
     replayMode_ = false;
+    isFirstReplayFrame_ = false;
 }
 
-void DebugAIManager::Tick(float dt) {
+void DebugAIManager::InjectAction() {
     if (!enabled_ || adapter_ == nullptr) {
         return;
     }
-
-    DebugAction* executedAction = nullptr;
+    hasPendingAction_ = false;
 
     if (replayMode_) {
         DebugGameState currentState = adapter_->CaptureDebugState();
         DebugReplayAction replayAction;
-        while (replayPlayer_.PopDueAction(currentState.frameNumber, replayAction)) {
-            const DebugGameState beforeState = currentState;
+        if (replayPlayer_.PopDueAction(currentState.frameNumber, replayAction)) {
+            pendingBeforeState_ = currentState;
+            pendingAction_ = replayAction.action;
+            hasPendingAction_ = true;
             adapter_->ExecuteDebugAction(replayAction.action);
             lastAction_ = replayAction.action;
-            executedAction = &lastAction_;
-            currentState = adapter_->CaptureDebugState();
-            replayRecorder_.RecordAction(beforeState, replayAction.action, currentState);
-            logger_.LogEvent(currentState, "ReplayActionResult", BuildStateDiffMessage(beforeState, currentState, replayAction.action));
         }
 
         if (!replayPlayer_.IsPlaying() && replayPlayer_.IsFinished()) {
             replayMode_ = false;
             enabled_ = false;
         }
-
-        logger_.LogFrame(currentState, executedAction);
-        DetectIssues_(currentState, dt);
         return;
     }
 
     DebugGameState beforeState = adapter_->CaptureDebugState();
-
     DebugAction chosenAction;
-    if (bot_.ChooseAction(beforeState, chosenAction)) {
+    if (bot_ != nullptr && bot_->ChooseAction(beforeState, chosenAction)) {
+        pendingBeforeState_ = beforeState;
+        pendingAction_ = chosenAction;
+        hasPendingAction_ = true;
         adapter_->ExecuteDebugAction(chosenAction);
         lastAction_ = chosenAction;
-        executedAction = &lastAction_;
+    }
+}
+
+void DebugAIManager::ProcessAfterUpdate(float dt) {
+    if (!enabled_ || adapter_ == nullptr) {
+        return;
     }
 
     DebugGameState afterState = adapter_->CaptureDebugState();
-    if (executedAction != nullptr) {
-        replayRecorder_.RecordAction(beforeState, *executedAction, afterState);
-        logger_.LogEvent(afterState, "BotActionResult", BuildStateDiffMessage(beforeState, afterState, *executedAction));
+    DebugAction* executedAction = nullptr;
+
+    if (hasPendingAction_) {
+        executedAction = &pendingAction_;
+        if (!replayMode_) {
+            replayRecorder_.RecordAction(pendingBeforeState_, pendingAction_, afterState);
+            logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
+        }
+        
+        if (replayMode_) {
+            logger_.LogEvent(afterState, "ReplayActionResult", BuildStateDiffMessage(pendingBeforeState_, afterState, pendingAction_));
+        } else {
+            logger_.LogEvent(afterState, "BotActionResult", BuildStateDiffMessage(pendingBeforeState_, afterState, pendingAction_));
+        }
+        hasPendingAction_ = false;
     }
+
+    if (replayMode_) {
+        CheckReplayDrift(afterState);
+    }
+
     logger_.LogFrame(afterState, executedAction);
     DetectIssues_(afterState, dt);
+
+    isFirstReplayFrame_ = false;
 }
 
 void DebugAIManager::RecordExternalAction(
@@ -279,7 +375,12 @@ void DebugAIManager::RecordExternalAction(
 
     lastAction_ = action;
     replayRecorder_.RecordAction(stateBefore, action, stateAfter);
+    logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
     logger_.LogEvent(stateAfter, "ManualActionResult", BuildStateDiffMessage(stateBefore, stateAfter, action));
+}
+
+void DebugAIManager::LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message) {
+    logger_.LogEvent(state, eventName, message);
 }
 
 void DebugAIManager::CheckReplayDrift(const DebugGameState& actualState) {

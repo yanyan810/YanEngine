@@ -247,6 +247,12 @@
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\DebugJson.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
@@ -450,6 +456,12 @@
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\DebugAI\ApiDebugBot.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugJson.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugLogger.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
@@ -463,6 +475,9 @@
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\IGameDebugAdapter.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\IDebugBot.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\RandomDebugBot.h">

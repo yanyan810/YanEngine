@@ -52,9 +52,6 @@ int GameApp::Run() {
             // F1キーでデバッグモードの切り替え
         }
 
-        if (debugAI_) {
-            debugAI_->Tick(dt);
-        }
 
         // Update
         sceneMgr_->Update(*this, dt);
@@ -187,9 +184,6 @@ void GameApp::Update(float dt) {
 
     input_->Update();
 
-    if (debugAI_) {
-        debugAI_->Tick(dt);
-    }
 
     sceneMgr_->Update(*this, dt); // ここがあるかが重要
 }

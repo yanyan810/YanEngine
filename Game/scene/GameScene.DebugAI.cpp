@@ -43,6 +43,7 @@ private:
 void GameScene::SetupDebugAI_(GameApp& app) {
     debugFrameNumber_ = 0;
     debugAIEnabled_ = false;
+    debugManualRecordingActive_ = false;
     debugAdapter_ = std::make_unique<GameSceneDebugAdapter>(*this);
 
     if (app.DebugAI()) {
@@ -57,6 +58,7 @@ void GameScene::ShutdownDebugAI_(GameApp& app) {
         app.DebugAI()->SetAdapter(nullptr);
     }
     debugAIEnabled_ = false;
+    debugManualRecordingActive_ = false;
     debugAdapter_.reset();
 }
 
@@ -114,13 +116,14 @@ DebugGameState GameScene::CaptureDebugState() const {
     state.enemyCount = aliveEnemyCount;
 
     state.availableActions = {
-        { "MoveLeft" },
-        { "MoveRight" },
-        { "MoveForward" },
+        { "Move" },
         { "Down" },
         { "Jump" },
         { "AttackWeak" },
-        { "AttackSpecial" },
+        { "AttackTilt" },
+        { "AttackSmash" },
+        { "AttackNeutralSpecial" },
+        { "AttackSideSpecial" },
         { "Guard" },
         { "Wait" },
     };
@@ -157,6 +160,7 @@ bool GameScene::RestoreDebugState(const DebugGameState& state) {
 
     debugFrameNumber_ = state.frameNumber;
     debugRandomSeed_ = state.randomSeed;
+    debugManualRecordingActive_ = false;
     if (debugRandomSeed_ != 0) {
         std::srand(debugRandomSeed_);
     }
@@ -214,15 +218,10 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
 
     Player::PlayerInputCommand command{};
 
-    if (action.name == "MoveLeft") {
+    if (action.name == "Move") {
         command.action = Player::PlayerAction::Move;
-        command.horizontal = -1;
-    } else if (action.name == "MoveRight") {
-        command.action = Player::PlayerAction::Move;
-        command.horizontal = +1;
-    } else if (action.name == "MoveForward") {
-        command.action = Player::PlayerAction::Move;
-        command.depth = +1;
+        command.horizontal = action.intParam;
+        command.depth = static_cast<int>(action.floatParam);
     } else if (action.name == "Down" || action.name == "MoveBack") {
         command.action = player_->IsOnGround()
             ? Player::PlayerAction::Crouch
@@ -235,11 +234,23 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     } else if (action.name == "AttackWeak") {
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::Weak;
-        command.horizontal = player_->GetFacing();
-    } else if (action.name == "AttackSpecial") {
+        command.horizontal = std::clamp(action.intParam, -1, 1);
+    } else if (action.name == "AttackTilt") {
+        command.action = Player::PlayerAction::Attack;
+        command.attackType = Player::PlayerAttackType::Tilt;
+        command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
+    } else if (action.name == "AttackSmash") {
+        command.action = Player::PlayerAction::Attack;
+        command.attackType = Player::PlayerAttackType::Smash;
+        command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
+    } else if (action.name == "AttackNeutralSpecial") {
+        command.action = Player::PlayerAction::Attack;
+        command.attackType = Player::PlayerAttackType::NeutralSpecial;
+        command.horizontal = 0;
+    } else if (action.name == "AttackSideSpecial" || action.name == "AttackSpecial") {
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::SideSpecial;
-        command.horizontal = player_->GetFacing();
+        command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
     } else if (action.name == "Guard") {
         command.action = Player::PlayerAction::Guard;
         command.guard = true;
@@ -248,6 +259,59 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     }
 
     player_->QueueDebugCommand(command);
+}
+
+void GameScene::FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const {
+    if (!player_) {
+        return;
+    }
+
+    const bool attackAction =
+        action.name == "AttackWeak" ||
+        action.name == "AttackSpecial" ||
+        action.name == "AttackTilt" ||
+        action.name == "AttackSmash" ||
+        action.name == "AttackNeutralSpecial" ||
+        action.name == "AttackSideSpecial";
+    if (!attackAction) {
+        return;
+    }
+
+    if (player_->GetAttackSerial() == attackSerialBefore ||
+        player_->GetCurrentAction() != Player::PlayerAction::Attack) {
+        action = { "Wait" };
+        return;
+    }
+
+    action.targetId.clear();
+    action.floatParam = 0.0f;
+
+    switch (player_->GetCurrentAttackType()) {
+    case Player::PlayerAttackType::Weak:
+        action.name = "AttackWeak";
+        action.intParam = 0;
+        break;
+    case Player::PlayerAttackType::Tilt:
+        action.name = "AttackTilt";
+        action.intParam = player_->GetFacing();
+        break;
+    case Player::PlayerAttackType::Smash:
+        action.name = "AttackSmash";
+        action.intParam = player_->GetFacing();
+        break;
+    case Player::PlayerAttackType::NeutralSpecial:
+        action.name = "AttackNeutralSpecial";
+        action.intParam = 0;
+        break;
+    case Player::PlayerAttackType::SideSpecial:
+        action.name = "AttackSideSpecial";
+        action.intParam = player_->GetFacing();
+        break;
+    case Player::PlayerAttackType::None:
+    default:
+        action = { "Wait" };
+        break;
+    }
 }
 
 bool GameScene::CaptureManualDebugAction_(DebugAction& outAction) const {
@@ -276,23 +340,28 @@ bool GameScene::CaptureManualDebugAction_(DebugAction& outAction) const {
         outAction = { "Guard" };
         return true;
     }
-    if (input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A)) {
-        outAction = { "MoveLeft" };
-        return true;
-    }
-    if (input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D)) {
-        outAction = { "MoveRight" };
-        return true;
-    }
-    if (input_->IsKeyPressed(DIK_UP) || input_->IsKeyPressed(DIK_W)) {
-        outAction = { "MoveForward" };
-        return true;
-    }
-    if (input_->IsKeyPressed(DIK_DOWN) || input_->IsKeyPressed(DIK_S)) {
-        outAction = { "Down" };
+
+    const bool left = input_->IsKeyPressed(DIK_LEFT) || input_->IsKeyPressed(DIK_A);
+    const bool right = input_->IsKeyPressed(DIK_RIGHT) || input_->IsKeyPressed(DIK_D);
+    const bool up = input_->IsKeyPressed(DIK_UP) || input_->IsKeyPressed(DIK_W);
+    const bool down = input_->IsKeyPressed(DIK_DOWN) || input_->IsKeyPressed(DIK_S);
+
+    if (left || right || up || down) {
+        if (down) {
+            outAction = { "Down" };
+            return true;
+        }
+        outAction = { "Move" };
+        if (left != right) {
+            outAction.intParam = right ? +1 : -1;
+        }
+        if (up != down) {
+            outAction.floatParam = up ? +1.0f : -1.0f;
+        }
         return true;
     }
 
-    return false;
+    outAction = { "Wait" };
+    return true;
 }
 

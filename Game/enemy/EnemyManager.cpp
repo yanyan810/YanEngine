@@ -1,4 +1,4 @@
-﻿#include "EnemyManager.h"
+#include "EnemyManager.h"
 #include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -108,16 +108,18 @@ void EnemyManager::Spawn(EnemyType type, const Vector3& posXYZ) {
 	enemies_.push_back(std::move(e));
 }
 
-void EnemyManager::ApplyPlayerAttack(Player& player) {
+std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(Player& player) {
+	std::vector<PlayerAttackHitEvent> hitEvents;
 	AABB attackBox{};
 	const unsigned int attackSerial = player.GetAttackSerial();
 	const int damage = player.GetAttackDamage();
 	if (attackSerial == 0 || damage <= 0 || !player.GetAttackHitBox(attackBox)) {
-		return;
+		return hitEvents;
 	}
 
 	const AABB3 attackBox3 = ToAABB3(attackBox);
-	for (auto& enemy : enemies_) {
+	for (size_t enemyIndex = 0; enemyIndex < enemies_.size(); ++enemyIndex) {
+		auto& enemy = enemies_[enemyIndex];
 		if (!enemy.IsAlive() || enemy.WasHitByPlayerAttack(attackSerial)) {
 			continue;
 		}
@@ -125,10 +127,24 @@ void EnemyManager::ApplyPlayerAttack(Player& player) {
 			continue;
 		}
 
+		const int hpBefore = enemy.GetHP();
 		const float knockDir = (enemy.GetPos3D().x >= player.GetPos3D().x) ? 1.0f : -1.0f;
 		enemy.ApplyHit2D(8.0f * knockDir, 8.0f, true, damage);
 		enemy.MarkHitByPlayerAttack(attackSerial);
+
+		PlayerAttackHitEvent event;
+		event.targetId = "enemy_" + std::to_string(enemyIndex);
+		event.targetType = DebugEnemyTypeName(enemy.GetType());
+		event.attackSerial = attackSerial;
+		event.damage = damage;
+		event.hpBefore = hpBefore;
+		event.hpAfter = enemy.GetHP();
+		event.playerPosition = player.GetPos3D();
+		event.targetPosition = enemy.GetPos3D();
+		hitEvents.push_back(event);
 	}
+
+	return hitEvents;
 }
 
 void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const {
@@ -144,6 +160,26 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		state.type = DebugEnemyTypeName(enemy.GetType());
 		state.hp = enemy.GetHP();
 		state.position = enemy.GetPos3D();
+		state.velocity = enemy.GetVel();
+		if (enemy.IsBoss()) {
+			BossAI::BossDebugState bossState = enemy.GetBossAI().GetDebugState();
+			state.aiState1 = static_cast<int>(bossState.st);
+			state.aiState2 = static_cast<int>(bossState.phase);
+			state.aiFloat1 = bossState.t;
+			state.aiFloat2 = bossState.stateTime;
+			int flags = 0;
+			if (bossState.did50) flags |= 1;
+			if (bossState.did25) flags |= 2;
+			state.aiFloat3 = static_cast<float>(flags);
+			state.bossWanderVel = bossState.wanderVel;
+			state.bossWanderChange = bossState.wanderChange;
+			state.bossMoveMul = bossState.moveMul;
+			state.bossDropStartY = bossState.dropStartY;
+			state.bossRushSpeed = bossState.rushSpeed;
+			state.bossChaseSpeed = bossState.chaseSpeed;
+			state.bossRushZMin = bossState.rushZMin;
+			state.bossRushZMax = bossState.rushZMax;
+		}
 		state.alive = true;
 		state.pending = false;
 		state.delay = 0.0f;
@@ -163,6 +199,20 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		outEntities.push_back(state);
 	}
 
+	int healDropIndex = 0;
+	for (const HealDrop& drop : healDrops_) {
+		DebugEntityState state;
+		state.id = "heal_drop_" + std::to_string(healDropIndex++);
+		state.category = "HealDrop";
+		state.type = "Heal";
+		state.hp = drop.amount; // Use hp for amount
+		state.life = drop.life; // Use life for remaining duration
+		state.position = drop.pos;
+		state.alive = true;
+		state.pending = false;
+		outEntities.push_back(state);
+	}
+
 	bullets_.AppendDebugEntities(outEntities);
 }
 
@@ -170,6 +220,16 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 	Clear();
 
 	for (const DebugEntityState& entity : entities) {
+		if (entity.category == "HealDrop") {
+			HealDrop d;
+			d.pos = entity.position;
+			d.life = entity.life;
+			d.amount = entity.hp;
+			d.radius = 0.6f; // Default radius
+			healDrops_.push_back(d);
+			continue;
+		}
+
 		if (entity.category != "Enemy" && entity.category != "PendingSpawn") {
 			continue;
 		}
@@ -186,15 +246,36 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 
 		Spawn(type, entity.position);
 		if (!enemies_.empty()) {
-			enemies_.back().SetHP(entity.hp);
+			Enemy& newEnemy = enemies_.back();
+			newEnemy.SetHP(entity.hp);
+			newEnemy.SetVel(entity.velocity);
+			if (newEnemy.IsBoss()) {
+				int flags = static_cast<int>(entity.aiFloat3);
+				BossAI::BossDebugState bossState;
+				bossState.st = static_cast<BossAI::State>(entity.aiState1);
+				bossState.phase = static_cast<BossAI::Phase>(entity.aiState2);
+				bossState.t = entity.aiFloat1;
+				bossState.stateTime = entity.aiFloat2;
+				bossState.did50 = (flags & 1) != 0;
+				bossState.did25 = (flags & 2) != 0;
+				bossState.wanderVel = entity.bossWanderVel;
+				bossState.wanderChange = entity.bossWanderChange;
+				bossState.moveMul = entity.bossMoveMul;
+				bossState.dropStartY = entity.bossDropStartY;
+				bossState.rushSpeed = entity.bossRushSpeed;
+				bossState.chaseSpeed = entity.bossChaseSpeed;
+				bossState.rushZMin = entity.bossRushZMin;
+				bossState.rushZMax = entity.bossRushZMax;
+				newEnemy.GetBossAIMutable().RestoreDebugState(bossState);
+			}
 		}
 	}
 
 	bullets_.RestoreDebugEntities(entities);
 }
 
-void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player) {
-	// 1) 謨ｵ譛ｬ菴薙・譖ｴ譁ｰ
+void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn) {
+	// 1) 敵本体の更新
 	for (auto& e : enemies_) {
 		e.Update(dt, playerXY, playerZ); // 竊・繧ゅ＠菴ｿ縺・↑繧牙ｼ墓焚繧呈綾縺励※OK
 		e.SetLighting(light_);
@@ -322,9 +403,9 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 
 	UpdateHealDrops_(dt, player);
 
-	UpdatePendingSpawns_(dt, playerXY, playerZ);
-
-
+	if (!disablePendingSpawn) {
+		UpdatePendingSpawns_(dt, playerXY, playerZ);
+	}
 }
 
 void EnemyManager::Draw() {
@@ -492,7 +573,10 @@ void EnemyManager::UpdatePendingSpawns_(float dt, const Vector2& playerXY, float
 				hasReplayOverride = true;
 				break;
 			}
-			if (!hasReplayOverride) {
+			if (hasReplayOverride) {
+				// Consume random numbers to keep RNG sequence identical to recording
+				MakeOutsideSpawnPos_(playerXY, playerZ);
+			} else {
 				pos = MakeOutsideSpawnPos_(playerXY, playerZ);
 			}
 			Spawn(type, pos);

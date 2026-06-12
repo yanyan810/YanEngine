@@ -1,6 +1,7 @@
 #pragma once
 #include "IScene.h"
 #include <memory>
+#include <string>
 
 #include "Particle.h"
 #include "Camera.h"
@@ -50,6 +51,7 @@ private:
     void SetDebugAIEnabled_(GameApp& app, bool enabled);
     bool ProcessDebugAIRequests_(GameApp& app);
     bool CaptureManualDebugAction_(DebugAction& outAction) const;
+    void FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const;
 
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Sprite> sprite_;
@@ -77,6 +79,8 @@ private:
     bool debugRequestStartBot_ = false;
     bool debugRequestStopBot_ = false;
     bool debugRequestRestoreInitialState_ = false;
+    bool debugManualRecordingActive_ = false;
+    std::string debugSelectedReplayPath_;
     unsigned long long debugFrameNumber_ = 0;
     unsigned int debugRandomSeed_ = 0;
 

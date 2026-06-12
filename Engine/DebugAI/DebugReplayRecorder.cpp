@@ -8,16 +8,29 @@ bool DebugReplayRecorder::Open(const std::string& directoryPath) {
     directoryPath_ = std::filesystem::absolute(directoryPath).string();
     std::filesystem::create_directories(directoryPath_);
 
+    lastIssueReplayPath_.clear();
+    issueReplayIndex_ = 0;
+    return StartNewActionLog_();
+}
+
+bool DebugReplayRecorder::StartNewActionLog_() {
+    FlushPendingRecord_();
+    if (actionLog_.is_open()) {
+        actionLog_.close();
+    }
+
     unsigned int runIndex = 1;
     do {
         std::ostringstream path;
-        path << directoryPath_ << "/debug_ai_actions_run_"
+        path << directoryPath_ << "/Debug_"
             << std::setw(4) << std::setfill('0') << runIndex
-            << ".jsonl";
-        actionLogPath_ = path.str();
+            ;
+        sessionDirectoryPath_ = path.str();
         ++runIndex;
-    } while (std::filesystem::exists(actionLogPath_));
+    } while (std::filesystem::exists(sessionDirectoryPath_));
 
+    std::filesystem::create_directories(sessionDirectoryPath_);
+    actionLogPath_ = sessionDirectoryPath_ + "/debug_ai_actions.jsonl";
     actionLog_.open(actionLogPath_, std::ios::out | std::ios::trunc);
     initialStatePath_ = actionLogPath_;
     const std::string suffix = ".jsonl";
@@ -28,12 +41,11 @@ bool DebugReplayRecorder::Open(const std::string& directoryPath) {
     initialStatePath_ += "_initial_state.json";
 
     recentRecords_.clear();
-    lastIssueReplayPath_.clear();
     hasInitialState_ = false;
     hasPendingRecord_ = false;
     pendingRecord_ = DebugActionRecord{};
-    issueReplayIndex_ = 0;
     lastCheckpointFrame_ = 0;
+    lastRecordedFrame_ = 0;
     return actionLog_.is_open();
 }
 
@@ -49,6 +61,10 @@ void DebugReplayRecorder::RecordAction(
     const DebugAction& action,
     const DebugGameState& stateAfter) {
 
+    if (ShouldStartNewActionLog_(stateBefore, stateAfter)) {
+        StartNewActionLog_();
+    }
+
     EnsureInitialState_(stateBefore);
 
     DebugActionRecord record;
@@ -59,30 +75,51 @@ void DebugReplayRecorder::RecordAction(
     record.stateAfter = stateAfter;
 
     const bool hasNewEnemySpawn = HasNewEnemySpawn_(stateBefore, stateAfter);
-    if (hasNewEnemySpawn && hasPendingRecord_) {
+    const bool hasImportantStateChange = HasImportantStateChange_(stateBefore, stateAfter);
+    if ((hasNewEnemySpawn || hasImportantStateChange) && hasPendingRecord_) {
         FlushPendingRecord_();
     }
 
-    if (CanMerge_(record)) {
+    if (!hasImportantStateChange && CanMerge_(record)) {
         ++pendingRecord_.durationFrames;
         pendingRecord_.stateAfter = stateAfter;
         if (ShouldWriteCheckpoint_(stateAfter)) {
             FlushPendingRecord_();
             WriteCheckpoint_(stateAfter);
         }
+        lastRecordedFrame_ = stateAfter.frameNumber;
         return;
     }
 
     FlushPendingRecord_();
     pendingRecord_ = record;
     hasPendingRecord_ = true;
-    if (hasNewEnemySpawn) {
+    if (hasNewEnemySpawn || hasImportantStateChange) {
         FlushPendingRecord_();
     }
     if (ShouldWriteCheckpoint_(stateAfter)) {
         FlushPendingRecord_();
         WriteCheckpoint_(stateAfter);
     }
+
+    lastRecordedFrame_ = stateAfter.frameNumber;
+}
+
+bool DebugReplayRecorder::ShouldStartNewActionLog_(
+    const DebugGameState& stateBefore,
+    const DebugGameState& stateAfter) const {
+
+    if (!hasInitialState_) {
+        return false;
+    }
+    if (stateBefore.randomSeed != initialState_.randomSeed ||
+        stateAfter.randomSeed != initialState_.randomSeed) {
+        return true;
+    }
+    if (lastRecordedFrame_ != 0 && stateAfter.frameNumber <= lastRecordedFrame_) {
+        return true;
+    }
+    return false;
 }
 
 std::string DebugReplayRecorder::SaveRecentReplayForIssue(const DebugIssue& issue) {
@@ -93,8 +130,12 @@ std::string DebugReplayRecorder::SaveRecentReplayForIssue(const DebugIssue& issu
     FlushPendingRecord_();
     ++issueReplayIndex_;
 
+    const std::string outputDirectory = sessionDirectoryPath_.empty()
+        ? directoryPath_
+        : sessionDirectoryPath_;
+
     std::ostringstream fileName;
-    fileName << directoryPath_ << "/issue_replay_"
+    fileName << outputDirectory << "/issue_replay_"
         << std::setw(4) << std::setfill('0') << issueReplayIndex_
         << "_frame_" << issue.frameNumber
         << ".jsonl";
@@ -218,13 +259,42 @@ bool DebugReplayRecorder::CanMerge_(const DebugActionRecord& nextRecord) const {
     if (pendingRecord_.action.name != nextRecord.action.name ||
         pendingRecord_.action.targetId != nextRecord.action.targetId ||
         pendingRecord_.action.intParam != nextRecord.action.intParam ||
-        pendingRecord_.action.floatParam != nextRecord.action.floatParam) {
+        pendingRecord_.action.floatParam != nextRecord.action.floatParam ||
+        pendingRecord_.action.stringParam != nextRecord.action.stringParam ||
+        pendingRecord_.action.holdFrames != nextRecord.action.holdFrames) {
         return false;
     }
 
     const unsigned long long expectedNextFrame =
         pendingRecord_.frameNumber + pendingRecord_.durationFrames;
     return nextRecord.frameNumber == expectedNextFrame;
+}
+
+bool DebugReplayRecorder::HasImportantStateChange_(const DebugGameState& before, const DebugGameState& after) const {
+    if (before.playerHp != after.playerHp ||
+        before.enemyHp != after.enemyHp ||
+        before.enemyCount != after.enemyCount ||
+        before.entities.size() != after.entities.size()) {
+        return true;
+    }
+
+    for (size_t i = 0; i < before.entities.size(); ++i) {
+        const DebugEntityState& beforeEntity = before.entities[i];
+        const DebugEntityState& afterEntity = after.entities[i];
+        if (beforeEntity.id != afterEntity.id ||
+            beforeEntity.category != afterEntity.category ||
+            beforeEntity.type != afterEntity.type ||
+            beforeEntity.hp != afterEntity.hp ||
+            beforeEntity.damage != afterEntity.damage ||
+            beforeEntity.alive != afterEntity.alive ||
+            beforeEntity.pending != afterEntity.pending ||
+            beforeEntity.delay != afterEntity.delay ||
+            beforeEntity.life != afterEntity.life) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool DebugReplayRecorder::HasNewEnemySpawn_(const DebugGameState& before, const DebugGameState& after) const {
@@ -248,10 +318,7 @@ bool DebugReplayRecorder::HasNewEnemySpawn_(const DebugGameState& before, const 
 }
 
 bool DebugReplayRecorder::IsContinuousAction_(const DebugAction& action) const {
-    return action.name == "MoveLeft" ||
-        action.name == "MoveRight" ||
-        action.name == "MoveForward" ||
-        action.name == "MoveBack" ||
+    return action.name == "Move" ||
         action.name == "Down" ||
         action.name == "Guard" ||
         action.name == "Wait";
@@ -293,7 +360,9 @@ void DebugReplayRecorder::WriteActionJson_(std::ostream& out, const DebugAction&
         << "\"name\":\"" << EscapeJson_(action.name) << "\","
         << "\"targetId\":\"" << EscapeJson_(action.targetId) << "\","
         << "\"intParam\":" << action.intParam << ","
-        << "\"floatParam\":" << action.floatParam
+        << "\"floatParam\":" << action.floatParam << ","
+        << "\"stringParam\":\"" << EscapeJson_(action.stringParam) << "\","
+        << "\"holdFrames\":" << action.holdFrames
         << "}";
 }
 
@@ -337,7 +406,24 @@ void DebugReplayRecorder::WriteStateSummaryJson_(std::ostream& out, const DebugG
             << "\"x\":" << entity.velocity.x << ","
             << "\"y\":" << entity.velocity.y << ","
             << "\"z\":" << entity.velocity.z
-            << "}"
+            << "},"
+            << "\"aiState1\":" << entity.aiState1 << ","
+            << "\"aiState2\":" << entity.aiState2 << ","
+            << "\"aiFloat1\":" << entity.aiFloat1 << ","
+            << "\"aiFloat2\":" << entity.aiFloat2 << ","
+            << "\"aiFloat3\":" << entity.aiFloat3 << ","
+            << "\"bossWanderVel\":{"
+            << "\"x\":" << entity.bossWanderVel.x << ","
+            << "\"y\":" << entity.bossWanderVel.y << ","
+            << "\"z\":" << entity.bossWanderVel.z
+            << "},"
+            << "\"bossWanderChange\":" << entity.bossWanderChange << ","
+            << "\"bossMoveMul\":" << entity.bossMoveMul << ","
+            << "\"bossDropStartY\":" << entity.bossDropStartY << ","
+            << "\"bossRushSpeed\":" << entity.bossRushSpeed << ","
+            << "\"bossChaseSpeed\":" << entity.bossChaseSpeed << ","
+            << "\"bossRushZMin\":" << entity.bossRushZMin << ","
+            << "\"bossRushZMax\":" << entity.bossRushZMax
             << "}";
     }
     out << "]"

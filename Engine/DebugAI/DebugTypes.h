@@ -10,6 +10,8 @@ struct DebugAction {
     std::string targetId;
     int intParam = 0;
     float floatParam = 0.0f;
+    std::string stringParam;
+    unsigned int holdFrames = 1;
 };
 
 struct DebugMapBounds {
@@ -30,6 +32,19 @@ struct DebugEntityState {
     bool pending = false;
     float delay = 0.0f;
     float life = 0.0f;
+    int aiState1 = 0;
+    int aiState2 = 0;
+    float aiFloat1 = 0.0f;
+    float aiFloat2 = 0.0f;
+    float aiFloat3 = 0.0f;
+    Vector3 bossWanderVel = {};
+    float bossWanderChange = 0.0f;
+    float bossMoveMul = 0.0f;
+    float bossDropStartY = 0.0f;
+    float bossRushSpeed = 0.0f;
+    float bossChaseSpeed = 0.0f;
+    float bossRushZMin = 0.0f;
+    float bossRushZMax = 0.0f;
 };
 
 struct DebugSpawnOverride {

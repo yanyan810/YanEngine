@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Enemy.h"
@@ -27,19 +28,30 @@ public:
         int damage = 5;
     };
 
+    struct PlayerAttackHitEvent {
+        std::string targetId;
+        std::string targetType;
+        unsigned int attackSerial = 0;
+        int damage = 0;
+        int hpBefore = 0;
+        int hpAfter = 0;
+        Vector3 playerPosition = {};
+        Vector3 targetPosition = {};
+    };
+
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
 
     void Clear();
     void Spawn(EnemyType type, const Vector3& posXY);
 
-    void Update(float dt, const Vector2& playerXY, float playerZ, Player& player);
+    	void Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn = false);
 
     void Draw();
 
     std::vector<Enemy>& GetEnemies() { return enemies_; }
     const std::vector<Enemy>& GetEnemies() const { return enemies_; }
 
-    void ApplyPlayerAttack(Player& player);
+    std::vector<PlayerAttackHitEvent> ApplyPlayerAttack(Player& player);
     void AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const;
     void RestoreDebugEntities(const std::vector<DebugEntityState>& entities);
 
