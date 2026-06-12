@@ -12,7 +12,6 @@
 #include <numbers>
 
 void Player::UpdateMove_(float /*dt*/, const Input& input) {
-    // --- 蟾ｦ蜿ｳ・・・・---
     float mx = 0.0f;
     if (input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A))  mx -= 1.0f, isMoving = true;
     if (input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D))  mx += 1.0f, isMoving = true;
@@ -22,10 +21,9 @@ void Player::UpdateMove_(float /*dt*/, const Input& input) {
 
     vel_.x = mx * moveSpeed_;
 
-    // --- 螂･陦後″・・・・---
     float mz = 0.0f;
-    if (input.IsKeyPressed(DIK_UP)) mz += 1.0f, isMoving = true; // 螂･縺ｸ +Z
-    if (input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S)) mz -= 1.0f, isMoving = true; // 謇句燕縺ｸ -Z
+    if (input.IsKeyPressed(DIK_UP)) mz += 1.0f, isMoving = true;
+    if (input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S)) mz -= 1.0f, isMoving = true;
 
     vel_.z = mz * depthSpeed_;
 
@@ -49,17 +47,14 @@ void Player::UpdateMove_(float /*dt*/, const PlayerInputCommand& command) {
 }
 
 void Player::ApplyPhysics_(float dt) {
-    // 驥榊鴨・・縺縺托ｼ・
     if (!onGround_) {
         vel_.y -= gravity_ * dt;
     }
 
-    // 菴咲ｽｮ譖ｴ譁ｰ・・/Y/Z・・
     pos_.x += vel_.x * dt;
     pos_.y += vel_.y * dt;
     pos_.z += vel_.z * dt;
 
-    // 蝨ｰ髱｢・・=0・・
     if (pos_.y <= 0.0f) {
         pos_.y = 0.0f;
         vel_.y = 0.0f;
@@ -67,9 +62,8 @@ void Player::ApplyPhysics_(float dt) {
         jumpCount_ = 0;
     }
 
-    // 螂･陦後″蛻ｶ髯・
-    const float zNear = -15.0f; // 謇句燕・・IK_DOWN縺ｧ陦後￥蛛ｴ・・
-    const float zFar = 20.0f; // 螂･・・IK_UP縺ｧ陦後￥蛛ｴ・・
+    const float zNear = -15.0f;
+    const float zFar = 20.0f;
     pos_.z = std::clamp(pos_.z, zNear, zFar);
 
 }
@@ -137,7 +131,7 @@ void Player::SetSpawnPos(const Vector3& p) {
     launchedTimer_ = 0.0f;
 
     UpdateBody_();
-    UpdateModel_(); // 隕九◆逶ｮ繧ょ叉蜿肴丐
+    UpdateModel_();
 }
 
 void Player::SetDropRespawnPos(const Vector3& p) {
@@ -158,10 +152,8 @@ void Player::SetDropRespawnPos(const Vector3& p) {
 void Player::UpdateModel_() {
     if (!model_) return;
 
-    // 菴咲ｽｮ
     model_->SetTranslate({ pos_.x, pos_.y, pos_.z });
 
-    // 笘・髄縺榊渚霆｢・・繧ｹ繧ｱ繝ｼ繝ｫ繧貞渚霆｢・・
     const float sx = (facing_ > 0) ? 1.0f : -1.0f;
     model_->SetScale({ sx, 1.0f, 1.0f });
 
@@ -191,7 +183,6 @@ void Player::DrawDebugHitBoxes(EnemyManager& enemyMgr) {
 
 
 void Player::UpdateBody_() {
-    // 縺薙％縺ｯ縺ゅ↑縺溘・隕九◆逶ｮ繧ｵ繧､繧ｺ縺ｫ蜷医ｏ縺帙※隱ｿ謨ｴ
     const float hx = 0.4f;
     const float hy = 0.9f;
     const float hz = 0.6f;

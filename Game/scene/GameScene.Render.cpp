@@ -144,9 +144,7 @@ void GameScene::DrawRender(GameApp& app) {
     app.ParticleCom()->SetGraphicsPipelineState();
 }
 
-// 繝舌ャ繧ｯ繝舌ャ繝輔ぃ縺ｸ逶ｴ謗･謠上￥3D・医・繧ｹ繝医お繝輔ぉ繧ｯ繝井ｸ崎ｦ√↑繧ゅ・・・
 void GameScene::Draw3D(GameApp& app) {
-    // 莉翫・迚ｹ縺ｫ縺ｪ縺・
 }
 
 // 2D / Sprite
@@ -182,7 +180,6 @@ void GameScene::Draw2D(GameApp& app) {
     }
 }
 
-// 縺昴・莉厄ｼ育ｩｺ縺ｧOK・・
 void GameScene::Draw(GameApp& app) {
 }
 
