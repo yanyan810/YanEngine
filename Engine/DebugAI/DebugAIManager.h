@@ -3,6 +3,7 @@
 #include "DebugLogger.h"
 #include "DebugReplayPlayer.h"
 #include "DebugReplayRecorder.h"
+#include "IDebugBot.h"
 #include "IGameDebugAdapter.h"
 #include "RandomDebugBot.h"
 
@@ -19,6 +20,9 @@ public:
     bool IsEnabled() const { return enabled_; }
 
     void SetAdapter(IGameDebugAdapter* adapter) { adapter_ = adapter; }
+    void SetBot(IDebugBot* bot);
+    void ResetBotToRandom();
+    const char* CurrentBotName() const { return bot_ ? bot_->Name() : "None"; }
     void InjectAction();
     void ProcessAfterUpdate(float dt);
     void RecordExternalAction(
@@ -28,6 +32,7 @@ public:
     void CheckReplayDrift(const DebugGameState& actualState);
 
     bool StartLatestReplay();
+    bool StartReplay(const std::string& replayPath);
     void StopReplay();
     bool IsReplayPlaying() const { return replayMode_ && replayPlayer_.IsPlaying(); }
     bool IsFirstReplayFrame() const { return isFirstReplayFrame_; }
@@ -36,6 +41,7 @@ public:
     const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
     const DebugReplayPlayer& ReplayPlayer() const { return replayPlayer_; }
     const DebugAction& LastAction() const { return lastAction_; }
+    void LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message);
 
 private:
     void DetectIssues_(const DebugGameState& state, float dt);
@@ -47,7 +53,8 @@ private:
 private:
     bool enabled_ = false;
     IGameDebugAdapter* adapter_ = nullptr;
-    RandomDebugBot bot_;
+    RandomDebugBot randomBot_;
+    IDebugBot* bot_ = &randomBot_;
     DebugLogger logger_;
     DebugReplayRecorder replayRecorder_;
     DebugReplayPlayer replayPlayer_;

@@ -213,6 +213,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Input\Input.cpp" />
     <ClCompile Include="Engine\Utility\Logger.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp" />
+    <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugJson.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayRecorder.cpp" />
@@ -473,11 +475,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Input\Input.h" />
     <ClInclude Include="Engine\Utility\Logger.h" />
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h" />
+    <ClInclude Include="Engine\DebugAI\ApiDebugBot.h" />
+    <ClInclude Include="Engine\DebugAI\DebugJson.h" />
     <ClInclude Include="Engine\DebugAI\DebugLogger.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayRecorder.h" />
     <ClInclude Include="Engine\DebugAI\DebugTypes.h" />
     <ClInclude Include="Engine\DebugAI\IGameDebugAdapter.h" />
+    <ClInclude Include="Engine\DebugAI\IDebugBot.h" />
     <ClInclude Include="Engine\DebugAI\RandomDebugBot.h" />
     <ClInclude Include="Engine\math\Matrix4x4.h" />
     <ClInclude Include="Engine\math\Vector3.h" />

@@ -108,16 +108,18 @@ void EnemyManager::Spawn(EnemyType type, const Vector3& posXYZ) {
 	enemies_.push_back(std::move(e));
 }
 
-void EnemyManager::ApplyPlayerAttack(Player& player) {
+std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(Player& player) {
+	std::vector<PlayerAttackHitEvent> hitEvents;
 	AABB attackBox{};
 	const unsigned int attackSerial = player.GetAttackSerial();
 	const int damage = player.GetAttackDamage();
 	if (attackSerial == 0 || damage <= 0 || !player.GetAttackHitBox(attackBox)) {
-		return;
+		return hitEvents;
 	}
 
 	const AABB3 attackBox3 = ToAABB3(attackBox);
-	for (auto& enemy : enemies_) {
+	for (size_t enemyIndex = 0; enemyIndex < enemies_.size(); ++enemyIndex) {
+		auto& enemy = enemies_[enemyIndex];
 		if (!enemy.IsAlive() || enemy.WasHitByPlayerAttack(attackSerial)) {
 			continue;
 		}
@@ -125,10 +127,24 @@ void EnemyManager::ApplyPlayerAttack(Player& player) {
 			continue;
 		}
 
+		const int hpBefore = enemy.GetHP();
 		const float knockDir = (enemy.GetPos3D().x >= player.GetPos3D().x) ? 1.0f : -1.0f;
 		enemy.ApplyHit2D(8.0f * knockDir, 8.0f, true, damage);
 		enemy.MarkHitByPlayerAttack(attackSerial);
+
+		PlayerAttackHitEvent event;
+		event.targetId = "enemy_" + std::to_string(enemyIndex);
+		event.targetType = DebugEnemyTypeName(enemy.GetType());
+		event.attackSerial = attackSerial;
+		event.damage = damage;
+		event.hpBefore = hpBefore;
+		event.hpAfter = enemy.GetHP();
+		event.playerPosition = player.GetPos3D();
+		event.targetPosition = enemy.GetPos3D();
+		hitEvents.push_back(event);
 	}
+
+	return hitEvents;
 }
 
 void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const {
@@ -146,15 +162,23 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		state.position = enemy.GetPos3D();
 		state.velocity = enemy.GetVel();
 		if (enemy.IsBoss()) {
-			const BossAI& bossAI = enemy.GetBossAI();
-			state.aiState1 = static_cast<int>(bossAI.GetState());
-			state.aiState2 = static_cast<int>(bossAI.GetPhase());
-			state.aiFloat1 = bossAI.GetTime();
-			state.aiFloat2 = bossAI.GetStateTime();
+			BossAI::BossDebugState bossState = enemy.GetBossAI().GetDebugState();
+			state.aiState1 = static_cast<int>(bossState.st);
+			state.aiState2 = static_cast<int>(bossState.phase);
+			state.aiFloat1 = bossState.t;
+			state.aiFloat2 = bossState.stateTime;
 			int flags = 0;
-			if (bossAI.Did50()) flags |= 1;
-			if (bossAI.Did25()) flags |= 2;
+			if (bossState.did50) flags |= 1;
+			if (bossState.did25) flags |= 2;
 			state.aiFloat3 = static_cast<float>(flags);
+			state.bossWanderVel = bossState.wanderVel;
+			state.bossWanderChange = bossState.wanderChange;
+			state.bossMoveMul = bossState.moveMul;
+			state.bossDropStartY = bossState.dropStartY;
+			state.bossRushSpeed = bossState.rushSpeed;
+			state.bossChaseSpeed = bossState.chaseSpeed;
+			state.bossRushZMin = bossState.rushZMin;
+			state.bossRushZMax = bossState.rushZMax;
 		}
 		state.alive = true;
 		state.pending = false;
@@ -227,16 +251,22 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 			newEnemy.SetVel(entity.velocity);
 			if (newEnemy.IsBoss()) {
 				int flags = static_cast<int>(entity.aiFloat3);
-				bool did50 = (flags & 1) != 0;
-				bool did25 = (flags & 2) != 0;
-				newEnemy.GetBossAIMutable().RestoreState(
-					static_cast<BossAI::State>(entity.aiState1),
-					static_cast<BossAI::Phase>(entity.aiState2),
-					entity.aiFloat1,
-					entity.aiFloat2,
-					did50,
-					did25
-				);
+				BossAI::BossDebugState bossState;
+				bossState.st = static_cast<BossAI::State>(entity.aiState1);
+				bossState.phase = static_cast<BossAI::Phase>(entity.aiState2);
+				bossState.t = entity.aiFloat1;
+				bossState.stateTime = entity.aiFloat2;
+				bossState.did50 = (flags & 1) != 0;
+				bossState.did25 = (flags & 2) != 0;
+				bossState.wanderVel = entity.bossWanderVel;
+				bossState.wanderChange = entity.bossWanderChange;
+				bossState.moveMul = entity.bossMoveMul;
+				bossState.dropStartY = entity.bossDropStartY;
+				bossState.rushSpeed = entity.bossRushSpeed;
+				bossState.chaseSpeed = entity.bossChaseSpeed;
+				bossState.rushZMin = entity.bossRushZMin;
+				bossState.rushZMax = entity.bossRushZMax;
+				newEnemy.GetBossAIMutable().RestoreDebugState(bossState);
 			}
 		}
 	}

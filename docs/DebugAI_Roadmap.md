@@ -1,24 +1,501 @@
-# DebugAI 実装ロードマップ
+# DebugAI Kit 仕様メモ
 
 ## 目的
 
-DebugAI は、ゲームと自動操作 AI / BOT を接続するための共通テスト基盤です。
+DebugAI Kit は、ゲームと AI / BOT / リプレイ / デバッグ検証を接続するための共通基盤です。
 
-目的は自動修正ではありません。
+最終的な目的は、AI や BOT がゲーム内を自動で動き回り、意図しない挙動や不具合を見つけられるようにすることです。
 
-目的は以下です。
+ただし、目的は自動修正ではありません。
+
+DebugAI Kit が担当する範囲は以下です。
 
 - 現在のゲーム状態を取得する
-- 意味のあるゲーム内 Action を実行する
-- 異常な挙動を検出する
-- ログ、レポート、リプレイデータを保存する
-- あとから記録した手順でバグを再現できるようにする
+- ゲーム内の意味を持つ Action を実行する
+- 手動プレイや BOT の行動履歴を記録する
+- 記録した Action をリプレイする
+- 必要に応じて Snapshot から状態を復元する
+- AI API に渡せる形で State / Action を JSON 化する
+- 異常を検出する
+- 調査に必要なログ、レポート、リプレイデータを保存する
 
-最終的な目標は、AI や BOT がゲーム内をくまなく探索し、想定外の挙動や不具合を見つけられるようにすることです。
+## 最終方針
 
-## 現在できていること
+DebugAI は、最初から完全な外部ツールとして作るのではなく、まずは ImGui のように各ゲームへ組み込めるライブラリ形式を目指します。
 
-実装済みのもの:
+理由は、ゲームの状態取得、Action 実行、当たり判定、敵やボスの状態、Snapshot 復元などは、ゲーム内部に強く依存するためです。
+
+そのため、まずは以下の形を目指します。
+
+```text
+各ゲーム
+  |
+  +-- DebugAI Kit を組み込む
+  |
+  +-- ゲームごとの IGameDebugAdapter を実装する
+  |
+  +-- Update / ImGui / ログ出力などから DebugAIManager を呼ぶ
+```
+
+将来的に外部ツールを作る場合も、外部ツールが直接ゲームを触るのではなく、DebugAI Kit にコマンドを送る形にします。
+
+```text
+外部 DebugAI Tool
+  |
+  | DebugCommand JSON / TCP / WebSocket / NamedPipe
+  v
+ゲーム内 DebugAI Kit
+  |
+  v
+IGameDebugAdapter
+  |
+  v
+実ゲーム
+```
+
+つまり、外部ツール化しても、ゲーム内には必ず小さな DebugAI Kit と Adapter が残ります。
+
+AI API を使う場合も同じ方針です。
+
+AI にゲームを直接操作させるのではなく、DebugAI Kit が現在の状態と使用可能 Action を JSON 化し、AI はその中から次の Action を返します。
+
+```text
+ゲーム
+  |
+  v
+IGameDebugAdapter
+  |
+  v
+DebugAI Kit
+  |
+  | State JSON + Available Actions
+  v
+AI API
+  |
+  | Action JSON
+  v
+DebugAI Kit
+  |
+  v
+IGameDebugAdapter::ExecuteDebugAction
+  |
+  v
+実ゲーム
+```
+
+AI が返した Action は、必ず `GetAvailableDebugActions()` に含まれるものか検証します。
+
+不正な Action、壊れた JSON、危険な命令、現在実行できない Action が返ってきた場合は、その Action は破棄し、`Wait` や `RandomDebugBot` などの安全な Fallback に切り替えます。
+
+## 目指す使い方
+
+別ゲームへ移植するときは、できるだけ以下の作業だけで使えるようにします。
+
+1. `Engine/DebugAI` 相当のファイルを追加する
+2. ゲーム側で `IGameDebugAdapter` を実装する
+3. 起動時に `DebugAIManager` へ Adapter を登録する
+4. Update で `DebugAIManager::Update` 相当を呼ぶ
+5. 必要なら ImGui パネルを呼ぶ
+6. ログ出力先を設定する
+
+イメージ:
+
+```cpp
+debugAI.SetAdapter(&gameDebugAdapter);
+debugAI.SetLogDirectory("generated/debug_ai");
+debugAI.SetEnabled(true);
+
+// Game loop
+debugAI.Update(deltaTime);
+```
+
+ゲーム側が最低限実装するもの:
+
+```cpp
+class MyGameDebugAdapter : public IGameDebugAdapter {
+public:
+    DebugGameState CaptureDebugState() override;
+    std::vector<DebugAction> GetAvailableDebugActions() override;
+    bool ExecuteDebugAction(const DebugAction& action) override;
+
+    DebugSnapshot CaptureDebugSnapshot() override;
+    bool RestoreDebugSnapshot(const DebugSnapshot& snapshot) override;
+};
+```
+
+## 責務の分離
+
+### DebugAI Kit 側が持つもの
+
+- `DebugAIManager`
+- `DebugAction`
+- `DebugGameState`
+- `DebugIssue`
+- `DebugSnapshot`
+- `DebugLogger`
+- `DebugReplayRecorder`
+- `DebugReplayPlayer`
+- `RandomDebugBot`
+- `ApiDebugBot`
+- `IDebugBot`
+- `DebugCommand`
+- `DebugResponse`
+- 共通の異常検出
+- Action / State / Snapshot / Replay の JSON 入出力
+- 任意の ImGui パネル
+
+### 各ゲーム側が持つもの
+
+- `IGameDebugAdapter` の実装
+- ゲーム固有の Action 定義
+- ゲーム固有の State 取得
+- ゲーム固有の Snapshot 保存 / 復元
+- プレイヤー、敵、ボス、シーンなどへの実際の操作
+- ゲーム固有の異常検出
+
+### 外部ツール側が将来持つもの
+
+- テストシナリオ管理
+- AI / BOT の行動選択
+- AI API の設定
+- Prompt / State 要約の編集
+- リプレイ一覧の管理
+- ログビューア
+- レポートビューア
+- カバレッジ可視化
+- 長時間テストの実行管理
+
+## 基本データ
+
+### DebugAction
+
+ゲーム内の意味を持つ操作です。
+
+キーボードやマウス座標を直接保存するのではなく、ゲーム側が理解できる Action として扱います。
+
+例:
+
+```text
+MoveLeft
+MoveRight
+Jump
+AttackWeak
+AttackSideSpecial
+Guard
+UseCard
+SelectEnemy
+EndTurn
+TalkToNpc
+UseItem
+```
+
+最低限持ちたい情報:
+
+- Action 名
+- 対象 ID
+- 整数パラメータ
+- 小数パラメータ
+- 文字列パラメータ
+- 何フレーム保持するか
+- 実行フレーム
+- 実行シーン
+
+### DebugGameState
+
+現在のゲーム状態です。
+
+共通で持ちたい情報:
+
+- シーン名
+- フレーム番号
+- 経過時間
+- FPS
+- プレイヤー HP
+- 敵 / ボス HP
+- プレイヤー座標
+- 敵数
+- 使用可能な Action 一覧
+- 乱数 seed
+- 現在のリプレイ / 記録状態
+
+ゲームごとに追加したい情報:
+
+- ボスフェーズ
+- プレイヤー状態
+- 地面にいるか
+- 攻撃中か
+- 移動ロック中か
+- 近くの敵
+- 近くの調べられるもの
+- 現在エリア ID
+- イベントフラグ
+- 所持アイテム
+
+### DebugSnapshot
+
+リプレイ開始時や Issue 発生時の状態復元に使う情報です。
+
+最低限保存したいもの:
+
+- シーン名
+- フレーム番号
+- 乱数 seed
+- プレイヤー状態
+- 敵 / ボス状態
+- 予約スポーン情報
+- 重要なゲームフラグ
+
+完全再現を目指す場合に追加したいもの:
+
+- プレイヤー内部タイマー
+- 攻撃中、硬直中、無敵時間などの状態
+- ボス AI のフェーズ、タイマー、現在行動
+- 敵 AI の状態
+- 弾、エフェクト、当たり判定の状態
+- 乱数生成器の内部状態
+- シーン遷移中の状態
+
+Snapshot は全ゲームで完全共通化するのは難しいため、共通の入れ物だけ DebugAI Kit 側に用意し、中身は Adapter 側でゲームごとに保存します。
+
+### DebugIssue
+
+検出された異常です。
+
+例:
+
+- HP が 0 未満になった
+- 座標が NaN になった
+- プレイヤーがマップ外に出た
+- 敵数が不正になった
+- 同じ状態が長時間続いた
+- シーン遷移が一定時間進まない
+- FPS が急に落ちた
+- リプレイと現在状態の差分が大きい
+
+保存したい情報:
+
+- Issue ID
+- 種類
+- メッセージ
+- 発生フレーム
+- シーン名
+- 直前の Action
+- プレイヤー座標
+- 乱数 seed
+- 関連するリプレイファイル
+- 関連する Snapshot ファイル
+
+## AI API 連携
+
+AI API 連携では、AI をゲーム専用の直接操作コードにはしません。
+
+AI の役割は、現在の `DebugGameState` と `availableActions` を見て、次に実行する `DebugAction` を 1 つ選ぶことです。
+
+DebugAI Kit 側に `IDebugBot` を用意し、ランダム BOT、カバレッジ BOT、API BOT を同じ入口で扱えるようにします。
+
+```cpp
+class IDebugBot {
+public:
+    virtual ~IDebugBot() = default;
+    virtual DebugAction DecideAction(const DebugGameState& state) = 0;
+};
+```
+
+想定する BOT:
+
+```text
+RandomDebugBot
+CoverageDebugBot
+ReplayDebugBot
+ApiDebugBot
+```
+
+### AI に渡す情報
+
+AI にはゲーム内部の全情報をそのまま渡すのではなく、判断に必要な情報だけを要約して渡します。
+
+例:
+
+```json
+{
+  "scene": "GameScene",
+  "frame": 1200,
+  "goal": "DefeatBoss",
+  "player": {
+    "hp": 82,
+    "position": { "x": 12.4, "y": 0.0, "z": 5.1 },
+    "state": "Grounded",
+    "canAttack": true
+  },
+  "enemies": [
+    {
+      "id": "boss",
+      "hp": 360,
+      "position": { "x": 18.0, "y": 0.0, "z": 5.0 },
+      "distance": 5.6
+    }
+  ],
+  "availableActions": [
+    "MoveLeft",
+    "MoveRight",
+    "Jump",
+    "AttackWeak",
+    "AttackSideSpecial",
+    "Guard"
+  ]
+}
+```
+
+### AI から受け取る情報
+
+AI からは文章ではなく、必ず Action JSON を受け取ります。
+
+例:
+
+```json
+{
+  "action": {
+    "name": "MoveRight",
+    "targetId": "",
+    "intParam": 0,
+    "floatParam": 0.0,
+    "stringParam": "",
+    "holdFrames": 12
+  },
+  "reason": "ボスとの距離を詰めるため"
+}
+```
+
+`reason` はログや調査用であり、ゲーム実行には使いません。
+
+### API BOT の安全ルール
+
+- AI は登録済み Action からしか選べない
+- AI が返した Action は実行前に必ず検証する
+- 不正 JSON の場合は実行しない
+- 使用可能 Action に存在しない場合は実行しない
+- API が失敗した場合は Fallback BOT に切り替える
+- API 応答待ちでゲーム本体を長時間止めない
+- API キーはログやリプレイに保存しない
+- AI が選んだ Action と理由はログに保存する
+
+### API 連携の実装順
+
+API 通信そのものは最後でよいです。
+
+先に必要なのは以下です。
+
+1. `IDebugBot`
+2. `DebugGameState` の JSON 化
+3. `DebugAction` の JSON 化
+4. `availableActions` の整理
+5. `ApiDebugBot` のインターフェース
+6. API 失敗時の Fallback
+7. 実際の API 通信
+
+## DebugCommand
+
+将来の外部ツール化を見越して、ImGui 操作やショートカットキーも DebugCommand 経由で実行できるようにします。
+
+これにより、最初はゲーム内 ImGui から呼び、後で外部ツールから同じコマンドを送れるようになります。
+
+想定コマンド:
+
+```text
+GetState
+GetAvailableActions
+ExecuteAction
+StartRecording
+StopRecording
+StartReplay
+StopReplay
+PauseReplay
+StepReplay
+SaveSnapshot
+RestoreSnapshot
+GetIssues
+ClearIssues
+SetBotMode
+SetExternalInputBlocked
+```
+
+JSON 例:
+
+```json
+{
+  "type": "execute_action",
+  "action": {
+    "name": "AttackWeak",
+    "targetId": "",
+    "intParam": 0,
+    "floatParam": 0.0,
+    "stringParam": "",
+    "holdFrames": 1
+  }
+}
+```
+
+## リプレイの考え方
+
+リプレイは、入力キーではなく Action を保存します。
+
+よくない例:
+
+```text
+KeyDown(Space)
+KeyDown(A)
+MouseClick(350, 210)
+```
+
+望ましい例:
+
+```text
+Jump
+MoveLeft
+AttackWeak
+SelectEnemy(enemy_001)
+```
+
+Action の方が、UI 変更やキーコンフィグに強く、人間が見ても内容を理解しやすくなります。
+
+ただし、Action だけでは完全再現できない場合があります。
+
+その場合は以下も併用します。
+
+- 初期 Snapshot
+- 乱数 seed
+- スポーンした敵の実体情報
+- ボス AI の内部状態
+- プレイヤーの内部状態
+- リプレイ中の状態差分ログ
+
+## ログ出力
+
+DebugAI Kit は、最低限以下のファイルを出力します。
+
+```text
+generated/debug_ai/
+  debug_ai_events.jsonl
+  debug_ai_report.txt
+  debug_ai_actions_run_0001.jsonl
+  debug_ai_snapshot_0001.json
+  issues/
+    issue_0001_report.txt
+    issue_0001_context.json
+    issue_0001_replay.jsonl
+```
+
+ログの役割:
+
+- `debug_ai_events.jsonl`: 全体のイベントログ
+- `debug_ai_report.txt`: 人間が読むサマリー
+- `debug_ai_actions_run_XXXX.jsonl`: 手動プレイや BOT の Action 履歴
+- `debug_ai_snapshot_XXXX.json`: 状態復元用 Snapshot
+- `issues`: 異常発生時の調査パッケージ
+
+## 現在の実装状態
+
+現時点で存在する主なもの:
 
 - `DebugAIManager`
 - `DebugAction`
@@ -27,450 +504,238 @@ DebugAI は、ゲームと自動操作 AI / BOT を接続するための共通�
 - `DebugLogger`
 - `IGameDebugAdapter`
 - `RandomDebugBot`
-- `DebugAITestScene`
-- `GameScene` 用の初期 Adapter
+- `DebugReplayRecorder`
+- `DebugReplayPlayer`
+- `GameScene` 用の Adapter 実装
+- Action 履歴の記録
+- リプレイ再生
+- 一部 Snapshot 復元
+- ImGui からの DebugAI 操作
+- 外部入力遮断
 - `generated/debug_ai` へのログ出力
-- 基本的な異常検出
-- `GameScene` 内で `F8` による DebugAI の ON / OFF
-- `TitleScene` から `F9` で `DebugAITestScene` に入る機能
 
-現在の動作:
+まだ整理したいもの:
 
-- ランダム BOT が登録済み Action から行動を選ぶ
-- キーボードやマウス座標ではなく、意味のある Action として実行する
-- HP が 0 未満、敵数が不正、座標が異常、マップ外、FPS低下、長時間停滞などをログに出せる
-- `GameScene` は `Player::QueueDebugCommand` 経由で DebugAI の Action を受け取れる
+- `DebugAI.h` のような単一 include 入口
+- `DebugCommand` / `DebugResponse`
+- DebugAI Kit とゲーム固有コードの分離
+- Snapshot の共通形式
+- リプレイ差分検出
+- 外部ツール用の通信層
 
-## 重要な方向性
+## 実装フェーズ
 
-今後は「リプレイ駆動の自動テスト」に近づけていきます。
-
-理想の流れ:
-
-1. 人間が手動でゲームをプレイする
-2. ゲーム側が意味のある Action として行動を記録する
-3. Action 履歴をリプレイデータとして保存する
-4. 必要に応じてリプレイデータを手直しする
-5. リプレイデータを自動テストとして実行する
-6. 自動テスト中も Action 履歴を再度記録する
-7. バグを検出したら、その直前までの手順と状態を保存する
-8. あとからそのリプレイデータを再生して、バグを再現する
-
-重要なのは、バグが起きた座標だけを保存するのではなく、そこに至るまでの手順を保存することです。
-
-ゲームのバグは、座標だけでは再現できないことがあります。
-
-例えば以下のようなものが再現条件になることがあります。
-
-- その前にどの敵と戦ったか
-- どのイベントを通ったか
-- どのアイテムを使ったか
-- どの順番で移動したか
-- どのシーン遷移を通ったか
-- どのタイミングで攻撃やジャンプをしたか
-
-そのため、DebugAI では Action の履歴を保存する仕組みが重要になります。
-
-## 目標とする構成
-
-```text
-GameScene / 各ゲーム固有の処理
-    |
-    v
-IGameDebugAdapter
-    |
-    +--> CaptureDebugState()
-    +--> ExecuteDebugAction()
-    |
-    v
-DebugAIManager
-    |
-    +--> BOT / リプレイ / AI の行動決定
-    +--> 異常検出
-    +--> Action 履歴
-    +--> ログ出力
-    |
-    v
-ログ / レポート / リプレイデータ
-```
-
-ゲーム固有の処理は、各 Adapter 側に閉じ込めます。
-
-DebugAI 共通部分は、ボスフェーズ、カード効果、アイテム ID、マップオブジェクト名などのゲーム固有情報を直接知らないようにします。
-
-ゲーム固有情報は `DebugGameState` と `DebugAction` を通して渡します。
-
-## 今後必要になりそうなもの
-
-### 1. DebugReplayRecorder
-
-実行された Action と重要な状態を記録する仕組みです。
-
-役割:
-
-- 実行された `DebugAction` を記録する
-- フレーム番号を記録する
-- シーン名を記録する
-- Action 実行前後の状態を必要に応じて保存する
-- 直近の履歴をリングバッファとして保持する
-- 手動でリプレイデータを保存できるようにする
-- 異常検出時に直近のリプレイデータを自動保存する
-
-出力例:
-
-```jsonl
-{ "frame": 120, "scene": "Game", "action": "MoveRight" }
-{ "frame": 132, "scene": "Game", "action": "Jump" }
-{ "frame": 180, "scene": "Game", "action": "AttackWeak" }
-```
-
-### 2. DebugReplayPlayer
-
-保存したリプレイデータを読み込み、同じ Action を再実行する仕組みです。
-
-役割:
-
-- リプレイファイルを読み込む
-- 記録されたフレーム、または時間に合わせて Action を実行する
-- シーンが一致しない場合に停止できるようにする
-- 多少ズレても続行するモードを用意する
-- リプレイ成功 / 失敗をレポートに残す
-
-想定する再生モード:
-
-- フレーム基準の厳密な再生
-- 時間基準の再生
-- 1 Action ずつ進めるデバッグ再生
-- フレームずれを許容する再生
-
-### 3. 手動プレイの Action 記録
-
-人間が普通にプレイした操作も、意味のある Action として記録したいです。
-
-あまり良くない記録:
-
-```text
-KeyDown(DIK_A)
-KeyDown(DIK_SPACE)
-MouseClick(340, 220)
-```
-
-望ましい記録:
-
-```text
-MoveLeft
-Jump
-TalkTo(NPC_001)
-UseItem(Potion)
-AttackWeak
-```
-
-キー入力やマウス座標ではなく、ゲーム内の意味で記録する方が、あとから読みやすく、編集しやすく、UI変更にも強くなります。
-
-### 4. 初期状態スナップショット
-
-リプレイを安定して再現するには、開始状態も保存する必要があります。
-
-最低限保存したい候補:
-
-- 開始シーン名
-- プレイヤー座標
-- プレイヤー HP
-- 敵リスト
-- ボス HP
-- 現在のフェーズ
-- 乱数 seed
-- 重要なイベントフラグ
-- 難易度
-- 所持アイテムの概要
-
-出力例:
-
-```json
-{
-  "scene": "Game",
-  "player": {
-    "hp": 100,
-    "position": { "x": -12.0, "y": 0.0, "z": 5.0 }
-  },
-  "phase": "Battle",
-  "rngSeed": 12345
-}
-```
-
-### 5. 乱数 seed の管理
-
-同じ Action を再生しても、敵の行動やドロップ、スポーンが毎回違うと再現性が落ちます。
-
-必要になりそうなもの:
-
-- 自動テスト中は seed を固定する
-- リプレイデータに seed を保存する
-- レポートに seed を表示する
-- 探索用にはランダム seed モードも用意する
-
-### 6. CoverageDebugBot
-
-ランダム操作は最初の確認には便利ですが、ゲーム内をくまなく探索するには不足します。
-
-CoverageDebugBot は、未探索エリアを優先して移動する BOT です。
-
-やりたいこと:
-
-- マップをグリッドに分ける
-- 訪問済みセルを記録する
-- 未訪問セルへ向かう
-- 詰まったらジャンプ、ガード、攻撃、逆方向移動を試す
-- 近くに調べられるものがあれば触る
-- 敵が進行を邪魔していれば攻撃する
-- 探索結果をカバレッジレポートとして保存する
-
-追加したい状態:
-
-- `visitedCells`
-- `currentAreaId`
-- `nearbyEnemies`
-- `nearbyInteractables`
-- `isGrounded`
-- `isStuck`
-- `canMove`
-- `canAttack`
-- `canInteract`
-
-### 7. チェックポイントと成功ログ
-
-自動テストでは、失敗ログだけではなく、成功した情報も必要です。
-
-例:
-
-- Battle フェーズに入った
-- ボスが出現した
-- ボス HP を 50% まで削った
-- プレイヤーが特定エリアに到達した
-- 特定 NPC に話しかけた
-- GameClear に到達した
-
-出力例:
-
-```jsonl
-{ "frame": 230, "checkpoint": "BattleStarted" }
-{ "frame": 1800, "checkpoint": "BossHalfHp" }
-{ "frame": 4200, "checkpoint": "GameClearReached" }
-```
-
-### 8. Issue Context Package
-
-異常を検出したときに、調査に必要な情報をまとめて保存する仕組みです。
-
-保存したいファイル:
-
-- `issue_report.txt`
-- `issue_context.json`
-- `issue_replay.jsonl`
-- `issue_frames.jsonl`
-- スクリーンショット
-- パフォーマンス情報
-
-保存したい内容:
-
-- 異常内容
-- 発生フレーム
-- シーン名
-- 直前の Action
-- 直近の Action 履歴
-- 直近の GameState 履歴
-- プレイヤー座標
-- 敵の状態
-- 乱数 seed
-- 使用中のリプレイファイル
-
-## 実装フェーズ案
-
-### Phase 1: 現在の DebugAI を安定させる
+### Phase 1: 今のゲームで安定させる
 
 目的:
 
-現在のランダム DebugAI を `GameScene` 内で安全に動かせるようにする。
+現在のゲームで、手動記録、リプレイ、Snapshot 復元、ログ出力を安定させます。
 
 作業:
 
-- `F8` で ON / OFF できる状態を維持する
-- ImGui でログ保存先を確認できるようにする
-- 同じ異常ログが大量に出すぎないようにする
-- `GameScene` の Action 実行が自然に動くか確認する
-- 現在のログに Action 履歴を少し追加する
-- Scene 終了時に DebugAI が確実に無効になるようにする
+- Action ログが 1 プレイごとに分かれるようにする
+- リプレイ中に手動入力が混ざらないようにする
+- リプレイ中に Action ログが汚れないようにする
+- ボス、敵、プレイヤーの Snapshot 復元を増やす
+- リプレイと実プレイの差分ログを出す
+- ずれたときに原因を追える情報を保存する
 
 完了条件:
 
-- `GameScene` で DebugAI を数分動かせる
-- ログが読める
-- DebugAI OFF のとき通常プレイに影響しない
+- 同じ Action ログで、おおむね同じ流れを再現できる
+- ずれた場合に、どのフレームからずれたか分かる
+- 既存の通常プレイに影響しない
 
-### Phase 2: Replay Recorder
+### Phase 2: DebugAI Kit として整理する
 
 目的:
 
-テスト中に実行された Action の手順を保存できるようにする。
+他ゲームへ移植しやすい形へ整理します。
 
 作業:
 
-- `DebugReplayRecorder` を追加する
-- BOT が選んだ Action を記録する
-- リプレイ実行中の Action も記録する
-- 直近 Action のリングバッファを持つ
-- 異常検出時に直近リプレイを保存する
-- レポートにリプレイファイルのパスを追加する
+- DebugAI の入口を `DebugAI.h` にまとめる
+- ゲーム固有コードを Adapter 側へ寄せる
+- 共通部分が `GameScene` や `Player` を直接知らない状態にする
+- `DebugAIConfig` を作る
+- ログ出力先や機能 ON / OFF を設定できるようにする
+- Optional な ImGui パネルを分離する
 
 完了条件:
 
-- 異常レポートにリプレイファイルが含まれる
-- リプレイファイルに異常発生までの Action 手順が保存される
+- DebugAI Kit 側だけを別ゲームに持っていける
+- 別ゲーム側は Adapter 実装だけで最小動作できる
 
-### Phase 3: Replay Player
+### Phase 3: DebugCommand を導入する
 
 目的:
 
-保存したリプレイファイルを再生できるようにする。
+ImGui、ショートカットキー、将来の外部ツールが同じ入口から DebugAI を操作できるようにします。
 
 作業:
 
-- `DebugReplayPlayer` を追加する
-- `jsonl` を読み込めるようにする
-- フレームに合わせて Action を実行する
-- ImGui から再生開始 / 停止 / 読み込みをできるようにする
-- 厳密再生とゆるい再生の両方を用意する
+- `DebugCommand` を定義する
+- `DebugResponse` を定義する
+- `DebugAIManager::ExecuteCommand` 相当を作る
+- ImGui 操作を DebugCommand 経由に寄せる
+- リプレイ開始、停止、Snapshot 復元などをコマンド化する
+- JSON 変換を用意する
 
 完了条件:
 
-- 保存したリプレイで、プレイヤーがだいたい同じ手順で動く
-- 異常再現を手動操作なしで試せる
+- ImGui からの操作と外部コマンドが同じ処理を通る
+- コマンド JSON をログやテストに使える
 
-### Phase 4: 手動プレイ記録
+### Phase 4: 外部接続の準備
 
 目的:
 
-人間のプレイをリプレイデータとして保存できるようにする。
+外部ツールから DebugAI Kit を操作できるようにします。
 
 作業:
 
-- プレイヤー入力を `DebugAction` に変換する
-- 手動プレイ中の Action を記録する
-- シーン遷移を記録する
-- 重要なインタラクトを記録する
-- 記録開始 / 停止の操作を追加する
+- 通信方式を決める
+- 最初は NamedPipe または TCP を検討する
+- `get_state` を外部から呼べるようにする
+- `execute_action` を外部から呼べるようにする
+- `start_replay` / `stop_replay` を外部から呼べるようにする
+- 外部入力遮断を外部コマンドから切り替えられるようにする
 
 完了条件:
 
-- 人間が一度プレイしたルートを保存できる
-- 保存したルートを自動再生できる
+- 外部の小さいテストプログラムからゲームを操作できる
+- 外部 BOT が Action を選んでゲームを動かせる
 
 ### Phase 5: Coverage Bot
 
 目的:
 
-ランダム操作ではなく、探索目的の BOT にする。
+ランダム操作ではなく、未探索の場所や未実行の行動を優先する BOT を作ります。
 
 作業:
 
-- マップのグリッドカバレッジを追加する
+- マップをグリッド化する
 - 訪問済みセルを記録する
-- 移動目標を選ぶ
-- 詰まり検出を追加する
-- 簡単な敵対応を追加する
-- カバレッジレポートを保存する
+- 未訪問セルへ移動する
+- 詰まり検出をする
+- 敵や障害物への簡単な対応をする
+- カバレッジログを保存する
 
 完了条件:
 
-- ランダム操作より広い範囲を探索できる
-- 訪問済み / 未訪問エリアを確認できる
+- ランダム BOT より広い範囲を探索できる
+- 探索済み / 未探索の情報をログで確認できる
 
-### Phase 6: テスト実行とレポート
+### Phase 6: API Debug Bot
 
 目的:
 
-自動テストを開発のイテレーションに使える形にする。
+AI API を使って、現在のゲーム状態から次の Action を選べるようにします。
 
 作業:
 
-- テストシナリオファイルを定義する
-- BOT またはリプレイを指定時間実行する
-- 成功 / 失敗のサマリーを保存する
-- チェックポイントを保存する
-- パフォーマンス情報を保存する
-- Issue Context Package を保存する
+- `IDebugBot` を追加する
+- `RandomDebugBot` を `IDebugBot` 経由に寄せる
+- `ApiDebugBot` のインターフェースを追加する
+- AI に渡す State JSON を作る
+- AI から返る Action JSON を検証する
+- API 失敗時の Fallback を作る
+- AI の選択理由をログに残す
 
 完了条件:
 
-- テスト実行結果を人間が読める
-- 成功したテストと失敗したテストの両方を確認できる
+- API 接続なしでも `ApiDebugBot` の入口を差し替えられる
+- API から返った Action を安全に実行できる
+- 不正な返答が来てもゲーム側が壊れない
 
-## ファイル形式案
+### Phase 7: 外部 DebugAI Tool
 
-### リプレイのメタ情報
+目的:
 
-```json
-{
-  "version": 1,
-  "gameBuild": "Debug",
-  "createdAt": "2026-06-08T11:00:00+09:00",
-  "startScene": "Game",
-  "rngSeed": 12345,
-  "mode": "ManualRecord"
-}
+ゲーム外からテスト実行、ログ確認、リプレイ管理ができるツールを作ります。
+
+作業:
+
+- テストシナリオ一覧を表示する
+- リプレイ一覧を表示する
+- Snapshot 一覧を表示する
+- Issue 一覧を表示する
+- Action を手動送信できるようにする
+- BOT / AI 実行を開始できるようにする
+- レポートを見やすく表示する
+
+完了条件:
+
+- ゲームを起動したまま、外部ツールから DebugAI を操作できる
+- テスト結果を外部ツール上で確認できる
+
+## 移植時の理想フォルダ
+
+将来的には以下のような構成を目指します。
+
+```text
+Engine/DebugAI/
+  DebugAI.h
+  DebugAIConfig.h
+  DebugAIManager.h
+  DebugAIManager.cpp
+  DebugTypes.h
+  IGameDebugAdapter.h
+  DebugLogger.h
+  DebugLogger.cpp
+  DebugReplayRecorder.h
+  DebugReplayRecorder.cpp
+  DebugReplayPlayer.h
+  DebugReplayPlayer.cpp
+  DebugCommand.h
+  DebugCommand.cpp
+  DebugJson.h
+  DebugJson.cpp
+  IDebugBot.h
+  RandomDebugBot.h
+  RandomDebugBot.cpp
+  ApiDebugBot.h
+  ApiDebugBot.cpp
+  ImGui/
+    DebugAIImGuiPanel.h
+    DebugAIImGuiPanel.cpp
 ```
 
-### リプレイ Action
+ゲーム側:
 
-```json
-{
-  "frame": 120,
-  "time": 2.0,
-  "scene": "Game",
-  "action": {
-    "name": "AttackWeak",
-    "targetId": "",
-    "intParam": 0,
-    "floatParam": 0.0
-  }
-}
-```
-
-### 異常発生時の情報
-
-```json
-{
-  "message": "Enemy HP became negative.",
-  "frame": 121,
-  "scene": "Game",
-  "lastAction": "AttackWeak",
-  "replayFile": "issue_replay_0001.jsonl",
-  "rngSeed": 12345
-}
+```text
+Game/Debug/
+  GameDebugAdapter.h
+  GameDebugAdapter.cpp
+  GameDebugSnapshot.cpp
+  GameDebugActions.cpp
 ```
 
 ## 未決定事項
 
-- リプレイはフレーム基準にするか、時間基準にするか
-- シーン遷移をどう記録するか
-- バトル前の動画スキップを Action として扱うか
-- 再現に必要なゲーム固有フラグは何か
-- 敵やボスの状態をどこまで復元するか
-- テストシナリオファイルをどこに置くか
-- 生成されたリプレイファイルを git 管理外にするか
-- DebugAI を Debug ビルド限定にするか
-- ImGui 上でリプレイ編集をできるようにするか
+- 通信方式は TCP、WebSocket、NamedPipe のどれにするか
+- Snapshot の共通 JSON 形式をどこまで決めるか
+- ゲーム固有 Snapshot をバイナリにするか JSON にするか
+- リプレイはフレーム基準を基本にするか、Action 順基準も持つか
+- 外部ツールは C++、C#、Python、Web UI のどれで作るか
+- AI API 連携はゲーム内から直接呼ぶか、外部ツール経由にするか
+- AI に渡す State をどこまで要約するか
+- AI の応答待ちを同期にするか非同期にするか
+- 長時間テストを CI で回すか、手元専用にするか
+- DebugAI Kit を Debug ビルド限定にするか
+- Issue 発生時にスクリーンショットや動画を保存するか
 
-## 直近のおすすめ実装
+## 直近の優先順位
 
-次に実装するなら、以下の順番が良さそうです。
+今のゲームで次にやるなら、以下の順番がよさそうです。
 
-1. `DebugReplayRecorder`
-2. 直近 Action のリングバッファ
-3. 異常検出時に直近リプレイを保存
-4. `debug_ai_report.txt` にリプレイファイルのパスを追加
+1. リプレイのずれ原因を追える差分ログを強化する
+2. ボス、敵、プレイヤーの Snapshot 復元対象を増やす
+3. `DebugCommand` / `DebugResponse` を追加する
+4. ImGui 操作を `DebugCommand` 経由に寄せる
+5. `IDebugBot` を追加して `RandomDebugBot` を差し替え可能にする
+6. `DebugGameState` / `DebugAction` の JSON 化を整理する
+7. `DebugAI.h` と `DebugAIConfig` を作る
+8. DebugAI Kit とゲーム固有 Adapter の境界を整理する
 
-これにより、現在のランダム BOT や今後の Coverage Bot に「再現可能な手順」が残せるようになります。
-
-その後に `DebugReplayPlayer` を実装します。
-
+この順番なら、今のゲームで使いながら、将来の移植ライブラリ化と外部ツール化の両方につなげられます。

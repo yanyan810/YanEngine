@@ -150,6 +150,13 @@ bool DebugReplayPlayer::ParseActionLine_(const std::string& line, DebugReplayAct
     ExtractString_(line, "\"targetId\"", outAction.action.targetId);
     ExtractInt_(line, "\"intParam\"", outAction.action.intParam);
     ExtractFloat_(line, "\"floatParam\"", outAction.action.floatParam);
+    ExtractString_(line, "\"stringParam\"", outAction.action.stringParam);
+    int holdFrames = 1;
+    if (ExtractInt_(line, "\"holdFrames\"", holdFrames) && holdFrames > 0) {
+        outAction.action.holdFrames = static_cast<unsigned int>(holdFrames);
+    } else {
+        outAction.action.holdFrames = 1;
+    }
     int durationFrames = 1;
     if (ExtractInt_(line, "\"durationFrames\"", durationFrames) && durationFrames > 0) {
         outAction.durationFrames = static_cast<unsigned int>(durationFrames);
@@ -350,6 +357,21 @@ void DebugReplayPlayer::ParseEntityStates_(const std::string& line, std::vector<
                 ExtractFloat_(objectText, "\"aiFloat1\"", entity.aiFloat1);
                 ExtractFloat_(objectText, "\"aiFloat2\"", entity.aiFloat2);
                 ExtractFloat_(objectText, "\"aiFloat3\"", entity.aiFloat3);
+
+                const size_t bossWanderVelPos = objectText.find("\"bossWanderVel\"");
+                if (bossWanderVelPos != std::string::npos) {
+                    const std::string bossWanderVelText = objectText.substr(bossWanderVelPos);
+                    ExtractFloat_(bossWanderVelText, "\"x\"", entity.bossWanderVel.x);
+                    ExtractFloat_(bossWanderVelText, "\"y\"", entity.bossWanderVel.y);
+                    ExtractFloat_(bossWanderVelText, "\"z\"", entity.bossWanderVel.z);
+                }
+                ExtractFloat_(objectText, "\"bossWanderChange\"", entity.bossWanderChange);
+                ExtractFloat_(objectText, "\"bossMoveMul\"", entity.bossMoveMul);
+                ExtractFloat_(objectText, "\"bossDropStartY\"", entity.bossDropStartY);
+                ExtractFloat_(objectText, "\"bossRushSpeed\"", entity.bossRushSpeed);
+                ExtractFloat_(objectText, "\"bossChaseSpeed\"", entity.bossChaseSpeed);
+                ExtractFloat_(objectText, "\"bossRushZMin\"", entity.bossRushZMin);
+                ExtractFloat_(objectText, "\"bossRushZMax\"", entity.bossRushZMax);
 
                 bool legacyPendingSpawn = false;
                 float legacySpawnDelay = 0.0f;
