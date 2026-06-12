@@ -9,6 +9,7 @@
 #include "Object3dCommon.h"
 #include "Particle.h"
 #include "ParticleCommon.h"
+#include "ParticleManager.h"
 #include "TextureManager.h"
 #include "DirectXCommon.h"
 #include "SrvManager.h"
@@ -142,6 +143,7 @@ void GameScene::DrawRender(GameApp& app) {
 
     // GPU Particle
     app.ParticleCom()->SetGraphicsPipelineState();
+    ParticleManager::GetInstance()->Draw(cmd);
 }
 
 void GameScene::Draw3D(GameApp& app) {
@@ -237,6 +239,55 @@ void GameScene::DrawImGui(GameApp& app) {
     }
     
     ImGui::End();
+
+    ImGui::Begin("Bone Attach");
+    static char weaponBoneName[128] = "ボーン.017";
+    static Vector3 weaponOffset{ 0.0f, 0.0f, 0.0f };
+    static Vector3 weaponRotate{ 0.0f, 0.0f, 0.0f };
+    static Vector3 weaponScale{ 0.15f, 0.15f, 0.15f };
+
+    ImGui::InputText("Weapon Bone", weaponBoneName, sizeof(weaponBoneName));
+    ImGui::DragFloat3("Weapon Offset", &weaponOffset.x, 0.01f);
+    ImGui::DragFloat3("Weapon Rotate", &weaponRotate.x, 0.01f);
+    ImGui::DragFloat3("Weapon Scale", &weaponScale.x, 0.01f, 0.001f, 10.0f);
+    if (player_ && ImGui::Button("Apply Weapon Attach")) {
+        player_->SetWeaponAttachment({ weaponBoneName }, weaponOffset, weaponRotate, weaponScale);
+    }
+
+    ImGui::Separator();
+    static char particleGroupName[128] = "BoneSpark";
+    static char particleBoneName[128] = "ボーン.017";
+    static Vector3 particleOffset{ 0.0f, 0.0f, 0.0f };
+    static int particleCount = 16;
+
+    ImGui::InputText("Particle Group", particleGroupName, sizeof(particleGroupName));
+    ImGui::InputText("Particle Bone", particleBoneName, sizeof(particleBoneName));
+    ImGui::DragFloat3("Particle Offset", &particleOffset.x, 0.01f);
+    ImGui::DragInt("Particle Count", &particleCount, 1, 1, 1024);
+
+    if (ImGui::Button("Create Default Group")) {
+        ParticleManager::GetInstance()->CreateParticleGroup(particleGroupName, "resources/white1x1.png");
+    }
+    ImGui::SameLine();
+    if (player_ && ImGui::Button("Emit From Bone")) {
+        player_->EmitParticleFromBone(
+            particleGroupName,
+            particleBoneName,
+            static_cast<uint32_t>(std::max(1, particleCount)),
+            particleOffset);
+    }
+
+    if (player_) {
+        Vector3 bonePos{};
+        if (player_->TryGetBoneWorldPosition(particleBoneName, bonePos, particleOffset)) {
+            ImGui::Text("Bone Pos: %.2f, %.2f, %.2f", bonePos.x, bonePos.y, bonePos.z);
+        } else {
+            ImGui::TextDisabled("Bone not found or pose is not ready.");
+        }
+    }
+    ImGui::End();
+
+    ParticleManager::GetInstance()->DrawImGui();
 
     DebugAIManager* debugAI = app.DebugAI();
     const DebugGameState debugState = CaptureDebugState();

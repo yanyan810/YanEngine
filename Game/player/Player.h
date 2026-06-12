@@ -1,5 +1,8 @@
 #pragma once
 #include <memory>
+#include <cstdint>
+#include <string>
+#include <vector>
 
 #include "AABB.h"   // Vector2 / Vector3 が入っている想定
 #include "Input.h"
@@ -126,6 +129,20 @@ public:
     Object3d* GetModelObject() const { return model_.get(); }
     PlayerAction GetCurrentAction() const { return action_; }
     PlayerAttackType GetCurrentAttackType() const { return attackType_; }
+    void SetWeaponAttachment(
+        const std::vector<std::string>& jointCandidates,
+        const Vector3& localOffset = { 0.0f, 0.0f, 0.0f },
+        const Vector3& rotate = { 0.0f, 0.0f, 0.0f },
+        const Vector3& scale = { 0.15f, 0.15f, 0.15f });
+    bool TryGetBoneWorldPosition(
+        const std::string& jointName,
+        Vector3& out,
+        const Vector3& localOffset = { 0.0f, 0.0f, 0.0f }) const;
+    bool EmitParticleFromBone(
+        const std::string& groupName,
+        const std::string& jointName,
+        uint32_t count,
+        const Vector3& localOffset = { 0.0f, 0.0f, 0.0f }) const;
 
 private:
     PlayerInputCommand ResolveInput_(const Input& input);
@@ -153,6 +170,17 @@ private:
     std::unique_ptr<Object3d> debugAtkCube_;   // 攻撃HB用
     std::unique_ptr<Object3d> debugEnemyCube_; // 敵AABB用
     std::unique_ptr<Object3d> swordObj_;
+    std::vector<std::string> weaponJointCandidates_{
+        "mixamorig:RightHand",
+        "RightHand",
+        "hand.R",
+        "Hand.R",
+        "ボーン.017",
+        "ボーン.005",
+    };
+    Vector3 weaponLocalOffset_{ 0.0f, 0.0f, 0.0f };
+    Vector3 weaponRotate_{ 0.0f, 0.0f, 0.0f };
+    Vector3 weaponScale_{ 0.15f, 0.15f, 0.15f };
 
     Camera* cam_ = nullptr;
 

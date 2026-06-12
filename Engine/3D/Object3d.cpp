@@ -41,6 +41,14 @@ static uint32_t CalcTotalVertexCount(const Model::ModelData& modelData) {
 	return static_cast<uint32_t>(total);
 }
 
+static Vector3 TransformPoint(const Vector3& point, const Matrix4x4& matrix) {
+	return {
+		point.x * matrix.m[0][0] + point.y * matrix.m[1][0] + point.z * matrix.m[2][0] + matrix.m[3][0],
+		point.x * matrix.m[0][1] + point.y * matrix.m[1][1] + point.z * matrix.m[2][1] + matrix.m[3][1],
+		point.x * matrix.m[0][2] + point.y * matrix.m[1][2] + point.z * matrix.m[2][2] + matrix.m[3][2],
+	};
+}
+
 void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx) {
 	SrvManager* srv = object3dCommon ? object3dCommon->GetSrvManager() : nullptr;
 	SkinningCommon* skin = object3dCommon ? object3dCommon->GetSkinningCommon() : nullptr;
@@ -672,24 +680,56 @@ void Object3d::SetModel(const std::string& filePath) {
 
 Matrix4x4 Object3d::GetJointWorldMatrix(const std::string& jointName) const
 {
+	Matrix4x4 jointWorld = Matrix4x4::MakeIdentity4x4();
+	TryGetJointWorldMatrix(jointName, jointWorld);
+	return jointWorld;
+}
+
+bool Object3d::TryGetJointWorldMatrix(const std::string& jointName, Matrix4x4& out) const
+{
 	if (!model_ || !model_->HasSkinning() || !animator_ || !animator_->IsPoseReady()) {
-		return Matrix4x4::MakeIdentity4x4();
+		return false;
 	}
 
 	const auto& poseSkeleton = animator_->GetPoseSkeleton();
 	auto it = poseSkeleton.jointMap.find(jointName);
 	if (it == poseSkeleton.jointMap.end()) {
-		return Matrix4x4::MakeIdentity4x4();
+		return false;
 	}
-	const int32_t jointIndex = it->second;
 
+	const int32_t jointIndex = it->second;
 	Matrix4x4 worldMatrixModel = Matrix4x4::MakeAffineMatrix(
 		transform.scale, transform.rotate, transform.translate);
 
-	Matrix4x4 jointWorld =
-		Matrix4x4::Multiply(poseSkeleton.joints[jointIndex].skeletonSpaceMatrix, worldMatrixModel);
+	out = Matrix4x4::Multiply(
+		poseSkeleton.joints[jointIndex].skeletonSpaceMatrix,
+		worldMatrixModel);
 
-	return jointWorld;
+	return true;
+}
+
+bool Object3d::GetJointWorldPosition(const std::string& jointName, Vector3& out, const Vector3& localOffset) const
+{
+	Matrix4x4 jointWorld{};
+	if (!TryGetJointWorldMatrix(jointName, jointWorld)) {
+		return false;
+	}
+
+	out = TransformPoint(localOffset, jointWorld);
+	return true;
+}
+
+bool Object3d::AttachObjectToJoint(Object3d& target, const std::string& jointName, const Vector3& localOffset, const Vector3& rotate, const Vector3& scale) const
+{
+	Vector3 position{};
+	if (!GetJointWorldPosition(jointName, position, localOffset)) {
+		return false;
+	}
+
+	target.SetTranslate(position);
+	target.SetRotate(rotate);
+	target.SetScale(scale);
+	return true;
 }
 
 bool Object3d::HasJoint(const std::string& jointName) const

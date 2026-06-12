@@ -9,6 +9,7 @@
 #include "Object3dCommon.h"
 #include "Particle.h"
 #include "ParticleCommon.h"
+#include "ParticleManager.h"
 #include "TextureManager.h"
 #include "DirectXCommon.h"
 #include "SrvManager.h"
@@ -279,6 +280,8 @@ void GameScene::Update(GameApp& app, float dt) {
         if (!kDebugDisableEnemies) {
             enemyMgr_.Update(dt, playerPos2D, playerZ, *player_, skipPendingSpawn);
         }
+
+        ParticleManager::GetInstance()->Update(dt, *camera_);
 
         if (bossHpFill_) {
             if (Enemy* boss = enemyMgr_.GetBoss()) {
