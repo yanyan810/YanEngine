@@ -3,6 +3,7 @@
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
 #include "Camera.h"
+#include "ParticleManager.h"
 
 #include "EnemyManager.h"
 
@@ -117,6 +118,38 @@ void Player::SetCamera(Camera* cam) {
     if (model_) model_->SetCamera(cam_);
 }
 
+void Player::SetWeaponAttachment(
+    const std::vector<std::string>& jointCandidates,
+    const Vector3& localOffset,
+    const Vector3& rotate,
+    const Vector3& scale) {
+    weaponJointCandidates_ = jointCandidates;
+    weaponLocalOffset_ = localOffset;
+    weaponRotate_ = rotate;
+    weaponScale_ = scale;
+}
+
+bool Player::TryGetBoneWorldPosition(const std::string& jointName, Vector3& out, const Vector3& localOffset) const {
+    if (!model_) {
+        return false;
+    }
+    return model_->GetJointWorldPosition(jointName, out, localOffset);
+}
+
+bool Player::EmitParticleFromBone(
+    const std::string& groupName,
+    const std::string& jointName,
+    uint32_t count,
+    const Vector3& localOffset) const {
+    Vector3 position{};
+    if (!TryGetBoneWorldPosition(jointName, position, localOffset)) {
+        return false;
+    }
+
+    ParticleManager::GetInstance()->Emit(groupName, position, count);
+    return true;
+}
+
 void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     (void)enemyMgr;
 
@@ -201,37 +234,11 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     if (model_) model_->Update(dt);
     if (model_ && swordObj_) {
-
-        const char* handJointName = "RightHand";
-        const char* candidates[] = {
-            "mixamorig:RightHand",
-            "RightHand",
-            "hand.R",
-            "Hand.R",
-            "ボーン.017",
-            "ボーン.005",
-        };
-        for (const char* candidate : candidates) {
-            if (model_->HasJoint(candidate)) {
-                handJointName = candidate;
+        for (const std::string& jointName : weaponJointCandidates_) {
+            if (model_->AttachObjectToJoint(*swordObj_, jointName, weaponLocalOffset_, weaponRotate_, weaponScale_)) {
                 break;
             }
         }
-
-        Matrix4x4 handW = model_->GetJointWorldMatrix(handJointName);
-
-        Vector3 handPos{ handW.m[3][0], handW.m[3][1], handW.m[3][2] };
-
-        Vector3 offset{ 0.0f, 0.0f, 0.0f };
-        Vector3 swordScale{ 0.15f, 0.15f, 0.15f };
-
-        swordObj_->SetScale(swordScale);
-        swordObj_->SetTranslate({
-            handPos.x + offset.x,
-            handPos.y + offset.y,
-            handPos.z + offset.z
-            });
-
     }
 
 
@@ -239,12 +246,6 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     //if (once && swordObj_) {
     //    once = false;
     //}
-
-    if (swordObj_) {
-        const auto& t = swordObj_->GetTranslate();
-        OutputDebugStringA(std::format("[SwordObj] translate=({:.3f},{:.3f},{:.3f})\n", t.x, t.y, t.z).c_str());
-    }
-
 
 	if (swordObj_) swordObj_->Update(dt);
     if (debugAtkCube_) debugAtkCube_->Update(dt);

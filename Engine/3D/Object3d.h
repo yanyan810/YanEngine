@@ -248,6 +248,9 @@ public:
 	bool IsFading() const { return animator_ ? animator_->IsFading() : false; }
 
 	Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
+	bool TryGetJointWorldMatrix(const std::string& jointName, Matrix4x4& out) const;
+	bool GetJointWorldPosition(const std::string& jointName, Vector3& out, const Vector3& localOffset = { 0.0f, 0.0f, 0.0f }) const;
+	bool AttachObjectToJoint(Object3d& target, const std::string& jointName, const Vector3& localOffset, const Vector3& rotate, const Vector3& scale) const;
 	bool HasJoint(const std::string& jointName) const;
 
 	const std::string& GetPlayingAnimName() const { static std::string empty; return animator_ ? animator_->GetPlayingAnimName() : empty; }

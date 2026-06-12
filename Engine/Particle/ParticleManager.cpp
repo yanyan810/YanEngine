@@ -220,6 +220,15 @@ void ParticleManager::Emit(const std::string& groupName,
     auto it = particleGroups_.find(groupName);
     if (it == particleGroups_.end()) return;
 
+    ParticleGroup& group = it->second;
+    if (group.mappedEmitter) {
+        group.mappedEmitter->translate = pos;
+        group.mappedEmitter->count = count;
+        group.isAutoEmit = false;
+        group.isEmitRequested = true;
+        return;
+    }
+
     std::uniform_real_distribution<float> d(-1.0f, 1.0f);
     std::uniform_real_distribution<float> c(0.0f, 1.0f);
     std::uniform_real_distribution<float> t(1.0f, 3.0f);
@@ -238,7 +247,7 @@ void ParticleManager::Emit(const std::string& groupName,
         p.lifeTime = t(randomEngine_);
         p.currentTime = 0.0f;
 
-        it->second.particles.push_back(p);
+        group.particles.push_back(p);
     }
 }
 
