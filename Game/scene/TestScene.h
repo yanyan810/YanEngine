@@ -46,10 +46,32 @@ private:
     bool reachedEdge_ = false; // TestScene メンバ
 
     bool prevAtRight_ = false;
+    bool enableEdgeTransition_ = false;
+    bool bossAIEnabled_ = false;
+    bool applyBossHitImmediately_ = true;
+    bool resetFightersRequested_ = false;
+    bool outOfBoundsEnabled_ = true;
+    bool resetDamageOnOutOfBounds_ = false;
+    float outLeftX_ = -26.0f;
+    float outRightX_ = 26.0f;
+    float outBottomY_ = -8.0f;
+    Vector3 bossSpawnPos_{ 0.0f, 0.0f, 5.0f };
+    Vector3 playerSpawnPos_{ -12.0f, 0.0f, 5.0f };
+    Vector3 dropRespawnPos_{ 0.0f, 12.0f, 5.0f };
 
     std::unique_ptr<Object3d> ground_;
 
     std::unique_ptr<Object3d> skyDome_;
+    std::unique_ptr<Object3d> knockbackPreviewLine_;
+    bool drawKnockbackPreview_ = true;
+    bool freezeKnockbackPreviewWhileLaunched_ = true;
+    bool previewLineWasLaunched_ = false;
+    bool previewUsesPlayerPercent_ = true;
+    int previewLineMode_ = 0; // 0: actual distance, 1: launch velocity
+    int previewAttackKind_ = 2;
+    float previewPercent_ = 80.0f;
+    float previewLineScale_ = 1.0f;
+    float previewLineThickness_ = 0.08f;
 
     // ===== Lighting params =====
     LightingParam light_;

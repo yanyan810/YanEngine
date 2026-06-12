@@ -36,6 +36,7 @@ public:
         FastFall,
         Guard,
         Attack,
+        Launched,
     };
 
     enum class PlayerAttackType {
@@ -93,6 +94,13 @@ public:
     void AddHP(int heal);
 
     void Damage(int Damage);
+    void AddDamagePercent(float damagePercent);
+    void SetDamagePercent(float damagePercent);
+    float GetDamagePercent() const { return damagePercent_; }
+    float GetGravity() const { return gravity_; }
+    void ApplyLaunch(const Vector3& velocity, float hitStunSec);
+    void ApplyBossHit(float damagePercent, float baseKnockback, float knockbackScale, const Vector3& knockbackDir, float hitStunSec);
+    bool IsLaunched() const { return launched_; }
     void SetHP(int hp);
 
     float GetX() const { return pos_.x; }
@@ -101,6 +109,7 @@ public:
 	int GetMaxHP() const { return 100; } // 固定値で良ければ
 
     void SetSpawnPos(const Vector3& p);
+    void SetDropRespawnPos(const Vector3& p);
 
     bool IsDead() const { return dead_; }
 
@@ -153,6 +162,8 @@ private:
 
     bool onGround_ = true;
     int  facing_ = +1; // +1:right / -1:left
+    int jumpCount_ = 0;
+    int maxJumpCount_ = 2;
 
     // ★移動ロック（秒）: >0 の間は移動入力を無視する
     float moveLockSec_ = 0.0f;
@@ -167,6 +178,8 @@ private:
     bool guarding_ = false;
     bool crouching_ = false;
     bool fastFalling_ = false;
+    bool launched_ = false;
+    float launchedTimer_ = 0.0f;
     float fastFallSpeed_ = 28.0f;
 
     // パラメータ
@@ -177,6 +190,7 @@ private:
     float zView_ = 15.0f;
 
     int hp_ = 100;
+    float damagePercent_ = 0.0f;
 
     // コンボ（あなたの既存クラスに差し替える）
     AABB body_{};

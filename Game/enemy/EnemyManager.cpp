@@ -108,6 +108,30 @@ void EnemyManager::Spawn(EnemyType type, const Vector3& posXYZ) {
 	enemies_.push_back(std::move(e));
 }
 
+EnemyManager::BossHitTuning& EnemyManager::BossTuning(MeleeKind kind) {
+	switch (kind) {
+	case MeleeKind::Land:
+		return bossLandTuning_;
+	case MeleeKind::Rush:
+		return bossRushTuning_;
+	case MeleeKind::Normal:
+	default:
+		return bossNormalTuning_;
+	}
+}
+
+const EnemyManager::BossHitTuning& EnemyManager::BossTuning(MeleeKind kind) const {
+	switch (kind) {
+	case MeleeKind::Land:
+		return bossLandTuning_;
+	case MeleeKind::Rush:
+		return bossRushTuning_;
+	case MeleeKind::Normal:
+	default:
+		return bossNormalTuning_;
+	}
+}
+
 std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(Player& player) {
 	std::vector<PlayerAttackHitEvent> hitEvents;
 	AABB attackBox{};
@@ -295,7 +319,20 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 	for (auto& h : meleeHitboxes_) {
 		if (Intersect3(h.box, playerBody3)) {
 			player.TriggerHitFlash(0.25f); // 螂ｽ縺阪↑遘呈焚
-			player.Damage(h.damage);
+			if (h.fromBoss) {
+				BossHitTuning tuning = BossTuning(h.kind);
+				Vector3 dir = tuning.knockbackDir;
+				const float dirX = (player.GetX() >= h.attackerPos.x) ? 1.0f : -1.0f;
+				dir.x = std::abs(dir.x) * dirX;
+				player.ApplyBossHit(
+					tuning.damagePercent,
+					tuning.baseKnockback,
+					tuning.knockbackScale,
+					dir,
+					tuning.hitStunSec);
+			} else {
+				player.Damage(h.damage);
+			}
 
 			// 1蝗槫ｽ薙◆縺｣縺溘ｉ豸医☆縺ｪ繧・
 			h.life = 0.0f;
@@ -369,7 +406,7 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			hb.hy = halfY;
 			hb.hz = halfZ;
 
-			meleeHitboxes_.push_back({ hb, life, dmg });
+			meleeHitboxes_.push_back({ hb, life, dmg, isBoss, kind, ep, facing });
 		}
 
 	}

@@ -69,7 +69,7 @@ private:
 	float circle_ = 1.0f;   // ★Titleは最初から開いている
 	float softness_ = 0.6f;
 
-	const char* kNextScene_ = "Test"; // SPACE後に行く先
+	const char* kNextScene_ = "Game"; // SPACE後に行く先
 
 	//確認
 	std::unique_ptr<Object3d> testObj_;

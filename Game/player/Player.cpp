@@ -129,33 +129,49 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     isMoving = false;
     UpdateActionTimer_(dt);
 
+    if (launched_) {
+        if (launchedTimer_ > 0.0f) {
+            launchedTimer_ -= dt;
+        }
+        if (launchedTimer_ <= 0.0f && onGround_) {
+            launched_ = false;
+            launchedTimer_ = 0.0f;
+            action_ = PlayerAction::Idle;
+        }
+    }
+
     // 笘・ｧｻ蜍輔Ο繝・け譖ｴ譁ｰ
     if (moveLockSec_ > 0.0f) {
         moveLockSec_ -= dt;
         if (moveLockSec_ < 0.0f) moveLockSec_ = 0.0f;
     }
 
-    const bool useDebugCommand = hasDebugCommand_;
-    const PlayerInputCommand command = useDebugCommand
+    const bool inputBlockedByLaunch = launched_;
+    const bool useDebugCommand = hasDebugCommand_ && !inputBlockedByLaunch;
+    PlayerInputCommand command = useDebugCommand
         ? debugCommand_
-        : (externalInputBlocked_ ? PlayerInputCommand{} : ResolveInput_(input));
+        : ((externalInputBlocked_ || inputBlockedByLaunch) ? PlayerInputCommand{} : ResolveInput_(input));
+    if (launched_) {
+        command.action = PlayerAction::Launched;
+    }
     hasDebugCommand_ = false;
 
     // --- 繧ｸ繝｣繝ｳ繝暦ｼ・・・---
-    if (command.jumpTriggered && onGround_ && actionTimer_ <= 0.0f && !command.guard) {
+    if (command.jumpTriggered && jumpCount_ < maxJumpCount_ && actionTimer_ <= 0.0f && !command.guard) {
         onGround_ = false;
         vel_.y = jumpVel_;
+        ++jumpCount_;
     }
 
     // 1) 遘ｻ蜍募・蜉幢ｼ医Ο繝・け荳ｭ縺ｯ辟｡隕厄ｼ・
-    if (!IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
+    if (!inputBlockedByLaunch && !IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
         if (useDebugCommand) {
             UpdateMove_(dt, command);
         } else {
             UpdateMove_(dt, input);
         }
     }
-    else {
+    else if (!launched_) {
         vel_.x = 0.0f;
         vel_.z = 0.0f;
     }
