@@ -32,7 +32,7 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/BoxFilter.PS.hlsl",
     L"resources/shaders/GaussianBlurX.PS.hlsl",
     L"resources/shaders/GaussianBlurY.PS.hlsl",
-    L"resources/shaders/Fullscreen.PS.hlsl", // GaussianBlur髢ｾ・ｪ闖ｴ阮吶・郢昶ぎ郢晄ｺ倥・
+    L"resources/shaders/Fullscreen.PS.hlsl",
     L"resources/shaders/Outline.PS.hlsl",
     L"resources/shaders/RadialBlur.PS.hlsl",
     L"resources/shaders/Dissolve.PS.hlsl",
@@ -84,26 +84,22 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
 
     CreateCopyImageRootSignature();
 
-    // GaussianFilter騾包ｽｨ邵ｺ・ｮ陞ｳ螢ｽ辟夂ｹ晁・繝｣郢晁ｼ斐＜郢ｧ蜑・ｽｽ諛医・
     gaussianFilterCB_ = dx_->CreateBufferResource((sizeof(GaussianFilterParameter) + 0xff) & ~0xff);
     gaussianFilterCB_->Map(0, nullptr, reinterpret_cast<void**>(&gaussianFilterCBData_));
     gaussianFilterCBData_->sigma = sigma_;
 
-    // Outline騾包ｽｨ邵ｺ・ｮ陞ｳ螢ｽ辟夂ｹ晁・繝｣郢晁ｼ斐＜郢ｧ蜑・ｽｽ諛医・
     outlineCB_ = dx_->CreateBufferResource((sizeof(OutlineParameter) + 0xff) & ~0xff);
     outlineCB_->Map(0, nullptr, reinterpret_cast<void**>(&outlineCBData_));
     outlineCBData_->color = outlineColor_;
     outlineCBData_->thickness = outlineThickness_;
     outlineCBData_->threshold = outlineThreshold_;
 
-    // RadialBlur逕ｨ縺ｮ螳壽焚繝舌ャ繝輔ぃ繧剃ｽ懈・
     radialBlurCB_ = dx_->CreateBufferResource((sizeof(RadialBlurParameter) + 0xff) & ~0xff);
     radialBlurCB_->Map(0, nullptr, reinterpret_cast<void**>(&radialBlurCBData_));
     radialBlurCBData_->center = radialBlurCenter_;
     radialBlurCBData_->numSamples = radialBlurNumSamples_;
     radialBlurCBData_->blurWidth = radialBlurWidth_;
 
-    // Dissolve逕ｨ縺ｮ螳壽焚繝舌ャ繝輔ぃ繧剃ｽ懈・
     dissolveCB_ = dx_->CreateBufferResource((sizeof(DissolveParameter) + 0xff) & ~0xff);
     dissolveCB_->Map(0, nullptr, reinterpret_cast<void**>(&dissolveCBData_));
     dissolveCBData_->edgeColor = dissolveEdgeColor_;
@@ -111,16 +107,13 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     dissolveCBData_->edgeWidth = dissolveEdgeWidth_;
     dissolveCBData_->backgroundColor = dissolveBackgroundColor_;
 
-    // Random用の定数バッファを作成
     randomCB_ = dx_->CreateBufferResource((sizeof(RandomParameter) + 0xff) & ~0xff);
     randomCB_->Map(0, nullptr, reinterpret_cast<void**>(&randomCBData_));
     randomCBData_->time = 0.0f;
 
-    // ノイズテクスチャのロードとSRVインデックス取得繝弱う繧ｺ繝・け繧ｹ繝√Ε縺ｮ繝ｭ繝ｼ繝峨→SRV繧､繝ｳ繝・ャ繧ｯ繧ｹ蜿門ｾ・
     TextureManager::GetInstance()->LoadTexture("resources/noise0.png");
     noiseSrvIndex_ = TextureManager::GetInstance()->GetSrvIndex("resources/noise0.png");
 
-    // 雎ｺ・ｱ陟趣ｽｦ郢晁・繝｣郢晁ｼ斐＜騾包ｽｨ邵ｺ・ｮSRV郢ｧ蜑・ｽｽ諛医・
     depthSrvIndex_ = srv_->Allocate();
     srv_->CreateSRVTexture2D(depthSrvIndex_, dx_->GetDepthStencilResource(), DXGI_FORMAT_R32_FLOAT, 1);
 
@@ -350,7 +343,6 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
         cmd->SetGraphicsRootConstantBufferView(5, dissolveCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::Random) {
 #ifdef USE_IMGUI
-        // 時間を更新してセットする
         if (randomCBData_) {
             randomCBData_->time = (float)ImGui::GetTime();
         }
@@ -432,12 +424,10 @@ void RenderManager::DrawOffscreenToBackBuffer()
             offscreen_->GetSrvIndex(),
             offscreen_->GetResource()
         );
-        // 繝昴せ繝医お繝輔ぉ繧ｯ繝亥ｮ御ｺ・ｾ後∝ｾ檎ｶ壹・UI繧・せ繝励Λ繧､繝域緒逕ｻ縺ｮ縺溘ａ縺ｫ騾壼ｸｸ縺ｮRTV+DSV迥ｶ諷九↓謌ｻ縺励※縺翫￥
         dx_->SetBackBufferRenderTarget();
         return;
     }
 
-    // 豺ｱ蠎ｦ繝舌ャ繝輔ぃ繧担RV縺ｨ縺励※隱ｭ縺ｿ霎ｼ繧縺溘ａ縺ｮ繝舌Μ繧｢
     dx_->TransitionResource(
         dx_->GetDepthStencilResource(),
         D3D12_RESOURCE_STATE_DEPTH_WRITE,
@@ -489,14 +479,12 @@ void RenderManager::DrawOffscreenToBackBuffer()
         }
     }
 
-    // 豺ｱ蠎ｦ繝舌ャ繝輔ぃ繧貞・縺ｮ迥ｶ諷具ｼ域嶌縺崎ｾｼ縺ｿ逕ｨ・峨↓謌ｻ縺・
     dx_->TransitionResource(
         dx_->GetDepthStencilResource(),
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_STATE_DEPTH_WRITE
     );
 
-    // 繝昴せ繝医お繝輔ぉ繧ｯ繝亥ｮ御ｺ・ｾ後∝ｾ檎ｶ壹・UI繧・せ繝励Λ繧､繝域緒逕ｻ縺ｮ縺溘ａ縺ｫ騾壼ｸｸ縺ｮRTV+DSV迥ｶ諷九↓謌ｻ縺励※縺翫￥
     dx_->SetBackBufferRenderTarget();
 }
 

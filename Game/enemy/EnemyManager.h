@@ -75,7 +75,7 @@ public:
     void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
 
     bool IsBossDefeated() const { return bossDefeated_; }
-    void ClearBossDefeatedFlag() { bossDefeated_ = false; } // 莉ｻ諢・
+    void ClearBossDefeatedFlag() { bossDefeated_ = false; }
 
     void SetLighting(const LightingParam& p);
 
@@ -110,21 +110,18 @@ private:
 
     BulletManager bullets_;
 
-    //蝗槫ｾｩ
     struct HealDrop {
         Vector3 pos;
-        float life = 10.0f;     // 豸医∴繧九∪縺ｧ縺ｮ譎る俣・育ｧ抵ｼ・0莉･荳九〒豸域ｻ・
-        float radius = 0.6f;    // 諡ｾ縺・愛螳壹・蜊雁ｾ・ｼ・Y・・
-        int amount = 100;         // 蝗槫ｾｩ驥・
+        float life = 10.0f;
+        float radius = 0.6f;
+        int amount = 100;
     };
 
     std::vector<HealDrop> healDrops_;
 
-    // 隱ｿ謨ｴ逕ｨ
-    float healDropChance_ = 0.0f; // 35%縺ｧ關ｽ縺｡繧・
+    float healDropChance_ = 0.0f;
     int healDropAmount_ = 10;
 
-    // 荵ｱ謨ｰ
     float Rand01_();
     void TrySpawnHealDrop_(const Enemy& e);
     void UpdateHealDrops_(float dt, Player& player);
@@ -132,18 +129,16 @@ private:
 
     struct PendingSpawn {
         EnemyType type;
-        float t; // 谿九ｊ遘・
+        float t;
     };
     std::vector<PendingSpawn> pendingSpawns_;
     std::vector<DebugSpawnOverride> replaySpawnOverrides_;
 
-    // 隱ｿ謨ｴ
-    float spawnInterval_ = 1.0f;   // 1菴薙★縺､貉ｧ縺城俣髫費ｼ亥・譛滓ｹｧ縺咲畑縺ｫ菴ｿ縺・↑繧会ｼ・
-    float respawnDelay_ = 10.0f;  // 蛟偵＆繧後◆繧我ｽ慕ｧ貞ｾ後↓霑ｽ蜉縺吶ｋ縺・
+    float spawnInterval_ = 1.0f;
+    float respawnDelay_ = 10.0f;
 
     size_t maxAlive_ = 6;
 
-    // 蜀・Κ
     Vector3 MakeOutsideSpawnPos_(const Vector2& playerXY, float playerZ);
     void UpdatePendingSpawns_(float dt, const Vector2& playerXY, float playerZ);
     float RandRange_(float a, float b);

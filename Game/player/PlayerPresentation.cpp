@@ -73,7 +73,6 @@ void Player::ResetTitleAttackDemo()
     titleDemoTimer_ = 0.0f;
     titleDemoNextIsI_ = true;
 
-    // 隕九◆逶ｮ繧ゅΜ繧ｻ繝・ヨ縺励◆縺代ｌ縺ｰ
     if (model_) {
         model_->PlayAnimation("", true);
         curAnim_ = "Idle";
@@ -84,13 +83,10 @@ void Player::UpdateTitleAttackDemo(float dt, float intervalSec)
 {
     if (!model_) return;
 
-    // interval 縺ｮ螳牙・遲・
     if (intervalSec < 0.05f) intervalSec = 0.05f;
 
-    // 縺ｾ縺壹い繝九Γ譎る俣繧帝ｲ繧√ｋ・遺・縺薙ｌ雜・㍾隕・ｼ・
     model_->Update(dt);
 
-    // 謾ｻ謦・い繝九Γ荳ｭ縺ｪ繧峨檎ｵゅｏ繧九∪縺ｧ蠕・▽縲・
     const bool inAttackAnim = (curAnim_ == "Attak_I" || curAnim_ == "Attak_O");
     if (inAttackAnim) {
         if (model_->IsAnimationFinished()) {
@@ -100,7 +96,6 @@ void Player::UpdateTitleAttackDemo(float dt, float intervalSec)
         return;
     }
 
-    // 谺｡縺ｮ謾ｻ謦・ち繧､繝溘Φ繧ｰ
     titleDemoTimer_ += dt;
     if (titleDemoTimer_ >= intervalSec) {
         titleDemoTimer_ = 0.0f;

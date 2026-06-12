@@ -64,7 +64,7 @@ float EnemyManager::RandRange_(float a, float b) {
 
 void EnemyManager::QueueSpawn(EnemyType type, float delaySec) {
 	if (enemies_.size() >= maxAlive_) {
-		return; // 笘・ｸ企剞縺ｪ繧我ｺ育ｴ・＠縺ｪ縺・ｼ・・・
+		return;
 	}
 	pendingSpawns_.push_back({ type, delaySec });
 }
@@ -87,7 +87,6 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 	debugHitboxCube_->SetCamera(cam_);
 	debugHitboxCube_->SetModel("heal/heal.obj");
 
-	//蠑ｾ
 	bullets_.Initialize(objCommon_, dx_, cam_);
 
 }
@@ -299,13 +298,11 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 }
 
 void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn) {
-	// 1) 敵本体の更新
 	for (auto& e : enemies_) {
-		e.Update(dt, playerXY, playerZ); // 竊・繧ゅ＠菴ｿ縺・↑繧牙ｼ墓焚繧呈綾縺励※OK
+		e.Update(dt, playerXY, playerZ);
 		e.SetLighting(light_);
 	}
 
-	// 2) 霑第磁繝偵ャ繝医・繝・け繧ｹ蟇ｿ蜻ｽ譖ｴ譁ｰ
 	for (auto& h : meleeHitboxes_) h.life -= dt;
 	meleeHitboxes_.erase(
 		std::remove_if(meleeHitboxes_.begin(), meleeHitboxes_.end(),
@@ -313,12 +310,11 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 		meleeHitboxes_.end()
 	);
 
-	// 霑第磁繝偵ャ繝医・繝・け繧ｹ vs 繝励Ξ繧､繝､繝ｼ
 	const AABB3 playerBody3 = ToAABB3(player.GetBodyAABB());
 
 	for (auto& h : meleeHitboxes_) {
 		if (Intersect3(h.box, playerBody3)) {
-			player.TriggerHitFlash(0.25f); // 螂ｽ縺阪↑遘呈焚
+			player.TriggerHitFlash(0.25f);
 			if (h.fromBoss) {
 				BossHitTuning tuning = BossTuning(h.kind);
 				Vector3 dir = tuning.knockbackDir;
@@ -334,16 +330,13 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 				player.Damage(h.damage);
 			}
 
-			// 1蝗槫ｽ薙◆縺｣縺溘ｉ豸医☆縺ｪ繧・
 			h.life = 0.0f;
 		}
 	}
 
 
-	// 3) 謾ｻ謦・ｦ∵ｱゅｒ蝗槫庶
 	for (auto& e : enemies_) {
 
-		// ---- Shooter・壼ｼｾ逋ｺ蟆・ｦ∵ｱ・----
 		Vector3 muzzle{};
 		int dir = +1;
 		if (e.ConsumeShootRequest(muzzle, dir)) {
@@ -353,14 +346,12 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			bullets_.Spawn(muzzle, dir, 7);
 		}
 
-		// ---- Melee・夊ｿ第磁謾ｻ謦・ヲ繝・ヨ繝懊ャ繧ｯ繧ｹ逕滓・ ----
 		MeleeKind kind{};
 		if (e.ConsumeMeleeRequest(kind)) {
 
 			Vector3 ep = e.GetPos3D();
 			const bool isBoss = e.IsBoss();
 
-			// 笘・蜈医↓菫晞匱・夐撼繝懊せ縺ｯ蠢・★ Normal
 			if (!isBoss) {
 				kind = MeleeKind::Normal;
 			}
@@ -411,21 +402,16 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 
 	}
 
-	// 4) 豁ｻ莠｡蜑企勁・遺・蜑企勁逶ｴ蜑阪↓蝗槫ｾｩ繝峨Ο繝・・謚ｽ驕ｸ・・
 	enemies_.erase(std::remove_if(enemies_.begin(), enemies_.end(),
 		[this](const Enemy& e) {
 			if (!e.IsAlive()) {
 
-				// 笘・・繧ｹ豁ｻ莠｡繝輔Λ繧ｰ
 				if (e.GetType() == EnemyType::Boss) {
 					bossDefeated_ = true;
-					// 繝懊せ縺ｯ蠕ｩ豢ｻ莠育ｴ・＠縺ｪ縺・・蝗槫ｾｩ繝峨Ο繝・・繧ゅ＠縺ｪ縺・↑繧峨％縺薙〒return縺ｧ繧０K
 				}
 
-				// 笘・屓蠕ｩ繝峨Ο繝・・謚ｽ驕ｸ・医・繧ｹ縺ｯTrySpawnHealDrop_蛛ｴ縺ｧ蠑ｾ縺・※繧具ｼ・
 				TrySpawnHealDrop_(e);
 
-				// 笘・elee / Shooter 縺悟偵＆繧後◆繧我ｺ育ｴ・せ繝昴・繝ｳ
 				if (e.GetType() == EnemyType::Melee || e.GetType() == EnemyType::Shooter) {
 					QueueSpawn(e.GetType(), respawnDelay_);
 				}
@@ -465,13 +451,9 @@ void EnemyManager::Draw() {
 
 	//if (debugDrawMeleeHitbox_ && debugHitboxCube_) {
 	//	for (const auto& h : meleeHitboxes_) {
-	//		const auto& b = h.box; // AABB3・・enter + half・・
 
-	//		// center 縺ｯ縺昴・縺ｾ縺ｾ菴ｿ縺医ｋ
 	//		Vector3 center{ b.x, b.y, b.z };
 
-	//		// Object3d 縺ｮ cube 縺ｯ縲茎cale 縺悟・繧ｵ繧､繧ｺ縲阪↑繧・2蛟阪☆繧・
-	//		// ・医≠縺ｪ縺溘・螳溯｣・′蜊雁ｹ・せ繧ｱ繝ｼ繝ｫ縺ｪ繧峨％縺薙・隱ｿ謨ｴ・・
 	//		Vector3 size{ b.hx * 2.0f, b.hy * 2.0f, b.hz * 2.0f };
 
 	//		debugHitboxCube_->SetTranslate(center);
@@ -491,10 +473,8 @@ float EnemyManager::Rand01_() {
 }
 
 void EnemyManager::TrySpawnHealDrop_(const Enemy& e) {
-	// 繝懊せ縺ｯ關ｽ縺ｨ縺輔↑縺・
 	if (e.GetType() != EnemyType::Melee && e.GetType() != EnemyType::Shooter) return;
 
-	// 遒ｺ邇・
 	if (Rand01_() > healDropChance_) return;
 
 	HealDrop d;
@@ -520,7 +500,6 @@ void EnemyManager::UpdateHealDrops_(float dt, Player& player) {
 		if ((dx * dx + dy * dy + dz * dz) <= (r * r)) {
 			player.AddHP(d.amount);
 
-			// 笘・ョ繝舌ャ繧ｰ繝ｭ繧ｰ・亥屓蠕ｩ縺励◆縺狗｢ｺ隱搾ｼ・
 			char buf[128];
 			sprintf_s(buf, "[Heal] +%d hp -> %d\n", d.amount, player.GetHP());
 			OutputDebugStringA(buf);
@@ -538,13 +517,9 @@ void EnemyManager::UpdateHealDrops_(float dt, Player& player) {
 
 
 void EnemyManager::DrawHealDrops_() {
-	// 隕九◆逶ｮ縺ｯ縲後く繝･繝ｼ繝悶阪〒莉｣逕ｨ・域焔霆ｽ・・
-	// 譌｢縺ｫ debugHitboxCube_ 繧呈戟縺｣縺ｦ繧九・縺ｧ縺昴ｌ繧呈ｵ∫畑縺ｧ縺阪∪縺・
 	if (!debugHitboxCube_) return;
 
 	for (auto& d : healDrops_) {
-		// 縺薙％縺ｯ縺ゅ↑縺溘・ Object3d 縺ｮ菴ｿ縺・婿縺ｫ蜷医ｏ縺帙※縺上□縺輔＞
-		// 萓具ｼ壻ｽ咲ｽｮ縺縺醍ｽｮ縺・※謠冗判・郁牡譖ｿ縺医〒縺阪ｋ縺ｪ繧臥ｷ代▲縺ｽ縺擾ｼ・
 		debugHitboxCube_->SetTranslate(d.pos);
 		debugHitboxCube_->SetScale({ 0.4f, 0.4f, 0.4f });
 
@@ -553,10 +528,10 @@ void EnemyManager::DrawHealDrops_() {
 }
 
 Vector3 EnemyManager::MakeOutsideSpawnPos_(const Vector2& playerXY, float playerZ) {
-	const float halfW = 12.0f;   // 逕ｻ髱｢縺ｮ蜊雁・蟷・ｼ郁ｪｿ謨ｴ・・
-	const float pad = 3.0f;    // 逕ｻ髱｢螟悶↓縺ｩ繧後□縺大・縺吶°
-	const float xRand = 3.0f;    // 螟門・縺ｧ縺ｮ縺ｰ繧峨▽縺・
-	const float yRand = 0.0f;    // Y縺ｮ縺ｰ繧峨▽縺・
+	const float halfW = 12.0f;
+	const float pad = 3.0f;
+	const float xRand = 3.0f;
+	const float yRand = 0.0f;
 
 	const bool fromLeft = (std::rand() % 2) == 0;
 
@@ -571,24 +546,19 @@ Vector3 EnemyManager::MakeOutsideSpawnPos_(const Vector2& playerXY, float player
 
 	float y = RandRange_(playerXY.y - yRand, playerXY.y + yRand);
 
-	// Z縺ｯ隕九◆逶ｮ逕ｨ縺ｪ繧・playerZ 縺ｫ蜷医ｏ縺帙ｋ縺ｮ縺檎┌髮｣
 	return Vector3{ x, y, playerZ };
 }
 
 void EnemyManager::UpdatePendingSpawns_(float dt, const Vector2& playerXY, float playerZ) {
-	// 繧ｿ繧､繝槭・譖ｴ譁ｰ
 	for (auto& p : pendingSpawns_) p.t -= dt;
 
-	// 笘・ｸ企剞縺ｫ驕斐＠縺ｦ繧九↑繧我ｺ育ｴ・ｒ蜈ｨ驛ｨ謐ｨ縺ｦ繧具ｼ・・・
 	if (enemies_.size() >= maxAlive_) {
 		pendingSpawns_.clear();
 		return;
 	}
 
-	// t<=0 縺ｮ繧ゅ・繧偵∫ｩｺ縺阪′縺ゅｋ蛻・□縺代せ繝昴・繝ｳ
 	for (size_t i = 0; i < pendingSpawns_.size();) {
 		if (enemies_.size() >= maxAlive_) {
-			// 騾比ｸｭ縺ｧ荳企剞縺ｫ驕斐＠縺溘ｉ縲∵ｮ九ｊ莠育ｴ・・謐ｨ縺ｦ繧具ｼ・・・
 			pendingSpawns_.clear();
 			return;
 		}
