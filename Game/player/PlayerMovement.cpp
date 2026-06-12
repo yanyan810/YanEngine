@@ -24,7 +24,7 @@ void Player::UpdateMove_(float /*dt*/, const Input& input) {
 
     // --- 螂･陦後″・・・・---
     float mz = 0.0f;
-    if (input.IsKeyPressed(DIK_UP) || input.IsKeyPressed(DIK_W)) mz += 1.0f, isMoving = true; // 螂･縺ｸ +Z
+    if (input.IsKeyPressed(DIK_UP)) mz += 1.0f, isMoving = true; // 螂･縺ｸ +Z
     if (input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S)) mz -= 1.0f, isMoving = true; // 謇句燕縺ｸ -Z
 
     vel_.z = mz * depthSpeed_;
@@ -64,25 +64,13 @@ void Player::ApplyPhysics_(float dt) {
         pos_.y = 0.0f;
         vel_.y = 0.0f;
         onGround_ = true;
+        jumpCount_ = 0;
     }
 
     // 螂･陦後″蛻ｶ髯・
     const float zNear = -15.0f; // 謇句燕・・IK_DOWN縺ｧ陦後￥蛛ｴ・・
     const float zFar = 20.0f; // 螂･・・IK_UP縺ｧ陦後￥蛛ｴ・・
     pos_.z = std::clamp(pos_.z, zNear, zFar);
-
-    // 笘・Z縺ｫ蠢懊§縺ｦ X 縺ｮ遽・峇繧貞､峨∴繧・
-    const float xMaxNear = 15.0f; // 謇句燕縺ｧ縺ｮ蟾ｦ蜿ｳ蟷・ｼ育強縺擾ｼ・
-    const float xMaxFar = 20.0f; // 螂･縺ｧ縺ｮ蟾ｦ蜿ｳ蟷・ｼ亥ｺ・￥・・
-
-    float t = (pos_.z - zNear) / (zFar - zNear); // 0:謇句燕 竊・1:螂･
-    t = std::clamp(t, 0.0f, 1.0f);
-
-    // 邱壼ｽ｢陬憺俣・・erp・・
-    float xMax = xMaxNear + (xMaxFar - xMaxNear) * t;
-
-    // X蛻ｶ髯・
-    pos_.x = std::clamp(pos_.x, -xMax, xMax);
 
 }
 
@@ -95,6 +83,46 @@ void Player::Damage(int d) {
     }
 }
 
+void Player::AddDamagePercent(float damagePercent) {
+    damagePercent_ = std::max(0.0f, damagePercent_ + damagePercent);
+}
+
+void Player::SetDamagePercent(float damagePercent) {
+    damagePercent_ = std::max(0.0f, damagePercent);
+}
+
+void Player::ApplyLaunch(const Vector3& velocity, float hitStunSec) {
+    vel_ = velocity;
+    onGround_ = false;
+    launched_ = true;
+    launchedTimer_ = std::max(0.0f, hitStunSec);
+    action_ = PlayerAction::Launched;
+    attackType_ = PlayerAttackType::None;
+    guarding_ = false;
+    crouching_ = false;
+    fastFalling_ = false;
+    moveLockSec_ = std::max(moveLockSec_, hitStunSec);
+}
+
+void Player::ApplyBossHit(float damagePercent, float baseKnockback, float knockbackScale, const Vector3& knockbackDir, float hitStunSec) {
+    const float knockbackPercent = damagePercent_;
+    AddDamagePercent(damagePercent);
+
+    Vector3 dir = knockbackDir;
+    const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+    if (len > 1.0e-6f) {
+        dir.x /= len;
+        dir.y /= len;
+        dir.z /= len;
+    } else {
+        dir = { 1.0f, 0.35f, 0.0f };
+    }
+
+    const float power = baseKnockback + knockbackPercent * knockbackScale;
+    ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, hitStunSec);
+    TriggerHitFlash(0.25f);
+}
+
 void Player::SetHP(int hp) {
     hp_ = std::clamp(hp, 0, GetMaxHP());
     dead_ = hp_ <= 0;
@@ -104,9 +132,27 @@ void Player::SetSpawnPos(const Vector3& p) {
     pos_ = p;
     vel_ = { 0,0,0 };
     onGround_ = true;
+    jumpCount_ = 0;
+    launched_ = false;
+    launchedTimer_ = 0.0f;
 
     UpdateBody_();
     UpdateModel_(); // 隕九◆逶ｮ繧ょ叉蜿肴丐
+}
+
+void Player::SetDropRespawnPos(const Vector3& p) {
+    pos_ = p;
+    vel_ = { 0.0f, 0.0f, 0.0f };
+    onGround_ = false;
+    jumpCount_ = 0;
+    launched_ = false;
+    launchedTimer_ = 0.0f;
+    moveLockSec_ = 0.0f;
+    action_ = PlayerAction::Jump;
+    attackType_ = PlayerAttackType::None;
+
+    UpdateBody_();
+    UpdateModel_();
 }
 
 void Player::UpdateModel_() {

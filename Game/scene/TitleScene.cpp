@@ -316,6 +316,11 @@ void TitleScene::Update(GameApp& app, float dt) {
 		return;
 	}
 
+	if (input->IsKeyTrigger(DIK_T)) {
+		RequestChangeScene_("Test");
+		return;
+	}
+
 	switch (state_) {
 	case State::Idle:
 		if (spaceTrig) {

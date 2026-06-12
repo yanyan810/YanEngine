@@ -31,7 +31,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     const bool left = input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A);
     const bool right = input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D);
     const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
-    const bool up = input.IsKeyPressed(DIK_UP) || input.IsKeyPressed(DIK_W);
+    const bool up = input.IsKeyPressed(DIK_UP);
 
     if (left != right) {
         command.horizontal = right ? +1 : -1;
@@ -40,7 +40,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     if (up != down) {
         command.depth = up ? +1 : -1;
     }
-    command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE);
+    command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE) || input.IsKeyTrigger(DIK_W);
     command.guard = input.IsKeyPressed(DIK_H);
 
     const bool weakTriggered = input.IsKeyTrigger(DIK_U);
@@ -82,7 +82,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
         return command;
     }
 
-    if (command.jumpTriggered && onGround_) {
+    if (command.jumpTriggered && jumpCount_ < maxJumpCount_) {
         command.action = PlayerAction::Jump;
         return command;
     }
@@ -248,6 +248,14 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
         attackType_ = PlayerAttackType::None;
         break;
 
+    case PlayerAction::Launched:
+        action_ = PlayerAction::Launched;
+        attackType_ = PlayerAttackType::None;
+        guarding_ = false;
+        crouching_ = false;
+        fastFalling_ = false;
+        break;
+
     case PlayerAction::Move:
         if (actionTimer_ <= 0.0f) {
             action_ = PlayerAction::Move;
@@ -306,6 +314,11 @@ void Player::PlayActionAnimation_(const PlayerInputCommand& command) {
     }
 
     if (action_ == PlayerAction::Guard || action_ == PlayerAction::Crouch) {
+        playIfChanged("Idle", true);
+        return;
+    }
+
+    if (action_ == PlayerAction::Launched) {
         playIfChanged("Idle", true);
         return;
     }

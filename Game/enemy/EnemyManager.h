@@ -26,6 +26,18 @@ public:
         AABB3 box;
         float life;
         int damage = 5;
+        bool fromBoss = false;
+        MeleeKind kind = MeleeKind::Normal;
+        Vector3 attackerPos = {};
+        int facing = 1;
+    };
+
+    struct BossHitTuning {
+        float damagePercent = 10.0f;
+        float baseKnockback = 10.0f;
+        float knockbackScale = 0.08f;
+        Vector3 knockbackDir = { 1.0f, 0.35f, 0.0f };
+        float hitStunSec = 0.35f;
     };
 
     struct PlayerAttackHitEvent {
@@ -56,6 +68,8 @@ public:
     void RestoreDebugEntities(const std::vector<DebugEntityState>& entities);
 
     void SetDebugDrawMeleeHitbox(bool enable) { debugDrawMeleeHitbox_ = enable; }
+    BossHitTuning& BossTuning(MeleeKind kind);
+    const BossHitTuning& BossTuning(MeleeKind kind) const;
 
     void QueueSpawn(EnemyType type, float delaySec);
     void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
@@ -85,6 +99,9 @@ private:
     Camera* cam_ = nullptr;
 
     std::vector<MeleeHitbox> meleeHitboxes_;
+    BossHitTuning bossNormalTuning_{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f };
+    BossHitTuning bossLandTuning_{ 16.0f, 12.0f, 0.10f, { 0.8f, 0.60f, 0.0f }, 0.45f };
+    BossHitTuning bossRushTuning_{ 12.0f, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f };
 
     std::vector<Enemy> enemies_;
 

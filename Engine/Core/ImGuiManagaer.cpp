@@ -145,6 +145,7 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGuiID rightBottomNode = ImGui::DockBuilderSplitNode(rightNode, ImGuiDir_Down, 0.45f, nullptr, &rightNode);
 
     ImGui::DockBuilderDockWindow("Hierarchy", leftNode);
+    ImGui::DockBuilderDockWindow("Boss Knockback Test", leftNode);
     ImGui::DockBuilderDockWindow("Inspector", rightNode);
     ImGui::DockBuilderDockWindow("Scene", mainNode);
     ImGui::DockBuilderDockWindow("Console", bottomNode);
