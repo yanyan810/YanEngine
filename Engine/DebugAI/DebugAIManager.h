@@ -45,6 +45,7 @@ public:
 
     const DebugLogger& Logger() const { return logger_; }
     const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
+    const DebugReplayRecorder& PlayerReplayRecorder() const { return playerReplayRecorder_; }
     const DebugReplayPlayer& ReplayPlayer() const { return replayPlayer_; }
     const DebugAction& LastAction() const { return lastAction_; }
     void LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message);
@@ -65,6 +66,7 @@ private:
     IDebugBot* bot_ = &randomBot_;
     DebugLogger logger_;
     DebugReplayRecorder replayRecorder_;
+    DebugReplayRecorder playerReplayRecorder_;
     DebugReplayPlayer replayPlayer_;
     DebugAction lastAction_;
     bool replayMode_ = false;

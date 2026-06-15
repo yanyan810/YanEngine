@@ -38,6 +38,7 @@ AIやBotは、マウス座標やキー入力を直接操作しません。
 | `DebugJson.h/.cpp` | Action / State の JSON 変換 |
 | `RandomDebugBot.h/.cpp` | ランダム操作 Bot |
 | `ApiDebugBot.h/.cpp` | 外部APIのJSON返答をActionとして扱うBot |
+| `GeminiDebugActionProvider.h/.cpp` | Gemini API 接続 |
 | `OpenAIDebugActionProvider.h/.cpp` | OpenAI Responses API 接続 |
 | `ImGui/DebugAIImGuiPanel.h/.cpp` | 任意の ImGui 操作パネル |
 
@@ -54,10 +55,30 @@ AIやBotは、マウス座標やキー入力を直接操作しません。
 ```cpp
 DebugAIConfig config;
 config.logDirectory = "generated/debug_ai";
+config.playerLogDirectory = "generated/debug_ai/player";
+config.aiLogDirectory = "generated/debug_ai/ai";
 
 debugAI.Initialize(config);
 debugAI.SetAdapter(&gameDebugAdapter);
 ```
+
+## ログ出力先
+
+現在のサンプルでは、手動プレイ記録とAI/Bot実行ログを分けています。
+
+```txt
+generated/debug_ai/player
+  手動プレイで記録したActionログ
+
+generated/debug_ai/ai
+  Gemini / OpenAI / BasicCombatBot など、AIやBotが動かしたActionログ
+
+generated/debug_ai
+  共通の入口、互換用ログ、リプレイ一覧の検索ルート
+```
+
+`F7` の最新リプレイは、まず `player` 側、次に `ai` 側を探します。  
+ImGuiのReplay一覧は `generated/debug_ai` 以下を再帰検索するため、両方のログを表示できます。
 
 ## Adapter が担当すること
 
@@ -90,6 +111,43 @@ AIやBotは、必ず `DebugGameState::availableActions` に含まれるActionか
 }
 ```
 
+## Gemini API 接続
+
+`GeminiDebugActionProvider` は、Gemini API の `generateContent` を使って次のActionを決めます。
+
+現在の実装では、Gemini接続はデフォルトOFFです。  
+環境変数を設定した場合だけ `ApiDebugBot` が有効になります。
+
+API接続が無効、APIキー未設定、通信失敗、返答不正の場合は `RandomDebugBot` に戻ります。
+
+PowerShellでゲームを起動する前に、以下を設定します。
+
+```powershell
+$env:GEMINI_API_KEY="自分のGemini APIキー"
+$env:DEBUGAI_GEMINI_ENABLED="1"
+$env:DEBUGAI_GEMINI_MODEL="gemini-3.5-flash"
+$env:DEBUGAI_GEMINI_INTERVAL_FRAMES="30"
+$env:DEBUGAI_GEMINI_TIMEOUT_MS="8000"
+```
+
+目的を変えたい場合は、以下も設定できます。
+
+```powershell
+$env:DEBUGAI_GEMINI_GOAL="ステージを探索して、敵を倒し、色々な行動を試す"
+```
+
+その後、同じPowerShellからゲームを起動します。
+
+```powershell
+.\generated\outputs\Debug\CG2_Setup.exe
+```
+
+Visual Studioの出力に以下が出ればGemini Botが有効です。
+
+```txt
+[DebugAI] Gemini ApiDebugBot enabled.
+```
+
 ## OpenAI API 接続
 
 `OpenAIDebugActionProvider` は、OpenAI Responses API を使って次のActionを決めます。
@@ -99,7 +157,7 @@ AIやBotは、必ず `DebugGameState::availableActions` に含まれるActionか
 
 API接続が無効、APIキー未設定、通信失敗、返答不正の場合は `RandomDebugBot` に戻ります。
 
-## API接続の設定方法
+## OpenAI API接続の設定方法
 
 PowerShellでゲームを起動する前に、以下を設定します。
 
@@ -130,6 +188,12 @@ Visual Studioを普通にダブルクリックで起動した場合、PowerShell
 
 | 変数名 | 内容 |
 |---|---|
+| `GEMINI_API_KEY` | Gemini APIキー |
+| `DEBUGAI_GEMINI_ENABLED` | `1` / `true` / `on` でGemini接続を有効化 |
+| `DEBUGAI_GEMINI_MODEL` | 使用モデル。未指定時は `gemini-3.5-flash` |
+| `DEBUGAI_GEMINI_INTERVAL_FRAMES` | Gemini APIに問い合わせる間隔。未指定時は30フレーム |
+| `DEBUGAI_GEMINI_TIMEOUT_MS` | Gemini API通信タイムアウト。未指定時は8000ms |
+| `DEBUGAI_GEMINI_GOAL` | Geminiに渡すプレイ方針 |
 | `OPENAI_API_KEY` | OpenAI APIキー |
 | `DEBUGAI_OPENAI_ENABLED` | `1` / `true` / `on` でOpenAI接続を有効化 |
 | `DEBUGAI_OPENAI_MODEL` | 使用モデル。未指定時は `gpt-5.5` |
@@ -146,6 +210,12 @@ Visual Studioを普通にダブルクリックで起動した場合、PowerShell
 5. プレイヤーがAIの選んだActionで動けば成功
 
 Visual Studioの出力に以下が出ればOpenAI Botが有効です。
+
+```txt
+[DebugAI] Gemini ApiDebugBot enabled.
+```
+
+または
 
 ```txt
 [DebugAI] OpenAI ApiDebugBot enabled.

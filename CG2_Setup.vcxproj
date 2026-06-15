@@ -214,8 +214,10 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Logger.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp" />
     <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp" />
+    <ClCompile Include="Engine\DebugAI\BasicCombatDebugBot.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugJson.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp" />
+    <ClCompile Include="Engine\DebugAI\GeminiDebugActionProvider.cpp" />
     <ClCompile Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.cpp" />
     <ClCompile Include="Engine\DebugAI\OpenAIDebugActionProvider.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp" />
@@ -481,8 +483,10 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\DebugAI\DebugAIConfig.h" />
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h" />
     <ClInclude Include="Engine\DebugAI\ApiDebugBot.h" />
+    <ClInclude Include="Engine\DebugAI\BasicCombatDebugBot.h" />
     <ClInclude Include="Engine\DebugAI\DebugJson.h" />
     <ClInclude Include="Engine\DebugAI\DebugLogger.h" />
+    <ClInclude Include="Engine\DebugAI\GeminiDebugActionProvider.h" />
     <ClInclude Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.h" />
     <ClInclude Include="Engine\DebugAI\OpenAIDebugActionProvider.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h" />
