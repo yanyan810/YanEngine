@@ -9,13 +9,17 @@
 #include "SrvManager.h"
 
 #include <d3d12.h>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 
 namespace {
 
 constexpr float kRadToDeg = 57.29577951308232f;
+using json = nlohmann::json;
 
 MeleeKind PreviewKindFromIndex(int index) {
     if (index == 0) {
@@ -37,6 +41,44 @@ Vector3 NormalizeOr(const Vector3& v, const Vector3& fallback) {
         return fallback;
     }
     return { v.x / len, v.y / len, v.z / len };
+}
+
+json ToJson(const Vector3& v) {
+    return json::array({ v.x, v.y, v.z });
+}
+
+Vector3 Vector3FromJson(const json& value, const Vector3& fallback) {
+    if (!value.is_array() || value.size() < 3) {
+        return fallback;
+    }
+    return {
+        value.at(0).get<float>(),
+        value.at(1).get<float>(),
+        value.at(2).get<float>(),
+    };
+}
+
+json ToJson(const EnemyManager::BossHitTuning& tuning) {
+    return {
+        { "damagePercent", tuning.damagePercent },
+        { "baseKnockback", tuning.baseKnockback },
+        { "knockbackScale", tuning.knockbackScale },
+        { "knockbackDir", ToJson(tuning.knockbackDir) },
+        { "hitStunSec", tuning.hitStunSec },
+    };
+}
+
+void ApplyJsonToTuning(const json& value, EnemyManager::BossHitTuning& tuning) {
+    if (!value.is_object()) {
+        return;
+    }
+    tuning.damagePercent = value.value("damagePercent", tuning.damagePercent);
+    tuning.baseKnockback = value.value("baseKnockback", tuning.baseKnockback);
+    tuning.knockbackScale = value.value("knockbackScale", tuning.knockbackScale);
+    if (value.contains("knockbackDir")) {
+        tuning.knockbackDir = Vector3FromJson(value.at("knockbackDir"), tuning.knockbackDir);
+    }
+    tuning.hitStunSec = value.value("hitStunSec", tuning.hitStunSec);
 }
 
 void SetLineSegment(Object3d& line, const Vector3& start, const Vector3& end, float thickness, float dt) {
@@ -182,6 +224,66 @@ KnockbackPreviewMetrics CalcKnockbackPreviewMetrics(
 }
 
 } // namespace
+
+bool TestScene::SaveBossTuning_(const std::string& path) {
+    try {
+        json root;
+        root["version"] = 1;
+        root["bossHits"] = {
+            { "normal", ToJson(enemyMgr_.BossTuning(MeleeKind::Normal)) },
+            { "jumpSlash", ToJson(enemyMgr_.BossTuning(MeleeKind::Land)) },
+            { "rush", ToJson(enemyMgr_.BossTuning(MeleeKind::Rush)) },
+        };
+
+        const std::filesystem::path filePath(path);
+        if (filePath.has_parent_path()) {
+            std::filesystem::create_directories(filePath.parent_path());
+        }
+
+        std::ofstream file(filePath, std::ios::out | std::ios::trunc);
+        if (!file) {
+            bossTuningStatus_ = "Save failed: cannot open file";
+            return false;
+        }
+        file << root.dump(4);
+        bossTuningStatus_ = "Saved: " + path;
+        return true;
+    } catch (const std::exception& e) {
+        bossTuningStatus_ = std::string("Save failed: ") + e.what();
+        return false;
+    }
+}
+
+bool TestScene::LoadBossTuning_(const std::string& path) {
+    try {
+        std::ifstream file(path);
+        if (!file) {
+            bossTuningStatus_ = "Load failed: cannot open file";
+            return false;
+        }
+
+        json root;
+        file >> root;
+        const json& bossHits = root.contains("bossHits") ? root.at("bossHits") : root;
+
+        if (bossHits.contains("normal")) {
+            ApplyJsonToTuning(bossHits.at("normal"), enemyMgr_.BossTuning(MeleeKind::Normal));
+        }
+        if (bossHits.contains("jumpSlash")) {
+            ApplyJsonToTuning(bossHits.at("jumpSlash"), enemyMgr_.BossTuning(MeleeKind::Land));
+        }
+        if (bossHits.contains("rush")) {
+            ApplyJsonToTuning(bossHits.at("rush"), enemyMgr_.BossTuning(MeleeKind::Rush));
+        }
+
+        bossTuningStatus_ = "Loaded: " + path;
+        previewLineWasLaunched_ = false;
+        return true;
+    } catch (const std::exception& e) {
+        bossTuningStatus_ = std::string("Load failed: ") + e.what();
+        return false;
+    }
+}
 
 void TestScene::OnEnter(GameApp& app) {
   //  TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
@@ -605,6 +707,20 @@ void TestScene::DrawImGui(GameApp& app) {
 
     if (ImGui::Button("Reset Fighter Positions")) {
         resetFightersRequested_ = true;
+    }
+
+    if (ImGui::CollapsingHeader("Boss Tuning Preset", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputText("Tuning Path", bossTuningPath_, IM_ARRAYSIZE(bossTuningPath_));
+        if (ImGui::Button("Save Boss Tuning")) {
+            SaveBossTuning_(bossTuningPath_);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load Boss Tuning")) {
+            LoadBossTuning_(bossTuningPath_);
+        }
+        if (!bossTuningStatus_.empty()) {
+            ImGui::TextUnformatted(bossTuningStatus_.c_str());
+        }
     }
 
     if (ImGui::CollapsingHeader("Knockback Preview", ImGuiTreeNodeFlags_DefaultOpen)) {
