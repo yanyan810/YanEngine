@@ -253,13 +253,22 @@
     <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\BasicCombatDebugBot.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugJson.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\GeminiDebugActionProvider.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\OpenAIDebugActionProvider.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp">
@@ -477,13 +486,22 @@
     <ClInclude Include="Engine\DebugAI\ApiDebugBot.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\DebugAI\BasicCombatDebugBot.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugJson.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugLogger.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\DebugAI\GeminiDebugActionProvider.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\OpenAIDebugActionProvider.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h">

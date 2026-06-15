@@ -1,8 +1,10 @@
 #pragma once
 
 #include "ApiDebugBot.h"
+#include "BasicCombatDebugBot.h"
 #include "DebugAIConfig.h"
 #include "DebugAIManager.h"
+#include "GeminiDebugActionProvider.h"
 #include "DebugJson.h"
 #include "DebugLogger.h"
 #include "DebugReplayPlayer.h"
@@ -10,4 +12,5 @@
 #include "DebugTypes.h"
 #include "IDebugBot.h"
 #include "IGameDebugAdapter.h"
+#include "OpenAIDebugActionProvider.h"
 #include "RandomDebugBot.h"

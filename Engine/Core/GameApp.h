@@ -12,8 +12,13 @@ class Object3dCommon;
 class PrimitiveCommon;
 class ParticleCommon;
 class ImGuiManagaer;
+class ApiDebugBot;
+class BasicCombatDebugBot;
+class GeminiDebugActionProvider;
 class SkinningCommon;
 class DebugAIManager;
+class OpenAIDebugActionProvider;
+class RandomDebugBot;
 #include "RenderManager.h"
 
 class SceneManager;
@@ -71,6 +76,10 @@ private:
     std::unique_ptr<SkinningCommon> skinCom_;
     std::unique_ptr<SkyboxCommon> skyboxCommon_;
     std::unique_ptr<DebugAIManager> debugAI_;
+    std::unique_ptr<ApiDebugBot> debugAIApiBot_;
+    std::unique_ptr<GeminiDebugActionProvider> debugAIGeminiProvider_;
+    std::unique_ptr<OpenAIDebugActionProvider> debugAIOpenAIProvider_;
+    std::unique_ptr<BasicCombatDebugBot> debugAIBasicCombatFallback_;
 
     std::unique_ptr<RenderManager> render_;
 

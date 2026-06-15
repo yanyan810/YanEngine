@@ -127,8 +127,50 @@ bool GameApp::Initialize_() {
     debugAI_ = std::make_unique<DebugAIManager>();
     DebugAIConfig debugAIConfig;
     debugAIConfig.logDirectory = "generated/debug_ai";
+    debugAIConfig.playerLogDirectory = "generated/debug_ai/player";
+    debugAIConfig.aiLogDirectory = "generated/debug_ai/ai";
     debugAIConfig.detectMapBounds = false;
     debugAI_->Initialize(debugAIConfig);
+
+    debugAIApiBot_ = std::make_unique<ApiDebugBot>();
+    debugAIBasicCombatFallback_ = std::make_unique<BasicCombatDebugBot>();
+    debugAIApiBot_->SetFallbackBot(debugAIBasicCombatFallback_.get());
+    bool apiBotEnabled = false;
+
+    debugAIGeminiProvider_ = std::make_unique<GeminiDebugActionProvider>();
+    if (debugAIGeminiProvider_->ConfigureFromEnvironment()) {
+        debugAIApiBot_->SetJsonProvider([provider = debugAIGeminiProvider_.get()](
+            const DebugGameState& state,
+            std::string& outJsonResponse) {
+            return provider->RequestActionJson(state, outJsonResponse);
+        });
+        debugAI_->SetBot(debugAIApiBot_.get());
+        OutputDebugStringA("[DebugAI] Gemini ApiDebugBot enabled.\n");
+        apiBotEnabled = true;
+    } else {
+        OutputDebugStringA(("[DebugAI] Gemini disabled: " + debugAIGeminiProvider_->LastStatus() + "\n").c_str());
+    }
+
+    debugAIOpenAIProvider_ = std::make_unique<OpenAIDebugActionProvider>();
+    if (!apiBotEnabled) {
+        if (debugAIOpenAIProvider_->ConfigureFromEnvironment()) {
+            debugAIApiBot_->SetJsonProvider([provider = debugAIOpenAIProvider_.get()](
+                const DebugGameState& state,
+                std::string& outJsonResponse) {
+                return provider->RequestActionJson(state, outJsonResponse);
+            });
+            debugAI_->SetBot(debugAIApiBot_.get());
+            OutputDebugStringA("[DebugAI] OpenAI ApiDebugBot enabled.\n");
+            apiBotEnabled = true;
+        } else {
+            OutputDebugStringA(("[DebugAI] OpenAI disabled: " + debugAIOpenAIProvider_->LastStatus() + "\n").c_str());
+        }
+    }
+
+    if (!apiBotEnabled) {
+        debugAI_->SetBot(debugAIBasicCombatFallback_.get());
+        OutputDebugStringA("[DebugAI] API Bot disabled. Using BasicCombatDebugBot.\n");
+    }
 
     WarmupAssets_();
 
@@ -169,6 +211,10 @@ void GameApp::Finalize_() {
     sceneMgr_.reset();
     input_.reset();
     debugAI_.reset();
+    debugAIApiBot_.reset();
+    debugAIGeminiProvider_.reset();
+    debugAIOpenAIProvider_.reset();
+    debugAIBasicCombatFallback_.reset();
     skyboxCommon_.reset();
     imgui_.reset();
     primitiveCommon_.reset();

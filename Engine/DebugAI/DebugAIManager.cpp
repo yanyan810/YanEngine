@@ -216,17 +216,25 @@ void DebugAIManager::Initialize(const std::string& logDirectory) {
 void DebugAIManager::Initialize(const DebugAIConfig& config) {
     SetConfig(config);
     logger_.Open(config_.logDirectory);
-    replayRecorder_.Open(logger_.DirectoryPath());
+    replayRecorder_.Open(config_.aiLogDirectory);
+    playerReplayRecorder_.Open(config_.playerLogDirectory);
     logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
 }
 
 void DebugAIManager::SetConfig(const DebugAIConfig& config) {
     config_ = config;
+    if (config_.playerLogDirectory.empty()) {
+        config_.playerLogDirectory = config_.logDirectory + "/player";
+    }
+    if (config_.aiLogDirectory.empty()) {
+        config_.aiLogDirectory = config_.logDirectory + "/ai";
+    }
 }
 
 void DebugAIManager::Shutdown() {
     logger_.WriteReport();
     replayRecorder_.Close();
+    playerReplayRecorder_.Close();
     logger_.Close();
 }
 
@@ -249,7 +257,9 @@ bool DebugAIManager::StartLatestReplay() {
     if (adapter_ == nullptr) {
         return false;
     }
-    if (!replayPlayer_.LoadLatestFromDirectory(logger_.DirectoryPath())) {
+    if (!replayPlayer_.LoadLatestFromDirectory(config_.playerLogDirectory) &&
+        !replayPlayer_.LoadLatestFromDirectory(config_.aiLogDirectory) &&
+        !replayPlayer_.LoadLatestFromDirectory(logger_.DirectoryPath())) {
         return false;
     }
     logger_.SetSessionDirectory(std::filesystem::path(replayPlayer_.ReplayPath()).parent_path().string());
@@ -391,8 +401,8 @@ void DebugAIManager::RecordExternalAction(
     }
 
     lastAction_ = action;
-    replayRecorder_.RecordAction(stateBefore, action, stateAfter);
-    logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
+    playerReplayRecorder_.RecordAction(stateBefore, action, stateAfter);
+    logger_.SetSessionDirectory(playerReplayRecorder_.SessionDirectoryPath());
     logger_.LogEvent(stateAfter, "ManualActionResult", BuildStateDiffMessage(stateBefore, stateAfter, action));
 }
 
