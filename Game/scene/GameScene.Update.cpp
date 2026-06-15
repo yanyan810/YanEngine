@@ -82,16 +82,15 @@ bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
         debugManualRecordingActive_ = false;
     }
 
-    if (debugRequestRestoreInitialState_ && debugAI->ReplayPlayer().HasInitialState()) {
-        RestoreDebugState(debugAI->ReplayPlayer().InitialState());
+    if (debugRequestRestoreInitialState_ && debugAI->RestoreReplayInitialState()) {
         stateWasRestored = true;
         debugManualRecordingActive_ = false;
     }
 
     if (debugRequestStartReplay_) {
-        const bool replayStarted = debugSelectedReplayPath_.empty()
+        const bool replayStarted = debugReplayStartPath_.empty()
             ? debugAI->StartLatestReplay()
-            : debugAI->StartReplay(debugSelectedReplayPath_);
+            : debugAI->StartReplay(debugReplayStartPath_);
         if (replayStarted) {
             debugAIEnabled_ = true;
             stateWasRestored = true;
@@ -112,6 +111,7 @@ bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
     debugRequestStartBot_ = false;
     debugRequestStopBot_ = false;
     debugRequestRestoreInitialState_ = false;
+    debugReplayStartPath_.clear();
     return stateWasRestored;
 }
 
@@ -131,6 +131,7 @@ void GameScene::Update(GameApp& app, float dt) {
     }
 
     if (input_->IsKeyTrigger(DIK_F7)) {
+        debugReplayStartPath_.clear();
         debugRequestStartReplay_ = true;
     }
 

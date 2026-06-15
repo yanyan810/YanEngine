@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DebugAIConfig.h"
 #include "DebugLogger.h"
 #include "DebugReplayPlayer.h"
 #include "DebugReplayRecorder.h"
@@ -14,7 +15,11 @@
 class DebugAIManager {
 public:
     void Initialize(const std::string& logDirectory = "generated/debug_ai");
+    void Initialize(const DebugAIConfig& config);
     void Shutdown();
+
+    void SetConfig(const DebugAIConfig& config);
+    const DebugAIConfig& Config() const { return config_; }
 
     void SetEnabled(bool enabled);
     bool IsEnabled() const { return enabled_; }
@@ -33,6 +38,7 @@ public:
 
     bool StartLatestReplay();
     bool StartReplay(const std::string& replayPath);
+    bool RestoreReplayInitialState();
     void StopReplay();
     bool IsReplayPlaying() const { return replayMode_ && replayPlayer_.IsPlaying(); }
     bool IsFirstReplayFrame() const { return isFirstReplayFrame_; }
@@ -44,6 +50,7 @@ public:
     void LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message);
 
 private:
+    bool RestoreReplayInitialState_();
     void DetectIssues_(const DebugGameState& state, float dt);
     void AddIssue_(DebugIssueSeverity severity, const DebugGameState& state, const std::string& message);
     bool IsFinite_(const Vector3& value) const;
@@ -52,6 +59,7 @@ private:
 
 private:
     bool enabled_ = false;
+    DebugAIConfig config_;
     IGameDebugAdapter* adapter_ = nullptr;
     RandomDebugBot randomBot_;
     IDebugBot* bot_ = &randomBot_;
@@ -72,10 +80,5 @@ private:
     float noProgressSeconds_ = 0.0f;
     float lowFpsSeconds_ = 0.0f;
 
-    float sameStateLimitSeconds_ = 10.0f;
-    float noProgressLimitSeconds_ = 15.0f;
-    float lowFpsLimitSeconds_ = 3.0f;
-    float lowFpsThreshold_ = 30.0f;
-    unsigned long long duplicateIssueCooldownFrames_ = 60;
     std::unordered_map<std::string, unsigned long long> lastIssueFrameByMessage_;
 };

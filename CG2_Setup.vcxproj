@@ -216,6 +216,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugJson.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp" />
+    <ClCompile Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayRecorder.cpp" />
     <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp" />
@@ -223,6 +224,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Core\GameApp.cpp" />
     <ClCompile Include="Game\scene\GameScene.cpp" />
     <ClCompile Include="Game\scene\GameScene.DebugAI.cpp" />
+    <ClCompile Include="Game\scene\GameSceneDebugProfile.cpp" />
     <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp" />
     <ClCompile Include="Game\scene\GameScene.Render.cpp" />
     <ClCompile Include="Game\scene\GameScene.UI.cpp" />
@@ -474,10 +476,13 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Core\SrvManager.h" />
     <ClInclude Include="Engine\Input\Input.h" />
     <ClInclude Include="Engine\Utility\Logger.h" />
+    <ClInclude Include="Engine\DebugAI\DebugAI.h" />
+    <ClInclude Include="Engine\DebugAI\DebugAIConfig.h" />
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h" />
     <ClInclude Include="Engine\DebugAI\ApiDebugBot.h" />
     <ClInclude Include="Engine\DebugAI\DebugJson.h" />
     <ClInclude Include="Engine\DebugAI\DebugLogger.h" />
+    <ClInclude Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayRecorder.h" />
     <ClInclude Include="Engine\DebugAI\DebugTypes.h" />
@@ -495,6 +500,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
     <ClInclude Include="Game\scene\GameScene.h" />
+    <ClInclude Include="Game\scene\GameSceneDebugAdapter.h" />
+    <ClInclude Include="Game\scene\GameSceneDebugProfile.h" />
     <ClInclude Include="Game\scene\TitleScene.h" />
     <ClInclude Include="Game\player\Player.h" />
     <ClInclude Include="Game\scene\TestScene.h" />
