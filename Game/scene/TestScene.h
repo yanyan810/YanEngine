@@ -12,6 +12,7 @@
 #include <memory>
 #include "LightingParam.h"
 #include "LevelLoader.h"
+#include <string>
 #include <vector>
 
 
@@ -34,6 +35,9 @@ public:
     void DrawImGui(GameApp& app) override;
 
 private:
+    bool SaveBossTuning_(const std::string& path);
+    bool LoadBossTuning_(const std::string& path);
+
     Input* input_ = nullptr;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Player> player_;
@@ -72,6 +76,8 @@ private:
     float previewPercent_ = 80.0f;
     float previewLineScale_ = 1.0f;
     float previewLineThickness_ = 0.08f;
+    char bossTuningPath_[256] = "resources/tuning/boss_hit_tuning.json";
+    std::string bossTuningStatus_;
 
     // ===== Lighting params =====
     LightingParam light_;
