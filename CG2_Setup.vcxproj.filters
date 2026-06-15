@@ -262,6 +262,9 @@
     <ClCompile Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\OpenAIDebugActionProvider.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
@@ -484,6 +487,9 @@
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\OpenAIDebugActionProvider.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h">

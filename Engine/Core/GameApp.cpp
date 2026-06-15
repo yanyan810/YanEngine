@@ -129,6 +129,21 @@ bool GameApp::Initialize_() {
     debugAIConfig.logDirectory = "generated/debug_ai";
     debugAIConfig.detectMapBounds = false;
     debugAI_->Initialize(debugAIConfig);
+    debugAIOpenAIProvider_ = std::make_unique<OpenAIDebugActionProvider>();
+    if (debugAIOpenAIProvider_->ConfigureFromEnvironment()) {
+        debugAIApiBot_ = std::make_unique<ApiDebugBot>();
+        debugAIRandomFallback_ = std::make_unique<RandomDebugBot>();
+        debugAIApiBot_->SetJsonProvider([provider = debugAIOpenAIProvider_.get()](
+            const DebugGameState& state,
+            std::string& outJsonResponse) {
+            return provider->RequestActionJson(state, outJsonResponse);
+        });
+        debugAIApiBot_->SetFallbackBot(debugAIRandomFallback_.get());
+        debugAI_->SetBot(debugAIApiBot_.get());
+        OutputDebugStringA("[DebugAI] OpenAI ApiDebugBot enabled.\n");
+    } else {
+        OutputDebugStringA("[DebugAI] OpenAI ApiDebugBot disabled. Using RandomDebugBot.\n");
+    }
 
     WarmupAssets_();
 
@@ -169,6 +184,9 @@ void GameApp::Finalize_() {
     sceneMgr_.reset();
     input_.reset();
     debugAI_.reset();
+    debugAIApiBot_.reset();
+    debugAIOpenAIProvider_.reset();
+    debugAIRandomFallback_.reset();
     skyboxCommon_.reset();
     imgui_.reset();
     primitiveCommon_.reset();

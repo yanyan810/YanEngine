@@ -10,4 +10,5 @@
 #include "DebugTypes.h"
 #include "IDebugBot.h"
 #include "IGameDebugAdapter.h"
+#include "OpenAIDebugActionProvider.h"
 #include "RandomDebugBot.h"

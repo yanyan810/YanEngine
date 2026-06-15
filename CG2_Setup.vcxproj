@@ -95,7 +95,7 @@
       </LinkTimeCodeGeneration>
       <LinkTimeCodeGenerationObjectFile />
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Debug</AdditionalLibraryDirectories>
-      <AdditionalDependencies>assimp-vc143-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>assimp-vc143-mtd.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreLinkEvent>
       <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
@@ -126,7 +126,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/ignore:4049 %(AdditionalOptions)</AdditionalOptions>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Release</AdditionalLibraryDirectories>
-      <AdditionalDependencies>assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>assimp-vc143-mt.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreLinkEvent>
       <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
@@ -160,7 +160,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <LinkTimeCodeGeneration />
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Release</AdditionalLibraryDirectories>
-      <AdditionalDependencies>assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>assimp-vc143-mt.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreLinkEvent>
       <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
@@ -217,6 +217,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\DebugAI\DebugJson.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp" />
     <ClCompile Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.cpp" />
+    <ClCompile Include="Engine\DebugAI\OpenAIDebugActionProvider.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugReplayRecorder.cpp" />
     <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp" />
@@ -483,6 +484,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\DebugAI\DebugJson.h" />
     <ClInclude Include="Engine\DebugAI\DebugLogger.h" />
     <ClInclude Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.h" />
+    <ClInclude Include="Engine\DebugAI\OpenAIDebugActionProvider.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h" />
     <ClInclude Include="Engine\DebugAI\DebugReplayRecorder.h" />
     <ClInclude Include="Engine\DebugAI\DebugTypes.h" />
