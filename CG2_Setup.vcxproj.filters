@@ -160,6 +160,9 @@
     <ClCompile Include="Game\scene\GameScene.DebugAI.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
+    <ClCompile Include="Game\scene\GameSceneDebugProfile.cpp">
+      <Filter>Game\Scene</Filter>
+    </ClCompile>
     <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp">
       <Filter>Game\Scene</Filter>
     </ClCompile>
@@ -254,6 +257,9 @@
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugReplayPlayer.cpp">
@@ -385,6 +391,12 @@
     <ClInclude Include="Game\scene\GameScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
+    <ClInclude Include="Game\scene\GameSceneDebugAdapter.h">
+      <Filter>Game\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\scene\GameSceneDebugProfile.h">
+      <Filter>Game\Scene</Filter>
+    </ClInclude>
     <ClInclude Include="Game\scene\TitleScene.h">
       <Filter>Game\Scene</Filter>
     </ClInclude>
@@ -453,6 +465,12 @@
     <ClInclude Include="Engine\3D\SkinnedModel.h" />
     <ClInclude Include="Engine\Core\SrvManager.h" />
     <ClInclude Include="Engine\Utility\Logger.h" />
+    <ClInclude Include="Engine\DebugAI\DebugAI.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugAIConfig.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
@@ -463,6 +481,9 @@
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugLogger.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\ImGui\DebugAIImGuiPanel.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugReplayPlayer.h">

@@ -1,43 +1,33 @@
 #include "GameScene.h"
 
 #include "DebugAI/DebugAIManager.h"
-#include "DebugAI/IGameDebugAdapter.h"
 #include "GameApp.h"
+#include "GameSceneDebugAdapter.h"
+#include "GameSceneDebugProfile.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdlib>
 #include <dinput.h>
 #include <string>
 
-namespace {
+GameSceneDebugAdapter::GameSceneDebugAdapter(GameScene& scene)
+    : scene_(scene) {
+}
 
-class GameSceneDebugAdapter : public IGameDebugAdapter {
-public:
-    explicit GameSceneDebugAdapter(GameScene& scene)
-        : scene_(scene) {
-    }
+DebugGameState GameSceneDebugAdapter::CaptureDebugState() const {
+    return scene_.CaptureDebugState();
+}
 
-    DebugGameState CaptureDebugState() const override {
-        return scene_.CaptureDebugState();
-    }
+bool GameSceneDebugAdapter::RestoreDebugState(const DebugGameState& state) {
+    return scene_.RestoreDebugState(state);
+}
 
-    void ExecuteDebugAction(const DebugAction& action) override {
-        scene_.ExecuteDebugAction(action);
-    }
+void GameSceneDebugAdapter::SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides) {
+    scene_.SetReplaySpawnOverrides(overrides);
+}
 
-    void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides) override {
-        scene_.SetReplaySpawnOverrides(overrides);
-    }
-
-    bool RestoreDebugState(const DebugGameState& state) override {
-        return scene_.RestoreDebugState(state);
-    }
-
-private:
-    GameScene& scene_;
-};
-
+void GameSceneDebugAdapter::ExecuteDebugAction(const DebugAction& action) {
+    scene_.ExecuteDebugAction(action);
 }
 
 void GameScene::SetupDebugAI_(GameApp& app) {
@@ -75,20 +65,21 @@ DebugGameState GameScene::CaptureDebugState() const {
     state.frameNumber = debugFrameNumber_;
     state.fps = 60.0f;
     state.randomSeed = debugRandomSeed_;
+    GameSceneDebugPhase debugPhase = GameSceneDebugPhase::Unknown;
     switch (phase_) {
     case Phase::IntroVideo:
-        state.gamePhase = "IntroVideo";
+        debugPhase = GameSceneDebugPhase::IntroVideo;
         break;
     case Phase::Battle:
-        state.gamePhase = "Battle";
+        debugPhase = GameSceneDebugPhase::Battle;
         break;
     case Phase::OutroVideo:
-        state.gamePhase = "OutroVideo";
+        debugPhase = GameSceneDebugPhase::OutroVideo;
         break;
     default:
-        state.gamePhase = "Unknown";
         break;
     }
+    state.gamePhase = ToDebugPhaseName(debugPhase);
 
     if (player_) {
         state.playerHp = player_->GetHP();
@@ -115,40 +106,10 @@ DebugGameState GameScene::CaptureDebugState() const {
     }
     state.enemyCount = aliveEnemyCount;
 
-    state.availableActions = {
-        { "Move" },
-        { "Down" },
-        { "Jump" },
-        { "AttackWeak" },
-        { "AttackTilt" },
-        { "AttackSmash" },
-        { "AttackNeutralSpecial" },
-        { "AttackSideSpecial" },
-        { "Guard" },
-        { "Wait" },
-    };
-
-    if (phase_ == Phase::IntroVideo) {
-        state.availableActions.push_back({ "SkipIntro" });
-    }
-
-    state.mapBounds.enabled = true;
-    state.mapBounds.min = { -20.0f, -1.0f, -15.0f };
-    state.mapBounds.max = { 20.0f, 12.0f, 20.0f };
-
-    const Vector3 pos = state.playerPosition;
-    state.stableStateKey =
-        std::to_string(state.playerHp) + ":" +
-        std::to_string(state.enemyHp) + ":" +
-        std::to_string(state.enemyCount) + ":" +
-        std::to_string(static_cast<int>(std::floor(pos.x))) + ":" +
-        std::to_string(static_cast<int>(std::floor(pos.z)));
-
-    state.progressKey =
-        state.sceneName + ":" +
-        std::to_string(static_cast<int>(phase_)) + ":" +
-        std::to_string(state.enemyHp) + ":" +
-        std::to_string(state.enemyCount);
+    state.availableActions = BuildGameSceneDebugActions(debugPhase);
+    state.mapBounds = BuildGameSceneDebugMapBounds();
+    state.stableStateKey = BuildGameSceneStableStateKey(state);
+    state.progressKey = BuildGameSceneProgressKey(state, debugPhase);
 
     return state;
 }

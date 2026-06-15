@@ -208,9 +208,20 @@ std::string BuildDriftMessage(const DebugGameState& expected, const DebugGameSta
 }
 
 void DebugAIManager::Initialize(const std::string& logDirectory) {
-    logger_.Open(logDirectory);
+    DebugAIConfig config;
+    config.logDirectory = logDirectory;
+    Initialize(config);
+}
+
+void DebugAIManager::Initialize(const DebugAIConfig& config) {
+    SetConfig(config);
+    logger_.Open(config_.logDirectory);
     replayRecorder_.Open(logger_.DirectoryPath());
     logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
+}
+
+void DebugAIManager::SetConfig(const DebugAIConfig& config) {
+    config_ = config;
 }
 
 void DebugAIManager::Shutdown() {
@@ -243,16 +254,7 @@ bool DebugAIManager::StartLatestReplay() {
     }
     logger_.SetSessionDirectory(std::filesystem::path(replayPlayer_.ReplayPath()).parent_path().string());
 
-    if (replayPlayer_.HasInitialState()) {
-        DebugGameState restoreState = replayPlayer_.InitialState();
-        if (restoreState.frameNumber > 0) {
-            --restoreState.frameNumber;
-        }
-        adapter_->SetReplaySpawnOverrides(replayPlayer_.SpawnOverrides());
-        adapter_->RestoreDebugState(restoreState);
-        const DebugGameState restoredState = adapter_->CaptureDebugState();
-        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState, replayPlayer_.SpawnOverrides()));
-    }
+    RestoreReplayInitialState_();
 
     const DebugGameState state = adapter_->CaptureDebugState();
     replayPlayer_.Start(state.frameNumber);
@@ -271,16 +273,7 @@ bool DebugAIManager::StartReplay(const std::string& replayPath) {
     }
     logger_.SetSessionDirectory(std::filesystem::path(replayPlayer_.ReplayPath()).parent_path().string());
 
-    if (replayPlayer_.HasInitialState()) {
-        DebugGameState restoreState = replayPlayer_.InitialState();
-        if (restoreState.frameNumber > 0) {
-            --restoreState.frameNumber;
-        }
-        adapter_->SetReplaySpawnOverrides(replayPlayer_.SpawnOverrides());
-        adapter_->RestoreDebugState(restoreState);
-        const DebugGameState restoredState = adapter_->CaptureDebugState();
-        logger_.LogEvent(restoredState, "ReplayRestore", BuildRestoreMessage(replayPlayer_.InitialState(), restoredState, replayPlayer_.SpawnOverrides()));
-    }
+    RestoreReplayInitialState_();
 
     const DebugGameState state = adapter_->CaptureDebugState();
     replayPlayer_.Start(state.frameNumber);
@@ -288,6 +281,30 @@ bool DebugAIManager::StartReplay(const std::string& replayPath) {
     enabled_ = true;
     isFirstReplayFrame_ = true;
     return true;
+}
+
+bool DebugAIManager::RestoreReplayInitialState() {
+    return RestoreReplayInitialState_();
+}
+
+bool DebugAIManager::RestoreReplayInitialState_() {
+    if (adapter_ == nullptr || !replayPlayer_.HasInitialState()) {
+        return false;
+    }
+
+    DebugGameState restoreState = replayPlayer_.InitialState();
+    if (restoreState.frameNumber > 0) {
+        --restoreState.frameNumber;
+    }
+
+    adapter_->SetReplaySpawnOverrides(replayPlayer_.SpawnOverrides());
+    const bool restored = adapter_->RestoreDebugState(restoreState);
+    const DebugGameState restoredState = adapter_->CaptureDebugState();
+    logger_.LogEvent(
+        restoredState,
+        "ReplayRestore",
+        BuildRestoreMessage(replayPlayer_.InitialState(), restoredState, replayPlayer_.SpawnOverrides()));
+    return restored;
 }
 
 void DebugAIManager::StopReplay() {
@@ -397,25 +414,27 @@ void DebugAIManager::CheckReplayDrift(const DebugGameState& actualState) {
 }
 
 void DebugAIManager::DetectIssues_(const DebugGameState& state, float dt) {
-    if (state.playerHp < 0) {
-        AddIssue_(DebugIssueSeverity::Error, state, "Player HP became negative.");
+    if (config_.detectNegativeHp) {
+        if (state.playerHp < 0) {
+            AddIssue_(DebugIssueSeverity::Error, state, "Player HP became negative.");
+        }
+        if (state.enemyHp < 0) {
+            AddIssue_(DebugIssueSeverity::Error, state, "Enemy HP became negative.");
+        }
     }
-    if (state.enemyHp < 0) {
-        AddIssue_(DebugIssueSeverity::Error, state, "Enemy HP became negative.");
-    }
-    if (state.enemyCount < 0) {
+    if (config_.detectInvalidCounts && state.enemyCount < 0) {
         AddIssue_(DebugIssueSeverity::Error, state, "Enemy count became negative.");
     }
-    if (!IsFinite_(state.playerPosition)) {
+    if (config_.detectInvalidPosition && !IsFinite_(state.playerPosition)) {
         AddIssue_(DebugIssueSeverity::Error, state, "Player position became NaN or infinity.");
     }
-    if (state.mapBounds.enabled && IsOutsideBounds_(state.playerPosition, state.mapBounds)) {
+    if (config_.detectMapBounds && state.mapBounds.enabled && IsOutsideBounds_(state.playerPosition, state.mapBounds)) {
         AddIssue_(DebugIssueSeverity::Warning, state, "Player moved outside the map bounds.");
     }
 
-    if (IsSameState_(state)) {
+    if (config_.detectSameState && IsSameState_(state)) {
         sameStateSeconds_ += dt;
-        if (sameStateSeconds_ >= sameStateLimitSeconds_) {
+        if (sameStateSeconds_ >= config_.sameStateLimitSeconds) {
             AddIssue_(DebugIssueSeverity::Warning, state, "Same state continued for too long.");
             sameStateSeconds_ = 0.0f;
         }
@@ -424,9 +443,9 @@ void DebugAIManager::DetectIssues_(const DebugGameState& state, float dt) {
     }
     lastStableStateKey_ = state.stableStateKey;
 
-    if (!state.progressKey.empty() && state.progressKey == lastProgressKey_) {
+    if (config_.detectNoProgress && !state.progressKey.empty() && state.progressKey == lastProgressKey_) {
         noProgressSeconds_ += dt;
-        if (noProgressSeconds_ >= noProgressLimitSeconds_) {
+        if (noProgressSeconds_ >= config_.noProgressLimitSeconds) {
             AddIssue_(DebugIssueSeverity::Warning, state, "Scene or game progress did not advance for too long.");
             noProgressSeconds_ = 0.0f;
         }
@@ -435,9 +454,9 @@ void DebugAIManager::DetectIssues_(const DebugGameState& state, float dt) {
     }
     lastProgressKey_ = state.progressKey;
 
-    if (state.fps > 0.0f && state.fps < lowFpsThreshold_) {
+    if (config_.detectLowFps && state.fps > 0.0f && state.fps < config_.lowFpsThreshold) {
         lowFpsSeconds_ += dt;
-        if (lowFpsSeconds_ >= lowFpsLimitSeconds_) {
+        if (lowFpsSeconds_ >= config_.lowFpsLimitSeconds) {
             AddIssue_(DebugIssueSeverity::Warning, state, "FPS stayed below the debug threshold.");
             lowFpsSeconds_ = 0.0f;
         }
@@ -449,7 +468,7 @@ void DebugAIManager::DetectIssues_(const DebugGameState& state, float dt) {
 void DebugAIManager::AddIssue_(DebugIssueSeverity severity, const DebugGameState& state, const std::string& message) {
     const auto it = lastIssueFrameByMessage_.find(message);
     if (it != lastIssueFrameByMessage_.end() &&
-        state.frameNumber < it->second + duplicateIssueCooldownFrames_) {
+        state.frameNumber < it->second + config_.duplicateIssueCooldownFrames) {
         return;
     }
     lastIssueFrameByMessage_[message] = state.frameNumber;

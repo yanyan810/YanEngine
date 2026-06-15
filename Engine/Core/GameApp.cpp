@@ -20,7 +20,7 @@
 #include "ParticleCommon.h"
 #include "ParticleManager.h"
 #include "ImGuiManagaer.h"
-#include "../DebugAI/DebugAIManager.h"
+#include "../DebugAI/DebugAI.h"
 
 
 #include "RenderManager.h"
@@ -125,7 +125,10 @@ bool GameApp::Initialize_() {
     input_->Update(); // 初回
 
     debugAI_ = std::make_unique<DebugAIManager>();
-    debugAI_->Initialize();
+    DebugAIConfig debugAIConfig;
+    debugAIConfig.logDirectory = "generated/debug_ai";
+    debugAIConfig.detectMapBounds = false;
+    debugAI_->Initialize(debugAIConfig);
 
     WarmupAssets_();
 

@@ -11,12 +11,14 @@
 
 #include "EnemyManager.h"
 #include "Player.h"
+#include "DebugAI/ImGui/DebugAIImGuiPanel.h"
 #include "DebugAI/DebugTypes.h"
 
 
 #include "VideoPlayerMF.h"
 
 class IGameDebugAdapter;
+class GameSceneDebugAdapter;
 
 class GameScene : public IScene {
 public:
@@ -40,16 +42,17 @@ public:
 
     void UpdateBossHPDigits_(int hp);
 
-    DebugGameState CaptureDebugState() const;
-    bool RestoreDebugState(const DebugGameState& state);
-    void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
-    void ExecuteDebugAction(const DebugAction& action);
-
 private:
+    friend class GameSceneDebugAdapter;
+
     void SetupDebugAI_(GameApp& app);
     void ShutdownDebugAI_(GameApp& app);
     void SetDebugAIEnabled_(GameApp& app, bool enabled);
     bool ProcessDebugAIRequests_(GameApp& app);
+    DebugGameState CaptureDebugState() const;
+    bool RestoreDebugState(const DebugGameState& state);
+    void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
+    void ExecuteDebugAction(const DebugAction& action);
     bool CaptureManualDebugAction_(DebugAction& outAction) const;
     void FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const;
 
@@ -80,7 +83,8 @@ private:
     bool debugRequestStopBot_ = false;
     bool debugRequestRestoreInitialState_ = false;
     bool debugManualRecordingActive_ = false;
-    std::string debugSelectedReplayPath_;
+    std::string debugReplayStartPath_;
+    DebugAIImGuiPanelState debugAIImGuiPanelState_;
     unsigned long long debugFrameNumber_ = 0;
     unsigned int debugRandomSeed_ = 0;
 
