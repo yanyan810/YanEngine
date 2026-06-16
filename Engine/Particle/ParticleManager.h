@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <list>
 #include <string>
+#include <vector>
 #include "TextureManager.h"
 
 #include "ParticleCommon.h"
@@ -128,6 +129,9 @@ public:
 
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, ParticleCommon* particleCommon); // ★追加
     void Finalize();
+    bool HasGroup(const std::string& groupName) const;
+    std::vector<std::string> GetGroupNames() const;
+    void ConfigureHitEffectPreset(const std::string& groupName);
     void SetGroupBlendMode(const std::string& groupName, ParticleCommon::BlendMode mode);            // ★追加
     void Update(float deltaTime, const Camera& camera);
     void UpdateCompute(ID3D12GraphicsCommandList* computeCmd);

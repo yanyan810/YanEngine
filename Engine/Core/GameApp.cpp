@@ -264,6 +264,7 @@ void GameApp::Draw() {
 
 #ifdef USE_IMGUI
     if (imgui_) {
+        imgui_->SetSceneTexture(render_->RenderPostEffectsForSceneTexture());
             sceneMgr_->DrawImGui(*this);
             render_->DrawImGui(); // ポストエフェクト切り替えUI
         imgui_->End(dx_->GetCommandList());

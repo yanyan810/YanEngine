@@ -15,7 +15,7 @@ static const char* kEffectNames[] = {
     "FullScreen (No Effect)",
     "Grayscale",
     "Vignette",
-    "BoxFilter (Smoothing)",
+    "Bloom",
     "GaussianBlurX (Horizontal)",
     "GaussianBlurY (Vertical)",
     "GaussianBlur (Linear)",
@@ -29,7 +29,7 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/Fullscreen.PS.hlsl",
     L"resources/shaders/Grayscale.PS.hlsl",
     L"resources/shaders/Vignette.PS.hlsl",
-    L"resources/shaders/BoxFilter.PS.hlsl",
+    L"resources/shaders/Bloom.PS.hlsl",
     L"resources/shaders/GaussianBlurX.PS.hlsl",
     L"resources/shaders/GaussianBlurY.PS.hlsl",
     L"resources/shaders/Fullscreen.PS.hlsl",
@@ -486,6 +486,96 @@ void RenderManager::DrawOffscreenToBackBuffer()
     );
 
     dx_->SetBackBufferRenderTarget();
+}
+
+uint32_t RenderManager::RenderPostEffectsForSceneTexture()
+{
+    assert(offscreen_);
+    assert(postBuffers_[0]);
+    assert(postBuffers_[1]);
+
+    auto* cmd = dx_->GetCommandList();
+    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
+    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+    offscreen_->TransitionToRenderTarget();
+
+    int lastEffect = -1;
+    for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
+        if (enabledEffects_[i]) {
+            lastEffect = i;
+        }
+    }
+
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
+    ID3D12Resource* srcResource = offscreen_->GetResource();
+    uint32_t srcSrvIndex = offscreen_->GetSrvIndex();
+    int bufferIndex = 0;
+
+    if (lastEffect < 0) {
+        OffscreenPass& dst = *postBuffers_[bufferIndex];
+        DrawFullscreenPassToBuffer(PostEffectMode::FullScreen, srcSrvIndex, srcResource, dst);
+        dst.TransitionToShaderResource();
+        previewSrvIndex_ = dst.GetSrvIndex();
+    } else {
+        for (int i = 1; i < kEffectCount; ++i) {
+            if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+                i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+                continue;
+            }
+            if (!enabledEffects_[i]) {
+                continue;
+            }
+
+            const PostEffectMode mode = static_cast<PostEffectMode>(i);
+            if (mode == PostEffectMode::GaussianBlur) {
+                OffscreenPass& dstX = *postBuffers_[bufferIndex];
+                DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurX, srcSrvIndex, srcResource, dstX);
+                srcResource = dstX.GetResource();
+                srcSrvIndex = dstX.GetSrvIndex();
+                bufferIndex = 1 - bufferIndex;
+
+                OffscreenPass& dstY = *postBuffers_[bufferIndex];
+                DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurY, srcSrvIndex, srcResource, dstY);
+                srcResource = dstY.GetResource();
+                srcSrvIndex = dstY.GetSrvIndex();
+                previewSrvIndex_ = srcSrvIndex;
+                if (i != lastEffect) {
+                    bufferIndex = 1 - bufferIndex;
+                } else {
+                    dstY.TransitionToShaderResource();
+                }
+            } else {
+                OffscreenPass& dst = *postBuffers_[bufferIndex];
+                DrawFullscreenPassToBuffer(mode, srcSrvIndex, srcResource, dst);
+                srcResource = dst.GetResource();
+                srcSrvIndex = dst.GetSrvIndex();
+                previewSrvIndex_ = srcSrvIndex;
+                if (i != lastEffect) {
+                    bufferIndex = 1 - bufferIndex;
+                } else {
+                    dst.TransitionToShaderResource();
+                }
+            }
+        }
+    }
+
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE
+    );
+
+    dx_->SetBackBufferRenderTarget();
+    return previewSrvIndex_;
 }
 
 void RenderManager::DrawImGui()

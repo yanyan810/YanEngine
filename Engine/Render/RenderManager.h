@@ -37,6 +37,7 @@ public:
     void BeginBackBuffer();
 
     void DrawOffscreenToBackBuffer();
+    uint32_t RenderPostEffectsForSceneTexture();
 
     // ImGui でポストエフェクトを切り替える
     void DrawImGui();
@@ -138,6 +139,7 @@ private:
     RandomParameter* randomCBData_ = nullptr;
 
     uint32_t noiseSrvIndex_ = 0;
+    uint32_t previewSrvIndex_ = 0;
 
     // 深度バッファ読み込み用のSRVインデックス
     uint32_t depthSrvIndex_ = 0;

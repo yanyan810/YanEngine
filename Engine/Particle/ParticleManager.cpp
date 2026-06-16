@@ -594,6 +594,48 @@ void ParticleManager::SetGroupBlendMode(const std::string& groupName, ParticleCo
     it->second.blendMode = mode;
 }
 
+bool ParticleManager::HasGroup(const std::string& groupName) const {
+    return particleGroups_.find(groupName) != particleGroups_.end();
+}
+
+std::vector<std::string> ParticleManager::GetGroupNames() const {
+    std::vector<std::string> names;
+    names.reserve(particleGroups_.size());
+    for (const auto& [name, group] : particleGroups_) {
+        names.push_back(name);
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+void ParticleManager::ConfigureHitEffectPreset(const std::string& groupName) {
+    auto it = particleGroups_.find(groupName);
+    if (it == particleGroups_.end()) return;
+
+    ParticleGroup& group = it->second;
+    group.blendMode = ParticleCommon::BlendMode::kBlendModeAdd;
+    group.isAutoEmit = false;
+    group.billboardMode = 0;
+
+    if (!group.mappedEmitter) return;
+
+    group.mappedEmitter->count = 24;
+    group.mappedEmitter->frequency = 0.05f;
+    group.mappedEmitter->frequencyTime = 0.0f;
+    group.mappedEmitter->radius = 0.45f;
+    group.mappedEmitter->emit = 0;
+    group.mappedEmitter->lifeTimeMin = 0.12f;
+    group.mappedEmitter->lifeTimeMax = 0.28f;
+    group.mappedEmitter->velocityBase = { 0.0f, 0.03f, 0.0f };
+    group.mappedEmitter->velocityVariance = 0.22f;
+    group.mappedEmitter->shapeType = 0;
+    group.mappedEmitter->shapeAngle = 0.5f;
+    group.mappedEmitter->shapeSize = { 0.35f, 0.35f, 0.35f };
+    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->startColor = { 1.0f, 0.85f, 0.25f, 1.0f };
+    group.mappedEmitter->endColor = { 1.0f, 0.15f, 0.02f, 0.0f };
+}
+
 void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
     for (auto& [name, group] : particleGroups_) {
 

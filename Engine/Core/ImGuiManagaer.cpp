@@ -2,10 +2,15 @@
 #include "WinApp.h"
 #include "DirectXCommon.h"
 #include "SrvManager.h"
+#include "ParticleManager.h"
 
 #ifdef USE_IMGUI
 #include <imgui_internal.h>
 #endif // USE_IMGUI
+
+#include <algorithm>
+#include <string>
+#include <vector>
 
 
 void ImGuiManagaer::Initialize([[maybe_unused]]WinApp* winApp, [[maybe_unused]] DirectXCommon* dxCommon, [[maybe_unused]] SrvManager* srvManager)
@@ -179,49 +184,114 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
 void ImGuiManagaer::DrawEditorPanels_()
 {
 #ifdef USE_IMGUI
-    const char* objects[] = {
-        "Scene Root",
-        "Player",
-        "Boss Enemy",
-        "Main Camera",
-        "Directional Light",
-        "Stage"
-    };
-    constexpr int objectCount = 6;
+    auto* particleManager = ParticleManager::GetInstance();
+    const std::vector<std::string> groupNames = particleManager->GetGroupNames();
+    constexpr int fixedItemCount = 3;
+    const int itemCount = fixedItemCount + static_cast<int>(groupNames.size());
+    selectedParticleItem_ = std::clamp(selectedParticleItem_, 0, std::max(0, itemCount - 1));
 
     ImGui::SetNextWindowSize(ImVec2(220.0f, 420.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 56.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Hierarchy");
-    for (int i = 0; i < objectCount; ++i) {
-        if (ImGui::Selectable(objects[i], selectedEditorObject_ == i)) {
-            selectedEditorObject_ = i;
+    ImGui::TextUnformatted("Particle Root");
+    ImGui::Separator();
+    if (ImGui::Selectable("Create New Group", selectedParticleItem_ == 0)) {
+        selectedParticleItem_ = 0;
+    }
+    if (ImGui::Selectable("HitEffect Preset", selectedParticleItem_ == 1)) {
+        selectedParticleItem_ = 1;
+    }
+    if (ImGui::Selectable("Save / Load", selectedParticleItem_ == 2)) {
+        selectedParticleItem_ = 2;
+    }
+    ImGui::Separator();
+    if (ImGui::TreeNodeEx("Particle Groups", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (groupNames.empty()) {
+            ImGui::TextDisabled("No particle groups.");
         }
+        for (int i = 0; i < static_cast<int>(groupNames.size()); ++i) {
+            const int itemIndex = fixedItemCount + i;
+            if (ImGui::Selectable(groupNames[i].c_str(), selectedParticleItem_ == itemIndex)) {
+                selectedParticleItem_ = itemIndex;
+            }
+        }
+        ImGui::TreePop();
     }
     ImGui::End();
 
     ImGui::SetNextWindowSize(ImVec2(280.0f, 420.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(980.0f, 56.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Inspector");
-    ImGui::TextUnformatted(objects[selectedEditorObject_]);
-    ImGui::Separator();
-    ImGui::TextUnformatted("Transform");
-    static float position[3] = { 0.0f, 0.0f, 0.0f };
-    static float rotation[3] = { 0.0f, 0.0f, 0.0f };
-    static float scale[3] = { 1.0f, 1.0f, 1.0f };
-    static bool visible = true;
-    ImGui::DragFloat3("Position", position, 0.05f);
-    ImGui::DragFloat3("Rotation", rotation, 0.5f);
-    ImGui::DragFloat3("Scale", scale, 0.05f);
-    ImGui::Separator();
-    ImGui::Checkbox("Visible", &visible);
+    static char groupName[64] = "HitEffect";
+    static char texturePath[256] = "resources/circle.png";
+    static char fileName[256] = "particles.json";
+    static int emitCount = 24;
+    static Vector3 emitPosition{ 0.0f, 1.0f, 0.0f };
+
+    if (selectedParticleItem_ == 0) {
+        ImGui::TextUnformatted("Create New Group");
+        ImGui::Separator();
+        ImGui::InputText("Name", groupName, sizeof(groupName));
+        ImGui::InputText("Texture", texturePath, sizeof(texturePath));
+        if (ImGui::Button("Create Particle Group")) {
+            particleManager->CreateParticleGroup(groupName, texturePath);
+        }
+        ImGui::TextDisabled("Tune details in Particle Manager.");
+    } else if (selectedParticleItem_ == 1) {
+        ImGui::TextUnformatted("HitEffect Preset");
+        ImGui::Separator();
+        ImGui::InputText("Name", groupName, sizeof(groupName));
+        ImGui::InputText("Texture", texturePath, sizeof(texturePath));
+        if (ImGui::Button("Create / Reset HitEffect")) {
+            if (!particleManager->HasGroup(groupName)) {
+                particleManager->CreateParticleGroup(groupName, texturePath);
+            }
+            particleManager->ConfigureHitEffectPreset(groupName);
+        }
+        ImGui::DragFloat3("Emit Position", &emitPosition.x, 0.1f);
+        ImGui::DragInt("Emit Count", &emitCount, 1, 1, 1024);
+        if (ImGui::Button("Emit Preview")) {
+            particleManager->Emit(groupName, emitPosition, static_cast<uint32_t>(std::max(1, emitCount)));
+        }
+    } else if (selectedParticleItem_ == 2) {
+        ImGui::TextUnformatted("Save / Load");
+        ImGui::Separator();
+        ImGui::InputText("File", fileName, sizeof(fileName));
+        if (ImGui::Button("Save Particles")) {
+            particleManager->Save(fileName);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load Particles")) {
+            particleManager->Load(fileName);
+        }
+        if (ImGui::Button("Clear Scene Particles")) {
+            particleManager->ClearGroups();
+            selectedParticleItem_ = 0;
+        }
+    } else {
+        const int groupIndex = selectedParticleItem_ - fixedItemCount;
+        const std::string& selectedGroupName = groupNames[groupIndex];
+        ImGui::TextUnformatted(selectedGroupName.c_str());
+        ImGui::Separator();
+        ImGui::DragFloat3("Emit Position", &emitPosition.x, 0.1f);
+        ImGui::DragInt("Emit Count", &emitCount, 1, 1, 1024);
+        if (ImGui::Button("Emit Preview")) {
+            particleManager->Emit(selectedGroupName, emitPosition, static_cast<uint32_t>(std::max(1, emitCount)));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Apply HitEffect Look")) {
+            particleManager->ConfigureHitEffectPreset(selectedGroupName);
+        }
+        ImGui::TextDisabled("Tune color, lifetime, shape, blend, model, and texture in Particle Manager.");
+    }
     ImGui::End();
 
     ImGui::SetNextWindowSize(ImVec2(420.0f, 160.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(260.0f, 560.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Console");
-    ImGui::TextUnformatted("[Yan Editer] Docking ready.");
-    ImGui::TextUnformatted("[Build] Debug x64 succeeded.");
-    ImGui::TextUnformatted("[Hint] Drag panel tabs to dock them.");
+    ImGui::TextUnformatted("[Particle Editor] Create groups from Hierarchy.");
+    ImGui::TextUnformatted("[Particle Editor] Select a group and preview it in Inspector.");
+    ImGui::TextUnformatted("[Particle Manager] Tune detailed parameters and save JSON.");
     ImGui::End();
 
     ImGui::SetNextWindowSize(ImVec2(360.0f, 220.0f), ImGuiCond_FirstUseEver);

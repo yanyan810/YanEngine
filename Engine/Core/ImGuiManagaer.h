@@ -36,7 +36,7 @@ private:
     SrvManager* srvManager_ = nullptr;
 
     bool initialized_ = false;
-    int selectedEditorObject_ = 1;
+    int selectedParticleItem_ = 0;
     uint32_t sceneSrvIndex_ = 0;
     bool hasSceneTexture_ = false;
     uint32_t imguiSrvIndex_ = 0; // SrvManager が 0番をImGui予約してる前提

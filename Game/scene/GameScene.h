@@ -55,6 +55,9 @@ private:
     void ExecuteDebugAction(const DebugAction& action);
     bool CaptureManualDebugAction_(DebugAction& outAction) const;
     void FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const;
+    void EnsureHitEffectGroup_();
+    void SpawnHitEffect_(const Vector3& position);
+    void DrawHitEffectImGui_();
 
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Sprite> sprite_;
@@ -147,6 +150,11 @@ private:
     // ===== Pause UI =====
     bool isPaused_ = false;
     bool prevTab_ = false;
+
+    bool hitEffectEnabled_ = true;
+    char hitEffectGroupName_[64] = "HitEffect";
+    int hitEffectCount_ = 24;
+    Vector3 hitEffectTestPosition_{ 0.0f, 1.0f, 5.0f };
 
     enum class PauseSel { Close, ToTitle };
     PauseSel pauseSel_ = PauseSel::Close;
