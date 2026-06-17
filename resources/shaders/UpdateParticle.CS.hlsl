@@ -32,6 +32,15 @@ struct EmitterData {
 
     float4 startColor; // 発生時の色
     float4 endColor; // 消滅時の色
+    float3 scaleStart;
+    float speedMin;
+
+    float3 scaleEnd;
+    float speedMax;
+
+    float angleRandomDeg;
+    float jitterDeg;
+    float2 padding3;
 };
 
 ConstantBuffer<EmitterData> gEmitter : register(b0);
@@ -58,10 +67,12 @@ void main(uint3 DTid : SV_DispatchThreadID) {
             
             gParticles[particleIndex].translate += gParticles[particleIndex].velocity;
             gParticles[particleIndex].currentTime += gPerFrame.deltaTime;
-            float alpha = 1.0f - (gParticles[particleIndex].currentTime / gParticles[particleIndex].lifeTime);
-            gParticles[particleIndex].color.a = saturate(alpha);
+            float lifeRate = saturate(gParticles[particleIndex].currentTime / max(gParticles[particleIndex].lifeTime, 0.001f));
+            gParticles[particleIndex].color = lerp(gEmitter.startColor, gEmitter.endColor, lifeRate);
+            gParticles[particleIndex].scale = lerp(gEmitter.scaleStart, gEmitter.scaleEnd, lifeRate);
 
-            if (gParticles[particleIndex].color.a == 0.0f) {
+            if (gParticles[particleIndex].currentTime >= gParticles[particleIndex].lifeTime) {
+                gParticles[particleIndex].color.a = 0.0f;
                 gParticles[particleIndex].scale = float3(0.0f, 0.0f, 0.0f);
                 int freeListIndex;
                 InterlockedAdd(gFreeListIndex[0], 1, freeListIndex);

@@ -17,6 +17,7 @@
 #endif
 
 #include <algorithm>
+#include <string>
 
 namespace {
 constexpr const char* kParticleJson = "test_particles.json";
@@ -54,8 +55,7 @@ void ParticleTestScene::OnEnter(GameApp& app)
     editorParticle_->SetBlendMode(ParticleCommon::BlendMode::kBlendModeAdd);
     editorParticle_->SetMaterialColor({ 1, 1, 1, 1 });
 
-    ParticleManager::GetInstance()->ClearGroups();
-    ParticleManager::GetInstance()->Load(kParticleJson);
+    ReloadParticleJson_();
 }
 
 void ParticleTestScene::OnExit(GameApp&)
@@ -80,9 +80,12 @@ void ParticleTestScene::Update(GameApp& app, float dt)
 
     reloadCooldown_ = std::max(0.0f, reloadCooldown_ - dt);
     if (input->IsKeyTrigger(DIK_R) && reloadCooldown_ <= 0.0f) {
-        ParticleManager::GetInstance()->ClearGroups();
-        ParticleManager::GetInstance()->Load(kParticleJson);
+        ReloadParticleJson_();
         reloadCooldown_ = 0.2f;
+    }
+
+    if (input->IsKeyTrigger(DIK_SPACE)) {
+        SpawnHitEffectPreview_();
     }
 
     if (camera_) {
@@ -102,7 +105,7 @@ void ParticleTestScene::Update(GameApp& app, float dt)
 void ParticleTestScene::DrawRender(GameApp& app)
 {
     if (ground_) {
-        ground_->Draw();
+  //      ground_->Draw();
     }
 
     if (editorParticle_) {
@@ -125,15 +128,73 @@ void ParticleTestScene::Draw(GameApp&)
 {
 }
 
+void ParticleTestScene::EnsureHitEffectGroup_()
+{
+    auto* particleManager = ParticleManager::GetInstance();
+    const std::string groupName = hitEffectGroupName_;
+    if (groupName.empty()) {
+        return;
+    }
+
+    if (!particleManager->HasGroup(groupName)) {
+        particleManager->CreateParticleGroup(groupName, "resources/circle.png");
+        particleManager->ConfigureHitEffectPreset(groupName);
+    }
+}
+
+void ParticleTestScene::ReloadParticleJson_()
+{
+    auto* particleManager = ParticleManager::GetInstance();
+    particleManager->ClearGroups();
+    particleManager->Load(kParticleJson);
+    EnsureHitEffectGroup_();
+}
+
+void ParticleTestScene::SpawnHitEffectPreview_()
+{
+    const std::string groupName = hitEffectGroupName_;
+    if (groupName.empty()) {
+        return;
+    }
+
+    EnsureHitEffectGroup_();
+    ParticleManager::GetInstance()->Emit(
+        groupName,
+        hitEffectSpawnPosition_,
+        static_cast<uint32_t>(std::max(1, hitEffectSpawnCount_)));
+}
+
 void ParticleTestScene::DrawImGui(GameApp&)
 {
 #ifdef USE_IMGUI
     ImGui::Begin("Particle Test Scene");
     ImGui::Text("JSON: %s", kParticleJson);
-    ImGui::Text("R: reload / ESC: title");
+    ImGui::Text("R: reload / Space: spawn / ESC: title");
     if (ImGui::Button("Reload JSON")) {
+        ReloadParticleJson_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save HitEffect JSON")) {
+        ParticleManager::GetInstance()->Save("hit_effect.json");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load HitEffect JSON")) {
         ParticleManager::GetInstance()->ClearGroups();
-        ParticleManager::GetInstance()->Load(kParticleJson);
+        ParticleManager::GetInstance()->Load("hit_effect.json");
+        EnsureHitEffectGroup_();
+    }
+
+    ImGui::Separator();
+    ImGui::InputText("HitEffect Group", hitEffectGroupName_, sizeof(hitEffectGroupName_));
+    ImGui::DragInt("Spawn Count", &hitEffectSpawnCount_, 1, 1, 1024);
+    ImGui::DragFloat3("Spawn Position", &hitEffectSpawnPosition_.x, 0.1f);
+    if (ImGui::Button("Create / Reset HitEffect Preset")) {
+        EnsureHitEffectGroup_();
+        ParticleManager::GetInstance()->ConfigureHitEffectPreset(hitEffectGroupName_);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Spawn HitEffect")) {
+        SpawnHitEffectPreview_();
     }
     ImGui::End();
 

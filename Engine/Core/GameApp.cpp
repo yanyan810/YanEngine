@@ -248,6 +248,15 @@ void GameApp::Draw() {
     sceneMgr_->Draw3D(*this);
     sceneMgr_->Draw2D(*this);
     sceneMgr_->Draw(*this);
+
+    auto* particleManager = ParticleManager::GetInstance();
+    if (particleManager->HasPostEffectTargets()) {
+        render_->BeginParticlePostLayer(particleManager->GetPrimaryPostEffectMode());
+        particleManager->Draw(dx_->GetCommandList(), true);
+        render_->EndParticlePostLayer();
+    } else {
+        render_->ClearParticlePostLayer();
+    }
     render_->EndOffscreen();
 
     // ② BackBufferへ

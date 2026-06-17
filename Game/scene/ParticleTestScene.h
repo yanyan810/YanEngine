@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IScene.h"
+#include "Vector3.h"
 
 #include <memory>
 
@@ -20,9 +21,16 @@ public:
     void DrawImGui(GameApp& app) override;
 
 private:
+    void EnsureHitEffectGroup_();
+    void ReloadParticleJson_();
+    void SpawnHitEffectPreview_();
+
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Object3d> ground_;
     std::unique_ptr<Particle> editorParticle_;
 
+    char hitEffectGroupName_[64] = "HitEffect";
+    int hitEffectSpawnCount_ = 24;
+    Vector3 hitEffectSpawnPosition_{ 0.0f, 1.0f, 0.0f };
     float reloadCooldown_ = 0.0f;
 };

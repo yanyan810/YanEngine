@@ -57,6 +57,18 @@ void OffscreenPass::BeginForPostEffect()
     dx_->PreDrawPostEffectBuffer(rtvIndex_);
 }
 
+void OffscreenPass::BeginForPostEffectClear()
+{
+    TransitionToRenderTarget();
+    dx_->PreDrawPostEffectBuffer(rtvIndex_, clearColor_);
+}
+
+void OffscreenPass::BeginOverlayClear()
+{
+    TransitionToRenderTarget();
+    dx_->PreDrawRenderTextureNoDepthClear(rtvIndex_, clearColor_);
+}
+
 void OffscreenPass::End()
 {
     TransitionToShaderResource();

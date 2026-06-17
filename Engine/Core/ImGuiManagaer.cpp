@@ -189,6 +189,11 @@ void ImGuiManagaer::DrawEditorPanels_()
     constexpr int fixedItemCount = 3;
     const int itemCount = fixedItemCount + static_cast<int>(groupNames.size());
     selectedParticleItem_ = std::clamp(selectedParticleItem_, 0, std::max(0, itemCount - 1));
+    if (selectedParticleItem_ >= fixedItemCount) {
+        particleManager->SetEditorSelectedGroupName(groupNames[selectedParticleItem_ - fixedItemCount]);
+    } else {
+        particleManager->SetEditorSelectedGroupName("");
+    }
 
     ImGui::SetNextWindowSize(ImVec2(220.0f, 420.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 56.0f), ImGuiCond_FirstUseEver);
