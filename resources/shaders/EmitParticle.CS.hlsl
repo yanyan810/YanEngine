@@ -32,6 +32,15 @@ struct EmitterData {
 
     float4 startColor; // 発生時の色
     float4 endColor; // 消滅時の色
+    float3 scaleStart;
+    float speedMin;
+
+    float3 scaleEnd;
+    float speedMax;
+
+    float angleRandomDeg;
+    float jitterDeg;
+    float2 padding3;
 };
 
 ConstantBuffer<EmitterData> gEmitter : register(b0);
@@ -96,16 +105,18 @@ void main(uint3 DTid : SV_DispatchThreadID) {
                 uint particleIndex = gFreeList[freeListIndex];
                 
                 // カウント分Particleを創出する
-                gParticles[particleIndex].scale = generator.Generate3d();
+                gParticles[particleIndex].scale = gEmitter.scaleStart;
                 
                 float3 randomDir = (generator.Generate3d() - 0.5f) * 2.0f; // -1~1のキューブ内
                 float3 randomDirNorm = normalize(randomDir);
+                float speedRange = max(0.0f, gEmitter.speedMax - gEmitter.speedMin);
+                float randomSpeed = gEmitter.speedMin + generator.Generate1d() * speedRange;
 
                 // --- 形状による位置と速度の決定 ---
                 if (gEmitter.shapeType == 0) {
                     // Sphere (球)
                     gParticles[particleIndex].translate = gEmitter.translate + (randomDirNorm * gEmitter.radius * generator.Generate1d());
-                    gParticles[particleIndex].velocity = gEmitter.velocityBase + (randomDir * gEmitter.velocityVariance);
+                    gParticles[particleIndex].velocity = gEmitter.velocityBase + randomDirNorm * randomSpeed;
 
                 } else if (gEmitter.shapeType == 1) {
                     // Cone (円錐)
@@ -132,18 +143,18 @@ void main(uint3 DTid : SV_DispatchThreadID) {
                     float3 worldDir = localDir.x * right + localDir.y * up + localDir.z * baseDir;
 
                     // 速度 = (基本スピード + 分散) * Cone方向
-                    gParticles[particleIndex].velocity = worldDir * max(0.0f, speed + (generator.Generate1d() - 0.5f) * gEmitter.velocityVariance);
+                    gParticles[particleIndex].velocity = worldDir * randomSpeed;
 
                 } else if (gEmitter.shapeType == 2) {
                     // Box (箱)
                     // -0.5 ~ 0.5 の乱数にサイズを掛ける
                     float3 boxRandom = generator.Generate3d() - 0.5f;
                     gParticles[particleIndex].translate = gEmitter.translate + (boxRandom * gEmitter.shapeSize);
-                    gParticles[particleIndex].velocity = gEmitter.velocityBase + (randomDir * gEmitter.velocityVariance);
+                    gParticles[particleIndex].velocity = gEmitter.velocityBase + randomDirNorm * randomSpeed;
                 } else {
                     // Default
                     gParticles[particleIndex].translate = gEmitter.translate;
-                    gParticles[particleIndex].velocity = gEmitter.velocityBase;
+                    gParticles[particleIndex].velocity = gEmitter.velocityBase + randomDirNorm * randomSpeed;
                 }
 
                 // カラー設定

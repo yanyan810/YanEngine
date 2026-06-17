@@ -468,7 +468,7 @@ void DirectXCommon::DethCriptorHeapSpawn() {
 	descriptorSizeRTV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	descriptorSizeDSV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 5, false);
+	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 8, false);
 
 	
 }
@@ -873,6 +873,44 @@ void DirectXCommon::PreDrawPostEffectBuffer(uint32_t rtvIndex)
 		GetCPUDescriptorHandle(rtvDescriptorHeap, descriptorSizeRTV, rtvIndex);
 
 	commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissorRect);
+}
+
+void DirectXCommon::PreDrawPostEffectBuffer(uint32_t rtvIndex, const Vector4& clearColor)
+{
+	D3D12_CPU_DESCRIPTOR_HANDLE handle =
+		GetCPUDescriptorHandle(rtvDescriptorHeap, descriptorSizeRTV, rtvIndex);
+
+	commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+
+	float color[4] = {
+		clearColor.x,
+		clearColor.y,
+		clearColor.z,
+		clearColor.w
+	};
+	commandList->ClearRenderTargetView(handle, color, 0, nullptr);
+
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissorRect);
+}
+
+void DirectXCommon::PreDrawRenderTextureNoDepthClear(uint32_t rtvIndex, const Vector4& clearColor)
+{
+	D3D12_CPU_DESCRIPTOR_HANDLE handle =
+		GetCPUDescriptorHandle(rtvDescriptorHeap, descriptorSizeRTV, rtvIndex);
+
+	commandList->OMSetRenderTargets(1, &handle, FALSE, &dsvHandle);
+
+	float color[4] = {
+		clearColor.x,
+		clearColor.y,
+		clearColor.z,
+		clearColor.w
+	};
+	commandList->ClearRenderTargetView(handle, color, 0, nullptr);
+
 	commandList->RSSetViewports(1, &viewport);
 	commandList->RSSetScissorRects(1, &scissorRect);
 }

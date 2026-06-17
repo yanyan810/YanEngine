@@ -127,11 +127,13 @@ public:
 
 	// RenderTextureをPostEffect用に設定（DSVなし、クリアなし）
 	void PreDrawPostEffectBuffer(uint32_t rtvIndex);
+	void PreDrawPostEffectBuffer(uint32_t rtvIndex, const Vector4& clearColor);
 
 	// BackBufferをPostEffect用に設定（DSVなし）
 	void SetBackBufferRenderTargetForPostEffect();
 
 	void PreDrawRenderTexture(uint32_t rtvIndex, const Vector4& clearColor);
+	void PreDrawRenderTextureNoDepthClear(uint32_t rtvIndex, const Vector4& clearColor);
 	void SetBackBufferRenderTarget();
 
 	// RenderTexture用DSVの作成

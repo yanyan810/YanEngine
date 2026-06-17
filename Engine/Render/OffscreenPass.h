@@ -20,6 +20,8 @@ public:
 
     void Begin();
     void BeginForPostEffect();
+    void BeginForPostEffectClear();
+    void BeginOverlayClear();
     void End();
     void TransitionToRenderTarget();
     void TransitionToShaderResource();

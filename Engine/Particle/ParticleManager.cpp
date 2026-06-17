@@ -404,6 +404,12 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->velocityVariance = 0.1f;
     group.mappedEmitter->startColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     group.mappedEmitter->endColor = { 1.0f, 1.0f, 1.0f, 0.0f };
+    group.mappedEmitter->scaleStart = { 0.25f, 0.25f, 0.25f };
+    group.mappedEmitter->scaleEnd = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->speedMin = 0.03f;
+    group.mappedEmitter->speedMax = 0.12f;
+    group.mappedEmitter->angleRandomDeg = 360.0f;
+    group.mappedEmitter->jitterDeg = 0.0f;
 
     group.mappedEmitter->shapeType = 0; // 0:Sphere
     group.mappedEmitter->shapeAngle = 0.5f; // Cone用
@@ -577,6 +583,12 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->velocityVariance = 0.1f;
     group.mappedEmitter->startColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     group.mappedEmitter->endColor = { 1.0f, 1.0f, 1.0f, 0.0f };
+    group.mappedEmitter->scaleStart = { 0.25f, 0.25f, 0.25f };
+    group.mappedEmitter->scaleEnd = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->speedMin = 0.03f;
+    group.mappedEmitter->speedMax = 0.12f;
+    group.mappedEmitter->angleRandomDeg = 360.0f;
+    group.mappedEmitter->jitterDeg = 0.0f;
 
     group.mappedEmitter->shapeType = 0; // 0:Sphere
     group.mappedEmitter->shapeAngle = 0.5f; // Cone用
@@ -592,6 +604,78 @@ void ParticleManager::SetGroupBlendMode(const std::string& groupName, ParticleCo
     auto it = particleGroups_.find(groupName);
     if (it == particleGroups_.end()) return;
     it->second.blendMode = mode;
+}
+
+bool ParticleManager::HasGroup(const std::string& groupName) const {
+    return particleGroups_.find(groupName) != particleGroups_.end();
+}
+
+void ParticleManager::SetEditorSelectedGroupName(const std::string& groupName) {
+    editorSelectedGroupName_ = groupName;
+}
+
+std::vector<std::string> ParticleManager::GetGroupNames() const {
+    std::vector<std::string> names;
+    names.reserve(particleGroups_.size());
+    for (const auto& [name, group] : particleGroups_) {
+        names.push_back(name);
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+bool ParticleManager::HasPostEffectTargets() const {
+    for (const auto& [name, group] : particleGroups_) {
+        if (group.postEffectMode != PostEffectMode::FullScreen) {
+            return true;
+        }
+    }
+    return false;
+}
+
+PostEffectMode ParticleManager::GetPrimaryPostEffectMode() const {
+    for (const auto& [name, group] : particleGroups_) {
+        if (group.postEffectMode != PostEffectMode::FullScreen) {
+            return group.postEffectMode;
+        }
+    }
+    return PostEffectMode::FullScreen;
+}
+
+void ParticleManager::ConfigureHitEffectPreset(const std::string& groupName) {
+    auto it = particleGroups_.find(groupName);
+    if (it == particleGroups_.end()) return;
+
+    ParticleGroup& group = it->second;
+    group.blendMode = ParticleCommon::BlendMode::kBlendModeAdd;
+    group.postEffectMode = PostEffectMode::OutlineBloom;
+    group.depthTestEnabled = false;
+    group.isAutoEmit = false;
+    group.billboardMode = 0;
+
+    if (!group.mappedEmitter) return;
+
+    group.mappedEmitter->count = 24;
+    group.mappedEmitter->frequency = 0.05f;
+    group.mappedEmitter->frequencyTime = 0.0f;
+    group.mappedEmitter->radius = 0.45f;
+    group.mappedEmitter->emit = 0;
+    group.mappedEmitter->lifeTimeMin = 0.12f;
+    group.mappedEmitter->lifeTimeMax = 0.28f;
+    group.mappedEmitter->velocityBase = { 0.0f, 0.03f, 0.0f };
+    group.mappedEmitter->velocityVariance = 0.22f;
+    group.mappedEmitter->speedMin = 0.04f;
+    group.mappedEmitter->speedMax = 0.20f;
+    group.mappedEmitter->shapeType = 0;
+    group.mappedEmitter->shapeAngle = 0.5f;
+    group.mappedEmitter->shapeSize = { 0.35f, 0.35f, 0.35f };
+    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->startColor = { 1.0f, 0.85f, 0.25f, 1.0f };
+    group.mappedEmitter->endColor = { 1.0f, 0.15f, 0.02f, 0.0f };
+    group.mappedEmitter->scaleStart = { 0.45f, 0.45f, 0.45f };
+    group.mappedEmitter->scaleEnd = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->angleRandomDeg = 360.0f;
+    group.mappedEmitter->jitterDeg = 0.0f;
 }
 
 void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
@@ -651,12 +735,21 @@ void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
 }
 
 void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
+    Draw(cmd, false);
+}
+
+void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTargets) {
     for (auto& [name, group] : particleGroups_) {
+        const bool isPostEffectTarget = group.postEffectMode != PostEffectMode::FullScreen;
+        if (drawPostEffectTargets && !isPostEffectTarget) {
+            continue;
+        }
 
         // --- Graphics による描画 ---
         // ★ ブレンド切替（PSO切替）
         if (particleCommon_) {
             particleCommon_->SetBlendMode(group.blendMode);
+            particleCommon_->SetDepthTestEnabled(group.depthTestEnabled);
             particleCommon_->SetGraphicsPipelineState();
         }
 
@@ -757,8 +850,22 @@ void ParticleManager::DrawImGui() {
         ScanResources();
     }
 
+    if (!editorSelectedGroupName_.empty() && !HasGroup(editorSelectedGroupName_)) {
+        editorSelectedGroupName_.clear();
+    }
+
+    if (editorSelectedGroupName_.empty()) {
+        ImGui::Separator();
+        ImGui::TextDisabled("Select a particle group in Hierarchy.");
+        ImGui::End();
+        return;
+    }
+
     for (auto& [name, group] : particleGroups_) {
-        if (ImGui::TreeNode(name.c_str())) {
+        if (name != editorSelectedGroupName_) {
+            continue;
+        }
+        if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
             
             // ブレンドモード
             const char* blendModes[] = { "None", "Normal", "Add", "Subtract", "Multiply", "Screen" };
@@ -766,6 +873,24 @@ void ParticleManager::DrawImGui() {
             if (ImGui::Combo("Blend Mode", &currentBlend, blendModes, IM_ARRAYSIZE(blendModes))) {
                 group.blendMode = static_cast<ParticleCommon::BlendMode>(currentBlend);
             }
+
+            const char* postEffectModes[] = { "None", "Bloom", "Outline Bloom" };
+            int currentPostEffect = 0;
+            if (group.postEffectMode == PostEffectMode::BoxFilter) {
+                currentPostEffect = 1;
+            } else if (group.postEffectMode == PostEffectMode::OutlineBloom) {
+                currentPostEffect = 2;
+            }
+            if (ImGui::Combo("Particle Post Effect", &currentPostEffect, postEffectModes, IM_ARRAYSIZE(postEffectModes))) {
+                group.postEffectMode =
+                    currentPostEffect == 1 ? PostEffectMode::BoxFilter :
+                    currentPostEffect == 2 ? PostEffectMode::OutlineBloom :
+                    PostEffectMode::FullScreen;
+            }
+            if (group.postEffectMode != PostEffectMode::FullScreen) {
+                ImGui::TextDisabled("Dedicated post-effect layer target.");
+            }
+            ImGui::Checkbox("Depth Test", &group.depthTestEnabled);
 
             // ビルボードモード
             const char* billboardModes[] = { "Billboard (Camera Face)", "Velocity Aligned (Arrow)", "None (Fixed)" };
@@ -873,8 +998,15 @@ void ParticleManager::DrawImGui() {
                     group.mappedEmitter->lifeTimeMax = lifetime[1];
                 }
 
+                ImGui::DragFloat3("Scale Start", &group.mappedEmitter->scaleStart.x, 0.01f, 0.0f, 20.0f);
+                ImGui::DragFloat3("Scale End", &group.mappedEmitter->scaleEnd.x, 0.01f, 0.0f, 20.0f);
+
                 ImGui::DragFloat3("Velocity Base", &group.mappedEmitter->velocityBase.x, 0.01f);
                 ImGui::DragFloat("Velocity Variance", &group.mappedEmitter->velocityVariance, 0.01f, 0.0f, 5.0f);
+                ImGui::DragFloat("Speed Min", &group.mappedEmitter->speedMin, 0.01f, 0.0f, 10.0f);
+                ImGui::DragFloat("Speed Max", &group.mappedEmitter->speedMax, 0.01f, 0.0f, 10.0f);
+                ImGui::DragFloat("Angle Random Deg", &group.mappedEmitter->angleRandomDeg, 1.0f, 0.0f, 360.0f);
+                ImGui::DragFloat("Jitter Deg", &group.mappedEmitter->jitterDeg, 1.0f, 0.0f, 180.0f);
                 ImGui::DragFloat3("Acceleration (Gravity)", &group.mappedEmitter->acceleration.x, 0.01f);
 
                 ImGui::ColorEdit4("Start Color", &group.mappedEmitter->startColor.x);
@@ -899,6 +1031,8 @@ void ParticleManager::Save(const std::string& filename) {
         g["modelType"] = group.modelType;
         g["modelName"] = group.modelName;
         g["blendMode"] = static_cast<int>(group.blendMode);
+        g["postEffectMode"] = static_cast<int>(group.postEffectMode);
+        g["depthTestEnabled"] = group.depthTestEnabled;
         g["billboardMode"] = group.billboardMode;
         g["isAutoEmit"] = group.isAutoEmit;
 
@@ -914,6 +1048,12 @@ void ParticleManager::Save(const std::string& filename) {
             e["velocityVariance"] = group.mappedEmitter->velocityVariance;
             e["startColor"] = { group.mappedEmitter->startColor.x, group.mappedEmitter->startColor.y, group.mappedEmitter->startColor.z, group.mappedEmitter->startColor.w };
             e["endColor"] = { group.mappedEmitter->endColor.x, group.mappedEmitter->endColor.y, group.mappedEmitter->endColor.z, group.mappedEmitter->endColor.w };
+            e["scaleStart"] = { group.mappedEmitter->scaleStart.x, group.mappedEmitter->scaleStart.y, group.mappedEmitter->scaleStart.z };
+            e["scaleEnd"] = { group.mappedEmitter->scaleEnd.x, group.mappedEmitter->scaleEnd.y, group.mappedEmitter->scaleEnd.z };
+            e["speedMin"] = group.mappedEmitter->speedMin;
+            e["speedMax"] = group.mappedEmitter->speedMax;
+            e["angleRandomDeg"] = group.mappedEmitter->angleRandomDeg;
+            e["jitterDeg"] = group.mappedEmitter->jitterDeg;
             e["shapeType"] = group.mappedEmitter->shapeType;
             e["shapeAngle"] = group.mappedEmitter->shapeAngle;
             e["shapeSize"] = { group.mappedEmitter->shapeSize.x, group.mappedEmitter->shapeSize.y, group.mappedEmitter->shapeSize.z };
@@ -976,6 +1116,8 @@ void ParticleManager::Load(const std::string& filename) {
         group.modelType = modelType;
         group.modelName = modelName;
         group.blendMode = static_cast<ParticleCommon::BlendMode>(g["blendMode"].get<int>());
+        group.postEffectMode = static_cast<PostEffectMode>(g.value("postEffectMode", static_cast<int>(PostEffectMode::FullScreen)));
+        group.depthTestEnabled = g.value("depthTestEnabled", true);
         group.billboardMode = g["billboardMode"];
         group.isAutoEmit = g["isAutoEmit"];
 
@@ -991,6 +1133,16 @@ void ParticleManager::Load(const std::string& filename) {
             group.mappedEmitter->velocityVariance = e["velocityVariance"];
             group.mappedEmitter->startColor = { e["startColor"][0], e["startColor"][1], e["startColor"][2], e["startColor"][3] };
             group.mappedEmitter->endColor = { e["endColor"][0], e["endColor"][1], e["endColor"][2], e["endColor"][3] };
+            if (e.contains("scaleStart")) {
+                group.mappedEmitter->scaleStart = { e["scaleStart"][0], e["scaleStart"][1], e["scaleStart"][2] };
+            }
+            if (e.contains("scaleEnd")) {
+                group.mappedEmitter->scaleEnd = { e["scaleEnd"][0], e["scaleEnd"][1], e["scaleEnd"][2] };
+            }
+            group.mappedEmitter->speedMin = e.value("speedMin", group.mappedEmitter->speedMin);
+            group.mappedEmitter->speedMax = e.value("speedMax", group.mappedEmitter->speedMax);
+            group.mappedEmitter->angleRandomDeg = e.value("angleRandomDeg", group.mappedEmitter->angleRandomDeg);
+            group.mappedEmitter->jitterDeg = e.value("jitterDeg", group.mappedEmitter->jitterDeg);
             group.mappedEmitter->shapeType = e["shapeType"];
             group.mappedEmitter->shapeAngle = e["shapeAngle"];
             group.mappedEmitter->shapeSize = { e["shapeSize"][0], e["shapeSize"][1], e["shapeSize"][2] };

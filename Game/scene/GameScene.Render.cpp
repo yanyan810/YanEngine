@@ -191,6 +191,8 @@ void GameScene::DrawImGui(GameApp& app) {
     }
     ImGui::End();
 
+    DrawHitEffectImGui_();
+
     ParticleManager::GetInstance()->DrawImGui();
 
     debugAIImGuiPanelState_.botRunning = debugAIEnabled_;
@@ -213,4 +215,61 @@ void GameScene::DrawImGui(GameApp& app) {
         debugRequestRestoreInitialState_ = true;
     }
 #endif // USE_IMGUI
+}
+
+void GameScene::EnsureHitEffectGroup_() {
+    auto* particleManager = ParticleManager::GetInstance();
+    const std::string groupName = hitEffectGroupName_;
+
+    if (!particleManager->HasGroup(groupName)) {
+        particleManager->CreateParticleGroup(groupName, "resources/circle.png");
+        particleManager->ConfigureHitEffectPreset(groupName);
+    }
+}
+
+void GameScene::SpawnHitEffect_(const Vector3& position) {
+    if (!hitEffectEnabled_) return;
+
+    EnsureHitEffectGroup_();
+    ParticleManager::GetInstance()->Emit(
+        hitEffectGroupName_,
+        position,
+        static_cast<uint32_t>(std::max(1, hitEffectCount_)));
+}
+
+void GameScene::DrawHitEffectImGui_() {
+#ifdef USE_IMGUI
+    ImGui::Begin("Hit Effect");
+
+    ImGui::Checkbox("Enable On Hit", &hitEffectEnabled_);
+    ImGui::InputText("Group", hitEffectGroupName_, sizeof(hitEffectGroupName_));
+    ImGui::DragInt("Emit Count", &hitEffectCount_, 1, 1, 1024);
+    ImGui::DragFloat3("Test Position", &hitEffectTestPosition_.x, 0.1f);
+
+    if (ImGui::Button("Create / Reset Preset")) {
+        auto* particleManager = ParticleManager::GetInstance();
+        if (!particleManager->HasGroup(hitEffectGroupName_)) {
+            particleManager->CreateParticleGroup(hitEffectGroupName_, "resources/circle.png");
+        }
+        particleManager->ConfigureHitEffectPreset(hitEffectGroupName_);
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Emit Test")) {
+        SpawnHitEffect_(hitEffectTestPosition_);
+    }
+
+    if (ImGui::Button("Save hit_effect.json")) {
+        ParticleManager::GetInstance()->Save("hit_effect.json");
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Load hit_effect.json")) {
+        ParticleManager::GetInstance()->Load("hit_effect.json");
+        EnsureHitEffectGroup_();
+    }
+
+    ImGui::TextDisabled("Detailed shape, color, lifetime, texture, and blend controls are in Particle Manager.");
+    ImGui::End();
+#endif
 }

@@ -8,9 +8,11 @@
 #include <unordered_map>
 #include <list>
 #include <string>
+#include <vector>
 #include "TextureManager.h"
 
 #include "ParticleCommon.h"
+#include "RenderManager.h"
 
 class Model;
 
@@ -61,6 +63,15 @@ struct EmitterData {
 
     Vector4 startColor; // 発生時の色 (16 bytes) -> 合計 16 bytes
     Vector4 endColor; // 消滅時の色 (16 bytes) -> 合計 16 bytes
+    Vector3 scaleStart;
+    float speedMin;
+
+    Vector3 scaleEnd;
+    float speedMax;
+
+    float angleRandomDeg;
+    float jitterDeg;
+    float padding3[2];
 };
 
 // ===============================
@@ -99,6 +110,8 @@ struct ParticleGroup {
     EmitterData* mappedEmitter = nullptr;
 
     ParticleCommon::BlendMode blendMode = ParticleCommon::BlendMode::kBlendModeNormal; 
+    PostEffectMode postEffectMode = PostEffectMode::FullScreen;
+    bool depthTestEnabled = true;
     
     // 手動/自動エミット制御用フラグ
     bool isAutoEmit = true;
@@ -128,10 +141,17 @@ public:
 
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, ParticleCommon* particleCommon); // ★追加
     void Finalize();
+    bool HasGroup(const std::string& groupName) const;
+    std::vector<std::string> GetGroupNames() const;
+    bool HasPostEffectTargets() const;
+    PostEffectMode GetPrimaryPostEffectMode() const;
+    void ConfigureHitEffectPreset(const std::string& groupName);
+    void SetEditorSelectedGroupName(const std::string& groupName);
     void SetGroupBlendMode(const std::string& groupName, ParticleCommon::BlendMode mode);            // ★追加
     void Update(float deltaTime, const Camera& camera);
     void UpdateCompute(ID3D12GraphicsCommandList* computeCmd);
     void Draw(ID3D12GraphicsCommandList* cmd);
+    void Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTargets);
     void ClearGroups();
     void DrawImGui(); // ★追加
 
@@ -173,6 +193,7 @@ private:
     std::vector<ParticleVertex> vertices_;
 
     std::unordered_map<std::string, ParticleGroup> particleGroups_;
+    std::string editorSelectedGroupName_;
 
 
     // === GPU リソース ===

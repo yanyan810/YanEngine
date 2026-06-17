@@ -16,7 +16,8 @@ void ParticleCommon::Initialize(DirectXCommon* dxCommon)
 
     // ★ 全BlendMode分 PSO を事前生成
     for (int i = 0; i < static_cast<int>(BlendMode::kCountOfBlendMode); ++i) {
-        CreateGraphicsPipelineState(static_cast<BlendMode>(i));
+        CreateGraphicsPipelineState(static_cast<BlendMode>(i), true);
+        CreateGraphicsPipelineState(static_cast<BlendMode>(i), false);
     }
 }
 
@@ -212,7 +213,7 @@ void ParticleCommon::CreateUpdateComputePipelineState()
     assert(SUCCEEDED(hr));
 }
 
-void ParticleCommon::CreateGraphicsPipelineState(BlendMode mode)
+void ParticleCommon::CreateGraphicsPipelineState(BlendMode mode, bool depthTestEnabled)
 {
     // === Shaders ===
     // ※ ここは “初期化時に一回だけ” 呼ばれるので、都度コンパイルでもOK
@@ -299,7 +300,7 @@ void ParticleCommon::CreateGraphicsPipelineState(BlendMode mode)
 
     // === Depth/Stencil ===
     D3D12_DEPTH_STENCIL_DESC ds{};
-    ds.DepthEnable = TRUE;
+    ds.DepthEnable = depthTestEnabled ? TRUE : FALSE;
     ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
@@ -319,9 +320,10 @@ void ParticleCommon::CreateGraphicsPipelineState(BlendMode mode)
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
+    const size_t depthIndex = depthTestEnabled ? 1 : 0;
     const int idx = static_cast<int>(mode);
     HRESULT hr = dx_->GetDevice()->CreateGraphicsPipelineState(
-        &psoDesc, IID_PPV_ARGS(&pso_[idx]));
+        &psoDesc, IID_PPV_ARGS(&pso_[depthIndex][idx]));
     assert(SUCCEEDED(hr));
 }
 
@@ -331,8 +333,9 @@ void ParticleCommon::SetGraphicsPipelineState(ID3D12GraphicsCommandList* cmd)
 
     cmd->SetGraphicsRootSignature(rootSignature_.Get());
 
+    const size_t depthIndex = depthTestEnabled_ ? 1 : 0;
     const int idx = static_cast<int>(blendMode_);
-    cmd->SetPipelineState(pso_[idx].Get());
+    cmd->SetPipelineState(pso_[depthIndex][idx].Get());
 
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

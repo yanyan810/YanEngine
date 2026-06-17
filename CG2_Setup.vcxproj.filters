@@ -603,6 +603,9 @@
       <Filter>shaders</Filter>
     </FxCompile>
     <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl" />
+    <FxCompile Include="resources\shaders\Bloom.PS.hlsl" />
+    <FxCompile Include="resources\shaders\AdditiveComposite.PS.hlsl" />
+    <FxCompile Include="resources\shaders\OutlineBloom.PS.hlsl" />
     <FxCompile Include="resources\shaders\GaussianBlurX.PS.hlsl" />
     <FxCompile Include="resources\shaders\Vignette.PS.hlsl" />
     <FxCompile Include="resources\shaders\RadialBlur.PS.hlsl" />

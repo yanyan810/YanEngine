@@ -248,6 +248,11 @@ void GameScene::Update(GameApp& app, float dt) {
             player_->SetExternalInputBlocked(blockExternalGameInput);
             player_->Update(dt, *input_, enemyMgr_);
             const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
+            for (const auto& hit : playerAttackHits) {
+                Vector3 effectPosition = hit.targetPosition;
+                effectPosition.y += 1.0f;
+                SpawnHitEffect_(effectPosition);
+            }
             if (!playerAttackHits.empty() && app.DebugAI()) {
                 const DebugGameState hitState = CaptureDebugState();
                 const Player::PlayerAttackType attackType = player_->GetCurrentAttackType();

@@ -229,6 +229,8 @@ void GameScene::OnEnter(GameApp& app) {
      prevTab_ = false;
      pauseSel_ = PauseSel::Close;
 
+     EnsureHitEffectGroup_();
+
      SetupDebugAI_(app);
 
 }

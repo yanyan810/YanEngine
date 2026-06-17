@@ -15,7 +15,7 @@ static const char* kEffectNames[] = {
     "FullScreen (No Effect)",
     "Grayscale",
     "Vignette",
-    "BoxFilter (Smoothing)",
+    "Bloom",
     "GaussianBlurX (Horizontal)",
     "GaussianBlurY (Vertical)",
     "GaussianBlur (Linear)",
@@ -23,13 +23,14 @@ static const char* kEffectNames[] = {
     "RadialBlur",
     "Dissolve",
     "Random",
+    "Outline Bloom",
 };
 
 static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/Fullscreen.PS.hlsl",
     L"resources/shaders/Grayscale.PS.hlsl",
     L"resources/shaders/Vignette.PS.hlsl",
-    L"resources/shaders/BoxFilter.PS.hlsl",
+    L"resources/shaders/Bloom.PS.hlsl",
     L"resources/shaders/GaussianBlurX.PS.hlsl",
     L"resources/shaders/GaussianBlurY.PS.hlsl",
     L"resources/shaders/Fullscreen.PS.hlsl",
@@ -37,6 +38,7 @@ static const wchar_t* kEffectPSPaths[] = {
     L"resources/shaders/RadialBlur.PS.hlsl",
     L"resources/shaders/Dissolve.PS.hlsl",
     L"resources/shaders/Random.PS.hlsl",
+    L"resources/shaders/OutlineBloom.PS.hlsl",
 };
 
 void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
@@ -50,6 +52,9 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     offscreen_ = std::make_unique<OffscreenPass>();
     postBuffers_[0] = std::make_unique<OffscreenPass>();
     postBuffers_[1] = std::make_unique<OffscreenPass>();
+    particlePostLayer_ = std::make_unique<OffscreenPass>();
+    particlePostBuffer_ = std::make_unique<OffscreenPass>();
+    compositeBuffer_ = std::make_unique<OffscreenPass>();
 
     Vector4 clearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
     offscreen_->Initialize(
@@ -81,6 +86,34 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
         postClearColor,
         4
     );
+    Vector4 particleLayerClearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+    particlePostLayer_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        particleLayerClearColor,
+        5
+    );
+    particlePostBuffer_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        postClearColor,
+        6
+    );
+    compositeBuffer_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        postClearColor,
+        7
+    );
 
     CreateCopyImageRootSignature();
 
@@ -111,6 +144,14 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     randomCB_->Map(0, nullptr, reinterpret_cast<void**>(&randomCBData_));
     randomCBData_->time = 0.0f;
 
+    bloomCB_ = dx_->CreateBufferResource((sizeof(BloomParameter) + 0xff) & ~0xff);
+    bloomCB_->Map(0, nullptr, reinterpret_cast<void**>(&bloomCBData_));
+    bloomCBData_->color = bloomColor_;
+    bloomCBData_->intensity = bloomIntensity_;
+    bloomCBData_->threshold = bloomThreshold_;
+    bloomCBData_->alpha = bloomAlpha_;
+    bloomCBData_->_pad = 0.0f;
+
     TextureManager::GetInstance()->LoadTexture("resources/noise0.png");
     noiseSrvIndex_ = TextureManager::GetInstance()->GetSrvIndex("resources/noise0.png");
 
@@ -120,6 +161,7 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     for (int i = 0; i < kEffectCount; ++i) {
         CreatePipelineState(kEffectPSPaths[i], pipelineStates_[i]);
     }
+    CreatePipelineState(L"resources/shaders/AdditiveComposite.PS.hlsl", additiveCompositePSO_);
 }
 
 void RenderManager::SetMode(PostEffectMode mode)
@@ -185,6 +227,30 @@ void RenderManager::EndOffscreen()
     offscreen_->End();
 }
 
+void RenderManager::BeginParticlePostLayer(PostEffectMode mode)
+{
+    assert(particlePostLayer_);
+    particlePostEffectMode_ = mode;
+    hasParticlePostLayer_ = mode != PostEffectMode::FullScreen;
+    if (!hasParticlePostLayer_) {
+        return;
+    }
+    particlePostLayer_->BeginOverlayClear();
+}
+
+void RenderManager::EndParticlePostLayer()
+{
+    if (!hasParticlePostLayer_) {
+        return;
+    }
+}
+
+void RenderManager::ClearParticlePostLayer()
+{
+    hasParticlePostLayer_ = false;
+    particlePostEffectMode_ = PostEffectMode::FullScreen;
+}
+
 uint32_t RenderManager::GetOffscreenSrvIndex() const
 {
     assert(offscreen_);
@@ -210,7 +276,7 @@ void RenderManager::CreateCopyImageRootSignature()
     range1.BaseShaderRegister = 1; // t1
     range1.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[7]{};
+    D3D12_ROOT_PARAMETER rootParams[8]{};
     // [0]: SRV (t0) Color
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -252,6 +318,12 @@ void RenderManager::CreateCopyImageRootSignature()
     rootParams[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParams[6].Descriptor.ShaderRegister = 4;
     rootParams[6].Descriptor.RegisterSpace = 0;
+
+    // [7]: CBV (b5) Bloom
+    rootParams[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParams[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParams[7].Descriptor.ShaderRegister = 5;
+    rootParams[7].Descriptor.RegisterSpace = 0;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -335,6 +407,8 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
 
     if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
         cmd->SetGraphicsRootConstantBufferView(1, gaussianFilterCB_->GetGPUVirtualAddress());
+    } else if (mode == PostEffectMode::BoxFilter || mode == PostEffectMode::OutlineBloom) {
+        cmd->SetGraphicsRootConstantBufferView(7, bloomCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::Outline) {
         cmd->SetGraphicsRootConstantBufferView(3, outlineCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::RadialBlur) {
@@ -350,6 +424,18 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
         cmd->SetGraphicsRootConstantBufferView(6, randomCB_->GetGPUVirtualAddress());
     }
 
+    cmd->DrawInstanced(3, 1, 0, 0);
+}
+
+void RenderManager::DrawAdditiveCompositePass(uint32_t baseSrvIndex, uint32_t addSrvIndex)
+{
+    auto* cmd = dx_->GetCommandList();
+
+    cmd->SetGraphicsRootSignature(copyImageRootSignature_.Get());
+    cmd->SetPipelineState(additiveCompositePSO_.Get());
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->SetGraphicsRootDescriptorTable(0, srv_->GetGPUDescriptionHandle(baseSrvIndex));
+    cmd->SetGraphicsRootDescriptorTable(2, srv_->GetGPUDescriptionHandle(addSrvIndex));
     cmd->DrawInstanced(3, 1, 0, 0);
 }
 
@@ -396,17 +482,8 @@ void RenderManager::DrawFullscreenPassToBuffer(
     );
 }
 
-void RenderManager::DrawOffscreenToBackBuffer()
+int RenderManager::FindLastEnabledPostEffect_() const
 {
-    assert(offscreen_);
-    assert(postBuffers_[0]);
-    assert(postBuffers_[1]);
-
-    auto* cmd = dx_->GetCommandList();
-    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
-    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
-    offscreen_->TransitionToRenderTarget();
-
     int lastEffect = -1;
     for (int i = 1; i < kEffectCount; ++i) {
         if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
@@ -417,26 +494,20 @@ void RenderManager::DrawOffscreenToBackBuffer()
             lastEffect = i;
         }
     }
+    return lastEffect;
+}
+
+uint32_t RenderManager::RenderPostEffectsToBuffer_(ID3D12Resource* srcResource, uint32_t srcSrvIndex)
+{
+    const int lastEffect = FindLastEnabledPostEffect_();
+    int bufferIndex = 0;
 
     if (lastEffect < 0) {
-        DrawFullscreenPassToBackBuffer(
-            PostEffectMode::FullScreen,
-            offscreen_->GetSrvIndex(),
-            offscreen_->GetResource()
-        );
-        dx_->SetBackBufferRenderTarget();
-        return;
+        OffscreenPass& dst = *postBuffers_[bufferIndex];
+        DrawFullscreenPassToBuffer(PostEffectMode::FullScreen, srcSrvIndex, srcResource, dst);
+        dst.TransitionToShaderResource();
+        return dst.GetSrvIndex();
     }
-
-    dx_->TransitionResource(
-        dx_->GetDepthStencilResource(),
-        D3D12_RESOURCE_STATE_DEPTH_WRITE,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-    );
-
-    ID3D12Resource* srcResource = offscreen_->GetResource();
-    uint32_t srcSrvIndex = offscreen_->GetSrvIndex();
-    int bufferIndex = 0;
 
     for (int i = 1; i < kEffectCount; ++i) {
         if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
@@ -449,14 +520,64 @@ void RenderManager::DrawOffscreenToBackBuffer()
 
         const PostEffectMode mode = static_cast<PostEffectMode>(i);
         if (mode == PostEffectMode::GaussianBlur) {
-            // Horizontal (X)
             OffscreenPass& dstX = *postBuffers_[bufferIndex];
             DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurX, srcSrvIndex, srcResource, dstX);
             srcResource = dstX.GetResource();
             srcSrvIndex = dstX.GetSrvIndex();
             bufferIndex = 1 - bufferIndex;
 
-            // Vertical (Y)
+            OffscreenPass& dstY = *postBuffers_[bufferIndex];
+            DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurY, srcSrvIndex, srcResource, dstY);
+            srcResource = dstY.GetResource();
+            srcSrvIndex = dstY.GetSrvIndex();
+            if (i != lastEffect) {
+                bufferIndex = 1 - bufferIndex;
+            } else {
+                dstY.TransitionToShaderResource();
+            }
+        } else {
+            OffscreenPass& dst = *postBuffers_[bufferIndex];
+            DrawFullscreenPassToBuffer(mode, srcSrvIndex, srcResource, dst);
+            srcResource = dst.GetResource();
+            srcSrvIndex = dst.GetSrvIndex();
+            if (i != lastEffect) {
+                bufferIndex = 1 - bufferIndex;
+            } else {
+                dst.TransitionToShaderResource();
+            }
+        }
+    }
+
+    return srcSrvIndex;
+}
+
+void RenderManager::RenderPostEffectsToBackBuffer_(ID3D12Resource* srcResource, uint32_t srcSrvIndex)
+{
+    const int lastEffect = FindLastEnabledPostEffect_();
+    int bufferIndex = 0;
+
+    if (lastEffect < 0) {
+        DrawFullscreenPassToBackBuffer(PostEffectMode::FullScreen, srcSrvIndex, srcResource);
+        return;
+    }
+
+    for (int i = 1; i < kEffectCount; ++i) {
+        if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
+            i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
+            continue;
+        }
+        if (!enabledEffects_[i]) {
+            continue;
+        }
+
+        const PostEffectMode mode = static_cast<PostEffectMode>(i);
+        if (mode == PostEffectMode::GaussianBlur) {
+            OffscreenPass& dstX = *postBuffers_[bufferIndex];
+            DrawFullscreenPassToBuffer(PostEffectMode::GaussianBlurX, srcSrvIndex, srcResource, dstX);
+            srcResource = dstX.GetResource();
+            srcSrvIndex = dstX.GetSrvIndex();
+            bufferIndex = 1 - bufferIndex;
+
             if (i == lastEffect) {
                 DrawFullscreenPassToBackBuffer(PostEffectMode::GaussianBlurY, srcSrvIndex, srcResource);
             } else {
@@ -478,6 +599,67 @@ void RenderManager::DrawOffscreenToBackBuffer()
             }
         }
     }
+}
+
+uint32_t RenderManager::CompositeParticlePostToBuffer_(uint32_t baseSrvIndex)
+{
+    if (!hasParticlePostLayer_ || particlePostEffectMode_ == PostEffectMode::FullScreen) {
+        return baseSrvIndex;
+    }
+
+    DrawFullscreenPassToBuffer(
+        particlePostEffectMode_,
+        particlePostLayer_->GetSrvIndex(),
+        particlePostLayer_->GetResource(),
+        *particlePostBuffer_);
+    particlePostBuffer_->TransitionToShaderResource();
+
+    compositeBuffer_->BeginForPostEffect();
+    DrawAdditiveCompositePass(baseSrvIndex, particlePostBuffer_->GetSrvIndex());
+    compositeBuffer_->End();
+    return compositeBuffer_->GetSrvIndex();
+}
+
+void RenderManager::CompositeParticlePostToBackBuffer_(uint32_t baseSrvIndex)
+{
+    if (!hasParticlePostLayer_ || particlePostEffectMode_ == PostEffectMode::FullScreen) {
+        return;
+    }
+
+    DrawFullscreenPassToBuffer(
+        particlePostEffectMode_,
+        particlePostLayer_->GetSrvIndex(),
+        particlePostLayer_->GetResource(),
+        *particlePostBuffer_);
+    particlePostBuffer_->TransitionToShaderResource();
+
+    dx_->SetBackBufferRenderTargetForPostEffect();
+    DrawAdditiveCompositePass(baseSrvIndex, particlePostBuffer_->GetSrvIndex());
+}
+
+void RenderManager::DrawOffscreenToBackBuffer()
+{
+    assert(offscreen_);
+    assert(postBuffers_[0]);
+    assert(postBuffers_[1]);
+
+    auto* cmd = dx_->GetCommandList();
+    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
+    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+    offscreen_->TransitionToRenderTarget();
+
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
+    if (hasParticlePostLayer_) {
+        uint32_t baseSrvIndex = RenderPostEffectsToBuffer_(offscreen_->GetResource(), offscreen_->GetSrvIndex());
+        CompositeParticlePostToBackBuffer_(baseSrvIndex);
+    } else {
+        RenderPostEffectsToBackBuffer_(offscreen_->GetResource(), offscreen_->GetSrvIndex());
+    }
 
     dx_->TransitionResource(
         dx_->GetDepthStencilResource(),
@@ -486,6 +668,36 @@ void RenderManager::DrawOffscreenToBackBuffer()
     );
 
     dx_->SetBackBufferRenderTarget();
+}
+
+uint32_t RenderManager::RenderPostEffectsForSceneTexture()
+{
+    assert(offscreen_);
+    assert(postBuffers_[0]);
+    assert(postBuffers_[1]);
+
+    auto* cmd = dx_->GetCommandList();
+    ID3D12DescriptorHeap* heaps[] = { srv_->GetDescriptorHeap() };
+    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+    offscreen_->TransitionToRenderTarget();
+
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
+    previewSrvIndex_ = RenderPostEffectsToBuffer_(offscreen_->GetResource(), offscreen_->GetSrvIndex());
+    previewSrvIndex_ = CompositeParticlePostToBuffer_(previewSrvIndex_);
+
+    dx_->TransitionResource(
+        dx_->GetDepthStencilResource(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE
+    );
+
+    dx_->SetBackBufferRenderTarget();
+    return previewSrvIndex_;
 }
 
 void RenderManager::DrawImGui()
@@ -514,6 +726,25 @@ void RenderManager::DrawImGui()
                 gaussianFilterCBData_->sigma = sigma_;
             }
             ImGui::Unindent();
+        }
+        if ((static_cast<PostEffectMode>(i) == PostEffectMode::BoxFilter ||
+            static_cast<PostEffectMode>(i) == PostEffectMode::OutlineBloom) && enabled) {
+            ImGui::PushID(i);
+            ImGui::Indent();
+            if (ImGui::ColorEdit4("Bloom Color", &bloomColor_.x)) {
+                bloomCBData_->color = bloomColor_;
+            }
+            if (ImGui::SliderFloat("Bloom Intensity", &bloomIntensity_, 0.0f, 5.0f)) {
+                bloomCBData_->intensity = bloomIntensity_;
+            }
+            if (ImGui::SliderFloat("Bloom Threshold", &bloomThreshold_, 0.0f, 1.0f)) {
+                bloomCBData_->threshold = bloomThreshold_;
+            }
+            if (ImGui::SliderFloat("Bloom Alpha", &bloomAlpha_, 0.0f, 1.0f)) {
+                bloomCBData_->alpha = bloomAlpha_;
+            }
+            ImGui::Unindent();
+            ImGui::PopID();
         }
         if (static_cast<PostEffectMode>(i) == PostEffectMode::Outline && enabled) {
             ImGui::Indent();
