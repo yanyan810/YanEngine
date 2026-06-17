@@ -12,6 +12,12 @@
 #include <string>
 #include <vector>
 
+#ifdef USE_IMGUI
+ImVec2 gSceneImageMin = ImVec2(0.0f, 0.0f);
+ImVec2 gSceneImageMax = ImVec2(0.0f, 0.0f);
+bool gHasSceneImageRect = false;
+#endif
+
 
 void ImGuiManagaer::Initialize([[maybe_unused]]WinApp* winApp, [[maybe_unused]] DirectXCommon* dxCommon, [[maybe_unused]] SrvManager* srvManager)
 {
@@ -317,8 +323,12 @@ void ImGuiManagaer::DrawEditorPanels_()
         ImGui::SetCursorPosY(cursor.y + (avail.y - imageSize.y) * 0.5f);
 
         D3D12_GPU_DESCRIPTOR_HANDLE handle = srvManager_->GetGPUDescriptionHandle(sceneSrvIndex_);
+        gSceneImageMin = ImGui::GetCursorScreenPos();
+        gSceneImageMax = ImVec2(gSceneImageMin.x + imageSize.x, gSceneImageMin.y + imageSize.y);
+        gHasSceneImageRect = true;
         ImGui::Image(static_cast<ImTextureID>(handle.ptr), imageSize);
     } else {
+        gHasSceneImageRect = false;
         ImGui::TextUnformatted("Scene texture is not ready.");
     }
     ImGui::End();
