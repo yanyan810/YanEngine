@@ -57,6 +57,7 @@ private:
     void FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const;
     void EnsureHitEffectGroup_();
     void SpawnHitEffect_(const Vector3& position);
+    void SpawnFallAttackEffect_(const Vector3& position);
     void DrawHitEffectImGui_();
 
     std::unique_ptr<Camera> camera_;
@@ -155,6 +156,9 @@ private:
     char hitEffectGroupName_[64] = "HitEffect";
     int hitEffectCount_ = 24;
     Vector3 hitEffectTestPosition_{ 0.0f, 1.0f, 5.0f };
+    bool fallAttackEffectEnabled_ = true;
+    char fallAttackEffectGroupName_[64] = "fallAttak_HitEffect";
+    bool pendingBattleParticleSetup_ = false;
 
     enum class PauseSel { Close, ToTitle };
     PauseSel pauseSel_ = PauseSel::Close;

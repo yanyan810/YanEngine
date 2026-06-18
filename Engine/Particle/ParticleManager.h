@@ -116,6 +116,7 @@ struct ParticleGroup {
     // 手動/自動エミット制御用フラグ
     bool isAutoEmit = true;
     bool isEmitRequested = false;
+    float activeTimeRemaining = 0.0f;
 
     // ビルボードモード
     // 0: Billboard (カメラ追従)
@@ -153,10 +154,13 @@ public:
     void Draw(ID3D12GraphicsCommandList* cmd);
     void Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTargets);
     void ClearGroups();
+    void RemoveGroup(const std::string& groupName);
     void DrawImGui(); // ★追加
 
     void Save(const std::string& filename);
     void Load(const std::string& filename);
+    void LoadAdditional(const std::string& filename, const std::string& groupNamePrefix);
+    void LoadAdditional(const std::string& filename, const std::string& groupNamePrefix, const std::vector<std::string>& skipGroupNames);
 
     void CreateParticleGroup(
         const std::string& name,
@@ -169,12 +173,15 @@ public:
     void Emit(const std::string& groupName,
         const Vector3& pos,
         uint32_t count);
+    void EmitConfigured(const std::string& groupName, const Vector3& pos);
 
 private:
     ParticleManager() = default;
     ~ParticleManager() = default;
     ParticleManager(const ParticleManager&) = delete;
     ParticleManager& operator=(const ParticleManager&) = delete;
+
+    void LoadInternal_(const std::string& filename, bool clearExisting, const std::string& groupNamePrefix, bool forceAutoEmitOff, const std::vector<std::string>* skipGroupNames = nullptr);
 
 private:
     // === 外部システム ===
@@ -221,7 +228,8 @@ private:
     void ScanResources();
     std::vector<std::string> modelFiles_;
     std::vector<std::string> textureFiles_;
+    std::vector<std::string> particleJsonFiles_;
     bool isResourcesScanned_ = false;
 
-    char saveFileName_[256] = "particles.json";
+    char saveFileName_[256] = "test_particles.json";
 };

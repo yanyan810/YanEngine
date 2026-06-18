@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cmath>
+#include <utility>
 
 // -------- EnemyManager --------
 
@@ -398,6 +399,9 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			hb.hz = halfZ;
 
 			meleeHitboxes_.push_back({ hb, life, dmg, isBoss, kind, ep, facing });
+			if (isBoss && kind == MeleeKind::Land) {
+				bossAttackEffectEvents_.push_back({ kind, ep });
+			}
 		}
 
 	}
@@ -429,6 +433,13 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 	if (!disablePendingSpawn) {
 		UpdatePendingSpawns_(dt, playerXY, playerZ);
 	}
+}
+
+std::vector<EnemyManager::BossAttackEffectEvent> EnemyManager::ConsumeBossAttackEffectEvents()
+{
+	std::vector<BossAttackEffectEvent> events = std::move(bossAttackEffectEvents_);
+	bossAttackEffectEvents_.clear();
+	return events;
 }
 
 void EnemyManager::Draw() {

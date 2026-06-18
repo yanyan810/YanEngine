@@ -37,6 +37,7 @@ private:
         int id = 0;
         std::string name;
         std::string modelPath;
+        int geometryType = -1;
         std::unique_ptr<Object3d> object;
         Vector3 position{ 0.0f, 0.0f, 0.0f };
         Vector3 rotation{ 0.0f, 0.0f, 0.0f };
@@ -50,6 +51,7 @@ private:
         int id = 0;
         std::string name;
         std::string modelPath;
+        int geometryType = -1;
         Vector3 position{ 0.0f, 0.0f, 0.0f };
         Vector3 rotation{ 0.0f, 0.0f, 0.0f };
         Vector3 scale{ 1.0f, 1.0f, 1.0f };
@@ -73,12 +75,19 @@ private:
         Scale,
     };
 
+    enum class EditorMode {
+        Blender = 0,
+        Particle,
+    };
+
     void EnsureHitEffectGroup_();
     void ReloadParticleJson_();
     void SpawnHitEffectPreview_();
     void AddEditorObject_(GameApp& app, const std::string& modelPath);
+    void AddGeometryObject_(GameApp& app, int geometryType);
     void PasteEditorObject_(GameApp& app);
     void DuplicateSelectedObject_(GameApp& app);
+    void RequestDeleteSelectedObject_();
     void DeleteSelectedObject_();
     void ApplyEditorObjectTransform_(EditorObject& item);
     EditorObjectSnapshot CaptureSelectedObject_() const;
@@ -95,10 +104,12 @@ private:
     void Redo_(GameApp& app);
     void SaveEffectJson_(const std::string& path) const;
     void LoadEffectJson_(GameApp& app, const std::string& path);
+    bool OpenModelFileDialog_();
     void DrawGizmoControls_(EditorObject& item);
     void DrawViewportGizmo_();
     void DrawEditorCameraControls_();
     void DrawEffectEditorImGui_(GameApp& app);
+    void DrawParticleModeImGui_();
 
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Object3d> ground_;
@@ -113,6 +124,7 @@ private:
     char editorModelPath_[128] = "cube/cube.obj";
     char effectJsonPath_[128] = "resources/effects/effect_editor.json";
     int hitEffectSpawnCount_ = 24;
+    int selectedGeometryType_ = 1;
     int selectedEditorObject_ = -1;
     int nextEditorObjectId_ = 1;
     Vector3 hitEffectSpawnPosition_{ 0.0f, 1.0f, 0.0f };
@@ -120,6 +132,7 @@ private:
     float timelineDuration_ = 1.0f;
     bool timelinePlaying_ = false;
     bool timelineLoop_ = true;
+    EditorMode editorMode_ = EditorMode::Blender;
     GizmoMode gizmoMode_ = GizmoMode::Translate;
     Vector3 editorCameraPosition_{ 0.0f, 3.0f, -20.0f };
     Vector3 editorCameraRotation_{ 0.0f, 0.0f, 0.0f };
@@ -132,5 +145,6 @@ private:
     int activeViewportGizmoAxis_ = -1;
     float viewportGizmoLastMouseX_ = 0.0f;
     float viewportGizmoLastMouseY_ = 0.0f;
+    bool pendingDeleteSelectedObject_ = false;
     float reloadCooldown_ = 0.0f;
 };

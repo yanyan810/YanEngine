@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <functional>
+#include <vector>
 
 class GameApp;
 class IScene;
@@ -28,5 +29,6 @@ public:
 private:
     std::unordered_map<std::string, Factory> factories_;
     std::unique_ptr<IScene> current_;
+    std::vector<std::unique_ptr<IScene>> retiredScenes_;
     std::string currentName_;
 };

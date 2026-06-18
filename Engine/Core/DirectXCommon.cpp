@@ -643,8 +643,6 @@ void DirectXCommon::PreDraw(bool clearDepth) {
 }
 
 
-// DirectXCommon::PostDraw()
-
 void DirectXCommon::PostDraw() {
 	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
 

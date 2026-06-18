@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <imgui.h>
 #include <fstream>
+#include <cstdio>
+#include <cstring>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -18,6 +20,18 @@ ParticleManager* ParticleManager::GetInstance() {
 }
 
 namespace {
+    std::string NormalizeParticleJsonFileName(const char* text) {
+        std::filesystem::path path(text ? text : "");
+        std::string fileName = path.filename().string();
+        if (fileName.empty()) {
+            fileName = "test_particles.json";
+        }
+        if (std::filesystem::path(fileName).extension().empty()) {
+            fileName += ".json";
+        }
+        return fileName;
+    }
+
     Model::ModelData MakeParticlePrimitiveModelData(const std::vector<Model::VertexData>& vertices) {
         Model::ModelData md{};
         md.materials.push_back({ "" });
@@ -163,6 +177,14 @@ void ParticleManager::ClearGroups()
     particleGroups_.clear();
 }
 
+void ParticleManager::RemoveGroup(const std::string& groupName)
+{
+    particleGroups_.erase(groupName);
+    if (editorSelectedGroupName_ == groupName) {
+        editorSelectedGroupName_.clear();
+    }
+}
+
 void ParticleManager::Update(float dt, const Camera& camera)
 {
     // ★ 実カメラから取得
@@ -189,6 +211,7 @@ void ParticleManager::Update(float dt, const Camera& camera)
 
     // Emitterの更新
     for (auto& [name, group] : particleGroups_) {
+        group.activeTimeRemaining = std::max(0.0f, group.activeTimeRemaining - dt);
         if (group.mappedEmitter) {
             if (group.isAutoEmit) {
                 group.mappedEmitter->frequencyTime += dt; // δタイムを加算
@@ -226,6 +249,7 @@ void ParticleManager::Emit(const std::string& groupName,
         group.mappedEmitter->count = count;
         group.isAutoEmit = false;
         group.isEmitRequested = true;
+        group.activeTimeRemaining = std::max(group.activeTimeRemaining, group.mappedEmitter->lifeTimeMax + 0.5f);
         return;
     }
 
@@ -249,6 +273,22 @@ void ParticleManager::Emit(const std::string& groupName,
 
         group.particles.push_back(p);
     }
+    group.activeTimeRemaining = std::max(group.activeTimeRemaining, 3.5f);
+}
+
+void ParticleManager::EmitConfigured(const std::string& groupName, const Vector3& pos)
+{
+    auto it = particleGroups_.find(groupName);
+    if (it == particleGroups_.end()) {
+        return;
+    }
+
+    uint32_t count = 1;
+    if (it->second.mappedEmitter) {
+        count = std::max<uint32_t>(1, it->second.mappedEmitter->count);
+    }
+
+    Emit(groupName, pos, count);
 }
 
 void ParticleManager::CreateParticleGroup(
@@ -626,7 +666,8 @@ std::vector<std::string> ParticleManager::GetGroupNames() const {
 
 bool ParticleManager::HasPostEffectTargets() const {
     for (const auto& [name, group] : particleGroups_) {
-        if (group.postEffectMode != PostEffectMode::FullScreen) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active && group.postEffectMode != PostEffectMode::FullScreen) {
             return true;
         }
     }
@@ -635,7 +676,8 @@ bool ParticleManager::HasPostEffectTargets() const {
 
 PostEffectMode ParticleManager::GetPrimaryPostEffectMode() const {
     for (const auto& [name, group] : particleGroups_) {
-        if (group.postEffectMode != PostEffectMode::FullScreen) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active && group.postEffectMode != PostEffectMode::FullScreen) {
             return group.postEffectMode;
         }
     }
@@ -682,6 +724,9 @@ void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
     for (auto& [name, group] : particleGroups_) {
 
         // --- Compute Shader による Emit ---
+        if (!group.isAutoEmit && !group.isEmitRequested && group.activeTimeRemaining <= 0.0f) {
+            continue;
+        }
         if (particleCommon_) {
             particleCommon_->SetEmitComputePipelineState(computeCmd);
         }
@@ -740,6 +785,9 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
 
 void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTargets) {
     for (auto& [name, group] : particleGroups_) {
+        if (!group.isAutoEmit && !group.isEmitRequested && group.activeTimeRemaining <= 0.0f) {
+            continue;
+        }
         const bool isPostEffectTarget = group.postEffectMode != PostEffectMode::FullScreen;
         if (drawPostEffectTargets && !isPostEffectTarget) {
             continue;
@@ -800,9 +848,28 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTa
 void ParticleManager::ScanResources() {
     modelFiles_.clear();
     textureFiles_.clear();
+    particleJsonFiles_.clear();
     
     std::string targetDir = "Resources";
-    if (!std::filesystem::exists(targetDir)) return;
+    if (!std::filesystem::exists(targetDir)) {
+        isResourcesScanned_ = true;
+        return;
+    }
+
+    std::filesystem::path particleDir("Resources/Particles");
+    if (std::filesystem::exists(particleDir)) {
+        for (const auto& entry : std::filesystem::directory_iterator(particleDir)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext == ".json") {
+                particleJsonFiles_.push_back(entry.path().filename().string());
+            }
+        }
+        std::sort(particleJsonFiles_.begin(), particleJsonFiles_.end());
+    }
 
     for (const auto& entry : std::filesystem::recursive_directory_iterator(targetDir)) {
         if (!entry.is_regular_file()) continue;
@@ -832,21 +899,44 @@ void ParticleManager::DrawImGui() {
 #ifdef _DEBUG
     ImGui::Begin("Particle Manager");
 
-    ImGui::InputText("File Name", saveFileName_, sizeof(saveFileName_));
+    if (!isResourcesScanned_) {
+        ScanResources();
+    }
+
+    if (ImGui::BeginCombo("Particle JSON", saveFileName_)) {
+        ImGui::InputText("Save / Load Name", saveFileName_, sizeof(saveFileName_));
+        ImGui::Separator();
+        ImGui::TextDisabled("Resources/Particles");
+        if (particleJsonFiles_.empty()) {
+            ImGui::TextDisabled("No json files in Resources/Particles.");
+        }
+        for (const std::string& fileName : particleJsonFiles_) {
+            const bool selected = fileName == saveFileName_;
+            if (ImGui::Selectable(fileName.c_str(), selected)) {
+                std::snprintf(saveFileName_, sizeof(saveFileName_), "%s", fileName.c_str());
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
     if (ImGui::Button("Save Particles")) {
-        Save(saveFileName_);
+        std::string fileName = NormalizeParticleJsonFileName(saveFileName_);
+        std::snprintf(saveFileName_, sizeof(saveFileName_), "%s", fileName.c_str());
+        Save(fileName);
+        ScanResources();
     }
     ImGui::SameLine();
     if (ImGui::Button("Load Particles")) {
-        Load(saveFileName_);
+        std::string fileName = NormalizeParticleJsonFileName(saveFileName_);
+        std::snprintf(saveFileName_, sizeof(saveFileName_), "%s", fileName.c_str());
+        Load(fileName);
     }
 
     ImGui::Separator();
 
     if (ImGui::Button("Scan Resources")) {
-        ScanResources();
-    }
-    if (!isResourcesScanned_) {
         ScanResources();
     }
 
@@ -1077,6 +1167,18 @@ void ParticleManager::Save(const std::string& filename) {
 }
 
 void ParticleManager::Load(const std::string& filename) {
+    LoadInternal_(filename, true, "", false);
+}
+
+void ParticleManager::LoadAdditional(const std::string& filename, const std::string& groupNamePrefix) {
+    LoadInternal_(filename, false, groupNamePrefix, true);
+}
+
+void ParticleManager::LoadAdditional(const std::string& filename, const std::string& groupNamePrefix, const std::vector<std::string>& skipGroupNames) {
+    LoadInternal_(filename, false, groupNamePrefix, true, &skipGroupNames);
+}
+
+void ParticleManager::LoadInternal_(const std::string& filename, bool clearExisting, const std::string& groupNamePrefix, bool forceAutoEmitOff, const std::vector<std::string>* skipGroupNames) {
     std::string path = "Resources/Particles/" + filename;
     std::ifstream file(path);
     if (!file.is_open()) return;
@@ -1084,10 +1186,17 @@ void ParticleManager::Load(const std::string& filename) {
     json root;
     file >> root;
 
-    particleGroups_.clear();
+    if (clearExisting) {
+        particleGroups_.clear();
+    }
 
     for (const auto& g : root) {
-        std::string name = g["name"];
+        const std::string sourceName = g["name"].get<std::string>();
+        if (skipGroupNames && std::find(skipGroupNames->begin(), skipGroupNames->end(), sourceName) != skipGroupNames->end()) {
+            continue;
+        }
+
+        std::string name = groupNamePrefix + sourceName;
         std::string texturePath = g["texturePath"];
         int modelType = g["modelType"];
         std::string modelName = g["modelName"];
@@ -1119,7 +1228,7 @@ void ParticleManager::Load(const std::string& filename) {
         group.postEffectMode = static_cast<PostEffectMode>(g.value("postEffectMode", static_cast<int>(PostEffectMode::FullScreen)));
         group.depthTestEnabled = g.value("depthTestEnabled", true);
         group.billboardMode = g["billboardMode"];
-        group.isAutoEmit = g["isAutoEmit"];
+        group.isAutoEmit = forceAutoEmitOff ? false : g["isAutoEmit"].get<bool>();
 
         if (g.contains("emitter") && group.mappedEmitter) {
             auto e = g["emitter"];

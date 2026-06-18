@@ -9,6 +9,7 @@
 #include "Object3dCommon.h"
 #include "Particle.h"
 #include "ParticleCommon.h"
+#include "ParticleManager.h"
 #include "TextureManager.h"
 #include "DirectXCommon.h"
 #include "SrvManager.h"
@@ -229,7 +230,7 @@ void GameScene::OnEnter(GameApp& app) {
      prevTab_ = false;
      pauseSel_ = PauseSel::Close;
 
-     EnsureHitEffectGroup_();
+     pendingBattleParticleSetup_ = true;
 
      SetupDebugAI_(app);
 

@@ -3,7 +3,10 @@
 #include "Camera.h"
 #include "DirectXCommon.h"
 #include "GameApp.h"
+#include "GeometryGenerator.h"
 #include "Input.h"
+#include "Model.h"
+#include "ModelManager.h"
 #include "Object3d.h"
 #include "Object3dCommon.h"
 #include "Particle.h"
@@ -16,15 +19,19 @@
 
 #ifdef USE_IMGUI
 #include <imgui.h>
+extern bool gParticleTestEditorModeSwitcherVisible;
+extern int gParticleTestEditorMode;
 #endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <Windows.h>
+#include <commdlg.h>
 
 using json = nlohmann::json;
 
@@ -32,6 +39,17 @@ namespace {
 constexpr const char* kParticleJson = "test_particles.json";
 constexpr size_t kMaxUndoCount = 64;
 constexpr float kPi = 3.14159265358979323846f;
+constexpr const char* kGeometryNames[] = {
+    "Ring",
+    "Sphere",
+    "Box",
+    "Plane",
+    "Torus",
+    "Cylinder",
+    "Cone",
+    "Triangle",
+};
+constexpr int kGeometryCount = static_cast<int>(sizeof(kGeometryNames) / sizeof(kGeometryNames[0]));
 
 }
 
@@ -72,15 +90,22 @@ void ParticleTestScene::OnEnter(GameApp& app)
 
     ReloadParticleJson_();
     AddEditorObject_(app, editorModelPath_);
+
+#ifdef USE_IMGUI
+    gParticleTestEditorModeSwitcherVisible = true;
+    gParticleTestEditorMode = static_cast<int>(editorMode_);
+#endif
 }
 
 void ParticleTestScene::OnExit(GameApp&)
 {
-    ParticleManager::GetInstance()->ClearGroups();
     editorObjects_.clear();
     editorParticle_.reset();
     ground_.reset();
     camera_.reset();
+#ifdef USE_IMGUI
+    gParticleTestEditorModeSwitcherVisible = false;
+#endif
 }
 
 void ParticleTestScene::Update(GameApp& app, float dt)
@@ -95,13 +120,18 @@ void ParticleTestScene::Update(GameApp& app, float dt)
         return;
     }
 
+    if (pendingDeleteSelectedObject_) {
+        pendingDeleteSelectedObject_ = false;
+        DeleteSelectedObject_();
+    }
+
     reloadCooldown_ = std::max(0.0f, reloadCooldown_ - dt);
-    if (input->IsKeyTrigger(DIK_R) && reloadCooldown_ <= 0.0f) {
+    if (editorMode_ == EditorMode::Particle && input->IsKeyTrigger(DIK_R) && reloadCooldown_ <= 0.0f) {
         ReloadParticleJson_();
         reloadCooldown_ = 0.2f;
     }
 
-    if (input->IsKeyTrigger(DIK_SPACE)) {
+    if (editorMode_ == EditorMode::Particle && input->IsKeyTrigger(DIK_SPACE)) {
         SpawnHitEffectPreview_();
     }
 
@@ -141,9 +171,9 @@ void ParticleTestScene::Update(GameApp& app, float dt)
 
 void ParticleTestScene::DrawRender(GameApp& app)
 {
-    if (ground_) {
+   /* if (ground_) {
         ground_->Draw();
-    }
+    }*/
 
     for (auto& item : editorObjects_) {
         if (item.object) {
@@ -255,12 +285,91 @@ Vector3 CameraForward(const Matrix4x4& cameraWorld)
 {
     return NormalizeVector3({ cameraWorld.m[2][0], cameraWorld.m[2][1], cameraWorld.m[2][2] });
 }
+
+std::vector<Model::VertexData> MakeEditorGeometryVertices(int typeIndex)
+{
+    switch (typeIndex) {
+    case 0: return GeometryGenerator::GenerateRingTriListXY(64, 1.0f, 0.5f);
+    case 1: return GeometryGenerator::GenerateSphereTriList(32, 16, 1.0f);
+    case 2: return GeometryGenerator::GenerateBoxTriList(2.0f, 2.0f, 2.0f);
+    case 3: return GeometryGenerator::GeneratePlaneTriListXY(2.0f, 2.0f);
+    case 4: return GeometryGenerator::GenerateTorusTriList(32, 16, 1.0f, 0.3f);
+    case 5: return GeometryGenerator::GenerateCylinderTriList(32, 1.0f, 2.0f);
+    case 6: return GeometryGenerator::GenerateConeTriList(32, 1.0f, 2.0f);
+    case 7: return GeometryGenerator::GenerateTriangleTriListXY(2.0f, 2.0f);
+    default: return GeometryGenerator::GenerateSphereTriList(32, 16, 1.0f);
+    }
+}
+
+Model::ModelData MakeEditorGeometryModelData(const std::vector<Model::VertexData>& vertices)
+{
+    Model::ModelData modelData{};
+    modelData.materials.push_back({ "" });
+
+    Model::MeshData mesh{};
+    mesh.materialIndex = 0;
+    mesh.vertices = vertices;
+    mesh.skinned = false;
+    mesh.startVertex = 0;
+    mesh.vertexCount = static_cast<uint32_t>(vertices.size());
+    mesh.startIndex = 0;
+    mesh.indexCount = static_cast<uint32_t>(vertices.size());
+    modelData.meshes.push_back(std::move(mesh));
+
+    modelData.indices.resize(vertices.size());
+    for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+        modelData.indices[i] = i;
+    }
+
+    modelData.rootNode.name = "EditorGeometryRoot";
+    modelData.rootNode.localMatrix = Matrix4x4::MakeIdentity4x4();
+    modelData.rootNode.meshIndices.push_back(0);
+    return modelData;
+}
+
+Model* GetOrCreateEditorGeometryModel(int typeIndex)
+{
+    typeIndex = std::clamp(typeIndex, 0, kGeometryCount - 1);
+    const std::string key = "EffectEditorGeometry_" + std::to_string(typeIndex);
+    if (Model* model = ModelManager::GetInstance()->FindModel(key)) {
+        return model;
+    }
+    auto vertices = MakeEditorGeometryVertices(typeIndex);
+    auto modelData = MakeEditorGeometryModelData(vertices);
+    return ModelManager::GetInstance()->CreatePrimitiveModel(key, modelData);
+}
+
+std::string ToResourceRelativeModelPath(const std::filesystem::path& sourcePath)
+{
+    std::filesystem::path normalized = sourcePath.lexically_normal();
+    std::filesystem::path relative = normalized;
+    bool foundResources = false;
+    for (auto it = normalized.begin(); it != normalized.end(); ++it) {
+        if (it->string() == "resources") {
+            relative.clear();
+            ++it;
+            for (; it != normalized.end(); ++it) {
+                relative /= *it;
+            }
+            foundResources = true;
+            break;
+        }
+    }
+
+    if (!foundResources) {
+        relative = normalized.filename();
+    }
+
+    return relative.generic_string();
+}
 }
 
 #ifdef USE_IMGUI
 extern ImVec2 gSceneImageMin;
 extern ImVec2 gSceneImageMax;
 extern bool gHasSceneImageRect;
+extern bool gParticleTestEditorModeSwitcherVisible;
+extern int gParticleTestEditorMode;
 #endif
 
 void ParticleTestScene::AddEditorObject_(GameApp& app, const std::string& modelPath)
@@ -271,10 +380,32 @@ void ParticleTestScene::AddEditorObject_(GameApp& app, const std::string& modelP
     std::snprintf(name, sizeof(name), "EffectObject_%02d", item.id);
     item.name = name;
     item.modelPath = modelPath.empty() ? "cube/cube.obj" : modelPath;
+    item.geometryType = -1;
     item.object = std::make_unique<Object3d>();
     item.object->Initialize(app.ObjCom(), app.Dx());
     item.object->SetCamera(camera_.get());
     item.object->SetModel(item.modelPath);
+    item.object->SetEnableLighting(0);
+    ApplyEditorObjectTransform_(item);
+    editorObjects_.push_back(std::move(item));
+    selectedEditorObject_ = static_cast<int>(editorObjects_.size()) - 1;
+}
+
+void ParticleTestScene::AddGeometryObject_(GameApp& app, int geometryType)
+{
+    geometryType = std::clamp(geometryType, 0, kGeometryCount - 1);
+
+    EditorObject item;
+    item.id = nextEditorObjectId_++;
+    char name[64]{};
+    std::snprintf(name, sizeof(name), "%s_%02d", kGeometryNames[geometryType], item.id);
+    item.name = name;
+    item.modelPath = std::string("geometry:") + kGeometryNames[geometryType];
+    item.geometryType = geometryType;
+    item.object = std::make_unique<Object3d>();
+    item.object->Initialize(app.ObjCom(), app.Dx());
+    item.object->SetCamera(camera_.get());
+    item.object->SetModel(GetOrCreateEditorGeometryModel(geometryType));
     item.object->SetEnableLighting(0);
     ApplyEditorObjectTransform_(item);
     editorObjects_.push_back(std::move(item));
@@ -293,6 +424,7 @@ void ParticleTestScene::PasteEditorObject_(GameApp& app)
     std::snprintf(name, sizeof(name), "%s_Copy_%02d", copiedObject_.name.c_str(), item.id);
     item.name = name;
     item.modelPath = copiedObject_.modelPath;
+    item.geometryType = copiedObject_.geometryType;
     item.position = copiedObject_.position + Vector3{ 0.5f, 0.0f, 0.0f };
     item.rotation = copiedObject_.rotation;
     item.scale = copiedObject_.scale;
@@ -305,7 +437,11 @@ void ParticleTestScene::PasteEditorObject_(GameApp& app)
     item.object = std::make_unique<Object3d>();
     item.object->Initialize(app.ObjCom(), app.Dx());
     item.object->SetCamera(camera_.get());
-    item.object->SetModel(item.modelPath);
+    if (item.geometryType >= 0) {
+        item.object->SetModel(GetOrCreateEditorGeometryModel(item.geometryType));
+    } else {
+        item.object->SetModel(item.modelPath);
+    }
     item.object->SetEnableLighting(0);
     ApplyEditorObjectTransform_(item);
     editorObjects_.push_back(std::move(item));
@@ -318,10 +454,23 @@ void ParticleTestScene::DuplicateSelectedObject_(GameApp& app)
         return;
     }
 
-    const EditorObject& src = editorObjects_[selectedEditorObject_];
-    AddEditorObject_(app, src.modelPath);
+    const EditorObjectSnapshot src = CaptureSelectedObject_();
+    if (src.geometryType >= 0) {
+        AddGeometryObject_(app, src.geometryType);
+    } else {
+        AddEditorObject_(app, src.modelPath);
+    }
     EditorObject& dst = editorObjects_.back();
     dst.position = src.position + Vector3{ 0.5f, 0.0f, 0.0f };
+    dst.geometryType = src.geometryType;
+    dst.modelPath = src.modelPath;
+    if (dst.object) {
+        if (dst.geometryType >= 0) {
+            dst.object->SetModel(GetOrCreateEditorGeometryModel(dst.geometryType));
+        } else {
+            dst.object->SetModel(dst.modelPath);
+        }
+    }
     dst.rotation = src.rotation;
     dst.scale = src.scale;
     dst.color = src.color;
@@ -341,6 +490,7 @@ ParticleTestScene::EditorObjectSnapshot ParticleTestScene::CaptureSelectedObject
     snapshot.id = item.id;
     snapshot.name = item.name;
     snapshot.modelPath = item.modelPath;
+    snapshot.geometryType = item.geometryType;
     snapshot.position = item.position;
     snapshot.rotation = item.rotation;
     snapshot.scale = item.scale;
@@ -357,6 +507,22 @@ void ParticleTestScene::CopySelectedObject_()
     }
     copiedObject_ = CaptureSelectedObject_();
     hasCopiedObject_ = true;
+}
+
+void ParticleTestScene::RequestDeleteSelectedObject_()
+{
+    if (selectedEditorObject_ < 0 || selectedEditorObject_ >= static_cast<int>(editorObjects_.size())) {
+        return;
+    }
+
+    if (!pendingDeleteSelectedObject_) {
+        PushUndoSnapshot_();
+    }
+
+    pendingDeleteSelectedObject_ = true;
+    activeViewportGizmoAxis_ = -1;
+    transformDragActive_ = false;
+    transformDragChanged_ = false;
 }
 
 void ParticleTestScene::DeleteSelectedObject_()
@@ -492,6 +658,7 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
         object.id = item.id;
         object.name = item.name;
         object.modelPath = item.modelPath;
+        object.geometryType = item.geometryType;
         object.position = item.position;
         object.rotation = item.rotation;
         object.scale = item.scale;
@@ -512,6 +679,7 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.id = src.id;
         item.name = src.name;
         item.modelPath = src.modelPath;
+        item.geometryType = src.geometryType;
         item.position = src.position;
         item.rotation = src.rotation;
         item.scale = src.scale;
@@ -521,7 +689,11 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.object = std::make_unique<Object3d>();
         item.object->Initialize(app.ObjCom(), app.Dx());
         item.object->SetCamera(camera_.get());
-        item.object->SetModel(item.modelPath);
+        if (item.geometryType >= 0) {
+            item.object->SetModel(GetOrCreateEditorGeometryModel(item.geometryType));
+        } else {
+            item.object->SetModel(item.modelPath);
+        }
         item.object->SetEnableLighting(0);
         ApplyEditorObjectTransform_(item);
         editorObjects_.push_back(std::move(item));
@@ -586,6 +758,7 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         object["id"] = item.id;
         object["name"] = item.name;
         object["modelPath"] = item.modelPath;
+        object["geometryType"] = item.geometryType;
         object["position"] = { item.position.x, item.position.y, item.position.z };
         object["rotation"] = { item.rotation.x, item.rotation.y, item.rotation.z };
         object["scale"] = { item.scale.x, item.scale.y, item.scale.z };
@@ -636,6 +809,7 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
         object.id = source.value("id", snapshot.nextObjectId);
         object.name = source.value("name", std::string("EffectObject"));
         object.modelPath = source.value("modelPath", std::string("cube/cube.obj"));
+        object.geometryType = source.value("geometryType", -1);
         auto p = source.value("position", json::array({ 0.0f, 0.0f, 0.0f }));
         auto r = source.value("rotation", json::array({ 0.0f, 0.0f, 0.0f }));
         auto s = source.value("scale", json::array({ 1.0f, 1.0f, 1.0f }));
@@ -670,6 +844,29 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
     RestoreEditorSnapshot_(app, snapshot);
     undoStack_.clear();
     redoStack_.clear();
+}
+
+bool ParticleTestScene::OpenModelFileDialog_()
+{
+    char filePath[MAX_PATH]{};
+    OPENFILENAMEA openFileName{};
+    openFileName.lStructSize = sizeof(openFileName);
+    openFileName.hwndOwner = GetActiveWindow();
+    openFileName.lpstrFilter =
+        "Model Files (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0"
+        "All Files (*.*)\0*.*\0";
+    openFileName.lpstrFile = filePath;
+    openFileName.nMaxFile = MAX_PATH;
+    openFileName.lpstrInitialDir = "resources";
+    openFileName.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameA(&openFileName)) {
+        return false;
+    }
+
+    const std::string modelPath = ToResourceRelativeModelPath(std::filesystem::path(filePath));
+    strncpy_s(editorModelPath_, sizeof(editorModelPath_), modelPath.c_str(), _TRUNCATE);
+    return true;
 }
 
 void ParticleTestScene::DrawGizmoControls_(EditorObject& item)
@@ -1015,6 +1212,9 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
         PushUndoSnapshot_();
         PasteEditorObject_(app);
     }
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false) && selectedEditorObject_ >= 0) {
+        RequestDeleteSelectedObject_();
+    }
     if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) {
         gizmoMode_ = GizmoMode::Translate;
     }
@@ -1025,12 +1225,34 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
         gizmoMode_ = GizmoMode::Scale;
     }
 
+    ImGui::TextUnformatted("Model Source");
     ImGui::InputText("Model Path", editorModelPath_, sizeof(editorModelPath_));
+    if (ImGui::Button("Open Model File...")) {
+        OpenModelFileDialog_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open + Add")) {
+        if (OpenModelFileDialog_()) {
+            PushUndoSnapshot_();
+            AddEditorObject_(app, editorModelPath_);
+        }
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Add Model")) {
         PushUndoSnapshot_();
         AddEditorObject_(app, editorModelPath_);
     }
-    ImGui::SameLine();
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Geometry Source");
+    ImGui::Combo("Geometry Type", &selectedGeometryType_, kGeometryNames, kGeometryCount);
+    if (ImGui::Button("Add Geometry")) {
+        PushUndoSnapshot_();
+        AddGeometryObject_(app, selectedGeometryType_);
+    }
+    ImGui::Separator();
+
+    ImGui::TextUnformatted("Object Actions");
     if (ImGui::Button("Duplicate") && selectedEditorObject_ >= 0) {
         PushUndoSnapshot_();
         DuplicateSelectedObject_(app);
@@ -1046,8 +1268,7 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
     }
     ImGui::SameLine();
     if (ImGui::Button("Delete") && selectedEditorObject_ >= 0) {
-        PushUndoSnapshot_();
-        DeleteSelectedObject_();
+        RequestDeleteSelectedObject_();
     }
     ImGui::SameLine();
     if (ImGui::Button("Undo")) {
@@ -1184,15 +1405,11 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
 #endif
 }
 
-void ParticleTestScene::DrawImGui(GameApp& app)
+void ParticleTestScene::DrawParticleModeImGui_()
 {
 #ifdef USE_IMGUI
-    DrawEffectEditorImGui_(app);
-    DrawViewportGizmo_();
-
-    ImGui::Begin("Particle Test Scene");
+    ImGui::Begin("Particle Mode");
     ImGui::Text("JSON: %s", kParticleJson);
-    ImGui::Text("R: reload / Space: spawn / ESC: title");
     if (ImGui::Button("Reload JSON")) {
         ReloadParticleJson_();
     }
@@ -1226,5 +1443,21 @@ void ParticleTestScene::DrawImGui(GameApp& app)
     }
 
     ParticleManager::GetInstance()->DrawImGui();
+#endif
+}
+
+void ParticleTestScene::DrawImGui(GameApp& app)
+{
+#ifdef USE_IMGUI
+    gParticleTestEditorModeSwitcherVisible = true;
+    gParticleTestEditorMode = std::clamp(gParticleTestEditorMode, 0, 1);
+    editorMode_ = gParticleTestEditorMode == 0 ? EditorMode::Blender : EditorMode::Particle;
+
+    if (editorMode_ == EditorMode::Blender) {
+        DrawEffectEditorImGui_(app);
+        DrawViewportGizmo_();
+    } else {
+        DrawParticleModeImGui_();
+    }
 #endif
 }

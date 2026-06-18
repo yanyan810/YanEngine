@@ -144,6 +144,15 @@ void GameScene::Update(GameApp& app, float dt) {
     }
     const bool blockExternalGameInput = app.DebugAI() && app.DebugAI()->IsReplayPlaying();
 
+    if (pendingBattleParticleSetup_) {
+        pendingBattleParticleSetup_ = false;
+        ParticleManager::GetInstance()->ClearGroups();
+        const std::vector<std::string> skipPreviewGroups = { "gpu_test" };
+        ParticleManager::GetInstance()->LoadAdditional("test_particles.json", "", skipPreviewGroups);
+        ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
+        EnsureHitEffectGroup_();
+    }
+
     camera_->Update();
 
     ground_->Update(dt);
@@ -285,6 +294,11 @@ void GameScene::Update(GameApp& app, float dt) {
 
         if (!kDebugDisableEnemies) {
             enemyMgr_.Update(dt, playerPos2D, playerZ, *player_, skipPendingSpawn);
+        }
+        for (const auto& event : enemyMgr_.ConsumeBossAttackEffectEvents()) {
+            if (event.kind == MeleeKind::Land) {
+                SpawnFallAttackEffect_(event.position);
+            }
         }
 
         ParticleManager::GetInstance()->Update(dt, *camera_);

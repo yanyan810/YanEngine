@@ -16,6 +16,8 @@
 ImVec2 gSceneImageMin = ImVec2(0.0f, 0.0f);
 ImVec2 gSceneImageMax = ImVec2(0.0f, 0.0f);
 bool gHasSceneImageRect = false;
+bool gParticleTestEditorModeSwitcherVisible = false;
+int gParticleTestEditorMode = 0;
 #endif
 
 
@@ -169,7 +171,9 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGui::DockBuilderDockWindow("Camera Debug", bottomNode);
     ImGui::DockBuilderDockWindow("Ground PointLight", bottomNode);
     ImGui::DockBuilderDockWindow("Ground SpotLight", bottomNode);
-    ImGui::DockBuilderDockWindow("Particle Manager", bottomNode);
+    ImGui::DockBuilderDockWindow("Particle Manager", rightNode);
+    ImGui::DockBuilderDockWindow("Effect Editor", bottomNode);
+    ImGui::DockBuilderDockWindow("Particle Mode", bottomNode);
     ImGui::DockBuilderDockWindow("Particle Camera", bottomNode);
     ImGui::DockBuilderDockWindow("Particle Test Scene", bottomNode);
 
@@ -235,7 +239,7 @@ void ImGuiManagaer::DrawEditorPanels_()
     ImGui::Begin("Inspector");
     static char groupName[64] = "HitEffect";
     static char texturePath[256] = "resources/circle.png";
-    static char fileName[256] = "particles.json";
+    static char fileName[256] = "test_particles.json";
     static int emitCount = 24;
     static Vector3 emitPosition{ 0.0f, 1.0f, 0.0f };
 
@@ -308,8 +312,22 @@ void ImGuiManagaer::DrawEditorPanels_()
     ImGui::SetNextWindowSize(ImVec2(360.0f, 220.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(260.0f, 56.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Scene");
+    if (gParticleTestEditorModeSwitcherVisible) {
+        ImGui::TextUnformatted("Effect Editor Mode");
+        ImGui::SameLine();
+        ImGui::RadioButton("Blender Mode", &gParticleTestEditorMode, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Particle Mode", &gParticleTestEditorMode, 1);
+        ImGui::Separator();
+    }
     if (hasSceneTexture_ && srvManager_) {
         ImVec2 avail = ImGui::GetContentRegionAvail();
+        if (avail.x < 8.0f || avail.y < 8.0f) {
+            gHasSceneImageRect = false;
+            ImGui::TextDisabled("Scene view is too small.");
+            ImGui::End();
+            return;
+        }
         constexpr float sceneAspect = 1280.0f / 720.0f;
         ImVec2 imageSize = avail;
         if (imageSize.x / imageSize.y > sceneAspect) {
@@ -317,6 +335,8 @@ void ImGuiManagaer::DrawEditorPanels_()
         } else {
             imageSize.y = imageSize.x / sceneAspect;
         }
+        imageSize.x = std::max(1.0f, imageSize.x);
+        imageSize.y = std::max(1.0f, imageSize.y);
 
         ImVec2 cursor = ImGui::GetCursorPos();
         ImGui::SetCursorPosX(cursor.x + (avail.x - imageSize.x) * 0.5f);

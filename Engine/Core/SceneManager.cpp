@@ -11,7 +11,10 @@ void SceneManager::Change(GameApp& app, const std::string& name) {
     auto it = factories_.find(name);
     assert(it != factories_.end());
 
-    if (current_) current_->OnExit(app);
+    if (current_) {
+        current_->OnExit(app);
+        retiredScenes_.push_back(std::move(current_));
+    }
 
     if (app.Render()) {
         app.Render()->SetMode(PostEffectMode::FullScreen);

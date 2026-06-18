@@ -237,6 +237,14 @@ void GameScene::SpawnHitEffect_(const Vector3& position) {
         static_cast<uint32_t>(std::max(1, hitEffectCount_)));
 }
 
+void GameScene::SpawnFallAttackEffect_(const Vector3& position) {
+    if (!fallAttackEffectEnabled_) return;
+
+    Vector3 effectPosition = position;
+    effectPosition.y += 0.05f;
+    ParticleManager::GetInstance()->EmitConfigured(fallAttackEffectGroupName_, effectPosition);
+}
+
 void GameScene::DrawHitEffectImGui_() {
 #ifdef USE_IMGUI
     ImGui::Begin("Hit Effect");
@@ -258,6 +266,10 @@ void GameScene::DrawHitEffectImGui_() {
     if (ImGui::Button("Emit Test")) {
         SpawnHitEffect_(hitEffectTestPosition_);
     }
+
+    ImGui::Separator();
+    ImGui::Checkbox("Enable Boss Fall Attack", &fallAttackEffectEnabled_);
+    ImGui::InputText("Fall Attack Group", fallAttackEffectGroupName_, sizeof(fallAttackEffectGroupName_));
 
     if (ImGui::Button("Save hit_effect.json")) {
         ParticleManager::GetInstance()->Save("hit_effect.json");

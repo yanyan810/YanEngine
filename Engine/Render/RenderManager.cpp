@@ -710,6 +710,33 @@ void RenderManager::DrawImGui()
     }
 
     ImGui::Separator();
+    if (ImGui::CollapsingHeader("Bloom Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool bloomEnabled = enabledEffects_[static_cast<int>(PostEffectMode::BoxFilter)];
+        if (ImGui::Checkbox("Enable Bloom", &bloomEnabled)) {
+            SetEffectEnabled(PostEffectMode::BoxFilter, bloomEnabled);
+        }
+
+        bool outlineBloomEnabled = enabledEffects_[static_cast<int>(PostEffectMode::OutlineBloom)];
+        if (ImGui::Checkbox("Enable Outline Bloom", &outlineBloomEnabled)) {
+            SetEffectEnabled(PostEffectMode::OutlineBloom, outlineBloomEnabled);
+        }
+
+        if (ImGui::ColorEdit4("Bloom Color / Alpha", &bloomColor_.x)) {
+            bloomCBData_->color = bloomColor_;
+        }
+        if (ImGui::SliderFloat("Bloom Intensity", &bloomIntensity_, 0.0f, 5.0f)) {
+            bloomCBData_->intensity = bloomIntensity_;
+        }
+        if (ImGui::SliderFloat("Bloom Threshold", &bloomThreshold_, 0.0f, 1.0f)) {
+            bloomCBData_->threshold = bloomThreshold_;
+        }
+        if (ImGui::SliderFloat("Bloom Mix Alpha", &bloomAlpha_, 0.0f, 1.0f)) {
+            bloomCBData_->alpha = bloomAlpha_;
+        }
+        ImGui::TextDisabled("These settings are also used by particle Bloom / Outline Bloom.");
+    }
+
+    ImGui::Separator();
     for (int i = 1; i < kEffectCount; ++i) {
         if (i == static_cast<int>(PostEffectMode::GaussianBlurX) ||
             i == static_cast<int>(PostEffectMode::GaussianBlurY)) {
@@ -731,18 +758,7 @@ void RenderManager::DrawImGui()
             static_cast<PostEffectMode>(i) == PostEffectMode::OutlineBloom) && enabled) {
             ImGui::PushID(i);
             ImGui::Indent();
-            if (ImGui::ColorEdit4("Bloom Color", &bloomColor_.x)) {
-                bloomCBData_->color = bloomColor_;
-            }
-            if (ImGui::SliderFloat("Bloom Intensity", &bloomIntensity_, 0.0f, 5.0f)) {
-                bloomCBData_->intensity = bloomIntensity_;
-            }
-            if (ImGui::SliderFloat("Bloom Threshold", &bloomThreshold_, 0.0f, 1.0f)) {
-                bloomCBData_->threshold = bloomThreshold_;
-            }
-            if (ImGui::SliderFloat("Bloom Alpha", &bloomAlpha_, 0.0f, 1.0f)) {
-                bloomCBData_->alpha = bloomAlpha_;
-            }
+            ImGui::TextDisabled("Use Bloom Settings above.");
             ImGui::Unindent();
             ImGui::PopID();
         }

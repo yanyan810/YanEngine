@@ -51,6 +51,11 @@ public:
         Vector3 targetPosition = {};
     };
 
+    struct BossAttackEffectEvent {
+        MeleeKind kind = MeleeKind::Normal;
+        Vector3 position = {};
+    };
+
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
 
     void Clear();
@@ -64,6 +69,7 @@ public:
     const std::vector<Enemy>& GetEnemies() const { return enemies_; }
 
     std::vector<PlayerAttackHitEvent> ApplyPlayerAttack(Player& player);
+    std::vector<BossAttackEffectEvent> ConsumeBossAttackEffectEvents();
     void AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const;
     void RestoreDebugEntities(const std::vector<DebugEntityState>& entities);
 
@@ -99,6 +105,7 @@ private:
     Camera* cam_ = nullptr;
 
     std::vector<MeleeHitbox> meleeHitboxes_;
+    std::vector<BossAttackEffectEvent> bossAttackEffectEvents_;
     BossHitTuning bossNormalTuning_{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f };
     BossHitTuning bossLandTuning_{ 16.0f, 12.0f, 0.10f, { 0.8f, 0.60f, 0.0f }, 0.45f };
     BossHitTuning bossRushTuning_{ 12.0f, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f };

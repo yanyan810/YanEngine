@@ -265,21 +265,6 @@ void TitleScene::OnEnter(GameApp& app) {
 
 void TitleScene::OnExit(GameApp&) {
 	enableVideo_ = false;
-	if (video_) {
-		video_->Close();
-	}
-	video_.reset();
-
-	ParticleManager::GetInstance()->ClearGroups();
-
-	skyDome_.reset();
-	particle_.reset();
-	camera_.reset();
-	nodeObj_.reset();
-	if (titlePlayer) {
-		titlePlayer.reset();
-	}
-
 }
 
 void TitleScene::Update(GameApp& app, float dt) {
