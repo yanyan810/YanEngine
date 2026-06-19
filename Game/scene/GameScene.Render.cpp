@@ -1,5 +1,6 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
+#include "Effect/EffectManager.h"
 
 #include "Camera.h"
 #include "DebugAI/DebugAIManager.h"
@@ -45,6 +46,9 @@ void GameScene::DrawRender(GameApp& app) {
         enemyMgr_.Draw();
         if (player_) player_->DrawDebugHitBoxes(enemyMgr_);
     }
+
+    // 3Dエフェクトオブジェクトの描画
+    EffectManager::GetInstance()->Draw();
 
     // GPU Particle
     app.ParticleCom()->SetGraphicsPipelineState();
@@ -254,7 +258,7 @@ void GameScene::SpawnFallAttackEffect_(const Vector3& position) {
 
     Vector3 effectPosition = position;
     effectPosition.y += 0.05f;
-    ParticleManager::GetInstance()->EmitConfigured(fallAttackEffectGroupName_, effectPosition);
+    EffectManager::GetInstance()->Play("fallAttak", effectPosition);
 }
 
 void GameScene::DrawHitEffectImGui_() {

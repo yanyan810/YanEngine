@@ -55,7 +55,10 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     particlePostLayer_ = std::make_unique<OffscreenPass>();
     particlePostBuffer_ = std::make_unique<OffscreenPass>();
     compositeBuffer_ = std::make_unique<OffscreenPass>();
+    compositeBuffer2_ = std::make_unique<OffscreenPass>();
     previewBuffer_ = std::make_unique<OffscreenPass>();
+    objectPostLayer_ = std::make_unique<OffscreenPass>();
+    objectPostBuffer_ = std::make_unique<OffscreenPass>();
 
     Vector4 clearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
     offscreen_->Initialize(
@@ -115,6 +118,15 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
         postClearColor,
         7
     );
+    compositeBuffer2_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        postClearColor,
+        8
+    );
     previewBuffer_->Initialize(
         dx_,
         srv_,
@@ -122,7 +134,25 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
         WinApp::kClientHeight,
         DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
         clearColor,
-        8
+        9
+    );
+    objectPostLayer_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        particleLayerClearColor,
+        10
+    );
+    objectPostBuffer_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        postClearColor,
+        11
     );
 
     CreateCopyImageRootSignature();
@@ -161,6 +191,38 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     bloomCBData_->threshold = bloomThreshold_;
     bloomCBData_->alpha = bloomAlpha_;
     bloomCBData_->_pad = 0.0f;
+
+    objectBloomCB_ = dx_->CreateBufferResource((sizeof(BloomParameter) + 0xff) & ~0xff);
+    objectBloomCB_->Map(0, nullptr, reinterpret_cast<void**>(&objectBloomCBData_));
+    objectBloomCBData_->color = objectLayerBloomColor_;
+    objectBloomCBData_->intensity = bloomIntensity_;
+    objectBloomCBData_->threshold = bloomThreshold_;
+    objectBloomCBData_->alpha = bloomAlpha_;
+    objectBloomCBData_->_pad = 0.0f;
+
+    objectOutlineBloomCB_ = dx_->CreateBufferResource((sizeof(BloomParameter) + 0xff) & ~0xff);
+    objectOutlineBloomCB_->Map(0, nullptr, reinterpret_cast<void**>(&objectOutlineBloomCBData_));
+    objectOutlineBloomCBData_->color = objectLayerOutlineBloomColor_;
+    objectOutlineBloomCBData_->intensity = bloomIntensity_;
+    objectOutlineBloomCBData_->threshold = bloomThreshold_;
+    objectOutlineBloomCBData_->alpha = bloomAlpha_;
+    objectOutlineBloomCBData_->_pad = 0.0f;
+
+    particleBloomCB_ = dx_->CreateBufferResource((sizeof(BloomParameter) + 0xff) & ~0xff);
+    particleBloomCB_->Map(0, nullptr, reinterpret_cast<void**>(&particleBloomCBData_));
+    particleBloomCBData_->color = particleLayerBloomColor_;
+    particleBloomCBData_->intensity = bloomIntensity_;
+    particleBloomCBData_->threshold = bloomThreshold_;
+    particleBloomCBData_->alpha = bloomAlpha_;
+    particleBloomCBData_->_pad = 0.0f;
+
+    particleOutlineBloomCB_ = dx_->CreateBufferResource((sizeof(BloomParameter) + 0xff) & ~0xff);
+    particleOutlineBloomCB_->Map(0, nullptr, reinterpret_cast<void**>(&particleOutlineBloomCBData_));
+    particleOutlineBloomCBData_->color = particleLayerOutlineBloomColor_;
+    particleOutlineBloomCBData_->intensity = bloomIntensity_;
+    particleOutlineBloomCBData_->threshold = bloomThreshold_;
+    particleOutlineBloomCBData_->alpha = bloomAlpha_;
+    particleOutlineBloomCBData_->_pad = 0.0f;
 
     TextureManager::GetInstance()->LoadTexture("resources/noise0.png");
     noiseSrvIndex_ = TextureManager::GetInstance()->GetSrvIndex("resources/noise0.png");
@@ -251,13 +313,21 @@ void RenderManager::EndPreview()
 
 void RenderManager::BeginParticlePostLayer(PostEffectMode mode)
 {
-    assert(particlePostLayer_);
+    BeginParticlePostLayer(mode == PostEffectMode::BoxFilter, mode == PostEffectMode::OutlineBloom);
     particlePostEffectMode_ = mode;
-    hasParticlePostLayer_ = mode != PostEffectMode::FullScreen;
-    if (!hasParticlePostLayer_) {
-        return;
+}
+
+void RenderManager::BeginParticlePostLayer(bool bloom, bool outlineBloom)
+{
+    assert(particlePostLayer_);
+    particlePostBloom_ = bloom;
+    particlePostOutlineBloom_ = outlineBloom;
+    particlePostEffectMode_ = outlineBloom ? PostEffectMode::OutlineBloom :
+        bloom ? PostEffectMode::BoxFilter : PostEffectMode::FullScreen;
+    hasParticlePostLayer_ = bloom || outlineBloom;
+    if (hasParticlePostLayer_) {
+        particlePostLayer_->BeginOverlayClear();
     }
-    particlePostLayer_->BeginOverlayClear();
 }
 
 void RenderManager::EndParticlePostLayer()
@@ -271,6 +341,30 @@ void RenderManager::ClearParticlePostLayer()
 {
     hasParticlePostLayer_ = false;
     particlePostEffectMode_ = PostEffectMode::FullScreen;
+    particlePostBloom_ = false;
+    particlePostOutlineBloom_ = false;
+}
+
+void RenderManager::BeginObjectPostLayer(bool bloom, bool outlineBloom)
+{
+    assert(objectPostLayer_);
+    objectPostBloom_ = bloom;
+    objectPostOutlineBloom_ = outlineBloom;
+    hasObjectPostLayer_ = bloom || outlineBloom;
+    if (hasObjectPostLayer_) {
+        objectPostLayer_->BeginOverlayClear();
+    }
+}
+
+void RenderManager::EndObjectPostLayer()
+{
+}
+
+void RenderManager::ClearObjectPostLayer()
+{
+    hasObjectPostLayer_ = false;
+    objectPostBloom_ = false;
+    objectPostOutlineBloom_ = false;
 }
 
 uint32_t RenderManager::GetOffscreenSrvIndex() const
@@ -418,7 +512,7 @@ void RenderManager::CreatePipelineState(
     assert(SUCCEEDED(hr));
 }
 
-void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex)
+void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* bloomCBOverride)
 {
     auto* cmd = dx_->GetCommandList();
 
@@ -436,7 +530,8 @@ void RenderManager::DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex
     if (mode == PostEffectMode::GaussianBlurX || mode == PostEffectMode::GaussianBlurY) {
         cmd->SetGraphicsRootConstantBufferView(1, gaussianFilterCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::BoxFilter || mode == PostEffectMode::OutlineBloom) {
-        cmd->SetGraphicsRootConstantBufferView(7, bloomCB_->GetGPUVirtualAddress());
+        ID3D12Resource* activeBloomCB = bloomCBOverride ? bloomCBOverride : bloomCB_.Get();
+        cmd->SetGraphicsRootConstantBufferView(7, activeBloomCB->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::Outline) {
         cmd->SetGraphicsRootConstantBufferView(3, outlineCB_->GetGPUVirtualAddress());
     } else if (mode == PostEffectMode::RadialBlur) {
@@ -492,7 +587,8 @@ void RenderManager::DrawFullscreenPassToBuffer(
     PostEffectMode mode,
     uint32_t srcSrvIndex,
     ID3D12Resource* srcResource,
-    OffscreenPass& dst)
+    OffscreenPass& dst,
+    ID3D12Resource* bloomCBOverride)
 {
     dx_->TransitionResource(
         srcResource,
@@ -501,7 +597,7 @@ void RenderManager::DrawFullscreenPassToBuffer(
     );
 
     dst.BeginForPostEffect();
-    DrawFullscreenPass(mode, srcSrvIndex);
+    DrawFullscreenPass(mode, srcSrvIndex, bloomCBOverride);
 
     dx_->TransitionResource(
         srcResource,
@@ -629,40 +725,185 @@ void RenderManager::RenderPostEffectsToBackBuffer_(ID3D12Resource* srcResource, 
     }
 }
 
+uint32_t RenderManager::RenderLayerPostEffectsToBuffer_(
+    ID3D12Resource* srcResource,
+    uint32_t srcSrvIndex,
+    bool bloom,
+    bool outlineBloom,
+    const Vector4& bloomColor,
+    ID3D12Resource* bloomCB,
+    BloomParameter* bloomCBData,
+    const Vector4& outlineBloomColor,
+    ID3D12Resource* outlineBloomCB,
+    BloomParameter* outlineBloomCBData,
+    OffscreenPass* tempCompositeBuffer)
+{
+    if (bloomCBData) {
+        bloomCBData->color = bloomColor;
+        bloomCBData->intensity = bloomIntensity_;
+        bloomCBData->threshold = bloomThreshold_;
+        bloomCBData->alpha = bloomAlpha_;
+        bloomCBData->_pad = 0.0f;
+    }
+    if (outlineBloomCBData) {
+        outlineBloomCBData->color = outlineBloomColor;
+        outlineBloomCBData->intensity = bloomIntensity_;
+        outlineBloomCBData->threshold = bloomThreshold_;
+        outlineBloomCBData->alpha = bloomAlpha_;
+        outlineBloomCBData->_pad = 0.0f;
+    }
+
+    if (!bloom && !outlineBloom) {
+        return srcSrvIndex;
+    }
+
+    // 両方有効な場合は並列に実行して加算合成する（直列にすると2つ目で輪郭アルファが失われるため）
+    if (bloom && outlineBloom) {
+        OffscreenPass* actualTemp = tempCompositeBuffer ? tempCompositeBuffer : compositeBuffer2_.get();
+
+        // 1. 通常ブルームを適用 (src -> particlePostBuffer_)
+        particlePostBuffer_->BeginForPostEffect();
+        DrawFullscreenPass(PostEffectMode::BoxFilter, srcSrvIndex, bloomCB);
+        particlePostBuffer_->End();
+        particlePostBuffer_->TransitionToShaderResource();
+
+        // 2. アウトラインブルームを適用 (src -> objectPostBuffer_)
+        objectPostBuffer_->BeginForPostEffect();
+        DrawFullscreenPass(PostEffectMode::OutlineBloom, srcSrvIndex, outlineBloomCB);
+        objectPostBuffer_->End();
+        objectPostBuffer_->TransitionToShaderResource();
+
+        // 3. 両者を加算合成 (particlePostBuffer_ + objectPostBuffer_ -> actualTemp)
+        actualTemp->BeginForPostEffect();
+        DrawAdditiveCompositePass(particlePostBuffer_->GetSrvIndex(), objectPostBuffer_->GetSrvIndex());
+        actualTemp->End();
+        actualTemp->TransitionToShaderResource();
+
+        return actualTemp->GetSrvIndex();
+    }
+
+    // 片方のみ有効な場合
+    OffscreenPass& dst = *particlePostBuffer_;
+    dst.BeginForPostEffect();
+    DrawFullscreenPass(bloom ? PostEffectMode::BoxFilter : PostEffectMode::OutlineBloom, srcSrvIndex, bloom ? bloomCB : outlineBloomCB);
+    dst.End();
+    dst.TransitionToShaderResource();
+
+    return dst.GetSrvIndex();
+}
+
 uint32_t RenderManager::CompositeParticlePostToBuffer_(uint32_t baseSrvIndex)
 {
-    if (!hasParticlePostLayer_ || particlePostEffectMode_ == PostEffectMode::FullScreen) {
+    if (!hasParticlePostLayer_) {
         return baseSrvIndex;
     }
 
-    DrawFullscreenPassToBuffer(
-        particlePostEffectMode_,
-        particlePostLayer_->GetSrvIndex(),
+    const uint32_t effectSrvIndex = RenderLayerPostEffectsToBuffer_(
         particlePostLayer_->GetResource(),
-        *particlePostBuffer_);
-    particlePostBuffer_->TransitionToShaderResource();
+        particlePostLayer_->GetSrvIndex(),
+        particlePostBloom_,
+        particlePostOutlineBloom_,
+        particleLayerBloomColor_,
+        particleBloomCB_.Get(),
+        particleBloomCBData_,
+        particleLayerOutlineBloomColor_,
+        particleOutlineBloomCB_.Get(),
+        particleOutlineBloomCBData_,
+        compositeBuffer_.get());
 
-    compositeBuffer_->BeginForPostEffect();
-    DrawAdditiveCompositePass(baseSrvIndex, particlePostBuffer_->GetSrvIndex());
-    compositeBuffer_->End();
-    return compositeBuffer_->GetSrvIndex();
+    if (effectSrvIndex == particlePostLayer_->GetSrvIndex()) {
+        return baseSrvIndex;
+    }
+
+    compositeBuffer2_->BeginForPostEffect();
+    DrawAdditiveCompositePass(baseSrvIndex, effectSrvIndex);
+    compositeBuffer2_->End();
+    compositeBuffer2_->TransitionToShaderResource();
+    return compositeBuffer2_->GetSrvIndex();
 }
 
 void RenderManager::CompositeParticlePostToBackBuffer_(uint32_t baseSrvIndex)
 {
-    if (!hasParticlePostLayer_ || particlePostEffectMode_ == PostEffectMode::FullScreen) {
+    if (!hasParticlePostLayer_) {
         return;
     }
 
-    DrawFullscreenPassToBuffer(
-        particlePostEffectMode_,
-        particlePostLayer_->GetSrvIndex(),
+    const uint32_t effectSrvIndex = RenderLayerPostEffectsToBuffer_(
         particlePostLayer_->GetResource(),
-        *particlePostBuffer_);
-    particlePostBuffer_->TransitionToShaderResource();
+        particlePostLayer_->GetSrvIndex(),
+        particlePostBloom_,
+        particlePostOutlineBloom_,
+        particleLayerBloomColor_,
+        particleBloomCB_.Get(),
+        particleBloomCBData_,
+        particleLayerOutlineBloomColor_,
+        particleOutlineBloomCB_.Get(),
+        particleOutlineBloomCBData_,
+        compositeBuffer_.get());
+
+    if (effectSrvIndex == particlePostLayer_->GetSrvIndex()) {
+        return;
+    }
 
     dx_->SetBackBufferRenderTargetForPostEffect();
-    DrawAdditiveCompositePass(baseSrvIndex, particlePostBuffer_->GetSrvIndex());
+    DrawAdditiveCompositePass(baseSrvIndex, effectSrvIndex);
+}
+
+uint32_t RenderManager::CompositeObjectPostToBuffer_(uint32_t baseSrvIndex)
+{
+    if (!hasObjectPostLayer_) {
+        return baseSrvIndex;
+    }
+
+    const uint32_t effectSrvIndex = RenderLayerPostEffectsToBuffer_(
+        objectPostLayer_->GetResource(),
+        objectPostLayer_->GetSrvIndex(),
+        objectPostBloom_,
+        objectPostOutlineBloom_,
+        objectLayerBloomColor_,
+        objectBloomCB_.Get(),
+        objectBloomCBData_,
+        objectLayerOutlineBloomColor_,
+        objectOutlineBloomCB_.Get(),
+        objectOutlineBloomCBData_,
+        compositeBuffer2_.get());
+
+    if (effectSrvIndex == objectPostLayer_->GetSrvIndex()) {
+        return baseSrvIndex;
+    }
+
+    compositeBuffer_->BeginForPostEffect();
+    DrawAdditiveCompositePass(baseSrvIndex, effectSrvIndex);
+    compositeBuffer_->End();
+    compositeBuffer_->TransitionToShaderResource();
+    return compositeBuffer_->GetSrvIndex();
+}
+
+void RenderManager::CompositeObjectPostToBackBuffer_(uint32_t baseSrvIndex)
+{
+    if (!hasObjectPostLayer_) {
+        return;
+    }
+
+    const uint32_t effectSrvIndex = RenderLayerPostEffectsToBuffer_(
+        objectPostLayer_->GetResource(),
+        objectPostLayer_->GetSrvIndex(),
+        objectPostBloom_,
+        objectPostOutlineBloom_,
+        objectLayerBloomColor_,
+        objectBloomCB_.Get(),
+        objectBloomCBData_,
+        objectLayerOutlineBloomColor_,
+        objectOutlineBloomCB_.Get(),
+        objectOutlineBloomCBData_,
+        compositeBuffer2_.get());
+
+    if (effectSrvIndex == objectPostLayer_->GetSrvIndex()) {
+        return;
+    }
+
+    dx_->SetBackBufferRenderTargetForPostEffect();
+    DrawAdditiveCompositePass(baseSrvIndex, effectSrvIndex);
 }
 
 void RenderManager::DrawOffscreenToBackBuffer()
@@ -682,9 +923,20 @@ void RenderManager::DrawOffscreenToBackBuffer()
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
 
-    if (hasParticlePostLayer_) {
+    if (hasObjectPostLayer_ || hasParticlePostLayer_) {
         uint32_t baseSrvIndex = RenderPostEffectsToBuffer_(offscreen_->GetResource(), offscreen_->GetSrvIndex());
-        CompositeParticlePostToBackBuffer_(baseSrvIndex);
+        if (hasObjectPostLayer_) {
+            baseSrvIndex = CompositeObjectPostToBuffer_(baseSrvIndex);
+        }
+        if (hasParticlePostLayer_) {
+            baseSrvIndex = CompositeParticlePostToBuffer_(baseSrvIndex);
+        }
+
+        ID3D12Resource* finalResource =
+            hasParticlePostLayer_ ? compositeBuffer2_->GetResource() :
+            hasObjectPostLayer_ ? compositeBuffer_->GetResource() :
+            offscreen_->GetResource();
+        DrawFullscreenPassToBackBuffer(PostEffectMode::FullScreen, baseSrvIndex, finalResource);
     } else {
         RenderPostEffectsToBackBuffer_(offscreen_->GetResource(), offscreen_->GetSrvIndex());
     }
@@ -716,6 +968,7 @@ uint32_t RenderManager::RenderPostEffectsForSceneTexture()
     );
 
     previewSrvIndex_ = RenderPostEffectsToBuffer_(offscreen_->GetResource(), offscreen_->GetSrvIndex());
+    previewSrvIndex_ = CompositeObjectPostToBuffer_(previewSrvIndex_);
     previewSrvIndex_ = CompositeParticlePostToBuffer_(previewSrvIndex_);
 
     dx_->TransitionResource(

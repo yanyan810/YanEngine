@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <cstring>
 #include <nlohmann/json.hpp>
+#include <Windows.h>
+#include <commdlg.h>
 
 using json = nlohmann::json;
 
@@ -21,6 +23,27 @@ ParticleManager* ParticleManager::GetInstance() {
 
 namespace {
     constexpr int kRetiredParticleGroupKeepFrames = 8;
+
+    std::string ToResourceRelativePath(const std::filesystem::path& sourcePath) {
+        std::filesystem::path normalized = sourcePath.lexically_normal();
+        std::filesystem::path relative = normalized;
+        bool foundResources = false;
+        for (auto it = normalized.begin(); it != normalized.end(); ++it) {
+            if (it->string() == "resources" || it->string() == "Resources") {
+                relative.clear();
+                ++it;
+                for (; it != normalized.end(); ++it) {
+                    relative /= *it;
+                }
+                foundResources = true;
+                break;
+            }
+        }
+        if (!foundResources) {
+            relative = normalized.filename();
+        }
+        return relative.generic_string();
+    }
 
     std::string NormalizeParticleJsonFileName(const char* text) {
         std::filesystem::path path(text ? text : "");
@@ -290,7 +313,9 @@ void ParticleManager::Update(float dt, const Camera& camera)
 
 void ParticleManager::Emit(const std::string& groupName,
     const Vector3& pos,
-    uint32_t count)
+    uint32_t count,
+    float timeScale,
+    float initialAge)
 {
     auto it = particleGroups_.find(groupName);
     if (it == particleGroups_.end()) return;
@@ -299,9 +324,13 @@ void ParticleManager::Emit(const std::string& groupName,
     if (group.mappedEmitter) {
         group.mappedEmitter->translate = pos;
         group.mappedEmitter->count = count;
+        group.mappedEmitter->timeScale = timeScale;
+        group.mappedEmitter->initialAge = initialAge;
         group.isAutoEmit = false;
         group.isEmitRequested = true;
-        group.activeTimeRemaining = std::max(group.activeTimeRemaining, group.mappedEmitter->lifeTimeMax + 0.5f);
+        // タイムスケールで最大寿命を割って正確なアクティブ残り時間を設定
+        float effectiveLife = group.mappedEmitter->lifeTimeMax / std::max(0.001f, timeScale);
+        group.activeTimeRemaining = std::max(group.activeTimeRemaining, effectiveLife + 0.5f);
         return;
     }
 
@@ -320,15 +349,14 @@ void ParticleManager::Emit(const std::string& groupName,
         };
         p.velocity = { d(randomEngine_), d(randomEngine_), d(randomEngine_) };
         p.color = { c(randomEngine_), c(randomEngine_), c(randomEngine_), 1.0f };
-        p.lifeTime = t(randomEngine_);
-        p.currentTime = 0.0f;
-
+        p.lifeTime = t(randomEngine_) / std::max(0.001f, timeScale); // timeScaleを考慮
+        p.currentTime = initialAge; // initialAgeからスタート
         group.particles.push_back(p);
     }
-    group.activeTimeRemaining = std::max(group.activeTimeRemaining, 3.5f);
+    group.activeTimeRemaining = std::max(group.activeTimeRemaining, 3.5f / std::max(0.001f, timeScale));
 }
 
-void ParticleManager::EmitConfigured(const std::string& groupName, const Vector3& pos)
+void ParticleManager::EmitConfigured(const std::string& groupName, const Vector3& pos, float timeScale, float initialAge)
 {
     auto it = particleGroups_.find(groupName);
     if (it == particleGroups_.end()) {
@@ -340,7 +368,7 @@ void ParticleManager::EmitConfigured(const std::string& groupName, const Vector3
         count = std::max<uint32_t>(1, it->second.mappedEmitter->count);
     }
 
-    Emit(groupName, pos, count);
+    Emit(groupName, pos, count, timeScale, initialAge);
 }
 
 void ParticleManager::CreateParticleGroup(
@@ -468,7 +496,7 @@ void ParticleManager::CreateParticleGroup(
     cmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
     cmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
 
-    cmd->Dispatch(kMaxInstance, 1, 1);
+    cmd->Dispatch(1, 1, 1);
 
     // barrier: UAV -> SRV (NON_PIXEL_SHADER_RESOURCE)
     D3D12_RESOURCE_BARRIER barrier{};
@@ -506,6 +534,8 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->rotationRandomDeg = 360.0f;
     group.mappedEmitter->angularVelocityMinDeg = 0.0f;
     group.mappedEmitter->angularVelocityMaxDeg = 0.0f;
+    group.mappedEmitter->timeScale = 1.0f;
+    group.mappedEmitter->initialAge = 0.0f;
 
     group.mappedEmitter->shapeType = 0; // 0:Sphere
     group.mappedEmitter->shapeAngle = 0.5f; // Cone逕ｨ
@@ -651,7 +681,7 @@ void ParticleManager::CreateParticleGroup(
     computeCmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
     computeCmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
 
-    computeCmd->Dispatch(kMaxInstance, 1, 1);
+    computeCmd->Dispatch(1, 1, 1);
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -689,6 +719,8 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->rotationRandomDeg = 360.0f;
     group.mappedEmitter->angularVelocityMinDeg = 0.0f;
     group.mappedEmitter->angularVelocityMaxDeg = 0.0f;
+    group.mappedEmitter->timeScale = 1.0f;
+    group.mappedEmitter->initialAge = 0.0f;
 
     group.mappedEmitter->shapeType = 0; // 0:Sphere
     group.mappedEmitter->shapeAngle = 0.5f; // Cone逕ｨ
@@ -734,13 +766,92 @@ bool ParticleManager::HasPostEffectTargets() const {
     return false;
 }
 
-PostEffectMode ParticleManager::GetPrimaryPostEffectMode() const {
-    for (const auto& [name, group] : particleGroups_) {
-        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
-        if (active && group.postEffectMode != PostEffectMode::FullScreen) {
-            return group.postEffectMode;
+Vector4 ParticleManager::GetPrimaryPostEffectBloomColor() const {
+    // 1. エディタ選択中のグループがあれば最優先（アクティブ判定無視、エフェクト有効のみチェック）
+    if (!editorSelectedGroupName_.empty()) {
+        auto it = particleGroups_.find(editorSelectedGroupName_);
+        if (it != particleGroups_.end()) {
+            const auto& group = it->second;
+            if (group.bloomPostEffect) {
+                return group.bloomColor;
+            }
         }
     }
+
+    // 2. アクティブなグループから検索
+    for (const auto& [name, group] : particleGroups_) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active && group.bloomPostEffect) {
+            return group.bloomColor;
+        }
+    }
+
+    // 3. 非アクティブでもブルーム設定があるグループがあれば返す
+    for (const auto& [name, group] : particleGroups_) {
+        if (group.bloomPostEffect) {
+            return group.bloomColor;
+        }
+    }
+
+    return { 1.0f, 0.72f, 0.22f, 1.0f };
+}
+
+Vector4 ParticleManager::GetPrimaryPostEffectOutlineBloomColor() const {
+    // 1. エディタ選択中のグループがあれば最優先
+    if (!editorSelectedGroupName_.empty()) {
+        auto it = particleGroups_.find(editorSelectedGroupName_);
+        if (it != particleGroups_.end()) {
+            const auto& group = it->second;
+            if (group.outlineBloomPostEffect) {
+                return group.outlineBloomColor;
+            }
+        }
+    }
+
+    // 2. アクティブなグループから検索
+    for (const auto& [name, group] : particleGroups_) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active && group.outlineBloomPostEffect) {
+            return group.outlineBloomColor;
+        }
+    }
+
+    // 3. 非アクティブでもブルーム設定があるグループがあれば返す
+    for (const auto& [name, group] : particleGroups_) {
+        if (group.outlineBloomPostEffect) {
+            return group.outlineBloomColor;
+        }
+    }
+
+    return { 1.0f, 0.22f, 0.22f, 1.0f };
+}
+
+PostEffectMode ParticleManager::GetPrimaryPostEffectMode() const {
+    // 1. エディタ選択中のグループがあれば最優先
+    if (!editorSelectedGroupName_.empty()) {
+        auto it = particleGroups_.find(editorSelectedGroupName_);
+        if (it != particleGroups_.end()) {
+            const auto& group = it->second;
+            if (group.outlineBloomPostEffect) return PostEffectMode::OutlineBloom;
+            if (group.bloomPostEffect) return PostEffectMode::BoxFilter;
+        }
+    }
+
+    // 2. アクティブなグループから検索
+    for (const auto& [name, group] : particleGroups_) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active) {
+            if (group.outlineBloomPostEffect) return PostEffectMode::OutlineBloom;
+            if (group.bloomPostEffect) return PostEffectMode::BoxFilter;
+        }
+    }
+
+    // 3. 非アクティブでもブルーム設定があるグループがあれば返す
+    for (const auto& [name, group] : particleGroups_) {
+        if (group.outlineBloomPostEffect) return PostEffectMode::OutlineBloom;
+        if (group.bloomPostEffect) return PostEffectMode::BoxFilter;
+    }
+
     return PostEffectMode::FullScreen;
 }
 
@@ -1036,20 +1147,30 @@ void ParticleManager::DrawImGuiContents() {
                 group.blendMode = static_cast<ParticleCommon::BlendMode>(currentBlend);
             }
 
-            const char* postEffectModes[] = { "None", "Bloom", "Outline Bloom" };
-            int currentPostEffect = 0;
-            if (group.postEffectMode == PostEffectMode::BoxFilter) {
-                currentPostEffect = 1;
-            } else if (group.postEffectMode == PostEffectMode::OutlineBloom) {
-                currentPostEffect = 2;
+            bool changed = false;
+            if (ImGui::Checkbox("Bloom", &group.bloomPostEffect)) {
+                changed = true;
             }
-            if (ImGui::Combo("Particle Post Effect", &currentPostEffect, postEffectModes, IM_ARRAYSIZE(postEffectModes))) {
-                group.postEffectMode =
-                    currentPostEffect == 1 ? PostEffectMode::BoxFilter :
-                    currentPostEffect == 2 ? PostEffectMode::OutlineBloom :
-                    PostEffectMode::FullScreen;
+            if (group.bloomPostEffect) {
+                ImGui::ColorEdit4("Bloom Color", &group.bloomColor.x);
             }
-            if (group.postEffectMode != PostEffectMode::FullScreen) {
+            if (ImGui::Checkbox("Outline Bloom", &group.outlineBloomPostEffect)) {
+                changed = true;
+            }
+            if (group.outlineBloomPostEffect) {
+                ImGui::ColorEdit4("Outline Bloom Color", &group.outlineBloomColor.x);
+            }
+
+            if (changed) {
+                if (group.outlineBloomPostEffect) {
+                    group.postEffectMode = PostEffectMode::OutlineBloom;
+                } else if (group.bloomPostEffect) {
+                    group.postEffectMode = PostEffectMode::BoxFilter;
+                } else {
+                    group.postEffectMode = PostEffectMode::FullScreen;
+                }
+            }
+            if (group.bloomPostEffect || group.outlineBloomPostEffect) {
                 ImGui::TextDisabled("Dedicated post-effect layer target.");
             }
             ImGui::Checkbox("Depth Test", &group.depthTestEnabled);
@@ -1097,12 +1218,21 @@ void ParticleManager::DrawImGuiContents() {
                 }
                 ImGui::EndCombo();
             }
+            if (ImGui::Button("Open Model File...##ParticleGroup")) {
+                std::string modelPath;
+                if (OpenModelFileDialog_(modelPath)) {
+                    ModelManager::GetInstance()->LoadModel(modelPath);
+                    group.model = ModelManager::GetInstance()->FindModel(modelPath);
+                    group.modelType = 2;
+                    group.modelName = modelPath;
+                }
+            }
 
             // 繝・け繧ｹ繝√Ε驕ｸ謚・
-            std::string currentTexName = "Select Texture...";
+            std::string currentTexName = group.texturePath.empty() ? "Select Texture..." : group.texturePath;
             if (ImGui::BeginCombo("Texture", currentTexName.c_str())) {
                 for (size_t i = 0; i < textureFiles_.size(); ++i) {
-                    bool isSelected = false;
+                    bool isSelected = (group.texturePath == textureFiles_[i]);
                     if (ImGui::Selectable(textureFiles_[i].c_str(), isSelected)) {
                         std::string path = textureFiles_[i];
                         TextureManager::GetInstance()->LoadTexture(path);
@@ -1111,6 +1241,14 @@ void ParticleManager::DrawImGuiContents() {
                     }
                 }
                 ImGui::EndCombo();
+            }
+            if (ImGui::Button("Open Texture File...")) {
+                std::string texturePath;
+                if (OpenTextureFileDialog_(texturePath)) {
+                    TextureManager::GetInstance()->LoadTexture(texturePath);
+                    group.textureSrvIndex = TextureManager::GetInstance()->GetSrvIndex(texturePath);
+                    group.texturePath = texturePath;
+                }
             }
 
             // Emitter繝代Λ繝｡繝ｼ繧ｿ
@@ -1204,6 +1342,10 @@ void ParticleManager::Save(const std::string& filename) {
         g["depthTestEnabled"] = group.depthTestEnabled;
         g["billboardMode"] = group.billboardMode;
         g["isAutoEmit"] = group.isAutoEmit;
+        g["bloomPostEffect"] = group.bloomPostEffect;
+        g["outlineBloomPostEffect"] = group.outlineBloomPostEffect;
+        g["bloomColor"] = { group.bloomColor.x, group.bloomColor.y, group.bloomColor.z, group.bloomColor.w };
+        g["outlineBloomColor"] = { group.outlineBloomColor.x, group.outlineBloomColor.y, group.outlineBloomColor.z, group.outlineBloomColor.w };
 
         if (group.mappedEmitter) {
             json e;
@@ -1231,6 +1373,8 @@ void ParticleManager::Save(const std::string& filename) {
             e["shapeAngle"] = group.mappedEmitter->shapeAngle;
             e["shapeSize"] = { group.mappedEmitter->shapeSize.x, group.mappedEmitter->shapeSize.y, group.mappedEmitter->shapeSize.z };
             e["acceleration"] = { group.mappedEmitter->acceleration.x, group.mappedEmitter->acceleration.y, group.mappedEmitter->acceleration.z };
+            e["timeScale"] = group.mappedEmitter->timeScale;
+            e["initialAge"] = group.mappedEmitter->initialAge;
             g["emitter"] = e;
         }
 
@@ -1312,6 +1456,26 @@ void ParticleManager::LoadInternal_(const std::string& filename, bool clearExist
         group.depthTestEnabled = g.value("depthTestEnabled", true);
         group.billboardMode = g["billboardMode"];
         group.isAutoEmit = forceAutoEmitOff ? false : g["isAutoEmit"].get<bool>();
+        group.bloomPostEffect = g.value("bloomPostEffect", false);
+        group.outlineBloomPostEffect = g.value("outlineBloomPostEffect", false);
+        if (g.contains("bloomColor")) {
+            group.bloomColor = { g["bloomColor"][0], g["bloomColor"][1], g["bloomColor"][2], g["bloomColor"][3] };
+        }
+        if (g.contains("outlineBloomColor")) {
+            group.outlineBloomColor = { g["outlineBloomColor"][0], g["outlineBloomColor"][1], g["outlineBloomColor"][2], g["outlineBloomColor"][3] };
+        }
+        if (!g.contains("bloomPostEffect") && !g.contains("outlineBloomPostEffect")) {
+            if (group.postEffectMode == PostEffectMode::BoxFilter) {
+                group.bloomPostEffect = true;
+                group.outlineBloomPostEffect = false;
+            } else if (group.postEffectMode == PostEffectMode::OutlineBloom) {
+                group.bloomPostEffect = false;
+                group.outlineBloomPostEffect = true;
+            } else {
+                group.bloomPostEffect = false;
+                group.outlineBloomPostEffect = false;
+            }
+        }
 
         if (g.contains("emitter") && group.mappedEmitter) {
             auto e = g["emitter"];
@@ -1343,8 +1507,166 @@ void ParticleManager::LoadInternal_(const std::string& filename, bool clearExist
             group.mappedEmitter->shapeAngle = e["shapeAngle"];
             group.mappedEmitter->shapeSize = { e["shapeSize"][0], e["shapeSize"][1], e["shapeSize"][2] };
             group.mappedEmitter->acceleration = { e["acceleration"][0], e["acceleration"][1], e["acceleration"][2] };
+            group.mappedEmitter->timeScale = e.value("timeScale", 1.0f);
+            group.mappedEmitter->initialAge = e.value("initialAge", 0.0f);
+        }
+        group.fromFile = filename;
+    }
+}
+
+bool ParticleManager::HasBloomPostEffectTargets() const {
+    if (!editorSelectedGroupName_.empty()) {
+        auto it = particleGroups_.find(editorSelectedGroupName_);
+        if (it != particleGroups_.end() && it->second.bloomPostEffect) {
+            return true;
         }
     }
+    for (const auto& [name, group] : particleGroups_) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active && group.bloomPostEffect) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ParticleManager::HasOutlineBloomPostEffectTargets() const {
+    if (!editorSelectedGroupName_.empty()) {
+        auto it = particleGroups_.find(editorSelectedGroupName_);
+        if (it != particleGroups_.end() && it->second.outlineBloomPostEffect) {
+            return true;
+        }
+    }
+    for (const auto& [name, group] : particleGroups_) {
+        const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
+        if (active && group.outlineBloomPostEffect) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ParticleManager::ClearGPUBuffers_(ParticleGroup& group) {
+    if (!group.instancingResource || !group.freeListIndexResource || !group.freeListResource) {
+        return;
+    }
+
+    auto* cmd = dxCommon_->GetComputeCommandList();
+
+    // barrier: NON_PIXEL_SHADER_RESOURCE -> UNORDERED_ACCESS
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = group.instancingResource.Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    cmd->ResourceBarrier(1, &barrier);
+
+    particleCommon_->SetComputePipelineState(cmd);
+    srvManager_->PreDrawCompute(cmd);
+    cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
+    cmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
+    cmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
+    cmd->Dispatch(1, 1, 1);
+
+    // barrier: UNORDERED_ACCESS -> NON_PIXEL_SHADER_RESOURCE
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    cmd->ResourceBarrier(1, &barrier);
+}
+
+void ParticleManager::ClearAllParticles() {
+    for (auto& [name, group] : particleGroups_) {
+        group.particles.clear();
+        ClearGPUBuffers_(group);
+        if (group.mappedEmitter) {
+            group.mappedEmitter->emit = 0;
+            group.mappedEmitter->frequencyTime = 0.0f;
+        }
+        group.activeTimeRemaining = 0.0f;
+        group.isEmitRequested = false;
+    }
+}
+
+std::vector<std::string> ParticleManager::GetGroupNamesInFile(const std::string& filename) {
+    std::vector<std::string> names;
+    std::string path = "Resources/Particles/" + filename;
+    std::ifstream file(path);
+    if (!file.is_open()) return names;
+
+    json root;
+    try {
+        file >> root;
+        for (const auto& g : root) {
+            if (g.contains("name")) {
+                names.push_back(g["name"].get<std::string>());
+            }
+        }
+    } catch (...) {
+    }
+    return names;
+}
+
+std::vector<std::string> ParticleManager::GetGroupNamesLoadedFromFile(const std::string& filename) const {
+    std::vector<std::string> names;
+    for (const auto& [name, group] : particleGroups_) {
+        if (group.fromFile == filename) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
+float ParticleManager::GetGroupLifeTimeMax(const std::string& groupName) const {
+    auto it = particleGroups_.find(groupName);
+    if (it != particleGroups_.end() && it->second.mappedEmitter) {
+        return it->second.mappedEmitter->lifeTimeMax;
+    }
+    return 0.0f;
+}
+
+bool ParticleManager::OpenTextureFileDialog_(std::string& outTexturePath)
+{
+    char filePath[MAX_PATH]{};
+    OPENFILENAMEA openFileName{};
+    openFileName.lStructSize = sizeof(openFileName);
+    openFileName.hwndOwner = GetActiveWindow();
+    openFileName.lpstrFilter =
+        "Texture Files (*.png;*.jpg;*.jpeg;*.dds;*.tga)\0*.png;*.jpg;*.jpeg;*.dds;*.tga\0"
+        "All Files (*.*)\0*.*\0";
+    openFileName.lpstrFile = filePath;
+    openFileName.nMaxFile = MAX_PATH;
+    openFileName.lpstrInitialDir = "resources";
+    openFileName.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameA(&openFileName)) {
+        return false;
+    }
+
+    outTexturePath = ToResourceRelativePath(std::filesystem::path(filePath));
+    return true;
+}
+
+bool ParticleManager::OpenModelFileDialog_(std::string& outModelPath)
+{
+    char filePath[MAX_PATH]{};
+    OPENFILENAMEA openFileName{};
+    openFileName.lStructSize = sizeof(openFileName);
+    openFileName.hwndOwner = GetActiveWindow();
+    openFileName.lpstrFilter =
+        "Model Files (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0"
+        "All Files (*.*)\0*.*\0";
+    openFileName.lpstrFile = filePath;
+    openFileName.nMaxFile = MAX_PATH;
+    openFileName.lpstrInitialDir = "resources";
+    openFileName.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameA(&openFileName)) {
+        return false;
+    }
+
+    outModelPath = ToResourceRelativePath(std::filesystem::path(filePath));
+    return true;
 }
 
 

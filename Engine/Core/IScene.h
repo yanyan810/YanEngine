@@ -29,6 +29,10 @@ public:
 
     virtual void DrawPreview(GameApp& app) {}
 
+    virtual void DrawPostEffectTargets(GameApp& app) {}
+    virtual bool HasObjectBloomTargets() const { return false; }
+    virtual bool HasObjectOutlineBloomTargets() const { return false; }
+
     void RequestChangeScene_(const std::string& next) {
         nextScene_ = next;
     }

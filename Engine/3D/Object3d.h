@@ -105,6 +105,7 @@ public:
 	}
 
 	void SetBlendMode(Object3dCommon::BlendMode m) { blendMode_ = m; }
+	Object3dCommon::BlendMode GetBlendMode() const { return blendMode_; }
 
 	void SetMaterialColor(const Vector4& c) {
 		if (model_) {
@@ -133,6 +134,8 @@ public:
 	void SetSpotLightCosFalloffStart(float c) { light_->SetSpotLightCosFalloffStart(c); }
 
 	void SetTexture(const std::string& path);
+	void ClearTextureOverride() { texturePath_.clear(); useOverrideTexture_ = false; }
+	const std::string& GetTexturePath() const { return texturePath_; }
 
 	Model* GetModel() const { return model_; }
 

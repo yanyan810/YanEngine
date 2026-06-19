@@ -44,6 +44,9 @@
     <Filter Include="Engine\DebugAI">
       <UniqueIdentifier>{a1b2c3d4-0001-0001-0001-000000000014}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Effect">
+      <UniqueIdentifier>{a1b2c3d4-0001-0001-0001-000000000020}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Game">
       <UniqueIdentifier>{a1b2c3d4-0002-0001-0001-000000000001}</UniqueIdentifier>
     </Filter>
@@ -285,6 +288,9 @@
     <ClCompile Include="Engine\Utility\StringUtility.cpp" />
     <ClCompile Include="Engine\Core\WinApp.cpp" />
     <ClCompile Include="Engine\Particle\ParticleManager.cpp" />
+    <ClCompile Include="Engine\Effect\EffectManager.cpp">
+      <Filter>Engine\Effect</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
     <ClCompile Include="Game\scene\DebugScene.cpp" />
@@ -525,6 +531,9 @@
     <ClInclude Include="Engine\Utility\StringUtility.h" />
     <ClInclude Include="Engine\Core\WinApp.h" />
     <ClInclude Include="Engine\Particle\ParticleManager.h" />
+    <ClInclude Include="Engine\Effect\EffectManager.h">
+      <Filter>Engine\Effect</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Core\ImGuiManagaer.h" />
     <ClInclude Include="Engine\Core\SceneManager.h" />
     <ClInclude Include="Engine\Level\LevelLoader.h" />

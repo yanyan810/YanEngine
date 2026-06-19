@@ -66,3 +66,16 @@ void SceneManager::DrawPreview(GameApp& app) {
     if (!current_) return;
     current_->DrawPreview(app);
 }
+
+void SceneManager::DrawPostEffectTargets(GameApp& app) {
+    if (!current_) return;
+    current_->DrawPostEffectTargets(app);
+}
+
+bool SceneManager::HasObjectBloomTargets() const {
+    return current_ && current_->HasObjectBloomTargets();
+}
+
+bool SceneManager::HasObjectOutlineBloomTargets() const {
+    return current_ && current_->HasObjectOutlineBloomTargets();
+}

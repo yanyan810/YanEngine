@@ -23,6 +23,9 @@ public:
     void Draw(GameApp& app);
     void DrawImGui(GameApp& app);
     void DrawPreview(GameApp& app);
+    void DrawPostEffectTargets(GameApp& app);
+    bool HasObjectBloomTargets() const;
+    bool HasObjectOutlineBloomTargets() const;
 
     IScene* Current() { return current_.get(); }
     const std::string& CurrentName() const { return currentName_; }

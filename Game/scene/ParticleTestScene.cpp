@@ -58,6 +58,14 @@ constexpr const char* kGeometryNames[] = {
     "Diamond",
 };
 constexpr int kGeometryCount = static_cast<int>(sizeof(kGeometryNames) / sizeof(kGeometryNames[0]));
+constexpr const char* kObjectBlendModeNames[] = {
+    "None",
+    "Normal",
+    "Add",
+    "Subtract",
+    "Multiply",
+    "Screen",
+};
 
 }
 
@@ -99,13 +107,26 @@ void ParticleTestScene::OnEnter(GameApp& app)
     editorParticle_->SetBlendMode(ParticleCommon::BlendMode::kBlendModeAdd);
     editorParticle_->SetMaterialColor({ 1, 1, 1, 1 });
 
-    ReloadParticleJson_();
     AddEditorObject_(app, editorModelPath_);
 
 #ifdef USE_IMGUI
     gParticleTestEditorModeSwitcherVisible = true;
     gParticleTestEditorMode = static_cast<int>(editorMode_);
 #endif
+    lastTimelineTime_ = (timelineTime_ == 0.0f) ? -0.001f : timelineTime_;
+    previousTimelineTime_ = timelineTime_;
+
+    auto* pm = ParticleManager::GetInstance();
+    if (editorMode_ == EditorMode::Blender) {
+        pm->ClearGroups();
+        for (auto& node : particleNodes_) {
+            pm->LoadAdditional(node.particleFileName, "");
+            node.hasEmitted = false;
+        }
+    } else {
+        ReloadParticleJson_();
+    }
+    lastEditorMode_ = editorMode_;
 }
 
 void ParticleTestScene::OnExit(GameApp&)
@@ -152,26 +173,75 @@ void ParticleTestScene::Update(GameApp& app, float dt)
         SpawnHitEffectPreview_();
     }
 
-    if (timelinePlaying_) {
-        timelineTime_ += dt;
-        if (timelineTime_ > timelineDuration_) {
+    // モード切り替え時のクリアと再ロード
+    if (editorMode_ != lastEditorMode_) {
+        auto* pm = ParticleManager::GetInstance();
+        pm->ClearAllParticles();
+        if (editorMode_ == EditorMode::Blender) {
+            pm->ClearGroups();
+            for (auto& node : particleNodes_) {
+                pm->LoadAdditional(node.particleFileName, "");
+                node.hasEmitted = false;
+            }
+        } else {
+            ReloadParticleJson_();
+        }
+        lastEditorMode_ = editorMode_;
+    }
+
+    float particleDt = 0.0f;
+    bool timeJumped = false;
+
+    if (pendingTimelineRebuild_) {
+        pendingTimelineRebuild_ = false;
+        RebuildParticleTimeline_(pendingTimelineRebuildTime_);
+        particleDt = 0.0f;
+        timeJumped = true;
+    }
+
+    if (!timeJumped && timelinePlaying_) {
+        float nextTime = timelineTime_ + dt;
+        if (nextTime > timelineDuration_) {
             if (timelineLoop_ && timelineDuration_ > 0.0f) {
-                timelineTime_ = std::fmod(timelineTime_, timelineDuration_);
+                timelineTime_ = std::fmod(nextTime, timelineDuration_);
+                RebuildParticleTimeline_(timelineTime_);
+                timeJumped = true;
             } else {
                 timelineTime_ = timelineDuration_;
                 timelinePlaying_ = false;
             }
+        } else {
+            timelineTime_ = nextTime;
         }
-        EvaluateTimeline_();
+        if (timeJumped) {
+            particleDt = 0.0f;
+        } else {
+            EvaluateTimeline_(true);
+            particleDt = dt;
+        }
+    } else if (!timeJumped) {
+        if (timelineTime_ != previousTimelineTime_) {
+            RebuildParticleTimeline_(timelineTime_);
+            particleDt = 0.0f;
+            timeJumped = true;
+        }
     }
+
+    if (!timeJumped) {
+        lastTimelineTime_ = (timelineTime_ == 0.0f) ? -0.001f : timelineTime_;
+    }
+    previousTimelineTime_ = timelineTime_;
 
     if (camera_) {
         camera_->Update();
     }
     ApplyAnimationCamera_();
     ApplyCameraToEditorObjects_();
+    if (editorMode_ == EditorMode::Particle) {
+        particleDt = dt;
+    }
     if (GetSceneCamera_()) {
-        ParticleManager::GetInstance()->Update(dt, *GetSceneCamera_());
+        ParticleManager::GetInstance()->Update(particleDt, *GetSceneCamera_());
     }
 
     if (ground_) {
@@ -185,7 +255,7 @@ void ParticleTestScene::Update(GameApp& app, float dt)
         }
     }
 
-    if (editorParticle_) {
+    if (editorMode_ == EditorMode::Particle && editorParticle_) {
         editorParticle_->Update();
     }
 }
@@ -234,6 +304,48 @@ void ParticleTestScene::DrawPreview(GameApp& app)
     }
 }
 
+void ParticleTestScene::DrawPostEffectTargets(GameApp& app)
+{
+    Vector4 layerBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+    Vector4 layerOutlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+    if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
+        const auto& selected = editorObjects_[selectedEditorObject_];
+        if (selected.bloomPostEffect || selected.outlineBloomPostEffect) {
+            layerBloomColor = selected.bloomColor;
+            layerOutlineBloomColor = selected.outlineBloomColor;
+        }
+    } else {
+        for (const auto& item : editorObjects_) {
+            if (item.bloomPostEffect || item.outlineBloomPostEffect) {
+                layerBloomColor = item.bloomColor;
+                layerOutlineBloomColor = item.outlineBloomColor;
+                break;
+            }
+        }
+    }
+    app.Render()->SetObjectLayerBloomColor(layerBloomColor);
+    app.Render()->SetObjectLayerOutlineBloomColor(layerOutlineBloomColor);
+    for (auto& item : editorObjects_) {
+        if ((item.bloomPostEffect || item.outlineBloomPostEffect) && item.object) {
+            item.object->Draw();
+        }
+    }
+}
+
+bool ParticleTestScene::HasObjectBloomTargets() const
+{
+    return std::any_of(editorObjects_.begin(), editorObjects_.end(), [](const EditorObject& item) {
+        return item.bloomPostEffect && item.object;
+    });
+}
+
+bool ParticleTestScene::HasObjectOutlineBloomTargets() const
+{
+    return std::any_of(editorObjects_.begin(), editorObjects_.end(), [](const EditorObject& item) {
+        return item.outlineBloomPostEffect && item.object;
+    });
+}
+
 void ParticleTestScene::DrawSceneContent_(GameApp& app)
 {
    /* if (ground_) {
@@ -246,7 +358,7 @@ void ParticleTestScene::DrawSceneContent_(GameApp& app)
         }
     }
 
-    if (editorParticle_) {
+    if (editorMode_ == EditorMode::Particle && editorParticle_) {
         app.ParticleCom()->SetGraphicsPipelineState();
         editorParticle_->Draw();
     }
@@ -497,7 +609,13 @@ void ParticleTestScene::PasteEditorObject_(GameApp& app)
     item.rotation = copiedObject_.rotation;
     item.scale = copiedObject_.scale;
     item.color = copiedObject_.color;
+    item.texturePath = copiedObject_.texturePath;
+    item.blendMode = copiedObject_.blendMode;
     item.billboard = copiedObject_.billboard;
+    item.bloomPostEffect = copiedObject_.bloomPostEffect;
+    item.outlineBloomPostEffect = copiedObject_.outlineBloomPostEffect;
+    item.bloomColor = copiedObject_.bloomColor;
+    item.outlineBloomColor = copiedObject_.outlineBloomColor;
     item.showBones = copiedObject_.showBones;
     item.selectedBone = copiedObject_.selectedBone;
     item.bonePoses = copiedObject_.bonePoses;
@@ -545,7 +663,13 @@ void ParticleTestScene::DuplicateSelectedObject_(GameApp& app)
     dst.rotation = src.rotation;
     dst.scale = src.scale;
     dst.color = src.color;
+    dst.texturePath = src.texturePath;
+    dst.blendMode = src.blendMode;
     dst.billboard = src.billboard;
+    dst.bloomPostEffect = src.bloomPostEffect;
+    dst.outlineBloomPostEffect = src.outlineBloomPostEffect;
+    dst.bloomColor = src.bloomColor;
+    dst.outlineBloomColor = src.outlineBloomColor;
     dst.showBones = src.showBones;
     dst.selectedBone = src.selectedBone;
     dst.bonePoses = src.bonePoses;
@@ -569,7 +693,13 @@ ParticleTestScene::EditorObjectSnapshot ParticleTestScene::CaptureSelectedObject
     snapshot.rotation = item.rotation;
     snapshot.scale = item.scale;
     snapshot.color = item.color;
+    snapshot.texturePath = item.texturePath;
+    snapshot.blendMode = item.blendMode;
     snapshot.billboard = item.billboard;
+    snapshot.bloomPostEffect = item.bloomPostEffect;
+    snapshot.outlineBloomPostEffect = item.outlineBloomPostEffect;
+    snapshot.bloomColor = item.bloomColor;
+    snapshot.outlineBloomColor = item.outlineBloomColor;
     snapshot.showBones = item.showBones;
     snapshot.selectedBone = item.selectedBone;
     snapshot.bonePoses = item.bonePoses;
@@ -630,6 +760,12 @@ void ParticleTestScene::ApplyEditorObjectTransform_(EditorObject& item)
     }
     item.object->SetScale(item.scale);
     item.object->SetMaterialColor(item.color);
+    item.object->SetBlendMode(item.blendMode);
+    if (!item.texturePath.empty()) {
+        item.object->SetTexture(item.texturePath);
+    } else {
+        item.object->ClearTextureOverride();
+    }
     ApplyEditorObjectBonePose_(item);
 }
 
@@ -786,11 +922,25 @@ void ParticleTestScene::AddKeyframeToSelected_()
             key.rotation = item.rotation;
             key.scale = item.scale;
             key.color = item.color;
+            key.bloomPostEffect = item.bloomPostEffect;
+            key.outlineBloomPostEffect = item.outlineBloomPostEffect;
+            key.bloomColor = item.bloomColor;
+            key.outlineBloomColor = item.outlineBloomColor;
             return;
         }
     }
 
-    item.keyframes.push_back({ timelineTime_, item.position, item.rotation, item.scale, item.color });
+    item.keyframes.push_back({
+        timelineTime_,
+        item.position,
+        item.rotation,
+        item.scale,
+        item.color,
+        item.bloomPostEffect,
+        item.outlineBloomPostEffect,
+        item.bloomColor,
+        item.outlineBloomColor
+    });
     SortKeyframes_(item);
 }
 
@@ -813,7 +963,7 @@ void ParticleTestScene::DeleteNearestKeyframeFromSelected_()
     }
 }
 
-void ParticleTestScene::EvaluateTimeline_()
+void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
 {
     if (!cameraKeyframes_.empty()) {
         SortCameraKeyframes_();
@@ -854,6 +1004,10 @@ void ParticleTestScene::EvaluateTimeline_()
             item.rotation = item.keyframes.front().rotation;
             item.scale = item.keyframes.front().scale;
             item.color = item.keyframes.front().color;
+            item.bloomPostEffect = item.keyframes.front().bloomPostEffect;
+            item.outlineBloomPostEffect = item.keyframes.front().outlineBloomPostEffect;
+            item.bloomColor = item.keyframes.front().bloomColor;
+            item.outlineBloomColor = item.keyframes.front().outlineBloomColor;
             ApplyEditorObjectTransform_(item);
             continue;
         }
@@ -862,6 +1016,10 @@ void ParticleTestScene::EvaluateTimeline_()
             item.rotation = item.keyframes.back().rotation;
             item.scale = item.keyframes.back().scale;
             item.color = item.keyframes.back().color;
+            item.bloomPostEffect = item.keyframes.back().bloomPostEffect;
+            item.outlineBloomPostEffect = item.keyframes.back().outlineBloomPostEffect;
+            item.bloomColor = item.keyframes.back().bloomColor;
+            item.outlineBloomColor = item.keyframes.back().outlineBloomColor;
             ApplyEditorObjectTransform_(item);
             continue;
         }
@@ -876,11 +1034,91 @@ void ParticleTestScene::EvaluateTimeline_()
                 item.rotation = LerpVector3(a.rotation, b.rotation, t);
                 item.scale = LerpVector3(a.scale, b.scale, t);
                 item.color = LerpVector4(a.color, b.color, t);
+                item.bloomPostEffect = a.bloomPostEffect;
+                item.outlineBloomPostEffect = a.outlineBloomPostEffect;
+                item.bloomColor = LerpVector4(a.bloomColor, b.bloomColor, t);
+                item.outlineBloomColor = LerpVector4(a.outlineBloomColor, b.outlineBloomColor, t);
                 ApplyEditorObjectTransform_(item);
                 break;
             }
         }
     }
+
+    if (!emitParticles) {
+        return;
+    }
+
+    for (auto& node : particleNodes_) {
+        const float nodeEndTime = node.startTime + GetParticleNodeDuration_(node);
+        node.endTime = nodeEndTime;
+        if (timelineTime_ < node.startTime) {
+            node.hasEmitted = false;
+            continue;
+        }
+        if (timelineTime_ > nodeEndTime) {
+            node.hasEmitted = true;
+            continue;
+        }
+
+        bool crossed = (lastTimelineTime_ < node.startTime && timelineTime_ >= node.startTime);
+
+        if (crossed && !node.hasEmitted) {
+            EmitParticleNode_(node, 0.0f);
+            node.hasEmitted = true;
+        }
+    }
+}
+
+float ParticleTestScene::GetParticleNodeDuration_(const ParticleNode& node) const
+{
+    return std::max(0.01f, node.presetDuration);
+}
+
+void ParticleTestScene::EmitParticleNode_(const ParticleNode& node, float initialAge)
+{
+    auto* pm = ParticleManager::GetInstance();
+    std::vector<std::string> groupNames = pm->GetGroupNamesInFile(node.particleFileName);
+    for (const auto& groupName : groupNames) {
+        if (pm->HasGroup(groupName)) {
+            pm->EmitConfigured(groupName, node.position, 1.0f, initialAge);
+        }
+    }
+}
+
+void ParticleTestScene::RequestTimelineRebuild_(float targetTime)
+{
+    targetTime = std::clamp(targetTime, 0.0f, timelineDuration_);
+    timelineTime_ = targetTime;
+    pendingTimelineRebuildTime_ = targetTime;
+    pendingTimelineRebuild_ = true;
+    EvaluateTimeline_(false);
+}
+
+void ParticleTestScene::RebuildParticleTimeline_(float targetTime)
+{
+    targetTime = std::clamp(targetTime, 0.0f, timelineDuration_);
+    timelineTime_ = targetTime;
+
+    EvaluateTimeline_(false);
+
+    auto* pm = ParticleManager::GetInstance();
+    pm->ClearAllParticles();
+    for (auto& node : particleNodes_) {
+        const float duration = GetParticleNodeDuration_(node);
+        node.endTime = node.startTime + duration;
+        node.hasEmitted = false;
+
+        if (targetTime < node.startTime || targetTime > node.endTime) {
+            node.hasEmitted = targetTime > node.endTime;
+            continue;
+        }
+
+        EmitParticleNode_(node, targetTime - node.startTime);
+        node.hasEmitted = true;
+    }
+
+    lastTimelineTime_ = (targetTime == 0.0f) ? -0.001f : targetTime;
+    previousTimelineTime_ = targetTime;
 }
 
 ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() const
@@ -897,6 +1135,8 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
     snapshot.useAnimationCameraPreview = useAnimationCameraPreview_;
     snapshot.animationCameraPreviewSwapped = animationCameraPreviewSwapped_;
     snapshot.cameraKeyframes = cameraKeyframes_;
+    snapshot.particleNodes = particleNodes_;
+    snapshot.selectedParticleNode = selectedParticleNode_;
     snapshot.objects.reserve(editorObjects_.size());
     for (const auto& item : editorObjects_) {
         EditorObjectSnapshot object;
@@ -908,7 +1148,13 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
         object.rotation = item.rotation;
         object.scale = item.scale;
         object.color = item.color;
+        object.texturePath = item.texturePath;
+        object.blendMode = item.blendMode;
         object.billboard = item.billboard;
+        object.bloomPostEffect = item.bloomPostEffect;
+        object.outlineBloomPostEffect = item.outlineBloomPostEffect;
+        object.bloomColor = item.bloomColor;
+        object.outlineBloomColor = item.outlineBloomColor;
         object.showBones = item.showBones;
         object.selectedBone = item.selectedBone;
         object.bonePoses = item.bonePoses;
@@ -932,7 +1178,13 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.rotation = src.rotation;
         item.scale = src.scale;
         item.color = src.color;
+        item.texturePath = src.texturePath;
+        item.blendMode = src.blendMode;
         item.billboard = src.billboard;
+        item.bloomPostEffect = src.bloomPostEffect;
+        item.outlineBloomPostEffect = src.outlineBloomPostEffect;
+        item.bloomColor = src.bloomColor;
+        item.outlineBloomColor = src.outlineBloomColor;
         item.showBones = src.showBones;
         item.selectedBone = src.selectedBone;
         item.bonePoses = src.bonePoses;
@@ -963,6 +1215,19 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
     useAnimationCameraPreview_ = snapshot.useAnimationCameraPreview;
     animationCameraPreviewSwapped_ = snapshot.animationCameraPreviewSwapped;
     cameraKeyframes_ = snapshot.cameraKeyframes;
+    particleNodes_ = snapshot.particleNodes;
+    selectedParticleNode_ = snapshot.selectedParticleNode;
+
+    // Blenderモード中のスナップショット復元の場合は、パーティクルグループも同期する
+    if (editorMode_ == EditorMode::Blender) {
+        auto* pm = ParticleManager::GetInstance();
+        pm->ClearGroups();
+        for (auto& node : particleNodes_) {
+            pm->LoadAdditional(node.particleFileName, "");
+            node.hasEmitted = false;
+        }
+    }
+
     ApplyAnimationCamera_();
     ApplyCameraToEditorObjects_();
     EvaluateTimeline_();
@@ -1033,12 +1298,18 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         object["id"] = item.id;
         object["name"] = item.name;
         object["modelPath"] = item.modelPath;
+        object["texturePath"] = item.texturePath;
         object["geometryType"] = item.geometryType;
         object["position"] = { item.position.x, item.position.y, item.position.z };
         object["rotation"] = { item.rotation.x, item.rotation.y, item.rotation.z };
         object["scale"] = { item.scale.x, item.scale.y, item.scale.z };
         object["color"] = { item.color.x, item.color.y, item.color.z, item.color.w };
+        object["blendMode"] = static_cast<int>(item.blendMode);
         object["billboard"] = item.billboard;
+        object["bloomPostEffect"] = item.bloomPostEffect;
+        object["outlineBloomPostEffect"] = item.outlineBloomPostEffect;
+        object["bloomColor"] = { item.bloomColor.x, item.bloomColor.y, item.bloomColor.z, item.bloomColor.w };
+        object["outlineBloomColor"] = { item.outlineBloomColor.x, item.outlineBloomColor.y, item.outlineBloomColor.z, item.outlineBloomColor.w };
         object["showBones"] = item.showBones;
         object["selectedBone"] = item.selectedBone;
         object["bonePoses"] = json::array();
@@ -1057,10 +1328,29 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
                 { "position", { key.position.x, key.position.y, key.position.z } },
                 { "rotation", { key.rotation.x, key.rotation.y, key.rotation.z } },
                 { "scale", { key.scale.x, key.scale.y, key.scale.z } },
-                { "color", { key.color.x, key.color.y, key.color.z, key.color.w } }
+                { "color", { key.color.x, key.color.y, key.color.z, key.color.w } },
+                { "bloomPostEffect", key.bloomPostEffect },
+                { "outlineBloomPostEffect", key.outlineBloomPostEffect },
+                { "bloomColor", { key.bloomColor.x, key.bloomColor.y, key.bloomColor.z, key.bloomColor.w } },
+                { "outlineBloomColor", { key.outlineBloomColor.x, key.outlineBloomColor.y, key.outlineBloomColor.z, key.outlineBloomColor.w } }
             });
         }
         root["objects"].push_back(std::move(object));
+    }
+
+    root["particleNodes"] = json::array();
+    for (const auto& node : particleNodes_) {
+        json jNode;
+        jNode["name"] = node.name;
+        jNode["particleFileName"] = node.particleFileName;
+        jNode["startTime"] = node.startTime;
+        jNode["endTime"] = node.endTime;
+        jNode["position"] = { node.position.x, node.position.y, node.position.z };
+        jNode["rotation"] = { node.rotation.x, node.rotation.y, node.rotation.z };
+        jNode["scale"] = { node.scale.x, node.scale.y, node.scale.z };
+        jNode["emitCount"] = node.emitCount;
+        jNode["presetDuration"] = node.presetDuration;
+        root["particleNodes"].push_back(std::move(jNode));
     }
 
     std::filesystem::path outputPath(path);
@@ -1113,6 +1403,7 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
         object.id = source.value("id", snapshot.nextObjectId);
         object.name = source.value("name", std::string("EffectObject"));
         object.modelPath = source.value("modelPath", std::string("cube/cube.obj"));
+        object.texturePath = source.value("texturePath", std::string{});
         object.geometryType = source.value("geometryType", -1);
         auto p = source.value("position", json::array({ 0.0f, 0.0f, 0.0f }));
         auto r = source.value("rotation", json::array({ 0.0f, 0.0f, 0.0f }));
@@ -1122,7 +1413,17 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
         object.rotation = { r[0], r[1], r[2] };
         object.scale = { s[0], s[1], s[2] };
         object.color = { c[0], c[1], c[2], c[3] };
+        object.blendMode = static_cast<Object3dCommon::BlendMode>(std::clamp(
+            source.value("blendMode", static_cast<int>(Object3dCommon::BlendMode::kBlendModeNormal)),
+            0,
+            static_cast<int>(Object3dCommon::BlendMode::kCountOfBlendMode) - 1));
         object.billboard = source.value("billboard", false);
+        object.bloomPostEffect = source.value("bloomPostEffect", false);
+        object.outlineBloomPostEffect = source.value("outlineBloomPostEffect", false);
+        auto bc = source.value("bloomColor", json::array({ 1.0f, 0.72f, 0.22f, 1.0f }));
+        object.bloomColor = { bc[0], bc[1], bc[2], bc[3] };
+        auto obc = source.value("outlineBloomColor", json::array({ 1.0f, 0.72f, 0.22f, 1.0f }));
+        object.outlineBloomColor = { obc[0], obc[1], obc[2], obc[3] };
         object.showBones = source.value("showBones", false);
         object.selectedBone = source.value("selectedBone", 0);
 
@@ -1149,11 +1450,39 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
             key.rotation = { kr[0], kr[1], kr[2] };
             key.scale = { ks[0], ks[1], ks[2] };
             key.color = { kc[0], kc[1], kc[2], kc[3] };
+            key.bloomPostEffect = keySource.value("bloomPostEffect", object.bloomPostEffect);
+            key.outlineBloomPostEffect = keySource.value("outlineBloomPostEffect", object.outlineBloomPostEffect);
+            auto kbc = keySource.value("bloomColor", json::array({ object.bloomColor.x, object.bloomColor.y, object.bloomColor.z, object.bloomColor.w }));
+            key.bloomColor = { kbc[0], kbc[1], kbc[2], kbc[3] };
+            auto kobc = keySource.value("outlineBloomColor", json::array({ object.outlineBloomColor.x, object.outlineBloomColor.y, object.outlineBloomColor.z, object.outlineBloomColor.w }));
+            key.outlineBloomColor = { kobc[0], kobc[1], kobc[2], kobc[3] };
             object.keyframes.push_back(key);
         }
 
         snapshot.nextObjectId = std::max(snapshot.nextObjectId, object.id + 1);
         snapshot.objects.push_back(std::move(object));
+    }
+
+    for (const auto& nodeSource : root.value("particleNodes", json::array())) {
+        ParticleNode node;
+        node.name = nodeSource.value("name", "ParticleNode");
+        if (nodeSource.contains("particleFileName")) {
+            node.particleFileName = nodeSource.value("particleFileName", "");
+        } else {
+            node.particleFileName = nodeSource.value("particleGroup", "");
+        }
+        node.startTime = nodeSource.value("startTime", 0.0f);
+        node.endTime = nodeSource.value("endTime", 1.0f);
+        auto p = nodeSource.value("position", json::array({ 0.0f, 0.0f, 0.0f }));
+        auto r = nodeSource.value("rotation", json::array({ 0.0f, 0.0f, 0.0f }));
+        auto s = nodeSource.value("scale", json::array({ 1.0f, 1.0f, 1.0f }));
+        node.position = { p[0], p[1], p[2] };
+        node.rotation = { r[0], r[1], r[2] };
+        node.scale = { s[0], s[1], s[2] };
+        node.emitCount = nodeSource.value("emitCount", 10);
+        node.presetDuration = nodeSource.value("presetDuration", 1.0f);
+        node.hasEmitted = false;
+        snapshot.particleNodes.push_back(std::move(node));
     }
 
     if (!snapshot.objects.empty()) {
@@ -1164,7 +1493,7 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
     redoStack_.clear();
 }
 
-bool ParticleTestScene::OpenModelFileDialog_()
+bool ParticleTestScene::OpenModelFileDialog_(std::string& outModelPath)
 {
     char filePath[MAX_PATH]{};
     OPENFILENAMEA openFileName{};
@@ -1182,8 +1511,39 @@ bool ParticleTestScene::OpenModelFileDialog_()
         return false;
     }
 
-    const std::string modelPath = ToResourceRelativeModelPath(std::filesystem::path(filePath));
-    strncpy_s(editorModelPath_, sizeof(editorModelPath_), modelPath.c_str(), _TRUNCATE);
+    outModelPath = ToResourceRelativeModelPath(std::filesystem::path(filePath));
+    return true;
+}
+
+bool ParticleTestScene::OpenModelFileDialog_()
+{
+    std::string path;
+    if (OpenModelFileDialog_(path)) {
+        strncpy_s(editorModelPath_, sizeof(editorModelPath_), path.c_str(), _TRUNCATE);
+        return true;
+    }
+    return false;
+}
+
+bool ParticleTestScene::OpenTextureFileDialog_(std::string& outTexturePath)
+{
+    char filePath[MAX_PATH]{};
+    OPENFILENAMEA openFileName{};
+    openFileName.lStructSize = sizeof(openFileName);
+    openFileName.hwndOwner = GetActiveWindow();
+    openFileName.lpstrFilter =
+        "Texture Files (*.png;*.jpg;*.jpeg;*.dds;*.tga)\0*.png;*.jpg;*.jpeg;*.dds;*.tga\0"
+        "All Files (*.*)\0*.*\0";
+    openFileName.lpstrFile = filePath;
+    openFileName.nMaxFile = MAX_PATH;
+    openFileName.lpstrInitialDir = "resources";
+    openFileName.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameA(&openFileName)) {
+        return false;
+    }
+
+    outTexturePath = ToResourceRelativeModelPath(std::filesystem::path(filePath));
     return true;
 }
 
@@ -1840,8 +2200,14 @@ void ParticleTestScene::HandleEffectEditorShortcuts_(GameApp& app)
         PushUndoSnapshot_();
         PasteEditorObject_(app);
     }
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false) && selectedEditorObject_ >= 0) {
-        RequestDeleteSelectedObject_();
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+        if (selectedEditorObject_ >= 0) {
+            RequestDeleteSelectedObject_();
+        } else if (selectedParticleNode_ >= 0) {
+            PushUndoSnapshot_();
+            particleNodes_.erase(particleNodes_.begin() + selectedParticleNode_);
+            selectedParticleNode_ = -1;
+        }
     }
     if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) {
         gizmoMode_ = GizmoMode::Translate;
@@ -1886,6 +2252,42 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
     }
 
     ImGui::Separator();
+    ImGui::TextUnformatted("Particle Node Source");
+    if (ImGui::Button("Add Particle Node")) {
+        std::vector<std::string> groupNames;
+        std::string fileName;
+        if (OpenParticleFileDialog_(groupNames, fileName)) {
+            PushUndoSnapshot_();
+            ParticleManager::GetInstance()->LoadAdditional(fileName, "");
+            
+            std::filesystem::path fp(fileName);
+            std::string stemName = fp.stem().string();
+
+            auto* pm = ParticleManager::GetInstance();
+            float maxLifeTime = 0.0f;
+            for (const auto& groupName : groupNames) {
+                maxLifeTime = std::max(maxLifeTime, pm->GetGroupLifeTimeMax(groupName));
+            }
+            if (maxLifeTime <= 0.0f) {
+                maxLifeTime = 1.0f;
+            }
+
+            ParticleNode node;
+            node.name = stemName + "_" + std::to_string(particleNodes_.size() + 1);
+            node.particleFileName = fileName;
+            node.startTime = 0.0f;
+            node.presetDuration = maxLifeTime;
+            node.endTime = node.startTime + GetParticleNodeDuration_(node);
+            timelineDuration_ = std::max(timelineDuration_, node.endTime);
+            node.position = { 0.0f, 1.0f, 0.0f };
+            particleNodes_.push_back(std::move(node));
+
+            selectedParticleNode_ = static_cast<int>(particleNodes_.size()) - 1;
+            selectedEditorObject_ = -1;
+        }
+    }
+
+    ImGui::Separator();
     ImGui::TextUnformatted("Object Actions");
     if (ImGui::Button("Duplicate") && selectedEditorObject_ >= 0) {
         PushUndoSnapshot_();
@@ -1900,8 +2302,14 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
         PasteEditorObject_(app);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete") && selectedEditorObject_ >= 0) {
-        RequestDeleteSelectedObject_();
+    if (ImGui::Button("Delete")) {
+        if (selectedEditorObject_ >= 0) {
+            RequestDeleteSelectedObject_();
+        } else if (selectedParticleNode_ >= 0) {
+            PushUndoSnapshot_();
+            particleNodes_.erase(particleNodes_.begin() + selectedParticleNode_);
+            selectedParticleNode_ = -1;
+        }
     }
     if (ImGui::Button("Undo")) {
         Undo_(app);
@@ -1927,6 +2335,16 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
         const bool selected = i == selectedEditorObject_;
         if (ImGui::Selectable(editorObjects_[i].name.c_str(), selected)) {
             selectedEditorObject_ = i;
+            selectedParticleNode_ = -1;
+        }
+    }
+    for (int i = 0; i < static_cast<int>(particleNodes_.size()); ++i) {
+        const bool selected = i == selectedParticleNode_;
+        char label[128];
+        sprintf_s(label, "%s (%.2f-%.2f) [Particle]", particleNodes_[i].name.c_str(), particleNodes_[i].startTime, particleNodes_[i].endTime);
+        if (ImGui::Selectable(label, selected)) {
+            selectedParticleNode_ = i;
+            selectedEditorObject_ = -1;
         }
     }
 
@@ -1953,6 +2371,43 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
                 transformDragChanged_ = false;
             }
         };
+
+        bool modelChanged = false;
+        if (item.geometryType < 0) {
+            char modelBuf[256];
+            strncpy_s(modelBuf, sizeof(modelBuf), item.modelPath.c_str(), _TRUNCATE);
+            if (ImGui::InputText("Model Path", modelBuf, sizeof(modelBuf))) {
+                item.modelPath = modelBuf;
+                modelChanged = true;
+            }
+            if (ImGui::IsItemActivated() && !transformDragActive_) {
+                transformDragBefore_ = CaptureEditorSnapshot_();
+                transformDragActive_ = true;
+                transformDragChanged_ = false;
+            }
+            if (ImGui::IsItemEdited()) {
+                transformDragChanged_ = true;
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+                if (transformDragChanged_) {
+                    PushUndoSnapshot_(transformDragBefore_);
+                }
+                transformDragActive_ = false;
+                transformDragChanged_ = false;
+            }
+            if (ImGui::Button("Open Model File...##SelectedObject")) {
+                std::string modelPath;
+                if (OpenModelFileDialog_(modelPath)) {
+                    PushUndoSnapshot_();
+                    item.modelPath = modelPath;
+                    modelChanged = true;
+                }
+            }
+        }
+        if (modelChanged) {
+            item.object->SetModel(item.modelPath);
+            changed = true;
+        }
 
         bool positionChanged = ImGui::DragFloat3("Position", &item.position.x, 0.05f);
         changed |= positionChanged;
@@ -1966,6 +2421,99 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
         bool colorChanged = ImGui::ColorEdit4("Color / Alpha", &item.color.x);
         changed |= colorChanged;
         trackDragEdit(colorChanged);
+        int currentBlend = static_cast<int>(item.blendMode);
+        if (ImGui::Combo("Blend Mode", &currentBlend, kObjectBlendModeNames, IM_ARRAYSIZE(kObjectBlendModeNames))) {
+            PushUndoSnapshot_();
+            currentBlend = std::clamp(currentBlend, 0, static_cast<int>(Object3dCommon::BlendMode::kCountOfBlendMode) - 1);
+            item.blendMode = static_cast<Object3dCommon::BlendMode>(currentBlend);
+            changed = true;
+        }
+
+        char textureBuf[256];
+        strncpy_s(textureBuf, sizeof(textureBuf), item.texturePath.c_str(), _TRUNCATE);
+        if (ImGui::InputText("Texture Path", textureBuf, sizeof(textureBuf))) {
+            item.texturePath = textureBuf;
+            changed = true;
+        }
+        if (ImGui::IsItemActivated() && !transformDragActive_) {
+            transformDragBefore_ = CaptureEditorSnapshot_();
+            transformDragActive_ = true;
+            transformDragChanged_ = false;
+        }
+        if (ImGui::IsItemEdited()) {
+            transformDragChanged_ = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+            if (transformDragChanged_) {
+                PushUndoSnapshot_(transformDragBefore_);
+            }
+            transformDragActive_ = false;
+            transformDragChanged_ = false;
+        }
+        if (ImGui::Button("Open Texture File...")) {
+            std::string texturePath;
+            if (OpenTextureFileDialog_(texturePath)) {
+                PushUndoSnapshot_();
+                item.texturePath = texturePath;
+                changed = true;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Texture")) {
+            PushUndoSnapshot_();
+            item.texturePath.clear();
+            changed = true;
+        }
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Object Post Effect");
+        const bool bloomBefore = item.bloomPostEffect;
+        if (ImGui::Checkbox("Bloom", &item.bloomPostEffect)) {
+            item.bloomPostEffect = bloomBefore;
+            PushUndoSnapshot_();
+            item.bloomPostEffect = !bloomBefore;
+        }
+        const bool outlineBloomBefore = item.outlineBloomPostEffect;
+        if (ImGui::Checkbox("Outline Bloom", &item.outlineBloomPostEffect)) {
+            item.outlineBloomPostEffect = outlineBloomBefore;
+            PushUndoSnapshot_();
+            item.outlineBloomPostEffect = !outlineBloomBefore;
+        }
+        
+        bool bloomColorChanged = ImGui::ColorEdit4("Bloom Color", &item.bloomColor.x);
+        if (ImGui::IsItemActivated() && !transformDragActive_) {
+            transformDragBefore_ = CaptureEditorSnapshot_();
+            transformDragActive_ = true;
+            transformDragChanged_ = false;
+        }
+        if (bloomColorChanged) {
+            transformDragChanged_ = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+            if (transformDragChanged_) {
+                PushUndoSnapshot_(transformDragBefore_);
+            }
+            transformDragActive_ = false;
+            transformDragChanged_ = false;
+        }
+
+        bool outlineBloomColorChanged = ImGui::ColorEdit4("Outline Bloom Color", &item.outlineBloomColor.x);
+        if (ImGui::IsItemActivated() && !transformDragActive_) {
+            transformDragBefore_ = CaptureEditorSnapshot_();
+            transformDragActive_ = true;
+            transformDragChanged_ = false;
+        }
+        if (outlineBloomColorChanged) {
+            transformDragChanged_ = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+            if (transformDragChanged_) {
+                PushUndoSnapshot_(transformDragBefore_);
+            }
+            transformDragActive_ = false;
+            transformDragChanged_ = false;
+        }
+
         const bool billboardBefore = item.billboard;
         bool billboardChanged = ImGui::Checkbox("Billboard", &item.billboard);
         if (billboardChanged) {
@@ -1980,6 +2528,47 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
 
         DrawGizmoControls_(item);
         DrawBoneControls_(item);
+    }
+
+    if (selectedParticleNode_ >= 0 && selectedParticleNode_ < static_cast<int>(particleNodes_.size())) {
+        ParticleNode& node = particleNodes_[selectedParticleNode_];
+        ImGui::Separator();
+        ImGui::Text("%s (ParticleNode)", node.name.c_str());
+
+        char nameBuf[128];
+        strncpy_s(nameBuf, sizeof(nameBuf), node.name.c_str(), _TRUNCATE);
+        if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
+            node.name = nameBuf;
+        }
+
+        char fileBuf[128];
+        strncpy_s(fileBuf, sizeof(fileBuf), node.particleFileName.c_str(), _TRUNCATE);
+        if (ImGui::InputText("Particle File", fileBuf, sizeof(fileBuf))) {
+            node.particleFileName = fileBuf;
+        }
+
+        if (ImGui::DragFloat("Start Time", &node.startTime, 0.01f, 0.0f, timelineDuration_)) {
+            node.startTime = std::clamp(node.startTime, 0.0f, timelineDuration_);
+            node.endTime = node.startTime + GetParticleNodeDuration_(node);
+            timelineDuration_ = std::max(timelineDuration_, node.endTime);
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        if (ImGui::DragFloat("End Time", &node.endTime, 0.01f, 0.0f, timelineDuration_)) {
+            node.endTime = std::clamp(node.endTime, node.startTime + 0.01f, timelineDuration_);
+            node.presetDuration = std::max(0.01f, node.endTime - node.startTime);
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        if (ImGui::DragFloat("Preset Duration", &node.presetDuration, 0.01f, 0.01f, 10.0f)) {
+            node.endTime = node.startTime + GetParticleNodeDuration_(node);
+            timelineDuration_ = std::max(timelineDuration_, node.endTime);
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        if (ImGui::DragFloat3("Position", &node.position.x, 0.05f)) {
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        ImGui::DragFloat3("Rotation", &node.rotation.x, 0.01f);
+        ImGui::DragFloat3("Scale", &node.scale.x, 0.05f);
+        ImGui::DragInt("Emit Count", &node.emitCount, 1, 1, 1000);
     }
 
     DrawEditorCameraControls_();
@@ -1993,9 +2582,88 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
 #ifdef USE_IMGUI
     ImGui::Begin("Effect Editor");
 
+    ImGui::TextUnformatted("Timeline (Dope Sheet)");
+    DrawDopeSheet_(app);
+
+    ImGui::Separator();
+
+    // タイムラインコントローラー
+    if (ImGui::Button(timelinePlaying_ ? "Stop" : "Play")) {
+        const bool startPlayback = !timelinePlaying_;
+        timelinePlaying_ = startPlayback;
+        if (startPlayback && timelineTime_ == 0.0f) {
+            for (auto& node : particleNodes_) {
+                node.hasEmitted = false;
+            }
+            lastTimelineTime_ = -1.0f;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restart")) {
+        timelineTime_ = 0.0f;
+        lastTimelineTime_ = -0.001f;
+        timelinePlaying_ = true;
+        pendingTimelineRebuild_ = true;
+        pendingTimelineRebuildTime_ = 0.0f;
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Loop", &timelineLoop_);
+    
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100.0f);
+    if (ImGui::DragFloat("Duration", &timelineDuration_, 0.05f, 0.05f, 30.0f, "%.2f s")) {
+        if (timelineDuration_ < 0.05f) timelineDuration_ = 0.05f;
+        timelineTime_ = std::clamp(timelineTime_, 0.0f, timelineDuration_);
+        RequestTimelineRebuild_(timelineTime_);
+    }
+    
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    if (ImGui::SliderFloat("Current Time", &timelineTime_, 0.0f, timelineDuration_, "%.3f s")) {
+        RequestTimelineRebuild_(timelineTime_);
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Add Particle Node")) {
+        std::vector<std::string> groupNames;
+        std::string fileName;
+        if (OpenParticleFileDialog_(groupNames, fileName)) {
+            PushUndoSnapshot_();
+            ParticleManager::GetInstance()->LoadAdditional(fileName, "");
+            
+            std::filesystem::path fp(fileName);
+            std::string stemName = fp.stem().string();
+
+            auto* pm = ParticleManager::GetInstance();
+            float maxLifeTime = 0.0f;
+            for (const auto& groupName : groupNames) {
+                maxLifeTime = std::max(maxLifeTime, pm->GetGroupLifeTimeMax(groupName));
+            }
+            if (maxLifeTime <= 0.0f) {
+                maxLifeTime = 1.0f;
+            }
+
+            ParticleNode node;
+            node.name = stemName + "_" + std::to_string(particleNodes_.size() + 1);
+            node.particleFileName = fileName;
+            node.startTime = 0.0f;
+            node.presetDuration = maxLifeTime;
+            node.endTime = node.startTime + GetParticleNodeDuration_(node);
+            timelineDuration_ = std::max(timelineDuration_, node.endTime);
+            node.position = { 0.0f, 1.0f, 0.0f };
+            particleNodes_.push_back(std::move(node));
+
+            selectedParticleNode_ = static_cast<int>(particleNodes_.size()) - 1;
+            selectedEditorObject_ = -1;
+        }
+    }
+
+    ImGui::Separator();
+
     if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
         EditorObject& item = editorObjects_[selectedEditorObject_];
-        ImGui::Text("%s (%s)", item.name.c_str(), item.modelPath.c_str());
+        ImGui::Text("Keyframes: %s (%s)", item.name.c_str(), item.modelPath.c_str());
+        
         if (ImGui::Button("Add / Replace Keyframe")) {
             PushUndoSnapshot_();
             AddKeyframeToSelected_();
@@ -2006,17 +2674,26 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
             DeleteNearestKeyframeFromSelected_();
         }
 
-        if (ImGui::BeginTable("Keyframes", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Time");
+        if (ImGui::BeginTable("KeyframesTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+            ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 80.0f);
             ImGui::TableSetupColumn("Position");
             ImGui::TableSetupColumn("Rotation");
             ImGui::TableSetupColumn("Scale");
             ImGui::TableSetupColumn("Color");
             ImGui::TableHeadersRow();
-            for (const auto& key : item.keyframes) {
+            for (size_t k = 0; k < item.keyframes.size(); ++k) {
+                auto& key = item.keyframes[k];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%.3f", key.time);
+                
+                char timeId[64];
+                sprintf_s(timeId, "##keytime_%zu", k);
+                ImGui::SetNextItemWidth(70.0f);
+                if (ImGui::DragFloat(timeId, &key.time, 0.01f, 0.0f, timelineDuration_, "%.2f")) {
+                    SortKeyframes_(item);
+                    EvaluateTimeline_(false);
+                }
+                
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.2f %.2f %.2f", key.position.x, key.position.y, key.position.z);
                 ImGui::TableSetColumnIndex(2);
@@ -2027,266 +2704,404 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
                 ImGui::Text("%.2f %.2f %.2f %.2f", key.color.x, key.color.y, key.color.z, key.color.w);
             }
             ImGui::EndTable();
+        }
+    } else if (selectedParticleNode_ >= 0 && selectedParticleNode_ < static_cast<int>(particleNodes_.size())) {
+        ParticleNode& node = particleNodes_[selectedParticleNode_];
+        ImGui::Text("Selected Particle Node: %s", node.name.c_str());
+        
+        char nameBuf[128];
+        strncpy_s(nameBuf, sizeof(nameBuf), node.name.c_str(), _TRUNCATE);
+        if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
+            node.name = nameBuf;
+        }
+
+        char fileBuf[128];
+        strncpy_s(fileBuf, sizeof(fileBuf), node.particleFileName.c_str(), _TRUNCATE);
+        if (ImGui::InputText("Particle File", fileBuf, sizeof(fileBuf))) {
+            node.particleFileName = fileBuf;
+        }
+
+        if (ImGui::DragFloat("Start Time", &node.startTime, 0.01f, 0.0f, timelineDuration_, "%.2f")) {
+            node.startTime = std::clamp(node.startTime, 0.0f, timelineDuration_);
+            node.endTime = node.startTime + GetParticleNodeDuration_(node);
+            timelineDuration_ = std::max(timelineDuration_, node.endTime);
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        if (ImGui::DragFloat("End Time", &node.endTime, 0.01f, 0.0f, timelineDuration_, "%.2f")) {
+            node.endTime = std::clamp(node.endTime, node.startTime + 0.01f, timelineDuration_);
+            node.presetDuration = GetParticleNodeDuration_(node);
+            node.presetDuration = std::max(0.01f, node.endTime - node.startTime);
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        if (ImGui::DragFloat("Preset Duration", &node.presetDuration, 0.01f, 0.01f, 10.0f)) {
+            node.endTime = node.startTime + GetParticleNodeDuration_(node);
+            timelineDuration_ = std::max(timelineDuration_, node.endTime);
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        if (ImGui::DragFloat3("Position", &node.position.x, 0.05f)) {
+            RequestTimelineRebuild_(timelineTime_);
+        }
+        ImGui::DragFloat3("Rotation", &node.rotation.x, 0.01f);
+        ImGui::DragFloat3("Scale", &node.scale.x, 0.05f);
+        ImGui::DragInt("Emit Count", &node.emitCount, 1, 1, 1000);
+        
+        if (ImGui::Button("Delete Particle Node")) {
+            PushUndoSnapshot_();
+            particleNodes_.erase(particleNodes_.begin() + selectedParticleNode_);
+            selectedParticleNode_ = -1;
         }
     } else {
-        ImGui::TextDisabled("Select a model in Hierarchy or Inspector.");
+        ImGui::TextDisabled("Select an object or particle node in Hierarchy, Dope Sheet, or Inspector.");
     }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Animation Camera Keys");
-    if (ImGui::BeginTable("CameraKeyframes", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Time");
-        ImGui::TableSetupColumn("Position");
-        ImGui::TableSetupColumn("Rotation");
-        ImGui::TableSetupColumn("FovY");
-        ImGui::TableHeadersRow();
-        for (const auto& key : cameraKeyframes_) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::Text("%.3f", key.time);
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%.2f %.2f %.2f", key.position.x, key.position.y, key.position.z);
-            ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%.2f %.2f %.2f", key.rotation.x, key.rotation.y, key.rotation.z);
-            ImGui::TableSetColumnIndex(3);
-            ImGui::Text("%.3f", key.fovY);
-        }
-        ImGui::EndTable();
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Timeline");
-    if (ImGui::Button(timelinePlaying_ ? "Stop" : "Play")) {
-        timelinePlaying_ = !timelinePlaying_;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Restart")) {
-        timelineTime_ = 0.0f;
-        timelinePlaying_ = true;
-        EvaluateTimeline_();
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Loop", &timelineLoop_);
-    ImGui::DragFloat("Duration", &timelineDuration_, 0.05f, 0.05f, 30.0f);
-    if (ImGui::SliderFloat("Current Time", &timelineTime_, 0.0f, timelineDuration_)) {
-        EvaluateTimeline_();
-    }
-
-    ImGui::End();
-    return;
-
-    ImGuiIO& io = ImGui::GetIO();
-    const ImVec2 mouse = ImGui::GetMousePos();
-    const bool rightCameraDrag =
-        gHasSceneImageRect &&
-        ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
-        mouse.x >= gSceneImageMin.x && mouse.x <= gSceneImageMax.x &&
-        mouse.y >= gSceneImageMin.y && mouse.y <= gSceneImageMax.y;
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
-        Undo_(app);
-    }
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
-        Redo_(app);
-    }
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
-        CopySelectedObject_();
-    }
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false) && hasCopiedObject_) {
-        PushUndoSnapshot_();
-        PasteEditorObject_(app);
-    }
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false) && selectedEditorObject_ >= 0) {
-        RequestDeleteSelectedObject_();
-    }
-    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) {
-        gizmoMode_ = GizmoMode::Translate;
-    }
-    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
-        gizmoMode_ = GizmoMode::Rotate;
-    }
-    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_R, false)) {
-        gizmoMode_ = GizmoMode::Scale;
-    }
-
-    ImGui::TextUnformatted("Model Source");
-    ImGui::InputText("Model Path", editorModelPath_, sizeof(editorModelPath_));
-    if (ImGui::Button("Open Model File...")) {
-        OpenModelFileDialog_();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Open + Add")) {
-        if (OpenModelFileDialog_()) {
-            PushUndoSnapshot_();
-            AddEditorObject_(app, editorModelPath_);
-        }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Add Model")) {
-        PushUndoSnapshot_();
-        AddEditorObject_(app, editorModelPath_);
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Geometry Source");
-    ImGui::Combo("Geometry Type", &selectedGeometryType_, kGeometryNames, kGeometryCount);
-    if (ImGui::Button("Add Geometry")) {
-        PushUndoSnapshot_();
-        AddGeometryObject_(app, selectedGeometryType_);
-    }
-    ImGui::Separator();
-
-    ImGui::TextUnformatted("Object Actions");
-    if (ImGui::Button("Duplicate") && selectedEditorObject_ >= 0) {
-        PushUndoSnapshot_();
-        DuplicateSelectedObject_(app);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Copy") && selectedEditorObject_ >= 0) {
-        CopySelectedObject_();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Paste") && hasCopiedObject_) {
-        PushUndoSnapshot_();
-        PasteEditorObject_(app);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Delete") && selectedEditorObject_ >= 0) {
-        RequestDeleteSelectedObject_();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Undo")) {
-        Undo_(app);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Redo")) {
-        Redo_(app);
-    }
-
-    ImGui::InputText("Effect JSON", effectJsonPath_, sizeof(effectJsonPath_));
-    if (ImGui::Button("Save Effect JSON")) {
-        SaveEffectJson_(effectJsonPath_);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Load Effect JSON")) {
-        PushUndoSnapshot_();
-        LoadEffectJson_(app, effectJsonPath_);
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Scene Objects");
-    for (int i = 0; i < static_cast<int>(editorObjects_.size()); ++i) {
-        const bool selected = i == selectedEditorObject_;
-        if (ImGui::Selectable(editorObjects_[i].name.c_str(), selected)) {
-            selectedEditorObject_ = i;
-        }
-    }
-
-    if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
-        EditorObject& item = editorObjects_[selectedEditorObject_];
-        ImGui::Separator();
-        ImGui::Text("%s (%s)", item.name.c_str(), item.modelPath.c_str());
-        bool changed = false;
-
-        auto trackDragEdit = [&](bool itemChanged) {
-            if (ImGui::IsItemActivated() && !transformDragActive_) {
-                transformDragBefore_ = CaptureEditorSnapshot_();
-                transformDragActive_ = true;
-                transformDragChanged_ = false;
-            }
-            if (itemChanged) {
-                transformDragChanged_ = true;
-            }
-            if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
-                if (transformDragChanged_) {
-                    PushUndoSnapshot_(transformDragBefore_);
-                }
-                transformDragActive_ = false;
-                transformDragChanged_ = false;
-            }
-        };
-
-        changed |= ImGui::DragFloat3("Position", &item.position.x, 0.05f);
-        trackDragEdit(changed);
-        bool rotationChanged = ImGui::DragFloat3("Rotation", &item.rotation.x, 0.01f);
-        changed |= rotationChanged;
-        trackDragEdit(rotationChanged);
-        bool scaleChanged = ImGui::DragFloat3("Scale", &item.scale.x, 0.05f, 0.01f, 100.0f);
-        changed |= scaleChanged;
-        trackDragEdit(scaleChanged);
-        bool colorChanged = ImGui::ColorEdit4("Color / Alpha", &item.color.x);
-        changed |= colorChanged;
-        trackDragEdit(colorChanged);
-        const bool billboardBefore = item.billboard;
-        bool billboardChanged = ImGui::Checkbox("Billboard", &item.billboard);
-        if (billboardChanged) {
-            item.billboard = billboardBefore;
-            PushUndoSnapshot_();
-            item.billboard = !billboardBefore;
-            changed = true;
-        }
-        if (changed) {
-            ApplyEditorObjectTransform_(item);
-        }
-
-        DrawGizmoControls_(item);
-        DrawBoneControls_(item);
-
-        if (ImGui::Button("Add / Replace Keyframe")) {
-            PushUndoSnapshot_();
-            AddKeyframeToSelected_();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Delete Near Keyframe")) {
-            PushUndoSnapshot_();
-            DeleteNearestKeyframeFromSelected_();
-        }
-
-        if (ImGui::BeginTable("Keyframes", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Time");
-            ImGui::TableSetupColumn("Position");
-            ImGui::TableSetupColumn("Rotation");
-            ImGui::TableSetupColumn("Scale");
-            ImGui::TableSetupColumn("Color");
-            ImGui::TableHeadersRow();
-            for (const auto& key : item.keyframes) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%.3f", key.time);
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%.2f %.2f %.2f", key.position.x, key.position.y, key.position.z);
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%.2f %.2f %.2f", key.rotation.x, key.rotation.y, key.rotation.z);
-                ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%.2f %.2f %.2f", key.scale.x, key.scale.y, key.scale.z);
-                ImGui::TableSetColumnIndex(4);
-                ImGui::Text("%.2f %.2f %.2f %.2f", key.color.x, key.color.y, key.color.z, key.color.w);
-            }
-            ImGui::EndTable();
-        }
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Timeline");
-    if (ImGui::Button(timelinePlaying_ ? "Stop" : "Play")) {
-        timelinePlaying_ = !timelinePlaying_;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Restart")) {
-        timelineTime_ = 0.0f;
-        timelinePlaying_ = true;
-        EvaluateTimeline_();
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Loop", &timelineLoop_);
-    ImGui::DragFloat("Duration", &timelineDuration_, 0.05f, 0.05f, 30.0f);
-    if (ImGui::SliderFloat("Current Time", &timelineTime_, 0.0f, timelineDuration_)) {
-        EvaluateTimeline_();
-    }
-
-    DrawEditorCameraControls_();
 
     ImGui::End();
 #endif
+}
+
+void ParticleTestScene::DrawDopeSheet_(GameApp& app)
+{
+#ifdef USE_IMGUI
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+    
+    int trackCount = 1; // Camera
+    trackCount += static_cast<int>(editorObjects_.size());
+    trackCount += static_cast<int>(particleNodes_.size());
+    
+    float trackHeight = 22.0f;
+    float headerHeight = 24.0f;
+    float totalHeight = headerHeight + trackCount * trackHeight;
+    canvasSize.y = std::min(110.0f, totalHeight + 4.0f);
+    if (canvasSize.y < 50.0f) canvasSize.y = 50.0f;
+    
+    ImGui::BeginChild("DopeSheetContainer", canvasSize, true, ImGuiWindowFlags_None);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    
+    const float labelWidth = 160.0f;
+    float timelineStartX = canvasPos.x + labelWidth;
+    float timelineWidth = ImGui::GetContentRegionMax().x - timelineStartX - 16.0f;
+    if (timelineWidth < 50.0f) timelineWidth = 50.0f;
+    float timelineEndX = timelineStartX + timelineWidth;
+    
+    auto timeToX = [&](float t) -> float {
+        if (timelineDuration_ <= 0.0f) return timelineStartX;
+        return timelineStartX + (t / timelineDuration_) * timelineWidth;
+    };
+    
+    auto xToTime = [&](float x) -> float {
+        if (timelineWidth <= 0.0f) return 0.0f;
+        float t = ((x - timelineStartX) / timelineWidth) * timelineDuration_;
+        return std::clamp(t, 0.0f, timelineDuration_);
+    };
+    
+    // ヘッダー背景
+    drawList->AddRectFilled(canvasPos, ImVec2(timelineEndX, canvasPos.y + headerHeight), ImGui::GetColorU32(ImGuiCol_HeaderActive));
+    drawList->AddLine(ImVec2(canvasPos.x, canvasPos.y + headerHeight), ImVec2(timelineEndX, canvasPos.y + headerHeight), ImGui::GetColorU32(ImGuiCol_Border));
+    
+    // グリッド線の描画
+    int gridCount = 10;
+    if (timelineDuration_ > 5.0f) gridCount = static_cast<int>(timelineDuration_);
+    for (int i = 0; i <= gridCount; ++i) {
+        float t = (static_cast<float>(i) / gridCount) * timelineDuration_;
+        float gridX = timeToX(t);
+        drawList->AddLine(ImVec2(gridX, canvasPos.y), ImVec2(gridX, canvasPos.y + totalHeight), ImGui::GetColorU32(ImGuiCol_Border, 0.3f));
+        
+        char buf[32];
+        sprintf_s(buf, "%.1fs", t);
+        drawList->AddText(ImVec2(gridX + 2.0f, canvasPos.y + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), buf);
+    }
+    
+    float currentY = canvasPos.y + headerHeight;
+    ImVec2 mousePos = io.MousePos;
+    bool clicked = ImGui::IsMouseClicked(0);
+    
+    // 1. Camera Track
+    {
+        drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_TableRowBg));
+        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), "Camera Keys");
+        drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+        
+        for (int i = 0; i < static_cast<int>(cameraKeyframes_.size()); ++i) {
+            float kx = timeToX(cameraKeyframes_[i].time);
+            ImVec2 center(kx, currentY + trackHeight * 0.5f);
+            
+            bool hovered = (std::abs(mousePos.x - center.x) <= 6.0f && std::abs(mousePos.y - center.y) <= 6.0f);
+            if (hovered && clicked && dragTarget_ == DragTarget::None) {
+                PushUndoSnapshot_();
+                dragTarget_ = DragTarget::CameraKeyframe;
+                dragKeyframeIndex_ = i;
+            }
+            
+            bool isSelected = (dragTarget_ == DragTarget::CameraKeyframe && dragKeyframeIndex_ == i);
+            drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelected ? ImColor(255, 200, 0) : ImColor(200, 200, 200));
+            drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelected ? ImColor(255, 200, 0) : ImColor(200, 200, 200));
+        }
+        currentY += trackHeight;
+    }
+    
+    // 2. Model Objects Tracks
+    for (int objIdx = 0; objIdx < static_cast<int>(editorObjects_.size()); ++objIdx) {
+        auto& item = editorObjects_[objIdx];
+        bool isSelectedObj = (selectedEditorObject_ == objIdx);
+        
+        drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), isSelectedObj ? ImGui::GetColorU32(ImGuiCol_HeaderHovered, 0.4f) : ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
+        
+        ImGui::SetCursorScreenPos(ImVec2(canvasPos.x, currentY));
+        char selectId[128];
+        sprintf_s(selectId, "##select_obj_%d", objIdx);
+        if (ImGui::InvisibleButton(selectId, ImVec2(labelWidth, trackHeight))) {
+            selectedEditorObject_ = objIdx;
+            selectedParticleNode_ = -1;
+        }
+        
+        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), isSelectedObj ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), item.name.c_str());
+        drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+        
+        for (int i = 0; i < static_cast<int>(item.keyframes.size()); ++i) {
+            float kx = timeToX(item.keyframes[i].time);
+            ImVec2 center(kx, currentY + trackHeight * 0.5f);
+            
+            bool hovered = (std::abs(mousePos.x - center.x) <= 6.0f && std::abs(mousePos.y - center.y) <= 6.0f);
+            if (hovered && clicked && dragTarget_ == DragTarget::None) {
+                PushUndoSnapshot_();
+                dragTarget_ = DragTarget::ModelKeyframe;
+                dragObjectIndex_ = objIdx;
+                dragKeyframeIndex_ = i;
+                selectedEditorObject_ = objIdx;
+                selectedParticleNode_ = -1;
+            }
+            
+            bool isSelectedKey = (dragTarget_ == DragTarget::ModelKeyframe && dragObjectIndex_ == objIdx && dragKeyframeIndex_ == i);
+            drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelectedKey ? ImColor(255, 200, 0) : ImColor(200, 150, 50));
+            drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelectedKey ? ImColor(255, 200, 0) : ImColor(200, 150, 50));
+        }
+        currentY += trackHeight;
+    }
+    
+    // 3. Particle Nodes Tracks
+    for (int nodeIdx = 0; nodeIdx < static_cast<int>(particleNodes_.size()); ++nodeIdx) {
+        auto& node = particleNodes_[nodeIdx];
+        bool isSelectedNode = (selectedParticleNode_ == nodeIdx);
+        
+        drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), isSelectedNode ? ImGui::GetColorU32(ImGuiCol_HeaderHovered, 0.4f) : ImGui::GetColorU32(ImGuiCol_TableRowBg));
+        
+        ImGui::SetCursorScreenPos(ImVec2(canvasPos.x, currentY));
+        char selectId[128];
+        sprintf_s(selectId, "##select_node_%d", nodeIdx);
+        if (ImGui::InvisibleButton(selectId, ImVec2(labelWidth, trackHeight))) {
+            selectedParticleNode_ = nodeIdx;
+            selectedEditorObject_ = -1;
+        }
+        
+        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), isSelectedNode ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), node.name.c_str());
+        drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+        
+        float barStartX = timeToX(node.startTime);
+        float barEndX = timeToX(node.endTime);
+        ImVec2 barMin(barStartX, currentY + 3.0f);
+        ImVec2 barMax(barEndX, currentY + trackHeight - 3.0f);
+        
+        ImU32 barColor = isSelectedNode ? ImColor(100, 220, 100, 180) : ImColor(60, 160, 60, 140);
+        drawList->AddRectFilled(barMin, barMax, barColor, 4.0f);
+        drawList->AddRect(barMin, barMax, ImColor(255, 255, 255, 100), 4.0f, 0, 1.0f);
+        
+        bool hoveredBar = (mousePos.x >= barMin.x && mousePos.x <= barMax.x && mousePos.y >= barMin.y && mousePos.y <= barMax.y);
+        bool hoveredStart = (std::abs(mousePos.x - barMin.x) <= 6.0f && mousePos.y >= barMin.y && mousePos.y <= barMax.y);
+        bool hoveredEnd = (std::abs(mousePos.x - barMax.x) <= 6.0f && mousePos.y >= barMin.y && mousePos.y <= barMax.y);
+        
+        if (clicked && dragTarget_ == DragTarget::None) {
+            if (hoveredStart) {
+                PushUndoSnapshot_();
+                dragTarget_ = DragTarget::ParticleNodeStart;
+                dragParticleNodeIndex_ = nodeIdx;
+                selectedParticleNode_ = nodeIdx;
+                selectedEditorObject_ = -1;
+            } else if (hoveredEnd) {
+                PushUndoSnapshot_();
+                dragTarget_ = DragTarget::ParticleNodeEnd;
+                dragParticleNodeIndex_ = nodeIdx;
+                selectedParticleNode_ = nodeIdx;
+                selectedEditorObject_ = -1;
+            } else if (hoveredBar) {
+                PushUndoSnapshot_();
+                dragTarget_ = DragTarget::ParticleNodeBar;
+                dragParticleNodeIndex_ = nodeIdx;
+                dragStartOffset_ = xToTime(mousePos.x) - node.startTime;
+                dragStartVal1_ = node.startTime;
+                dragStartVal2_ = node.endTime;
+                selectedParticleNode_ = nodeIdx;
+                selectedEditorObject_ = -1;
+            }
+        }
+        
+        drawList->AddRectFilled(ImVec2(barMin.x - 2.0f, barMin.y), ImVec2(barMin.x + 2.0f, barMax.y), ImColor(255, 255, 255, 200), 1.0f);
+        drawList->AddRectFilled(ImVec2(barMax.x - 2.0f, barMin.y), ImVec2(barMax.x + 2.0f, barMax.y), ImColor(255, 255, 255, 200), 1.0f);
+        
+        currentY += trackHeight;
+    }
+    
+    // 再生ヘッドの縦線描画
+    float curX = timeToX(timelineTime_);
+    drawList->AddLine(ImVec2(curX, canvasPos.y), ImVec2(curX, canvasPos.y + totalHeight), ImColor(50, 150, 255, 200), 2.0f);
+    
+    // 再生ヘッドのつまみ描画
+    ImVec2 headCenter(curX, canvasPos.y + headerHeight);
+    drawList->AddTriangleFilled(ImVec2(headCenter.x - 6.0f, headCenter.y - 12.0f), ImVec2(headCenter.x + 6.0f, headCenter.y - 12.0f), ImVec2(headCenter.x, headCenter.y), ImColor(50, 150, 255));
+    
+    bool hoveredHead = (mousePos.x >= curX - 6.0f && mousePos.x <= curX + 6.0f && mousePos.y >= canvasPos.y && mousePos.y <= canvasPos.y + headerHeight);
+    bool hoveredHeaderArea = (mousePos.x >= timelineStartX && mousePos.x <= timelineEndX && mousePos.y >= canvasPos.y && mousePos.y <= canvasPos.y + headerHeight);
+    
+    if (clicked && dragTarget_ == DragTarget::None) {
+        if (hoveredHead || hoveredHeaderArea) {
+            dragTarget_ = DragTarget::TimelineTime;
+        }
+    }
+    
+    // ドラッグ中のインタラクション処理
+    if (ImGui::IsMouseDown(0) && dragTarget_ != DragTarget::None) {
+        float mouseT = xToTime(mousePos.x);
+        
+        switch (dragTarget_) {
+        case DragTarget::TimelineTime:
+            timelineTime_ = mouseT;
+            RequestTimelineRebuild_(timelineTime_);
+            break;
+            
+        case DragTarget::ModelKeyframe:
+            if (dragObjectIndex_ >= 0 && dragObjectIndex_ < static_cast<int>(editorObjects_.size())) {
+                auto& item = editorObjects_[dragObjectIndex_];
+                if (dragKeyframeIndex_ >= 0 && dragKeyframeIndex_ < static_cast<int>(item.keyframes.size())) {
+                    item.keyframes[dragKeyframeIndex_].time = mouseT;
+                    SortKeyframes_(item);
+                    EvaluateTimeline_(false);
+                }
+            }
+            break;
+            
+        case DragTarget::CameraKeyframe:
+            if (dragKeyframeIndex_ >= 0 && dragKeyframeIndex_ < static_cast<int>(cameraKeyframes_.size())) {
+                cameraKeyframes_[dragKeyframeIndex_].time = mouseT;
+                SortCameraKeyframes_();
+                EvaluateTimeline_(false);
+            }
+            break;
+            
+        case DragTarget::ParticleNodeStart:
+            if (dragParticleNodeIndex_ >= 0 && dragParticleNodeIndex_ < static_cast<int>(particleNodes_.size())) {
+                auto& node = particleNodes_[dragParticleNodeIndex_];
+                node.startTime = std::min(mouseT, node.endTime - 0.01f);
+                node.startTime = std::max(0.0f, node.startTime);
+                node.presetDuration = std::max(0.01f, node.endTime - node.startTime);
+                RequestTimelineRebuild_(timelineTime_);
+            }
+            break;
+            
+        case DragTarget::ParticleNodeEnd:
+            if (dragParticleNodeIndex_ >= 0 && dragParticleNodeIndex_ < static_cast<int>(particleNodes_.size())) {
+                auto& node = particleNodes_[dragParticleNodeIndex_];
+                node.endTime = std::max(mouseT, node.startTime + 0.01f);
+                node.endTime = std::min(timelineDuration_, node.endTime);
+                node.presetDuration = std::max(0.01f, node.endTime - node.startTime);
+                RequestTimelineRebuild_(timelineTime_);
+            }
+            break;
+            
+        case DragTarget::ParticleNodeBar:
+            if (dragParticleNodeIndex_ >= 0 && dragParticleNodeIndex_ < static_cast<int>(particleNodes_.size())) {
+                auto& node = particleNodes_[dragParticleNodeIndex_];
+                float duration = dragStartVal2_ - dragStartVal1_;
+                float targetStart = mouseT - dragStartOffset_;
+                node.startTime = std::clamp(targetStart, 0.0f, timelineDuration_ - duration);
+                node.endTime = node.startTime + duration;
+                node.presetDuration = duration;
+                RequestTimelineRebuild_(timelineTime_);
+            }
+            break;
+            
+        default:
+            break;
+        }
+    }
+    
+    if (ImGui::IsMouseReleased(0) && dragTarget_ != DragTarget::None) {
+        if (dragTarget_ == DragTarget::ModelKeyframe) {
+            if (dragObjectIndex_ >= 0 && dragObjectIndex_ < static_cast<int>(editorObjects_.size())) {
+                SortKeyframes_(editorObjects_[dragObjectIndex_]);
+                EvaluateTimeline_(false);
+            }
+        } else if (dragTarget_ == DragTarget::CameraKeyframe) {
+            SortCameraKeyframes_();
+            EvaluateTimeline_(false);
+        }
+        dragTarget_ = DragTarget::None;
+    }
+    
+    ImGui::EndChild();
+#endif
+}
+
+bool ParticleTestScene::OpenParticleFileDialog_(std::vector<std::string>& outGroupNames, std::string& outFileName)
+{
+    char filePath[MAX_PATH]{};
+    OPENFILENAMEA openFileName{};
+    openFileName.lStructSize = sizeof(openFileName);
+    openFileName.hwndOwner = GetActiveWindow();
+    openFileName.lpstrFilter =
+        "Particle JSON Files (*.json)\0*.json\0"
+        "All Files (*.*)\0*.*\0";
+    openFileName.lpstrFile = filePath;
+    openFileName.nMaxFile = MAX_PATH;
+    if (std::filesystem::exists("Resources/Particles")) {
+        openFileName.lpstrInitialDir = "Resources\\Particles";
+    } else {
+        openFileName.lpstrInitialDir = "resources";
+    }
+    openFileName.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameA(&openFileName)) {
+        return false;
+    }
+
+    std::filesystem::path fullPath(filePath);
+    std::string fileName = fullPath.filename().string();
+
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    outGroupNames.clear();
+    outFileName = fileName;
+
+    try {
+        nlohmann::json root;
+        file >> root;
+        
+        if (root.is_array()) {
+            for (const auto& item : root) {
+                std::string gName = item.value("name", "");
+                if (!gName.empty()) {
+                    outGroupNames.push_back(gName);
+                }
+            }
+        } else if (root.is_object()) {
+            std::string gName = root.value("name", "");
+            if (!gName.empty()) {
+                outGroupNames.push_back(gName);
+            }
+        }
+
+        if (outGroupNames.empty()) {
+            outGroupNames.push_back(fullPath.stem().string());
+        }
+
+        return true;
+    }
+    catch (const std::exception&) {
+        outGroupNames.push_back(fullPath.stem().string());
+        return true;
+    }
 }
 
 void ParticleTestScene::DrawParticleModeImGui_()
@@ -2320,6 +3135,8 @@ void ParticleTestScene::DrawParticleModeImGui_()
     if (ImGui::Button("Spawn HitEffect")) {
         SpawnHitEffectPreview_();
     }
+    ImGui::Separator();
+    ParticleManager::GetInstance()->DrawImGuiContents();
     ImGui::End();
 
     if (editorParticle_) {
@@ -2339,18 +3156,36 @@ void ParticleTestScene::DrawImGui(GameApp& app)
         HandleEffectEditorShortcuts_(app);
         if (gParticleTestBlenderHierarchySelectionChanged) {
             gParticleTestBlenderHierarchySelectionChanged = false;
-            if (gParticleTestBlenderHierarchySelected >= 0 &&
-                gParticleTestBlenderHierarchySelected < static_cast<int>(editorObjects_.size())) {
-                selectedEditorObject_ = gParticleTestBlenderHierarchySelected;
+            if (gParticleTestBlenderHierarchySelected >= 0) {
+                if (gParticleTestBlenderHierarchySelected < static_cast<int>(editorObjects_.size())) {
+                    selectedEditorObject_ = gParticleTestBlenderHierarchySelected;
+                    selectedParticleNode_ = -1;
+                } else if (gParticleTestBlenderHierarchySelected < static_cast<int>(editorObjects_.size() + particleNodes_.size())) {
+                    selectedParticleNode_ = gParticleTestBlenderHierarchySelected - static_cast<int>(editorObjects_.size());
+                    selectedEditorObject_ = -1;
+                }
+            } else {
+                selectedEditorObject_ = -1;
+                selectedParticleNode_ = -1;
             }
         }
 
         gParticleTestBlenderHierarchyNames.clear();
-        gParticleTestBlenderHierarchyNames.reserve(editorObjects_.size());
+        gParticleTestBlenderHierarchyNames.reserve(editorObjects_.size() + particleNodes_.size());
         for (const auto& item : editorObjects_) {
             gParticleTestBlenderHierarchyNames.push_back(item.name + " (" + item.modelPath + ")");
         }
-        gParticleTestBlenderHierarchySelected = selectedEditorObject_;
+        for (const auto& node : particleNodes_) {
+            gParticleTestBlenderHierarchyNames.push_back(node.name + " (" + node.particleFileName + ") [Particle]");
+        }
+
+        if (selectedEditorObject_ >= 0) {
+            gParticleTestBlenderHierarchySelected = selectedEditorObject_;
+        } else if (selectedParticleNode_ >= 0) {
+            gParticleTestBlenderHierarchySelected = static_cast<int>(editorObjects_.size()) + selectedParticleNode_;
+        } else {
+            gParticleTestBlenderHierarchySelected = -1;
+        }
         animationCameraPreviewSwapped_ = gParticleTestAnimationCameraPreviewSwapped;
         gParticleTestAnimationCameraPreviewVisible = useAnimationCameraPreview_;
         gParticleTestAnimationCameraPreviewSwapped = animationCameraPreviewSwapped_;

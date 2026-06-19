@@ -38,6 +38,7 @@ public:
     float GetStateTime() const { return stateTime_; }
     bool Did50() const { return did50_; }
     bool Did25() const { return did25_; }
+    void ForceChangeState(State s) { ChangeState_(s); }
 
     struct BossDebugState {
         State st = State::Wander;

@@ -1,5 +1,6 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
+#include "Effect/EffectManager.h"
 
 #include "Camera.h"
 #include "DebugAI/IGameDebugAdapter.h"
@@ -232,11 +233,16 @@ void GameScene::OnEnter(GameApp& app) {
 
      pendingBattleParticleSetup_ = true;
 
+     EffectManager::GetInstance()->Initialize();
+     EffectManager::GetInstance()->SetGraphicsResources(app.ObjCom(), app.Dx(), camera_.get());
+
      SetupDebugAI_(app);
 
 }
 
 void GameScene::OnExit(GameApp& app) {
+    EffectManager::GetInstance()->Finalize();
+
     ShutdownDebugAI_(app);
 
     if (auto* input = app.GetInput()) {

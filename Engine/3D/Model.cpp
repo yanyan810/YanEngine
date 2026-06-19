@@ -990,7 +990,7 @@ void Model::DrawSkinned(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc)
 	}
 }
 
-void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc)
+void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc, const D3D12_GPU_DESCRIPTOR_HANDLE* overrideSrv)
 {
 	if (!indexResource_ || !materialResource_ || !materialData_ || !sc.outputVertexResource) {
 		OutputDebugStringA("[Model] DrawSkinnedCompute skipped: resources not initialized\n");
@@ -1010,21 +1010,26 @@ void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster
 			continue; // 剣などスキン無しはここでは描かない
 		}
 
-		// ---- texture path ----
-		std::string texPath;
-		if (mesh.materialIndex < modelData_.materials.size()) {
-			texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
-		}
-
 		D3D12_GPU_DESCRIPTOR_HANDLE handle{};
-		if (!texPath.empty()) {
-			if (!TextureManager::GetInstance()->HasTexture(texPath)) {
-				TextureManager::GetInstance()->LoadTexture(texPath);
-			}
-			handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
+		if (overrideSrv) {
+			handle = *overrideSrv;
 		}
 		else {
-			handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+			// ---- texture path ----
+			std::string texPath;
+			if (mesh.materialIndex < modelData_.materials.size()) {
+				texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
+			}
+
+			if (!texPath.empty()) {
+				if (!TextureManager::GetInstance()->HasTexture(texPath)) {
+					TextureManager::GetInstance()->LoadTexture(texPath);
+				}
+				handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
+			}
+			else {
+				handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+			}
 		}
 
 		// ★PrimitiveCommon/Object3dCommon: RootParam(2) が PS Texture SRV(t0)
@@ -1720,26 +1725,31 @@ void Model::ComputeNodeGlobalMatrices(const Animation* anim, float time,
 
 }
 
-void Model::DrawOneMesh(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t texRootParam)
+void Model::DrawOneMesh(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t texRootParam, const D3D12_GPU_DESCRIPTOR_HANDLE* overrideSrv)
 {
 	if (meshIndex >= modelData_.meshes.size()) return;
 
 	const auto& mesh = modelData_.meshes[meshIndex];
 
-	std::string texPath;
-	if (mesh.materialIndex < modelData_.materials.size()) {
-		texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
-	}
-
 	D3D12_GPU_DESCRIPTOR_HANDLE handle{};
-	if (!texPath.empty()) {
-		if (!TextureManager::GetInstance()->HasTexture(texPath)) {
-			TextureManager::GetInstance()->LoadTexture(texPath);
-		}
-		handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
+	if (overrideSrv) {
+		handle = *overrideSrv;
 	}
 	else {
-		handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+		std::string texPath;
+		if (mesh.materialIndex < modelData_.materials.size()) {
+			texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
+		}
+
+		if (!texPath.empty()) {
+			if (!TextureManager::GetInstance()->HasTexture(texPath)) {
+				TextureManager::GetInstance()->LoadTexture(texPath);
+			}
+			handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
+		}
+		else {
+			handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+		}
 	}
 
 	cmd->SetGraphicsRootDescriptorTable(texRootParam, handle);

@@ -247,9 +247,21 @@ void GameApp::Draw() {
     sceneMgr_->Draw2D(*this);
     sceneMgr_->Draw(*this);
 
+    if (sceneMgr_->HasObjectBloomTargets() || sceneMgr_->HasObjectOutlineBloomTargets()) {
+        render_->BeginObjectPostLayer(sceneMgr_->HasObjectBloomTargets(), sceneMgr_->HasObjectOutlineBloomTargets());
+        sceneMgr_->DrawPostEffectTargets(*this);
+        render_->EndObjectPostLayer();
+    } else {
+        render_->ClearObjectPostLayer();
+    }
+
     auto* particleManager = ParticleManager::GetInstance();
     if (particleManager->HasPostEffectTargets()) {
-        render_->BeginParticlePostLayer(particleManager->GetPrimaryPostEffectMode());
+        render_->SetParticleLayerBloomColor(particleManager->GetPrimaryPostEffectBloomColor());
+        render_->SetParticleLayerOutlineBloomColor(particleManager->GetPrimaryPostEffectOutlineBloomColor());
+        render_->BeginParticlePostLayer(
+            particleManager->HasBloomPostEffectTargets(),
+            particleManager->HasOutlineBloomPostEffectTargets());
         particleManager->Draw(dx_->GetCommandList(), true);
         render_->EndParticlePostLayer();
     } else {

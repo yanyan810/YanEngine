@@ -144,7 +144,7 @@ public:
 		const D3D12_GPU_DESCRIPTOR_HANDLE* overrideSrv);
 
 	void DrawSkinned(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc);
-	void DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc);
+	void DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc, const D3D12_GPU_DESCRIPTOR_HANDLE* overrideSrv = nullptr);
 
 	void DrawMeshIndexed(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t instanceCount);
 	
@@ -215,7 +215,7 @@ public:
 		std::vector<Matrix4x4>& outGlobals) const;
 
 	// mesh 1個だけ描く（TransformCB/PSOは外側でセット済み前提）
-	void DrawOneMesh(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t texRootParam);
+	void DrawOneMesh(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t texRootParam, const D3D12_GPU_DESCRIPTOR_HANDLE* overrideSrv = nullptr);
 
 	// ---- getters for binding ----
 	const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }

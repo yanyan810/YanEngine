@@ -242,6 +242,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Core\WinApp.cpp" />
     <ClCompile Include="Engine\Camera\Camera.cpp" />
     <ClCompile Include="Engine\Particle\ParticleManager.cpp" />
+    <ClCompile Include="Engine\Effect\EffectManager.cpp" />
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
     <ClCompile Include="Game\scene\TitleScene.cpp" />
@@ -516,6 +517,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Core\WinApp.h" />
     <ClInclude Include="Engine\Camera\Camera.h" />
     <ClInclude Include="Engine\Particle\ParticleManager.h" />
+    <ClInclude Include="Engine\Effect\EffectManager.h" />
     <ClInclude Include="Engine\Core\ImGuiManagaer.h" />
     <ClInclude Include="Engine\Core\SceneManager.h" />
     <ClInclude Include="Engine\Level\LevelLoader.h" />

@@ -48,7 +48,8 @@ struct EmitterData {
 
     float angularVelocityMinDeg;
     float angularVelocityMaxDeg;
-    float2 padding3;
+    float timeScale;
+    float initialAge;
 };
 
 ConstantBuffer<EmitterData> gEmitter : register(b0);
@@ -103,7 +104,7 @@ void main(uint3 DTid : SV_DispatchThreadID) {
         
         RandomGenerator generator;
         // スレッドIDと時間をSeedにする
-        generator.seed = (float3(DTid) + gPerFrame.time) * gPerFrame.time;
+        generator.seed = gEmitter.translate + float3(1.0f, 2.0f, 3.0f);
 
         for (uint countIndex = 0; countIndex < gEmitter.count; ++countIndex) {
             int freeListIndex;
@@ -171,11 +172,26 @@ void main(uint3 DTid : SV_DispatchThreadID) {
                 float angularVelocityRange = gEmitter.angularVelocityMaxDeg - gEmitter.angularVelocityMinDeg;
                 gParticles[particleIndex].angularVelocity = radians(gEmitter.angularVelocityMinDeg + generator.Generate1d() * angularVelocityRange);
                 
-                gParticles[particleIndex].currentTime = 0.0f;
+                float initialAge = max(0.0f, gEmitter.initialAge * gEmitter.timeScale);
                 
                 // 寿命: Min ~ Max の間
                 float lifeTimeRange = gEmitter.lifeTimeMax - gEmitter.lifeTimeMin;
                 gParticles[particleIndex].lifeTime = gEmitter.lifeTimeMin + generator.Generate1d() * lifeTimeRange;
+                gParticles[particleIndex].currentTime = min(initialAge, gParticles[particleIndex].lifeTime);
+
+                const float authoredFrameRate = 60.0f;
+                float authoredFrames = initialAge * authoredFrameRate;
+                gParticles[particleIndex].translate += gParticles[particleIndex].velocity * authoredFrames;
+                gParticles[particleIndex].translate += gEmitter.acceleration * (0.5f * authoredFrameRate * initialAge * initialAge);
+                gParticles[particleIndex].velocity += gEmitter.acceleration * initialAge;
+                gParticles[particleIndex].rotation += gParticles[particleIndex].angularVelocity * initialAge;
+
+                float lifeRate = saturate(gParticles[particleIndex].currentTime / max(gParticles[particleIndex].lifeTime, 0.001f));
+                gParticles[particleIndex].color = lerp(gEmitter.startColor, gEmitter.endColor, lifeRate);
+                gParticles[particleIndex].scale = lerp(gEmitter.scaleStart, gEmitter.scaleEnd, lifeRate);
+                if (initialAge >= gParticles[particleIndex].lifeTime) {
+                    gParticles[particleIndex].color.a = max(gParticles[particleIndex].color.a, 0.0001f);
+                }
             } else {
                 InterlockedAdd(gFreeListIndex[0], 1);
                 break;

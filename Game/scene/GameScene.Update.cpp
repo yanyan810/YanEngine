@@ -1,5 +1,6 @@
 #include "GameScene.h"
 #include "GameApp.h"
+#include "Effect/EffectManager.h"
 
 #include "Camera.h"
 #include "DebugAI/DebugAIManager.h"
@@ -152,6 +153,7 @@ void GameScene::Update(GameApp& app, float dt) {
         const std::vector<std::string> skipPreviewGroups = { "gpu_test" };
         ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
         ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
+        EffectManager::GetInstance()->LoadEffect("fallAttak", "resources/effects/fallAttak.json");
         EnsureHitEffectGroup_();
     }
 
@@ -303,6 +305,7 @@ void GameScene::Update(GameApp& app, float dt) {
             }
         }
 
+        EffectManager::GetInstance()->Update(dt);
         ParticleManager::GetInstance()->Update(dt, *camera_);
 
         if (bossHpFill_) {

@@ -3,6 +3,8 @@
 #include "Input.h"
 #include "Camera.h"
 #include "Player.h"
+#include "Particle/ParticleManager.h"
+#include "Effect/EffectManager.h"
 #include "TextureManager.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -443,9 +445,18 @@ void TestScene::OnEnter(GameApp& app) {
     }
     */
 
+    EffectManager::GetInstance()->Initialize();
+    EffectManager::GetInstance()->SetGraphicsResources(app.ObjCom(), app.Dx(), camera_.get());
+    ParticleManager::GetInstance()->ClearGroups();
+    const std::vector<std::string> skipPreviewGroups = { "gpu_test" };
+    ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
+    ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
+    EffectManager::GetInstance()->LoadEffect("fallAttak", "resources/effects/fallAttak.json");
+
 }
 
 void TestScene::OnExit(GameApp& /*app*/) {
+    EffectManager::GetInstance()->Finalize();
     player_.reset();
     camera_.reset();
     enemyMgr_.Clear();
@@ -492,7 +503,8 @@ void TestScene::Update(GameApp& app, float dt) {
     float playerZ = player_->GetZ();
 
     if (Enemy* boss = enemyMgr_.GetBoss()) {
-        boss->SetAIDisabled(!bossAIEnabled_);
+        bool isAttacking = boss->GetBossAI().GetState() != BossAI::State::Wander;
+        boss->SetAIDisabled(!bossAIEnabled_ && !isAttacking);
     }
 
     enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
@@ -584,6 +596,15 @@ void TestScene::Update(GameApp& app, float dt) {
 
     player_->SetLighting(light_);
     enemyMgr_.SetLighting(light_);
+
+    for (const auto& event : enemyMgr_.ConsumeBossAttackEffectEvents()) {
+        if (event.kind == MeleeKind::Land) {
+            EffectManager::GetInstance()->Play("fallAttak", event.position);
+        }
+    }
+
+    EffectManager::GetInstance()->Update(dt);
+    ParticleManager::GetInstance()->Update(dt, *camera_);
    
 }
 
@@ -614,6 +635,13 @@ void TestScene::DrawRender(GameApp& app) {
 #endif
 
     enemyMgr_.Draw();
+
+    // 3Dエフェクトオブジェクトの描画
+    EffectManager::GetInstance()->Draw();
+
+    // GPU Particle
+    app.ParticleCom()->SetGraphicsPipelineState();
+    ParticleManager::GetInstance()->Draw(cmd);
 }
 
 // バックバッファへ直接描く3D（ポストエフェクト不要なもの）
@@ -691,14 +719,17 @@ void TestScene::DrawImGui(GameApp& app) {
         }
 
         if (ImGui::Button("Boss Normal")) {
+            boss->GetBossAIMutable().ForceChangeState(BossAI::State::Melee_Dash);
             triggerBossTestHit(*boss, MeleeKind::Normal);
         }
         ImGui::SameLine();
         if (ImGui::Button("Boss Jump Slash")) {
+            boss->GetBossAIMutable().ForceChangeState(BossAI::State::Drop_Windup);
             triggerBossTestHit(*boss, MeleeKind::Land);
         }
         ImGui::SameLine();
         if (ImGui::Button("Boss Rush")) {
+            boss->GetBossAIMutable().ForceChangeState(BossAI::State::Rush_ToRight);
             triggerBossTestHit(*boss, MeleeKind::Rush);
         }
     } else {

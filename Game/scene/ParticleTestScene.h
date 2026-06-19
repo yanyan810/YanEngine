@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IScene.h"
+#include "Object3dCommon.h"
 #include "Vector3.h"
 
 #include <deque>
@@ -24,14 +25,34 @@ public:
     void Draw(GameApp& app) override;
     void DrawImGui(GameApp& app) override;
     void DrawPreview(GameApp& app) override;
+    void DrawPostEffectTargets(GameApp& app) override;
+    bool HasObjectBloomTargets() const override;
+    bool HasObjectOutlineBloomTargets() const override;
 
 private:
+    struct ParticleNode {
+        std::string name;
+        std::string particleFileName;
+        float startTime = 0.5f;
+        float endTime = 1.0f;
+        Vector3 position{ 0.0f, 0.0f, 0.0f };
+        Vector3 rotation{ 0.0f, 0.0f, 0.0f };
+        Vector3 scale{ 1.0f, 1.0f, 1.0f };
+        int emitCount = 10;
+        float presetDuration = 1.0f;
+        bool hasEmitted = false;
+    };
+
     struct EffectKeyframe {
         float time = 0.0f;
         Vector3 position{ 0.0f, 0.0f, 0.0f };
         Vector3 rotation{ 0.0f, 0.0f, 0.0f };
         Vector3 scale{ 1.0f, 1.0f, 1.0f };
         Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
+        bool bloomPostEffect = false;
+        bool outlineBloomPostEffect = false;
+        Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+        Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
     };
 
     struct CameraKeyframe {
@@ -52,13 +73,19 @@ private:
         int id = 0;
         std::string name;
         std::string modelPath;
+        std::string texturePath;
         int geometryType = -1;
         std::unique_ptr<Object3d> object;
         Vector3 position{ 0.0f, 0.0f, 0.0f };
         Vector3 rotation{ 0.0f, 0.0f, 0.0f };
         Vector3 scale{ 1.0f, 1.0f, 1.0f };
         Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
+        Object3dCommon::BlendMode blendMode = Object3dCommon::BlendMode::kBlendModeNormal;
         bool billboard = false;
+        bool bloomPostEffect = false;
+        bool outlineBloomPostEffect = false;
+        Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+        Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         bool showBones = false;
         int selectedBone = 0;
         std::vector<EditorBonePose> bonePoses;
@@ -69,12 +96,18 @@ private:
         int id = 0;
         std::string name;
         std::string modelPath;
+        std::string texturePath;
         int geometryType = -1;
         Vector3 position{ 0.0f, 0.0f, 0.0f };
         Vector3 rotation{ 0.0f, 0.0f, 0.0f };
         Vector3 scale{ 1.0f, 1.0f, 1.0f };
         Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
+        Object3dCommon::BlendMode blendMode = Object3dCommon::BlendMode::kBlendModeNormal;
         bool billboard = false;
+        bool bloomPostEffect = false;
+        bool outlineBloomPostEffect = false;
+        Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+        Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         bool showBones = false;
         int selectedBone = 0;
         std::vector<EditorBonePose> bonePoses;
@@ -94,6 +127,8 @@ private:
         bool useAnimationCameraPreview = false;
         bool animationCameraPreviewSwapped = false;
         std::vector<CameraKeyframe> cameraKeyframes;
+        std::vector<ParticleNode> particleNodes;
+        int selectedParticleNode = -1;
     };
 
     enum class GizmoMode {
@@ -130,7 +165,11 @@ private:
     void DeleteNearestKeyframeFromSelected_();
     void SortKeyframes_(EditorObject& item);
     void SortCameraKeyframes_();
-    void EvaluateTimeline_();
+    void EvaluateTimeline_(bool emitParticles = true);
+    float GetParticleNodeDuration_(const ParticleNode& node) const;
+    void EmitParticleNode_(const ParticleNode& node, float initialAge);
+    void RequestTimelineRebuild_(float targetTime);
+    void RebuildParticleTimeline_(float targetTime);
     void AddCameraKeyframe_();
     void DeleteNearestCameraKeyframe_();
     EditorSnapshot CaptureEditorSnapshot_() const;
@@ -142,6 +181,8 @@ private:
     void SaveEffectJson_(const std::string& path) const;
     void LoadEffectJson_(GameApp& app, const std::string& path);
     bool OpenModelFileDialog_();
+    bool OpenModelFileDialog_(std::string& outModelPath);
+    bool OpenTextureFileDialog_(std::string& outTexturePath);
     void HandleEffectEditorShortcuts_(GameApp& app);
     void DrawEffectInspectorImGui_(GameApp& app);
     void DrawAnimationCameraControls_();
@@ -201,4 +242,31 @@ private:
     bool viewportBoneDragChanged_ = false;
     bool pendingDeleteSelectedObject_ = false;
     float reloadCooldown_ = 0.0f;
+    std::vector<ParticleNode> particleNodes_;
+    int selectedParticleNode_ = -1;
+    float lastTimelineTime_ = 0.0f;
+    float previousTimelineTime_ = 0.0f;
+    bool pendingTimelineRebuild_ = false;
+    float pendingTimelineRebuildTime_ = 0.0f;
+    EditorMode lastEditorMode_ = EditorMode::Blender;
+
+    enum class DragTarget {
+        None = 0,
+        TimelineTime,
+        ModelKeyframe,
+        CameraKeyframe,
+        ParticleNodeStart,
+        ParticleNodeEnd,
+        ParticleNodeBar,
+    };
+    DragTarget dragTarget_ = DragTarget::None;
+    int dragObjectIndex_ = -1;
+    int dragKeyframeIndex_ = -1;
+    int dragParticleNodeIndex_ = -1;
+    float dragStartOffset_ = 0.0f;
+    float dragStartVal1_ = 0.0f;
+    float dragStartVal2_ = 0.0f;
+
+    void DrawDopeSheet_(GameApp& app);
+    bool OpenParticleFileDialog_(std::vector<std::string>& outGroupNames, std::string& outFileName);
 };

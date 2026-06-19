@@ -31,7 +31,7 @@ PixelShaderOutput main(VertexShaderOutput input)
     gTexture.GetDimensions(width, height);
 
     float2 texel = float2(rcp((float)width), rcp((float)height));
-    float3 bloom = 0.0f;
+    float bloomMaskSum = 0.0f;
     float totalWeight = 0.0f;
 
     [unroll]
@@ -41,17 +41,27 @@ PixelShaderOutput main(VertexShaderOutput input)
             float2 offset = float2((float)x, (float)y);
             float dist2 = dot(offset, offset);
             float weight = exp(-dist2 / 16.0f);
-            float3 sampleColor = gTexture.Sample(gSampler, input.texcoord + offset * texel * 4.0f).rgb;
-            bloom += ExtractBright(sampleColor) * weight;
+            
+            float4 sampleColor = gTexture.Sample(gSampler, input.texcoord + offset * texel * 4.0f);
+            
+            // アルファ値（オブジェクトの存在）と輝度値を考慮したマスク
+            float brightness = max(sampleColor.r, max(sampleColor.g, sampleColor.b));
+            float mask = sampleColor.a * (0.5f + 0.5f * brightness);
+            
+            bloomMaskSum += mask * weight;
             totalWeight += weight;
         }
     }
 
-    bloom /= max(totalWeight, 0.001f);
+    float blurredMask = bloomMaskSum / max(totalWeight, 0.001f);
 
-    float4 baseColor = gTexture.Sample(gSampler, input.texcoord);
-    float3 glow = bloom * bloomColor.rgb * bloomIntensity * bloomAlpha;
+    // ぼかしたマスク値にブルームカラーと強度を乗算して発光色を決定
+    float3 glow = bloomColor.rgb * blurredMask * bloomIntensity * bloomAlpha * bloomColor.a;
+    
+    // アルファマスク
+    float outAlpha = saturate(blurredMask * bloomAlpha * bloomColor.a);
+
     PixelShaderOutput output;
-    output.color = float4(baseColor.rgb + glow, baseColor.a);
+    output.color = float4(glow, outAlpha);
     return output;
 }
