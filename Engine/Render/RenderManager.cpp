@@ -55,6 +55,7 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     particlePostLayer_ = std::make_unique<OffscreenPass>();
     particlePostBuffer_ = std::make_unique<OffscreenPass>();
     compositeBuffer_ = std::make_unique<OffscreenPass>();
+    previewBuffer_ = std::make_unique<OffscreenPass>();
 
     Vector4 clearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
     offscreen_->Initialize(
@@ -113,6 +114,15 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
         DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
         postClearColor,
         7
+    );
+    previewBuffer_->Initialize(
+        dx_,
+        srv_,
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        clearColor,
+        8
     );
 
     CreateCopyImageRootSignature();
@@ -227,6 +237,18 @@ void RenderManager::EndOffscreen()
     offscreen_->End();
 }
 
+void RenderManager::BeginPreview()
+{
+    assert(previewBuffer_);
+    previewBuffer_->Begin();
+}
+
+void RenderManager::EndPreview()
+{
+    assert(previewBuffer_);
+    previewBuffer_->End();
+}
+
 void RenderManager::BeginParticlePostLayer(PostEffectMode mode)
 {
     assert(particlePostLayer_);
@@ -255,6 +277,12 @@ uint32_t RenderManager::GetOffscreenSrvIndex() const
 {
     assert(offscreen_);
     return offscreen_->GetSrvIndex();
+}
+
+uint32_t RenderManager::GetPreviewSrvIndex() const
+{
+    assert(previewBuffer_);
+    return previewBuffer_->GetSrvIndex();
 }
 
 void RenderManager::BeginBackBuffer()

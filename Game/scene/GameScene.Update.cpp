@@ -58,6 +58,8 @@ std::string BuildPlayerAttackHitMessage(
         << hit.playerPosition.x << "," << hit.playerPosition.y << "," << hit.playerPosition.z
         << ") targetPos=("
         << hit.targetPosition.x << "," << hit.targetPosition.y << "," << hit.targetPosition.z
+        << ") hitPos=("
+        << hit.hitPosition.x << "," << hit.hitPosition.y << "," << hit.hitPosition.z
         << ")";
     return message.str();
 }
@@ -148,7 +150,7 @@ void GameScene::Update(GameApp& app, float dt) {
         pendingBattleParticleSetup_ = false;
         ParticleManager::GetInstance()->ClearGroups();
         const std::vector<std::string> skipPreviewGroups = { "gpu_test" };
-        ParticleManager::GetInstance()->LoadAdditional("test_particles.json", "", skipPreviewGroups);
+        ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
         ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
         EnsureHitEffectGroup_();
     }
@@ -258,8 +260,8 @@ void GameScene::Update(GameApp& app, float dt) {
             player_->Update(dt, *input_, enemyMgr_);
             const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
             for (const auto& hit : playerAttackHits) {
-                Vector3 effectPosition = hit.targetPosition;
-                effectPosition.y += 1.0f;
+                Vector3 effectPosition = hit.hitPosition;
+                effectPosition.y += 0.15f;
                 SpawnHitEffect_(effectPosition);
             }
             if (!playerAttackHits.empty() && app.DebugAI()) {

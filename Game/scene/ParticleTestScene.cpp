@@ -21,6 +21,11 @@
 #include <imgui.h>
 extern bool gParticleTestEditorModeSwitcherVisible;
 extern int gParticleTestEditorMode;
+extern std::vector<std::string> gParticleTestBlenderHierarchyNames;
+extern int gParticleTestBlenderHierarchySelected;
+extern bool gParticleTestBlenderHierarchySelectionChanged;
+extern bool gParticleTestAnimationCameraPreviewVisible;
+extern bool gParticleTestAnimationCameraPreviewSwapped;
 #endif
 
 #include <algorithm>
@@ -48,6 +53,9 @@ constexpr const char* kGeometryNames[] = {
     "Cylinder",
     "Cone",
     "Triangle",
+    "Capsule",
+    "Star",
+    "Diamond",
 };
 constexpr int kGeometryCount = static_cast<int>(sizeof(kGeometryNames) / sizeof(kGeometryNames[0]));
 
@@ -71,6 +79,9 @@ void ParticleTestScene::OnEnter(GameApp& app)
     camera_->SetTranslate(editorCameraPosition_);
     camera_->SetRotate(editorCameraRotation_);
     camera_->Update();
+
+    animationCamera_ = std::make_unique<Camera>();
+    ApplyAnimationCamera_();
     app.ObjCom()->SetDefaultCamera(camera_.get());
 
     ground_ = std::make_unique<Object3d>();
@@ -102,9 +113,15 @@ void ParticleTestScene::OnExit(GameApp&)
     editorObjects_.clear();
     editorParticle_.reset();
     ground_.reset();
+    animationCamera_.reset();
     camera_.reset();
 #ifdef USE_IMGUI
     gParticleTestEditorModeSwitcherVisible = false;
+    gParticleTestBlenderHierarchyNames.clear();
+    gParticleTestBlenderHierarchySelected = -1;
+    gParticleTestBlenderHierarchySelectionChanged = false;
+    gParticleTestAnimationCameraPreviewVisible = false;
+    gParticleTestAnimationCameraPreviewSwapped = false;
 #endif
 }
 
@@ -150,7 +167,11 @@ void ParticleTestScene::Update(GameApp& app, float dt)
 
     if (camera_) {
         camera_->Update();
-        ParticleManager::GetInstance()->Update(dt, *camera_);
+    }
+    ApplyAnimationCamera_();
+    ApplyCameraToEditorObjects_();
+    if (GetSceneCamera_()) {
+        ParticleManager::GetInstance()->Update(dt, *GetSceneCamera_());
     }
 
     if (ground_) {
@@ -170,6 +191,50 @@ void ParticleTestScene::Update(GameApp& app, float dt)
 }
 
 void ParticleTestScene::DrawRender(GameApp& app)
+{
+    DrawSceneContent_(app);
+}
+
+void ParticleTestScene::DrawPreview(GameApp& app)
+{
+    if (!useAnimationCameraPreview_) {
+        return;
+    }
+
+    Camera* previewCamera = GetPreviewCamera_();
+    Camera* sceneCamera = GetSceneCamera_();
+    if (!previewCamera) {
+        return;
+    }
+
+    if (ground_) {
+        ground_->SetCamera(previewCamera);
+    }
+    if (editorParticle_) {
+        editorParticle_->SetCamera(previewCamera);
+    }
+    for (auto& item : editorObjects_) {
+        if (item.object) {
+            item.object->SetCamera(previewCamera);
+        }
+    }
+
+    DrawSceneContent_(app);
+
+    if (ground_) {
+        ground_->SetCamera(sceneCamera);
+    }
+    if (editorParticle_) {
+        editorParticle_->SetCamera(sceneCamera);
+    }
+    for (auto& item : editorObjects_) {
+        if (item.object) {
+            item.object->SetCamera(sceneCamera);
+        }
+    }
+}
+
+void ParticleTestScene::DrawSceneContent_(GameApp& app)
 {
    /* if (ground_) {
         ground_->Draw();
@@ -297,6 +362,9 @@ std::vector<Model::VertexData> MakeEditorGeometryVertices(int typeIndex)
     case 5: return GeometryGenerator::GenerateCylinderTriList(32, 1.0f, 2.0f);
     case 6: return GeometryGenerator::GenerateConeTriList(32, 1.0f, 2.0f);
     case 7: return GeometryGenerator::GenerateTriangleTriListXY(2.0f, 2.0f);
+    case 8: return GeometryGenerator::GenerateCapsuleTriList(32, 8, 0.65f, 1.4f);
+    case 9: return GeometryGenerator::GenerateStarTriListXY(1.1f, 0.48f, 5);
+    case 10: return GeometryGenerator::GenerateDiamondTriListXY(1.6f, 2.2f);
     default: return GeometryGenerator::GenerateSphereTriList(32, 16, 1.0f);
     }
 }
@@ -383,7 +451,7 @@ void ParticleTestScene::AddEditorObject_(GameApp& app, const std::string& modelP
     item.geometryType = -1;
     item.object = std::make_unique<Object3d>();
     item.object->Initialize(app.ObjCom(), app.Dx());
-    item.object->SetCamera(camera_.get());
+    item.object->SetCamera(GetSceneCamera_());
     item.object->SetModel(item.modelPath);
     item.object->SetEnableLighting(0);
     ApplyEditorObjectTransform_(item);
@@ -404,7 +472,7 @@ void ParticleTestScene::AddGeometryObject_(GameApp& app, int geometryType)
     item.geometryType = geometryType;
     item.object = std::make_unique<Object3d>();
     item.object->Initialize(app.ObjCom(), app.Dx());
-    item.object->SetCamera(camera_.get());
+    item.object->SetCamera(GetSceneCamera_());
     item.object->SetModel(GetOrCreateEditorGeometryModel(geometryType));
     item.object->SetEnableLighting(0);
     ApplyEditorObjectTransform_(item);
@@ -430,13 +498,16 @@ void ParticleTestScene::PasteEditorObject_(GameApp& app)
     item.scale = copiedObject_.scale;
     item.color = copiedObject_.color;
     item.billboard = copiedObject_.billboard;
+    item.showBones = copiedObject_.showBones;
+    item.selectedBone = copiedObject_.selectedBone;
+    item.bonePoses = copiedObject_.bonePoses;
     item.keyframes = copiedObject_.keyframes;
     for (auto& key : item.keyframes) {
         key.position += Vector3{ 0.5f, 0.0f, 0.0f };
     }
     item.object = std::make_unique<Object3d>();
     item.object->Initialize(app.ObjCom(), app.Dx());
-    item.object->SetCamera(camera_.get());
+    item.object->SetCamera(GetSceneCamera_());
     if (item.geometryType >= 0) {
         item.object->SetModel(GetOrCreateEditorGeometryModel(item.geometryType));
     } else {
@@ -475,6 +546,9 @@ void ParticleTestScene::DuplicateSelectedObject_(GameApp& app)
     dst.scale = src.scale;
     dst.color = src.color;
     dst.billboard = src.billboard;
+    dst.showBones = src.showBones;
+    dst.selectedBone = src.selectedBone;
+    dst.bonePoses = src.bonePoses;
     dst.keyframes = src.keyframes;
     ApplyEditorObjectTransform_(dst);
 }
@@ -496,6 +570,9 @@ ParticleTestScene::EditorObjectSnapshot ParticleTestScene::CaptureSelectedObject
     snapshot.scale = item.scale;
     snapshot.color = item.color;
     snapshot.billboard = item.billboard;
+    snapshot.showBones = item.showBones;
+    snapshot.selectedBone = item.selectedBone;
+    snapshot.bonePoses = item.bonePoses;
     snapshot.keyframes = item.keyframes;
     return snapshot;
 }
@@ -544,14 +621,113 @@ void ParticleTestScene::ApplyEditorObjectTransform_(EditorObject& item)
     if (!item.object) {
         return;
     }
+    item.object->SetCamera(GetSceneCamera_());
     item.object->SetTranslate(item.position);
-    if (item.billboard && camera_) {
-        item.object->SetRotate(camera_->GetRotate());
+    if (item.billboard && GetSceneCamera_()) {
+        item.object->SetRotate(GetSceneCamera_()->GetRotate());
     } else {
         item.object->SetRotate(item.rotation);
     }
     item.object->SetScale(item.scale);
     item.object->SetMaterialColor(item.color);
+    ApplyEditorObjectBonePose_(item);
+}
+
+Camera* ParticleTestScene::GetSceneCamera_() const
+{
+    if (useAnimationCameraPreview_ && animationCameraPreviewSwapped_ && animationCamera_) {
+        return animationCamera_.get();
+    }
+    return camera_.get();
+}
+
+Camera* ParticleTestScene::GetPreviewCamera_() const
+{
+    if (animationCameraPreviewSwapped_ && camera_) {
+        return camera_.get();
+    }
+    if (animationCamera_) {
+        return animationCamera_.get();
+    }
+    return camera_.get();
+}
+
+void ParticleTestScene::ApplyCameraToEditorObjects_()
+{
+    Camera* sceneCamera = GetSceneCamera_();
+    if (ground_) {
+        ground_->SetCamera(sceneCamera);
+    }
+    if (editorParticle_) {
+        editorParticle_->SetCamera(sceneCamera);
+    }
+    for (auto& item : editorObjects_) {
+        if (item.object) {
+            item.object->SetCamera(sceneCamera);
+        }
+    }
+}
+
+void ParticleTestScene::ApplyAnimationCamera_()
+{
+    if (!animationCamera_) {
+        return;
+    }
+    animationCamera_->SetTranslate(animationCameraPosition_);
+    animationCamera_->SetRotate(animationCameraRotation_);
+    animationCamera_->SetFovY(animationCameraFovY_);
+    animationCamera_->Update();
+}
+
+void ParticleTestScene::SyncEditorObjectBones_(EditorObject& item)
+{
+    if (!item.object || !item.object->HasSkinningModel()) {
+        item.selectedBone = 0;
+        item.bonePoses.clear();
+        return;
+    }
+
+    const Model::Skeleton* skeleton = item.object->GetSkeleton();
+    if (!skeleton) {
+        item.selectedBone = 0;
+        item.bonePoses.clear();
+        return;
+    }
+
+    std::vector<EditorBonePose> next;
+    next.reserve(skeleton->joints.size());
+    for (const auto& joint : skeleton->joints) {
+        EditorBonePose pose;
+        pose.name = joint.name;
+        auto it = std::find_if(item.bonePoses.begin(), item.bonePoses.end(), [&](const EditorBonePose& current) {
+            return current.name == joint.name;
+        });
+        if (it != item.bonePoses.end()) {
+            pose.translate = it->translate;
+            pose.rotate = it->rotate;
+            pose.scale = it->scale;
+        }
+        next.push_back(std::move(pose));
+    }
+
+    item.bonePoses = std::move(next);
+    if (item.selectedBone >= static_cast<int>(item.bonePoses.size())) {
+        item.selectedBone = item.bonePoses.empty() ? 0 : static_cast<int>(item.bonePoses.size()) - 1;
+    }
+}
+
+void ParticleTestScene::ApplyEditorObjectBonePose_(EditorObject& item)
+{
+    if (!item.object || !item.object->HasSkinningModel()) {
+        return;
+    }
+
+    SyncEditorObjectBones_(item);
+    item.object->ResetManualJointTransforms();
+    for (int i = 0; i < static_cast<int>(item.bonePoses.size()); ++i) {
+        const EditorBonePose& pose = item.bonePoses[i];
+        item.object->SetManualJointTransform(i, pose.translate, pose.rotate, pose.scale);
+    }
 }
 
 void ParticleTestScene::SortKeyframes_(EditorObject& item)
@@ -559,6 +735,42 @@ void ParticleTestScene::SortKeyframes_(EditorObject& item)
     std::sort(item.keyframes.begin(), item.keyframes.end(), [](const EffectKeyframe& a, const EffectKeyframe& b) {
         return a.time < b.time;
     });
+}
+
+void ParticleTestScene::SortCameraKeyframes_()
+{
+    std::sort(cameraKeyframes_.begin(), cameraKeyframes_.end(), [](const CameraKeyframe& a, const CameraKeyframe& b) {
+        return a.time < b.time;
+    });
+}
+
+void ParticleTestScene::AddCameraKeyframe_()
+{
+    for (auto& key : cameraKeyframes_) {
+        if (std::abs(key.time - timelineTime_) < 0.001f) {
+            key.position = animationCameraPosition_;
+            key.rotation = animationCameraRotation_;
+            key.fovY = animationCameraFovY_;
+            return;
+        }
+    }
+
+    cameraKeyframes_.push_back({ timelineTime_, animationCameraPosition_, animationCameraRotation_, animationCameraFovY_ });
+    SortCameraKeyframes_();
+}
+
+void ParticleTestScene::DeleteNearestCameraKeyframe_()
+{
+    if (cameraKeyframes_.empty()) {
+        return;
+    }
+
+    auto it = std::min_element(cameraKeyframes_.begin(), cameraKeyframes_.end(), [this](const CameraKeyframe& a, const CameraKeyframe& b) {
+        return std::abs(a.time - timelineTime_) < std::abs(b.time - timelineTime_);
+    });
+    if (it != cameraKeyframes_.end() && std::abs(it->time - timelineTime_) <= 0.05f) {
+        cameraKeyframes_.erase(it);
+    }
 }
 
 void ParticleTestScene::AddKeyframeToSelected_()
@@ -603,6 +815,33 @@ void ParticleTestScene::DeleteNearestKeyframeFromSelected_()
 
 void ParticleTestScene::EvaluateTimeline_()
 {
+    if (!cameraKeyframes_.empty()) {
+        SortCameraKeyframes_();
+        if (timelineTime_ <= cameraKeyframes_.front().time) {
+            animationCameraPosition_ = cameraKeyframes_.front().position;
+            animationCameraRotation_ = cameraKeyframes_.front().rotation;
+            animationCameraFovY_ = cameraKeyframes_.front().fovY;
+        } else if (timelineTime_ >= cameraKeyframes_.back().time) {
+            animationCameraPosition_ = cameraKeyframes_.back().position;
+            animationCameraRotation_ = cameraKeyframes_.back().rotation;
+            animationCameraFovY_ = cameraKeyframes_.back().fovY;
+        } else {
+            for (size_t i = 0; i + 1 < cameraKeyframes_.size(); ++i) {
+                const auto& a = cameraKeyframes_[i];
+                const auto& b = cameraKeyframes_[i + 1];
+                if (timelineTime_ >= a.time && timelineTime_ <= b.time) {
+                    const float range = std::max(0.0001f, b.time - a.time);
+                    const float t = (timelineTime_ - a.time) / range;
+                    animationCameraPosition_ = LerpVector3(a.position, b.position, t);
+                    animationCameraRotation_ = LerpVector3(a.rotation, b.rotation, t);
+                    animationCameraFovY_ = a.fovY + (b.fovY - a.fovY) * t;
+                    break;
+                }
+            }
+        }
+        ApplyAnimationCamera_();
+    }
+
     for (auto& item : editorObjects_) {
         if (item.keyframes.empty()) {
             ApplyEditorObjectTransform_(item);
@@ -652,6 +891,12 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
     snapshot.timelineTime = timelineTime_;
     snapshot.timelineDuration = timelineDuration_;
     snapshot.timelineLoop = timelineLoop_;
+    snapshot.animationCameraPosition = animationCameraPosition_;
+    snapshot.animationCameraRotation = animationCameraRotation_;
+    snapshot.animationCameraFovY = animationCameraFovY_;
+    snapshot.useAnimationCameraPreview = useAnimationCameraPreview_;
+    snapshot.animationCameraPreviewSwapped = animationCameraPreviewSwapped_;
+    snapshot.cameraKeyframes = cameraKeyframes_;
     snapshot.objects.reserve(editorObjects_.size());
     for (const auto& item : editorObjects_) {
         EditorObjectSnapshot object;
@@ -664,6 +909,9 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
         object.scale = item.scale;
         object.color = item.color;
         object.billboard = item.billboard;
+        object.showBones = item.showBones;
+        object.selectedBone = item.selectedBone;
+        object.bonePoses = item.bonePoses;
         object.keyframes = item.keyframes;
         snapshot.objects.push_back(std::move(object));
     }
@@ -685,10 +933,13 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.scale = src.scale;
         item.color = src.color;
         item.billboard = src.billboard;
+        item.showBones = src.showBones;
+        item.selectedBone = src.selectedBone;
+        item.bonePoses = src.bonePoses;
         item.keyframes = src.keyframes;
         item.object = std::make_unique<Object3d>();
         item.object->Initialize(app.ObjCom(), app.Dx());
-        item.object->SetCamera(camera_.get());
+        item.object->SetCamera(GetSceneCamera_());
         if (item.geometryType >= 0) {
             item.object->SetModel(GetOrCreateEditorGeometryModel(item.geometryType));
         } else {
@@ -706,6 +957,14 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
     timelineTime_ = snapshot.timelineTime;
     timelineDuration_ = std::max(0.05f, snapshot.timelineDuration);
     timelineLoop_ = snapshot.timelineLoop;
+    animationCameraPosition_ = snapshot.animationCameraPosition;
+    animationCameraRotation_ = snapshot.animationCameraRotation;
+    animationCameraFovY_ = snapshot.animationCameraFovY;
+    useAnimationCameraPreview_ = snapshot.useAnimationCameraPreview;
+    animationCameraPreviewSwapped_ = snapshot.animationCameraPreviewSwapped;
+    cameraKeyframes_ = snapshot.cameraKeyframes;
+    ApplyAnimationCamera_();
+    ApplyCameraToEditorObjects_();
     EvaluateTimeline_();
 }
 
@@ -752,6 +1011,22 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         { "duration", timelineDuration_ },
         { "loop", timelineLoop_ }
     };
+    root["animationCamera"] = {
+        { "position", { animationCameraPosition_.x, animationCameraPosition_.y, animationCameraPosition_.z } },
+        { "rotation", { animationCameraRotation_.x, animationCameraRotation_.y, animationCameraRotation_.z } },
+        { "fovY", animationCameraFovY_ },
+        { "preview", useAnimationCameraPreview_ },
+        { "previewSwapped", animationCameraPreviewSwapped_ },
+        { "keyframes", json::array() }
+    };
+    for (const auto& key : cameraKeyframes_) {
+        root["animationCamera"]["keyframes"].push_back({
+            { "time", key.time },
+            { "position", { key.position.x, key.position.y, key.position.z } },
+            { "rotation", { key.rotation.x, key.rotation.y, key.rotation.z } },
+            { "fovY", key.fovY }
+        });
+    }
     root["objects"] = json::array();
     for (const auto& item : editorObjects_) {
         json object;
@@ -764,6 +1039,17 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         object["scale"] = { item.scale.x, item.scale.y, item.scale.z };
         object["color"] = { item.color.x, item.color.y, item.color.z, item.color.w };
         object["billboard"] = item.billboard;
+        object["showBones"] = item.showBones;
+        object["selectedBone"] = item.selectedBone;
+        object["bonePoses"] = json::array();
+        for (const auto& pose : item.bonePoses) {
+            object["bonePoses"].push_back({
+                { "name", pose.name },
+                { "translate", { pose.translate.x, pose.translate.y, pose.translate.z } },
+                { "rotate", { pose.rotate.x, pose.rotate.y, pose.rotate.z } },
+                { "scale", { pose.scale.x, pose.scale.y, pose.scale.z } }
+            });
+        }
         object["keyframes"] = json::array();
         for (const auto& key : item.keyframes) {
             object["keyframes"].push_back({
@@ -803,6 +1089,24 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
     snapshot.timelineTime = 0.0f;
     snapshot.selectedObject = -1;
     snapshot.nextObjectId = 1;
+    const json cameraJson = root.value("animationCamera", json::object());
+    auto cp = cameraJson.value("position", json::array({ 0.0f, 3.0f, -12.0f }));
+    auto cr = cameraJson.value("rotation", json::array({ 0.0f, 0.0f, 0.0f }));
+    snapshot.animationCameraPosition = { cp[0], cp[1], cp[2] };
+    snapshot.animationCameraRotation = { cr[0], cr[1], cr[2] };
+    snapshot.animationCameraFovY = cameraJson.value("fovY", 0.45f);
+    snapshot.useAnimationCameraPreview = cameraJson.value("preview", false);
+    snapshot.animationCameraPreviewSwapped = cameraJson.value("previewSwapped", false);
+    for (const auto& keySource : cameraJson.value("keyframes", json::array())) {
+        CameraKeyframe key;
+        key.time = keySource.value("time", 0.0f);
+        auto kp = keySource.value("position", json::array({ snapshot.animationCameraPosition.x, snapshot.animationCameraPosition.y, snapshot.animationCameraPosition.z }));
+        auto kr = keySource.value("rotation", json::array({ snapshot.animationCameraRotation.x, snapshot.animationCameraRotation.y, snapshot.animationCameraRotation.z }));
+        key.position = { kp[0], kp[1], kp[2] };
+        key.rotation = { kr[0], kr[1], kr[2] };
+        key.fovY = keySource.value("fovY", snapshot.animationCameraFovY);
+        snapshot.cameraKeyframes.push_back(key);
+    }
 
     for (const auto& source : root.value("objects", json::array())) {
         EditorObjectSnapshot object;
@@ -819,6 +1123,20 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
         object.scale = { s[0], s[1], s[2] };
         object.color = { c[0], c[1], c[2], c[3] };
         object.billboard = source.value("billboard", false);
+        object.showBones = source.value("showBones", false);
+        object.selectedBone = source.value("selectedBone", 0);
+
+        for (const auto& poseSource : source.value("bonePoses", json::array())) {
+            EditorBonePose pose;
+            pose.name = poseSource.value("name", std::string{});
+            auto bt = poseSource.value("translate", json::array({ 0.0f, 0.0f, 0.0f }));
+            auto br = poseSource.value("rotate", json::array({ 0.0f, 0.0f, 0.0f }));
+            auto bs = poseSource.value("scale", json::array({ 1.0f, 1.0f, 1.0f }));
+            pose.translate = { bt[0], bt[1], bt[2] };
+            pose.rotate = { br[0], br[1], br[2] };
+            pose.scale = { bs[0], bs[1], bs[2] };
+            object.bonePoses.push_back(std::move(pose));
+        }
 
         for (const auto& keySource : source.value("keyframes", json::array())) {
             EffectKeyframe key;
@@ -932,24 +1250,124 @@ void ParticleTestScene::DrawGizmoControls_(EditorObject& item)
 #endif
 }
 
-void ParticleTestScene::DrawViewportGizmo_()
+void ParticleTestScene::DrawBoneControls_(EditorObject& item)
 {
 #ifdef USE_IMGUI
-    if (!gHasSceneImageRect || !camera_) {
+    if (!item.object || !item.object->HasSkinningModel()) {
+        return;
+    }
+
+    SyncEditorObjectBones_(item);
+    if (item.bonePoses.empty()) {
+        return;
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Bone Controls");
+    ImGui::Checkbox("Show Bones", &item.showBones);
+    item.object->SetDebugDrawBones(false);
+    ImGui::Text("Bones: %d", static_cast<int>(item.bonePoses.size()));
+
+    item.selectedBone = std::clamp(item.selectedBone, 0, static_cast<int>(item.bonePoses.size()) - 1);
+    const char* previewName = item.bonePoses[item.selectedBone].name.c_str();
+    if (ImGui::BeginCombo("Bone", previewName)) {
+        for (int i = 0; i < static_cast<int>(item.bonePoses.size()); ++i) {
+            const bool selected = i == item.selectedBone;
+            if (ImGui::Selectable(item.bonePoses[i].name.c_str(), selected)) {
+                item.selectedBone = i;
+                item.showBones = true;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    EditorBonePose& pose = item.bonePoses[item.selectedBone];
+    bool changed = false;
+    auto trackBoneDrag = [&](bool itemChanged) {
+        if (ImGui::IsItemActivated() && !transformDragActive_) {
+            transformDragBefore_ = CaptureEditorSnapshot_();
+            transformDragActive_ = true;
+            transformDragChanged_ = false;
+        }
+        if (itemChanged) {
+            transformDragChanged_ = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+            if (transformDragChanged_) {
+                PushUndoSnapshot_(transformDragBefore_);
+            }
+            transformDragActive_ = false;
+            transformDragChanged_ = false;
+        }
+    };
+
+    bool t = ImGui::DragFloat3("Bone Translate", &pose.translate.x, 0.01f, -10.0f, 10.0f);
+    changed |= t;
+    trackBoneDrag(t);
+    bool r = ImGui::DragFloat3("Bone Rotate", &pose.rotate.x, 0.01f, -100.0f, 100.0f);
+    changed |= r;
+    trackBoneDrag(r);
+    bool s = ImGui::DragFloat3("Bone Scale", &pose.scale.x, 0.01f, 0.01f, 10.0f);
+    changed |= s;
+    trackBoneDrag(s);
+
+    if (ImGui::Button("Reset Bone")) {
+        transformDragBefore_ = CaptureEditorSnapshot_();
+        pose.translate = { 0.0f, 0.0f, 0.0f };
+        pose.rotate = { 0.0f, 0.0f, 0.0f };
+        pose.scale = { 1.0f, 1.0f, 1.0f };
+        PushUndoSnapshot_(transformDragBefore_);
+        changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset All Bones")) {
+        transformDragBefore_ = CaptureEditorSnapshot_();
+        for (auto& bonePose : item.bonePoses) {
+            bonePose.translate = { 0.0f, 0.0f, 0.0f };
+            bonePose.rotate = { 0.0f, 0.0f, 0.0f };
+            bonePose.scale = { 1.0f, 1.0f, 1.0f };
+        }
+        PushUndoSnapshot_(transformDragBefore_);
+        changed = true;
+    }
+
+    if (changed) {
+        ApplyEditorObjectBonePose_(item);
+    }
+#endif
+}
+
+void ParticleTestScene::DrawViewportBones_()
+{
+#ifdef USE_IMGUI
+    Camera* sceneCamera = GetSceneCamera_();
+    if (!gHasSceneImageRect || !sceneCamera) {
         return;
     }
     if (selectedEditorObject_ < 0 || selectedEditorObject_ >= static_cast<int>(editorObjects_.size())) {
         return;
     }
-
     EditorObject& item = editorObjects_[selectedEditorObject_];
+    if (!item.showBones || !item.object || !item.object->HasSkinningModel()) {
+        return;
+    }
+
+    SyncEditorObjectBones_(item);
+    const Model::Skeleton* skeleton = item.object->GetSkeleton();
+    if (!skeleton || skeleton->joints.empty()) {
+        return;
+    }
+
     const ImVec2 sceneMin = gSceneImageMin;
     const ImVec2 sceneMax = gSceneImageMax;
     const float sceneW = std::max(1.0f, sceneMax.x - sceneMin.x);
     const float sceneH = std::max(1.0f, sceneMax.y - sceneMin.y);
 
     auto project = [&](const Vector3& world, ImVec2& out) -> bool {
-        const Matrix4x4& vp = camera_->GetViewProjectionMatrix();
+        const Matrix4x4& vp = sceneCamera->GetViewProjectionMatrix();
         const float x = world.x * vp.m[0][0] + world.y * vp.m[1][0] + world.z * vp.m[2][0] + vp.m[3][0];
         const float y = world.x * vp.m[0][1] + world.y * vp.m[1][1] + world.z * vp.m[2][1] + vp.m[3][1];
         const float w = world.x * vp.m[0][3] + world.y * vp.m[1][3] + world.z * vp.m[2][3] + vp.m[3][3];
@@ -964,8 +1382,156 @@ void ParticleTestScene::DrawViewportGizmo_()
             out.y >= sceneMin.y - 80.0f && out.y <= sceneMax.y + 80.0f;
     };
 
+    std::vector<Vector3> worldPositions(skeleton->joints.size());
+    std::vector<ImVec2> screenPositions(skeleton->joints.size());
+    std::vector<bool> visible(skeleton->joints.size(), false);
+    for (size_t i = 0; i < skeleton->joints.size(); ++i) {
+        Matrix4x4 jointWorld{};
+        if (!item.object->TryGetJointWorldMatrix(skeleton->joints[i].name, jointWorld)) {
+            continue;
+        }
+        worldPositions[i] = { jointWorld.m[3][0], jointWorld.m[3][1], jointWorld.m[3][2] };
+        visible[i] = project(worldPositions[i], screenPositions[i]);
+    }
+
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool mouseInsideScene =
+        mouse.x >= sceneMin.x && mouse.x <= sceneMax.x &&
+        mouse.y >= sceneMin.y && mouse.y <= sceneMax.y;
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
+        int nearestBone = -1;
+        float nearestDistance = 9999.0f;
+        for (int i = 0; i < static_cast<int>(screenPositions.size()); ++i) {
+            if (!visible[i]) {
+                continue;
+            }
+            const float dx = mouse.x - screenPositions[i].x;
+            const float dy = mouse.y - screenPositions[i].y;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestBone = i;
+            }
+        }
+
+        if (nearestBone >= 0 && nearestDistance <= 10.0f) {
+            item.selectedBone = nearestBone;
+            activeViewportBone_ = nearestBone;
+            viewportBoneLastMouseX_ = mouse.x;
+            viewportBoneLastMouseY_ = mouse.y;
+            transformDragBefore_ = CaptureEditorSnapshot_();
+            viewportBoneDragActive_ = true;
+            viewportBoneDragChanged_ = false;
+        }
+    }
+
+    if (viewportBoneDragActive_ && activeViewportBone_ >= 0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        const ImVec2 delta{ mouse.x - viewportBoneLastMouseX_, mouse.y - viewportBoneLastMouseY_ };
+        viewportBoneLastMouseX_ = mouse.x;
+        viewportBoneLastMouseY_ = mouse.y;
+
+        if (activeViewportBone_ < static_cast<int>(item.bonePoses.size())) {
+            const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
+            const float amountX = delta.x / 55.0f;
+            const float amountY = -delta.y / 55.0f;
+            item.bonePoses[activeViewportBone_].translate += CameraRight(cameraWorld) * amountX;
+            item.bonePoses[activeViewportBone_].translate += CameraUp(cameraWorld) * amountY;
+            ApplyEditorObjectBonePose_(item);
+            viewportBoneDragChanged_ = true;
+        }
+    }
+
+    if (viewportBoneDragActive_ && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (viewportBoneDragChanged_) {
+            PushUndoSnapshot_(transformDragBefore_);
+        }
+        viewportBoneDragActive_ = false;
+        viewportBoneDragChanged_ = false;
+        activeViewportBone_ = -1;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    const ImU32 lineColor = IM_COL32(255, 220, 80, 230);
+    const ImU32 jointColor = IM_COL32(255, 255, 255, 245);
+    const ImU32 selectedColor = IM_COL32(80, 170, 255, 255);
+
+    for (size_t i = 0; i < skeleton->joints.size(); ++i) {
+        if (!visible[i] || !skeleton->joints[i].parent.has_value()) {
+            continue;
+        }
+        const int32_t parentIndex = *skeleton->joints[i].parent;
+        if (parentIndex < 0 || parentIndex >= static_cast<int32_t>(screenPositions.size()) || !visible[parentIndex]) {
+            continue;
+        }
+        drawList->AddLine(screenPositions[parentIndex], screenPositions[i], lineColor, 2.0f);
+    }
+
+    for (size_t i = 0; i < screenPositions.size(); ++i) {
+        if (!visible[i]) {
+            continue;
+        }
+        const bool selected = static_cast<int>(i) == item.selectedBone;
+        drawList->AddCircleFilled(screenPositions[i], selected ? 5.5f : 3.5f, selected ? selectedColor : jointColor, 16);
+        drawList->AddCircle(screenPositions[i], selected ? 7.0f : 5.0f, IM_COL32(30, 30, 30, 220), 16, 1.0f);
+    }
+#endif
+}
+
+void ParticleTestScene::DrawViewportGizmo_()
+{
+#ifdef USE_IMGUI
+    Camera* sceneCamera = GetSceneCamera_();
+    if (!gHasSceneImageRect || !sceneCamera) {
+        return;
+    }
+    if (selectedEditorObject_ < 0 || selectedEditorObject_ >= static_cast<int>(editorObjects_.size())) {
+        return;
+    }
+
+    EditorObject& item = editorObjects_[selectedEditorObject_];
+    const ImVec2 sceneMin = gSceneImageMin;
+    const ImVec2 sceneMax = gSceneImageMax;
+    const float sceneW = std::max(1.0f, sceneMax.x - sceneMin.x);
+    const float sceneH = std::max(1.0f, sceneMax.y - sceneMin.y);
+
+    auto project = [&](const Vector3& world, ImVec2& out) -> bool {
+        const Matrix4x4& vp = sceneCamera->GetViewProjectionMatrix();
+        const float x = world.x * vp.m[0][0] + world.y * vp.m[1][0] + world.z * vp.m[2][0] + vp.m[3][0];
+        const float y = world.x * vp.m[0][1] + world.y * vp.m[1][1] + world.z * vp.m[2][1] + vp.m[3][1];
+        const float w = world.x * vp.m[0][3] + world.y * vp.m[1][3] + world.z * vp.m[2][3] + vp.m[3][3];
+        if (w <= 0.001f) {
+            return false;
+        }
+        const float ndcX = x / w;
+        const float ndcY = y / w;
+        out.x = sceneMin.x + (ndcX * 0.5f + 0.5f) * sceneW;
+        out.y = sceneMin.y + (0.5f - ndcY * 0.5f) * sceneH;
+        return out.x >= sceneMin.x - 80.0f && out.x <= sceneMax.x + 80.0f &&
+            out.y >= sceneMin.y - 80.0f && out.y <= sceneMax.y + 80.0f;
+    };
+
+    Vector3 gizmoWorldPosition = item.position;
+    bool editingBone = false;
+    EditorBonePose* selectedBonePose = nullptr;
+    if (item.showBones && item.object && item.object->HasSkinningModel()) {
+        SyncEditorObjectBones_(item);
+        if (!item.bonePoses.empty()) {
+            item.selectedBone = std::clamp(item.selectedBone, 0, static_cast<int>(item.bonePoses.size()) - 1);
+            const Model::Skeleton* skeleton = item.object->GetSkeleton();
+            if (skeleton && item.selectedBone < static_cast<int>(skeleton->joints.size())) {
+                Matrix4x4 jointWorld{};
+                if (item.object->TryGetJointWorldMatrix(skeleton->joints[item.selectedBone].name, jointWorld)) {
+                    gizmoWorldPosition = { jointWorld.m[3][0], jointWorld.m[3][1], jointWorld.m[3][2] };
+                    selectedBonePose = &item.bonePoses[item.selectedBone];
+                    editingBone = selectedBonePose != nullptr;
+                }
+            }
+        }
+    }
+
     ImVec2 center{};
-    if (!project(item.position, center)) {
+    if (!project(gizmoWorldPosition, center)) {
         return;
     }
 
@@ -986,7 +1552,7 @@ void ParticleTestScene::DrawViewportGizmo_()
 
     for (int axis = 0; axis < 3; ++axis) {
         ImVec2 projectedEnd{};
-        if (!project(item.position + axisWorld[axis] * worldHandleLength, projectedEnd)) {
+        if (!project(gizmoWorldPosition + axisWorld[axis] * worldHandleLength, projectedEnd)) {
             projectedEnd = center;
         }
         ImVec2 rawDir{ projectedEnd.x - center.x, projectedEnd.y - center.y };
@@ -1018,7 +1584,7 @@ void ParticleTestScene::DrawViewportGizmo_()
         ImGui::GetMousePos().y >= sceneMin.y && ImGui::GetMousePos().y <= sceneMax.y;
     const ImVec2 mouse = ImGui::GetMousePos();
 
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0) {
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
         int nearestAxis = -1;
         float nearestDistance = 9999.0f;
         for (int axis = 0; axis < 3; ++axis) {
@@ -1049,39 +1615,53 @@ void ParticleTestScene::DrawViewportGizmo_()
             const float amount = signedPixels / 55.0f;
             if (std::abs(amount) > 0.00001f) {
                 if (gizmoMode_ == GizmoMode::Translate) {
-                    if (axis == 0) item.position.x += amount;
-                    if (axis == 1) item.position.y += amount;
-                    if (axis == 2) item.position.z += amount;
+                    Vector3& translate = editingBone ? selectedBonePose->translate : item.position;
+                    if (axis == 0) translate.x += amount;
+                    if (axis == 1) translate.y += amount;
+                    if (axis == 2) translate.z += amount;
                 } else if (gizmoMode_ == GizmoMode::Rotate) {
-                    if (axis == 0) item.rotation.x += amount * 0.35f;
-                    if (axis == 1) item.rotation.y += amount * 0.35f;
-                    if (axis == 2) item.rotation.z += amount * 0.35f;
+                    Vector3& rotate = editingBone ? selectedBonePose->rotate : item.rotation;
+                    if (axis == 0) rotate.x += amount * 0.35f;
+                    if (axis == 1) rotate.y += amount * 0.35f;
+                    if (axis == 2) rotate.z += amount * 0.35f;
                 } else {
-                    if (axis == 0) item.scale.x = std::max(0.01f, item.scale.x + amount);
-                    if (axis == 1) item.scale.y = std::max(0.01f, item.scale.y + amount);
-                    if (axis == 2) item.scale.z = std::max(0.01f, item.scale.z + amount);
+                    Vector3& scale = editingBone ? selectedBonePose->scale : item.scale;
+                    if (axis == 0) scale.x = std::max(0.01f, scale.x + amount);
+                    if (axis == 1) scale.y = std::max(0.01f, scale.y + amount);
+                    if (axis == 2) scale.z = std::max(0.01f, scale.z + amount);
                 }
                 transformDragChanged_ = true;
-                ApplyEditorObjectTransform_(item);
+                if (editingBone) {
+                    ApplyEditorObjectBonePose_(item);
+                } else {
+                    ApplyEditorObjectTransform_(item);
+                }
             }
         } else if (axis == 3) {
             const float amountX = delta.x / 55.0f;
             const float amountY = -delta.y / 55.0f;
             if (gizmoMode_ == GizmoMode::Translate) {
-                const Matrix4x4& cameraWorld = camera_->GetWorldMatrix();
-                item.position += CameraRight(cameraWorld) * amountX;
-                item.position += CameraUp(cameraWorld) * amountY;
+                const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
+                Vector3& translate = editingBone ? selectedBonePose->translate : item.position;
+                translate += CameraRight(cameraWorld) * amountX;
+                translate += CameraUp(cameraWorld) * amountY;
             } else if (gizmoMode_ == GizmoMode::Scale) {
                 const float amount = (amountX + amountY) * 0.5f;
-                item.scale.x = std::max(0.01f, item.scale.x + amount);
-                item.scale.y = std::max(0.01f, item.scale.y + amount);
-                item.scale.z = std::max(0.01f, item.scale.z + amount);
+                Vector3& scale = editingBone ? selectedBonePose->scale : item.scale;
+                scale.x = std::max(0.01f, scale.x + amount);
+                scale.y = std::max(0.01f, scale.y + amount);
+                scale.z = std::max(0.01f, scale.z + amount);
             } else {
-                item.rotation.y += amountX * 0.35f;
-                item.rotation.x += amountY * 0.35f;
+                Vector3& rotate = editingBone ? selectedBonePose->rotate : item.rotation;
+                rotate.y += amountX * 0.35f;
+                rotate.x += amountY * 0.35f;
             }
             transformDragChanged_ = true;
-            ApplyEditorObjectTransform_(item);
+            if (editingBone) {
+                ApplyEditorObjectBonePose_(item);
+            } else {
+                ApplyEditorObjectTransform_(item);
+            }
         }
     }
 
@@ -1097,6 +1677,7 @@ void ParticleTestScene::DrawViewportGizmo_()
     const char* modeText =
         gizmoMode_ == GizmoMode::Translate ? "Translate" :
         gizmoMode_ == GizmoMode::Rotate ? "Rotate" : "Scale";
+    const std::string gizmoLabel = editingBone ? (std::string("Bone ") + modeText) : modeText;
     drawList->AddCircleFilled(center, activeViewportGizmoAxis_ == 3 ? 9.0f : 7.0f, IM_COL32(255, 255, 255, 230));
     drawList->AddCircle(center, gizmoMode_ == GizmoMode::Rotate ? 46.0f : 14.0f, IM_COL32(255, 255, 255, 180), 48, 2.0f);
     for (int axis = 0; axis < 3; ++axis) {
@@ -1104,7 +1685,7 @@ void ParticleTestScene::DrawViewportGizmo_()
         drawList->AddLine(center, axisEnd[axis], axisColor[axis], thickness);
         drawList->AddCircleFilled(axisEnd[axis], gizmoMode_ == GizmoMode::Scale ? 7.0f : 5.0f, axisColor[axis]);
     }
-    drawList->AddText(ImVec2(center.x + 12.0f, center.y + 12.0f), IM_COL32(255, 255, 255, 230), modeText);
+    drawList->AddText(ImVec2(center.x + 12.0f, center.y + 12.0f), IM_COL32(255, 255, 255, 230), gizmoLabel.c_str());
 #endif
 }
 
@@ -1187,10 +1768,312 @@ void ParticleTestScene::DrawEditorCameraControls_()
 #endif
 }
 
+void ParticleTestScene::DrawAnimationCameraControls_()
+{
+#ifdef USE_IMGUI
+    ImGui::Separator();
+    ImGui::TextUnformatted("Animation Camera");
+    bool cameraChanged = false;
+    cameraChanged |= ImGui::Checkbox("Preview Animation Camera", &useAnimationCameraPreview_);
+    if (!useAnimationCameraPreview_) {
+        animationCameraPreviewSwapped_ = false;
+    }
+    cameraChanged |= ImGui::DragFloat3("Anim Cam Position", &animationCameraPosition_.x, 0.1f);
+    cameraChanged |= ImGui::DragFloat3("Anim Cam Rotation", &animationCameraRotation_.x, 0.01f);
+    cameraChanged |= ImGui::SliderFloat("Anim Cam FovY", &animationCameraFovY_, 0.1f, 1.8f, "%.3f");
+    if (cameraChanged) {
+        ApplyAnimationCamera_();
+        ApplyCameraToEditorObjects_();
+    }
+
+    if (ImGui::Button("Copy From Editor Camera") && camera_) {
+        PushUndoSnapshot_();
+        animationCameraPosition_ = camera_->GetTranslate();
+        animationCameraRotation_ = camera_->GetRotate();
+        animationCameraFovY_ = camera_->GetFovY();
+        ApplyAnimationCamera_();
+        ApplyCameraToEditorObjects_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Anim Camera")) {
+        PushUndoSnapshot_();
+        animationCameraPosition_ = { 0.0f, 3.0f, -12.0f };
+        animationCameraRotation_ = { 0.0f, 0.0f, 0.0f };
+        animationCameraFovY_ = 0.45f;
+        ApplyAnimationCamera_();
+        ApplyCameraToEditorObjects_();
+    }
+
+    if (ImGui::Button("Add / Replace Camera Key")) {
+        PushUndoSnapshot_();
+        AddCameraKeyframe_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete Near Camera Key")) {
+        PushUndoSnapshot_();
+        DeleteNearestCameraKeyframe_();
+    }
+#endif
+}
+
+void ParticleTestScene::HandleEffectEditorShortcuts_(GameApp& app)
+{
+#ifdef USE_IMGUI
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool rightCameraDrag =
+        gHasSceneImageRect &&
+        ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
+        mouse.x >= gSceneImageMin.x && mouse.x <= gSceneImageMax.x &&
+        mouse.y >= gSceneImageMin.y && mouse.y <= gSceneImageMax.y;
+
+    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+        Undo_(app);
+    }
+    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+        Redo_(app);
+    }
+    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+        CopySelectedObject_();
+    }
+    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false) && hasCopiedObject_) {
+        PushUndoSnapshot_();
+        PasteEditorObject_(app);
+    }
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false) && selectedEditorObject_ >= 0) {
+        RequestDeleteSelectedObject_();
+    }
+    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) {
+        gizmoMode_ = GizmoMode::Translate;
+    }
+    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+        gizmoMode_ = GizmoMode::Rotate;
+    }
+    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_R, false)) {
+        gizmoMode_ = GizmoMode::Scale;
+    }
+#endif
+}
+
+void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
+{
+#ifdef USE_IMGUI
+    ImGui::Begin("Inspector");
+
+    ImGui::TextUnformatted("Model Source");
+    ImGui::InputText("Model Path", editorModelPath_, sizeof(editorModelPath_));
+    if (ImGui::Button("Open Model File...")) {
+        OpenModelFileDialog_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open + Add")) {
+        if (OpenModelFileDialog_()) {
+            PushUndoSnapshot_();
+            AddEditorObject_(app, editorModelPath_);
+        }
+    }
+    if (ImGui::Button("Add Model")) {
+        PushUndoSnapshot_();
+        AddEditorObject_(app, editorModelPath_);
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Geometry Source");
+    ImGui::Combo("Geometry Type", &selectedGeometryType_, kGeometryNames, kGeometryCount);
+    if (ImGui::Button("Add Geometry")) {
+        PushUndoSnapshot_();
+        AddGeometryObject_(app, selectedGeometryType_);
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Object Actions");
+    if (ImGui::Button("Duplicate") && selectedEditorObject_ >= 0) {
+        PushUndoSnapshot_();
+        DuplicateSelectedObject_(app);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Copy") && selectedEditorObject_ >= 0) {
+        CopySelectedObject_();
+    }
+    if (ImGui::Button("Paste") && hasCopiedObject_) {
+        PushUndoSnapshot_();
+        PasteEditorObject_(app);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete") && selectedEditorObject_ >= 0) {
+        RequestDeleteSelectedObject_();
+    }
+    if (ImGui::Button("Undo")) {
+        Undo_(app);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Redo")) {
+        Redo_(app);
+    }
+
+    ImGui::InputText("Effect JSON", effectJsonPath_, sizeof(effectJsonPath_));
+    if (ImGui::Button("Save Effect JSON")) {
+        SaveEffectJson_(effectJsonPath_);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load Effect JSON")) {
+        PushUndoSnapshot_();
+        LoadEffectJson_(app, effectJsonPath_);
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Scene Objects");
+    for (int i = 0; i < static_cast<int>(editorObjects_.size()); ++i) {
+        const bool selected = i == selectedEditorObject_;
+        if (ImGui::Selectable(editorObjects_[i].name.c_str(), selected)) {
+            selectedEditorObject_ = i;
+        }
+    }
+
+    if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
+        EditorObject& item = editorObjects_[selectedEditorObject_];
+        ImGui::Separator();
+        ImGui::Text("%s (%s)", item.name.c_str(), item.modelPath.c_str());
+        bool changed = false;
+
+        auto trackDragEdit = [&](bool itemChanged) {
+            if (ImGui::IsItemActivated() && !transformDragActive_) {
+                transformDragBefore_ = CaptureEditorSnapshot_();
+                transformDragActive_ = true;
+                transformDragChanged_ = false;
+            }
+            if (itemChanged) {
+                transformDragChanged_ = true;
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+                if (transformDragChanged_) {
+                    PushUndoSnapshot_(transformDragBefore_);
+                }
+                transformDragActive_ = false;
+                transformDragChanged_ = false;
+            }
+        };
+
+        bool positionChanged = ImGui::DragFloat3("Position", &item.position.x, 0.05f);
+        changed |= positionChanged;
+        trackDragEdit(positionChanged);
+        bool rotationChanged = ImGui::DragFloat3("Rotation", &item.rotation.x, 0.01f);
+        changed |= rotationChanged;
+        trackDragEdit(rotationChanged);
+        bool scaleChanged = ImGui::DragFloat3("Scale", &item.scale.x, 0.05f, 0.01f, 100.0f);
+        changed |= scaleChanged;
+        trackDragEdit(scaleChanged);
+        bool colorChanged = ImGui::ColorEdit4("Color / Alpha", &item.color.x);
+        changed |= colorChanged;
+        trackDragEdit(colorChanged);
+        const bool billboardBefore = item.billboard;
+        bool billboardChanged = ImGui::Checkbox("Billboard", &item.billboard);
+        if (billboardChanged) {
+            item.billboard = billboardBefore;
+            PushUndoSnapshot_();
+            item.billboard = !billboardBefore;
+            changed = true;
+        }
+        if (changed) {
+            ApplyEditorObjectTransform_(item);
+        }
+
+        DrawGizmoControls_(item);
+        DrawBoneControls_(item);
+    }
+
+    DrawEditorCameraControls_();
+    DrawAnimationCameraControls_();
+    ImGui::End();
+#endif
+}
+
 void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
 {
 #ifdef USE_IMGUI
     ImGui::Begin("Effect Editor");
+
+    if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
+        EditorObject& item = editorObjects_[selectedEditorObject_];
+        ImGui::Text("%s (%s)", item.name.c_str(), item.modelPath.c_str());
+        if (ImGui::Button("Add / Replace Keyframe")) {
+            PushUndoSnapshot_();
+            AddKeyframeToSelected_();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Delete Near Keyframe")) {
+            PushUndoSnapshot_();
+            DeleteNearestKeyframeFromSelected_();
+        }
+
+        if (ImGui::BeginTable("Keyframes", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Time");
+            ImGui::TableSetupColumn("Position");
+            ImGui::TableSetupColumn("Rotation");
+            ImGui::TableSetupColumn("Scale");
+            ImGui::TableSetupColumn("Color");
+            ImGui::TableHeadersRow();
+            for (const auto& key : item.keyframes) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%.3f", key.time);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%.2f %.2f %.2f", key.position.x, key.position.y, key.position.z);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%.2f %.2f %.2f", key.rotation.x, key.rotation.y, key.rotation.z);
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%.2f %.2f %.2f", key.scale.x, key.scale.y, key.scale.z);
+                ImGui::TableSetColumnIndex(4);
+                ImGui::Text("%.2f %.2f %.2f %.2f", key.color.x, key.color.y, key.color.z, key.color.w);
+            }
+            ImGui::EndTable();
+        }
+    } else {
+        ImGui::TextDisabled("Select a model in Hierarchy or Inspector.");
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Animation Camera Keys");
+    if (ImGui::BeginTable("CameraKeyframes", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("Time");
+        ImGui::TableSetupColumn("Position");
+        ImGui::TableSetupColumn("Rotation");
+        ImGui::TableSetupColumn("FovY");
+        ImGui::TableHeadersRow();
+        for (const auto& key : cameraKeyframes_) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%.3f", key.time);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%.2f %.2f %.2f", key.position.x, key.position.y, key.position.z);
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%.2f %.2f %.2f", key.rotation.x, key.rotation.y, key.rotation.z);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("%.3f", key.fovY);
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Timeline");
+    if (ImGui::Button(timelinePlaying_ ? "Stop" : "Play")) {
+        timelinePlaying_ = !timelinePlaying_;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restart")) {
+        timelineTime_ = 0.0f;
+        timelinePlaying_ = true;
+        EvaluateTimeline_();
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Loop", &timelineLoop_);
+    ImGui::DragFloat("Duration", &timelineDuration_, 0.05f, 0.05f, 30.0f);
+    if (ImGui::SliderFloat("Current Time", &timelineTime_, 0.0f, timelineDuration_)) {
+        EvaluateTimeline_();
+    }
+
+    ImGui::End();
+    return;
 
     ImGuiIO& io = ImGui::GetIO();
     const ImVec2 mouse = ImGui::GetMousePos();
@@ -1346,6 +2229,7 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
         }
 
         DrawGizmoControls_(item);
+        DrawBoneControls_(item);
 
         if (ImGui::Button("Add / Replace Keyframe")) {
             PushUndoSnapshot_();
@@ -1441,8 +2325,6 @@ void ParticleTestScene::DrawParticleModeImGui_()
     if (editorParticle_) {
         editorParticle_->DebugImGui();
     }
-
-    ParticleManager::GetInstance()->DrawImGui();
 #endif
 }
 
@@ -1454,7 +2336,33 @@ void ParticleTestScene::DrawImGui(GameApp& app)
     editorMode_ = gParticleTestEditorMode == 0 ? EditorMode::Blender : EditorMode::Particle;
 
     if (editorMode_ == EditorMode::Blender) {
+        HandleEffectEditorShortcuts_(app);
+        if (gParticleTestBlenderHierarchySelectionChanged) {
+            gParticleTestBlenderHierarchySelectionChanged = false;
+            if (gParticleTestBlenderHierarchySelected >= 0 &&
+                gParticleTestBlenderHierarchySelected < static_cast<int>(editorObjects_.size())) {
+                selectedEditorObject_ = gParticleTestBlenderHierarchySelected;
+            }
+        }
+
+        gParticleTestBlenderHierarchyNames.clear();
+        gParticleTestBlenderHierarchyNames.reserve(editorObjects_.size());
+        for (const auto& item : editorObjects_) {
+            gParticleTestBlenderHierarchyNames.push_back(item.name + " (" + item.modelPath + ")");
+        }
+        gParticleTestBlenderHierarchySelected = selectedEditorObject_;
+        animationCameraPreviewSwapped_ = gParticleTestAnimationCameraPreviewSwapped;
+        gParticleTestAnimationCameraPreviewVisible = useAnimationCameraPreview_;
+        gParticleTestAnimationCameraPreviewSwapped = animationCameraPreviewSwapped_;
+    } else {
+        gParticleTestAnimationCameraPreviewVisible = false;
+        gParticleTestAnimationCameraPreviewSwapped = false;
+    }
+
+    if (editorMode_ == EditorMode::Blender) {
+        DrawEffectInspectorImGui_(app);
         DrawEffectEditorImGui_(app);
+        DrawViewportBones_();
         DrawViewportGizmo_();
     } else {
         DrawParticleModeImGui_();

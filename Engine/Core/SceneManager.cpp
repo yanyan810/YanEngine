@@ -61,3 +61,8 @@ void SceneManager::DrawImGui(GameApp& app) {
     if (!current_) return;
     current_->DrawImGui(app);
 }
+
+void SceneManager::DrawPreview(GameApp& app) {
+    if (!current_) return;
+    current_->DrawPreview(app);
+}

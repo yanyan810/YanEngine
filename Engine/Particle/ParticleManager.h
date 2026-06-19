@@ -23,6 +23,9 @@ struct Particles {
     float lifeTime;
     Vector3 velocity;
     float currentTime;
+    float rotation;
+    float angularVelocity;
+    float padding0[2];
     Vector4 color;
 };
 
@@ -71,6 +74,11 @@ struct EmitterData {
 
     float angleRandomDeg;
     float jitterDeg;
+    float rotationStartDeg;
+    float rotationRandomDeg;
+
+    float angularVelocityMinDeg;
+    float angularVelocityMaxDeg;
     float padding3[2];
 };
 
@@ -156,6 +164,7 @@ public:
     void ClearGroups();
     void RemoveGroup(const std::string& groupName);
     void DrawImGui(); // ★追加
+    void DrawImGuiContents();
 
     void Save(const std::string& filename);
     void Load(const std::string& filename);
@@ -182,6 +191,9 @@ private:
     ParticleManager& operator=(const ParticleManager&) = delete;
 
     void LoadInternal_(const std::string& filename, bool clearExisting, const std::string& groupNamePrefix, bool forceAutoEmitOff, const std::vector<std::string>* skipGroupNames = nullptr);
+    void RetireAllGroups_();
+    void RetireGroup_(const std::string& groupName);
+    void CollectRetiredGroups_();
 
 private:
     // === 外部システム ===
@@ -201,6 +213,12 @@ private:
 
     std::unordered_map<std::string, ParticleGroup> particleGroups_;
     std::string editorSelectedGroupName_;
+
+    struct RetiredParticleGroups {
+        std::unordered_map<std::string, ParticleGroup> groups;
+        int framesRemaining = 3;
+    };
+    std::vector<RetiredParticleGroups> retiredParticleGroups_;
 
 
     // === GPU リソース ===

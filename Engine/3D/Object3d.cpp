@@ -741,3 +741,23 @@ bool Object3d::HasJoint(const std::string& jointName) const
 	const auto& poseSkeleton = animator_->GetPoseSkeleton();
 	return poseSkeleton.jointMap.contains(jointName);
 }
+
+void Object3d::SetManualJointTransform(int32_t jointIndex, const Vector3& translate, const Vector3& rotate, const Vector3& scale)
+{
+	if (!animator_) {
+		return;
+	}
+
+	Animator::ManualJointTransform transform{};
+	transform.translate = translate;
+	transform.rotate = rotate;
+	transform.scale = scale;
+	animator_->SetManualJointTransform(jointIndex, transform);
+}
+
+void Object3d::ResetManualJointTransforms()
+{
+	if (animator_) {
+		animator_->ResetManualJointTransforms();
+	}
+}

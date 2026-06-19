@@ -906,7 +906,6 @@ void Model::Draw(ID3D12GraphicsCommandList* cmd,
 
 		if (overrideSrv) {
 			// ★動画など外部SRVを強制使用
-			OutputDebugStringA("[Model] overrideSrv path\n");
 			handle = *overrideSrv;
 
 		}

@@ -122,7 +122,6 @@ void VideoPlayerMF::UploadToGpu(ID3D12GraphicsCommandList* cmd)
 	if (!gpuInitialized_ || !cmd) return;
 
 	if (!hasNewFrame_) {
-		OutputDebugStringA("[VideoPlayerMF] no new frame\n");
 		return;
 	}
 

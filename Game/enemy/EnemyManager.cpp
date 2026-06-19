@@ -29,6 +29,20 @@ EnemyManager::AABB3 ToAABB3(const AABB& a) {
 	return b;
 }
 
+Vector3 OverlapCenter(const AABB& a, const AABB& b) {
+	const float minX = std::max(a.min.x, b.min.x);
+	const float minY = std::max(a.min.y, b.min.y);
+	const float minZ = std::max(a.min.z, b.min.z);
+	const float maxX = std::min(a.max.x, b.max.x);
+	const float maxY = std::min(a.max.y, b.max.y);
+	const float maxZ = std::min(a.max.z, b.max.z);
+	return {
+		(minX + maxX) * 0.5f,
+		(minY + maxY) * 0.5f,
+		(minZ + maxZ) * 0.5f
+	};
+}
+
 const char* DebugEnemyTypeName(EnemyType type) {
 	switch (type) {
 	case EnemyType::Melee:
@@ -147,7 +161,8 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		if (!enemy.IsAlive() || enemy.WasHitByPlayerAttack(attackSerial)) {
 			continue;
 		}
-		if (!Intersect3(attackBox3, ToAABB3(enemy.GetBodyAABB()))) {
+		const AABB enemyBodyBox = enemy.GetBodyAABB();
+		if (!Intersect3(attackBox3, ToAABB3(enemyBodyBox))) {
 			continue;
 		}
 
@@ -165,6 +180,7 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		event.hpAfter = enemy.GetHP();
 		event.playerPosition = player.GetPos3D();
 		event.targetPosition = enemy.GetPos3D();
+		event.hitPosition = OverlapCenter(attackBox, enemyBodyBox);
 		hitEvents.push_back(event);
 	}
 
@@ -447,16 +463,6 @@ void EnemyManager::Draw() {
 	DrawHealDrops_();
 
 	for (auto& e : enemies_) e.Draw();
-
-	for (auto& e : enemies_) {
-		if (e.IsBoss()) {
-			Vector3 p = e.GetPos3D();
-			char buf[128];
-			sprintf_s(buf, "[Boss] pos=(%.2f, %.2f, %.2f)\n", p.x, p.y, p.z);
-			OutputDebugStringA(buf);
-		}
-	}
-
 
 	bullets_.Draw();
 

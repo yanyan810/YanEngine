@@ -20,6 +20,8 @@ ParticleManager* ParticleManager::GetInstance() {
 }
 
 namespace {
+    constexpr int kRetiredParticleGroupKeepFrames = 8;
+
     std::string NormalizeParticleJsonFileName(const char* text) {
         std::filesystem::path path(text ? text : "");
         std::string fileName = path.filename().string();
@@ -74,6 +76,9 @@ namespace {
         case 5: vertices = GeometryGenerator::GenerateCylinderTriList(32, 1.0f, 2.0f); break;
         case 6: vertices = GeometryGenerator::GenerateConeTriList(32, 1.0f, 2.0f); break;
         case 7: vertices = GeometryGenerator::GenerateTriangleTriListXY(2.0f, 2.0f); break;
+        case 8: vertices = GeometryGenerator::GenerateCapsuleTriList(32, 8, 0.65f, 1.4f); break;
+        case 9: vertices = GeometryGenerator::GenerateStarTriListXY(1.1f, 0.48f, 5); break;
+        case 10: vertices = GeometryGenerator::GenerateDiamondTriListXY(1.6f, 2.2f); break;
         default: return nullptr;
         }
 
@@ -86,14 +91,14 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     particleCommon_ = particleCommon;
-    // ランダム初期化
+    // 繝ｩ繝ｳ繝繝蛻晄悄蛹・
     std::random_device rd;
     randomEngine_ = std::mt19937(rd());
 
-    // 頂点配列確保
+    // 鬆らせ驟榊・遒ｺ菫・
     vertices_.resize(kVertexCount);
 
-    // 左上(0) 右上(1) 右下(2) / 左上(0) 右下(2) 左下(3)
+    // 蟾ｦ荳・0) 蜿ｳ荳・1) 蜿ｳ荳・2) / 蟾ｦ荳・0) 蜿ｳ荳・2) 蟾ｦ荳・3)
     auto setV = [&](int i, float x, float y, float u, float v) {
         vertices_[i].position[0] = x;
         vertices_[i].position[1] = y;
@@ -106,7 +111,7 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
         vertices_[i].normal[2] = -1.0f;
         };
 
-    // サイズは好み。まず見える確認なら大きめでOK
+    // 繧ｵ繧､繧ｺ縺ｯ螂ｽ縺ｿ縲ゅ∪縺夊ｦ九∴繧狗｢ｺ隱阪↑繧牙､ｧ縺阪ａ縺ｧOK
     const float s = 0.5f;
     setV(0, -s, +s, 0.0f, 0.0f);
     setV(1, +s, +s, 1.0f, 0.0f);
@@ -115,7 +120,7 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     setV(4, +s, -s, 1.0f, 1.0f);
     setV(5, -s, -s, 0.0f, 1.0f);
 
-    // bufferSize も kVertexCount 分にする
+    // bufferSize 繧・kVertexCount 蛻・↓縺吶ｋ
     const UINT bufferSize = sizeof(ParticleVertex) * kVertexCount;
 
 
@@ -127,28 +132,28 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     vbView_.SizeInBytes = bufferSize;
     vbView_.StrideInBytes = sizeof(ParticleVertex);
 
-    // GPUへ書き込み
+    // GPU縺ｸ譖ｸ縺崎ｾｼ縺ｿ
     void* mapped = nullptr;
     vertexBuffer_->Map(0, nullptr, &mapped);
     memcpy(mapped, vertices_.data(), bufferSize);
     vertexBuffer_->Unmap(0, nullptr);
 
-    // PerView リソース作成
+    // PerView 繝ｪ繧ｽ繝ｼ繧ｹ菴懈・
     perViewResource_ = dxCommon_->CreateBufferResource(sizeof(PerView));
     perViewResource_->Map(0, nullptr, reinterpret_cast<void**>(&mappedPerView_));
-    // 初期値
+    // 蛻晄悄蛟､
     mappedPerView_->viewProjection = Matrix4x4::MakeIdentity4x4();
     mappedPerView_->billboardMatrix = Matrix4x4::MakeIdentity4x4();
 
-    // PerFrame リソース作成
+    // PerFrame 繝ｪ繧ｽ繝ｼ繧ｹ菴懈・
     perFrameResource_ = dxCommon_->CreateBufferResource(sizeof(PerFrame));
     perFrameResource_->Map(0, nullptr, reinterpret_cast<void**>(&mappedPerFrame_));
     mappedPerFrame_->time = 0.0f;
     mappedPerFrame_->deltaTime = 0.0f;
     time_ = 0.0f;
 
-    // --- ダミーマテリアル＆ライト ---
-    // HLSLの struct Material { float4 color; int enableLighting; float4x4 uvTransform; } (サイズ: 16+4+64 = 84 -> アライメント考慮で256の倍数)
+    // --- 繝繝溘・繝槭ユ繝ｪ繧｢繝ｫ・・Λ繧､繝・---
+    // HLSL縺ｮ struct Material { float4 color; int enableLighting; float4x4 uvTransform; } (繧ｵ繧､繧ｺ: 16+4+64 = 84 -> 繧｢繝ｩ繧､繝｡繝ｳ繝郁・・縺ｧ256縺ｮ蛟肴焚)
     materialResource_ = dxCommon_->CreateBufferResource(256);
     struct DummyMaterial { Vector4 color; int enableLighting; float padding[3]; Matrix4x4 uvTransform; };
     DummyMaterial* mappedMat = nullptr;
@@ -157,7 +162,7 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     mappedMat->enableLighting = 0;
     mappedMat->uvTransform = Matrix4x4::MakeIdentity4x4();
 
-    // HLSLの struct DirectionalLight { float4 color; float3 direction; float intensity; }
+    // HLSL縺ｮ struct DirectionalLight { float4 color; float3 direction; float intensity; }
     dirLightResource_ = dxCommon_->CreateBufferResource(256);
     struct DummyLight { Vector4 color; Vector3 direction; float intensity; };
     DummyLight* mappedLight = nullptr;
@@ -168,26 +173,73 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
 }
 
 void ParticleManager::Finalize() {
-    particleGroups_.clear();
+    RetireAllGroups_();
+    retiredParticleGroups_.clear();
     vertexBuffer_.Reset();
 }
 
 void ParticleManager::ClearGroups()
 {
-    particleGroups_.clear();
+    RetireAllGroups_();
 }
 
 void ParticleManager::RemoveGroup(const std::string& groupName)
 {
-    particleGroups_.erase(groupName);
+    RetireGroup_(groupName);
+}
+
+void ParticleManager::RetireAllGroups_()
+{
+    if (particleGroups_.empty()) {
+        return;
+    }
+
+    RetiredParticleGroups retired;
+    retired.groups = std::move(particleGroups_);
+    retired.framesRemaining = kRetiredParticleGroupKeepFrames;
+    retiredParticleGroups_.push_back(std::move(retired));
+    particleGroups_.clear();
+    editorSelectedGroupName_.clear();
+}
+
+void ParticleManager::RetireGroup_(const std::string& groupName)
+{
+    auto it = particleGroups_.find(groupName);
+    if (it == particleGroups_.end()) {
+        return;
+    }
+
+    RetiredParticleGroups retired;
+    retired.groups.emplace(groupName, std::move(it->second));
+    retired.framesRemaining = kRetiredParticleGroupKeepFrames;
+    retiredParticleGroups_.push_back(std::move(retired));
+    particleGroups_.erase(it);
+
     if (editorSelectedGroupName_ == groupName) {
         editorSelectedGroupName_.clear();
     }
 }
 
+void ParticleManager::CollectRetiredGroups_()
+{
+    for (auto& retired : retiredParticleGroups_) {
+        --retired.framesRemaining;
+    }
+    retiredParticleGroups_.erase(
+        std::remove_if(
+            retiredParticleGroups_.begin(),
+            retiredParticleGroups_.end(),
+            [](const RetiredParticleGroups& retired) {
+                return retired.framesRemaining <= 0;
+            }),
+        retiredParticleGroups_.end());
+}
+
 void ParticleManager::Update(float dt, const Camera& camera)
 {
-    // ★ 実カメラから取得
+    CollectRetiredGroups_();
+
+    // 笘・螳溘き繝｡繝ｩ縺九ｉ蜿門ｾ・
     const Matrix4x4& vp = camera.GetViewProjectionMatrix();
     const Matrix4x4& cameraMatrix = camera.GetWorldMatrix();
 
@@ -196,26 +248,26 @@ void ParticleManager::Update(float dt, const Camera& camera)
     billboardMatrix.m[3][1] = 0.0f;
     billboardMatrix.m[3][2] = 0.0f;
 
-    // PerView の更新
+    // PerView 縺ｮ譖ｴ譁ｰ
     if (mappedPerView_) {
         mappedPerView_->viewProjection = vp;
         mappedPerView_->billboardMatrix = billboardMatrix;
     }
 
-    // PerFrame の更新
+    // PerFrame 縺ｮ譖ｴ譁ｰ
     time_ += dt;
     if (mappedPerFrame_) {
         mappedPerFrame_->time = time_;
         mappedPerFrame_->deltaTime = dt;
     }
 
-    // Emitterの更新
+    // Emitter縺ｮ譖ｴ譁ｰ
     for (auto& [name, group] : particleGroups_) {
         group.activeTimeRemaining = std::max(0.0f, group.activeTimeRemaining - dt);
         if (group.mappedEmitter) {
             if (group.isAutoEmit) {
-                group.mappedEmitter->frequencyTime += dt; // δタイムを加算
-                // 射出間隔を上回ったら射出許可を出して時間を調整
+                group.mappedEmitter->frequencyTime += dt; // ﾎｴ繧ｿ繧､繝繧貞刈邂・
+                // 蟆・・髢馴囈繧剃ｸ雁屓縺｣縺溘ｉ蟆・・險ｱ蜿ｯ繧貞・縺励※譎る俣繧定ｪｿ謨ｴ
                 if (group.mappedEmitter->frequency <= group.mappedEmitter->frequencyTime) {
                     group.mappedEmitter->frequencyTime -= group.mappedEmitter->frequency;
                     group.mappedEmitter->emit = 1;
@@ -223,10 +275,10 @@ void ParticleManager::Update(float dt, const Camera& camera)
                     group.mappedEmitter->emit = 0;
                 }
             } else {
-                // 自動発生OFFの場合
+                // 閾ｪ蜍慕匱逕欅FF縺ｮ蝣ｴ蜷・
                 if (group.isEmitRequested) {
                     group.mappedEmitter->emit = 1;
-                    group.isEmitRequested = false; // 1フレームだけ1にする
+                    group.isEmitRequested = false; // 1繝輔Ξ繝ｼ繝縺縺・縺ｫ縺吶ｋ
                 } else {
                     group.mappedEmitter->emit = 0;
                 }
@@ -382,7 +434,7 @@ void ParticleManager::CreateParticleGroup(
         sizeof(uint32_t)
     );
 
-    // --- Compute Shaderで初期化 (Dispatch) ---
+    // --- Compute Shader縺ｧ蛻晄悄蛹・(Dispatch) ---
     auto* cmd = dxCommon_->GetComputeCommandList();
 
     // barrier: COMMON -> UAV
@@ -408,10 +460,10 @@ void ParticleManager::CreateParticleGroup(
 
     particleCommon_->SetComputePipelineState(cmd);
     
-    // ★追加: DescriptorHeapをコマンドリストにセットする
+    // 笘・ｿｽ蜉: DescriptorHeap繧偵さ繝槭Φ繝峨Μ繧ｹ繝医↓繧ｻ繝・ヨ縺吶ｋ
     srvManager_->PreDrawCompute(cmd);
 
-    // UAVセット (Register u0, u1, u2)
+    // UAV繧ｻ繝・ヨ (Register u0, u1, u2)
     cmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
     cmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
     cmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
@@ -437,7 +489,7 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->radius = 5.0f;
     group.mappedEmitter->emit = 0;
 
-    // 拡張パラメータの初期化
+    // 諡｡蠑ｵ繝代Λ繝｡繝ｼ繧ｿ縺ｮ蛻晄悄蛹・
     group.mappedEmitter->lifeTimeMin = 0.5f;
     group.mappedEmitter->lifeTimeMax = 2.0f;
     group.mappedEmitter->velocityBase = { 0.0f, 0.0f, 0.0f };
@@ -450,11 +502,15 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->speedMax = 0.12f;
     group.mappedEmitter->angleRandomDeg = 360.0f;
     group.mappedEmitter->jitterDeg = 0.0f;
+    group.mappedEmitter->rotationStartDeg = 0.0f;
+    group.mappedEmitter->rotationRandomDeg = 360.0f;
+    group.mappedEmitter->angularVelocityMinDeg = 0.0f;
+    group.mappedEmitter->angularVelocityMaxDeg = 0.0f;
 
     group.mappedEmitter->shapeType = 0; // 0:Sphere
-    group.mappedEmitter->shapeAngle = 0.5f; // Cone用
-    group.mappedEmitter->shapeSize = { 5.0f, 5.0f, 5.0f }; // Box用
-    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f }; // 重力など
+    group.mappedEmitter->shapeAngle = 0.5f; // Cone逕ｨ
+    group.mappedEmitter->shapeSize = { 5.0f, 5.0f, 5.0f }; // Box逕ｨ
+    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f }; // 驥榊鴨縺ｪ縺ｩ
 
     group.billboardMode = 0; // 0:Billboard
 
@@ -472,8 +528,8 @@ void ParticleManager::CreateParticleGroup(
 
     ParticleGroup group{};
     group.model = model;
-    group.modelType = 2; // デフォルトはFileとして扱う（詳細は呼び出し元依存）
-    group.modelName = ""; // 初期値
+    group.modelType = 2; // 繝・ヵ繧ｩ繝ｫ繝医・File縺ｨ縺励※謇ｱ縺・ｼ郁ｩｳ邏ｰ縺ｯ蜻ｼ縺ｳ蜃ｺ縺怜・萓晏ｭ假ｼ・
+    group.modelName = ""; // 蛻晄悄蛟､
 
     // --- texture ---
     const auto& materials = model->GetMaterials();
@@ -485,7 +541,7 @@ void ParticleManager::CreateParticleGroup(
         group.textureSrvIndex = TextureManager::GetInstance()->GetSrvIndex(texPath);
         group.texturePath = texPath;
     } else {
-        // 空パスのときは TextureManager に白テクスチャ等があるならそれを使うか 0 番にする
+        // 遨ｺ繝代せ縺ｮ縺ｨ縺阪・ TextureManager 縺ｫ逋ｽ繝・け繧ｹ繝√Ε遲峨′縺ゅｋ縺ｪ繧峨◎繧後ｒ菴ｿ縺・° 0 逡ｪ縺ｫ縺吶ｋ
         group.textureSrvIndex = 0; 
         group.texturePath = "";
     }
@@ -564,7 +620,7 @@ void ParticleManager::CreateParticleGroup(
         sizeof(uint32_t)
     );
 
-    // --- Compute Shaderで初期化 (Dispatch) ---
+    // --- Compute Shader縺ｧ蛻晄悄蛹・(Dispatch) ---
     auto* computeCmd = dxCommon_->GetComputeCommandList();
 
     D3D12_RESOURCE_BARRIER barriers[3]{};
@@ -606,7 +662,7 @@ void ParticleManager::CreateParticleGroup(
     computeCmd->ResourceBarrier(1, &barrier);
 
     // --- Emitter Buffer ---
-    // HLSLの構造体に合わせてサイズを確保
+    // HLSL縺ｮ讒矩菴薙↓蜷医ｏ縺帙※繧ｵ繧､繧ｺ繧堤｢ｺ菫・
     group.emitterResource = dxCommon_->CreateBufferResource(sizeof(EmitterData));
     group.emitterResource->Map(0, nullptr, reinterpret_cast<void**>(&group.mappedEmitter));
     group.mappedEmitter->count = 10;
@@ -616,7 +672,7 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->radius = 5.0f;
     group.mappedEmitter->emit = 0;
 
-    // 拡張パラメータの初期化
+    // 諡｡蠑ｵ繝代Λ繝｡繝ｼ繧ｿ縺ｮ蛻晄悄蛹・
     group.mappedEmitter->lifeTimeMin = 0.5f;
     group.mappedEmitter->lifeTimeMax = 2.0f;
     group.mappedEmitter->velocityBase = { 0.0f, 0.0f, 0.0f };
@@ -629,11 +685,15 @@ void ParticleManager::CreateParticleGroup(
     group.mappedEmitter->speedMax = 0.12f;
     group.mappedEmitter->angleRandomDeg = 360.0f;
     group.mappedEmitter->jitterDeg = 0.0f;
+    group.mappedEmitter->rotationStartDeg = 0.0f;
+    group.mappedEmitter->rotationRandomDeg = 360.0f;
+    group.mappedEmitter->angularVelocityMinDeg = 0.0f;
+    group.mappedEmitter->angularVelocityMaxDeg = 0.0f;
 
     group.mappedEmitter->shapeType = 0; // 0:Sphere
-    group.mappedEmitter->shapeAngle = 0.5f; // Cone用
-    group.mappedEmitter->shapeSize = { 5.0f, 5.0f, 5.0f }; // Box用
-    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f }; // 重力など
+    group.mappedEmitter->shapeAngle = 0.5f; // Cone逕ｨ
+    group.mappedEmitter->shapeSize = { 5.0f, 5.0f, 5.0f }; // Box逕ｨ
+    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f }; // 驥榊鴨縺ｪ縺ｩ
 
     group.billboardMode = 0; // 0:Billboard
 
@@ -718,12 +778,16 @@ void ParticleManager::ConfigureHitEffectPreset(const std::string& groupName) {
     group.mappedEmitter->scaleEnd = { 0.0f, 0.0f, 0.0f };
     group.mappedEmitter->angleRandomDeg = 360.0f;
     group.mappedEmitter->jitterDeg = 0.0f;
+    group.mappedEmitter->rotationStartDeg = 0.0f;
+    group.mappedEmitter->rotationRandomDeg = 360.0f;
+    group.mappedEmitter->angularVelocityMinDeg = -360.0f;
+    group.mappedEmitter->angularVelocityMaxDeg = 360.0f;
 }
 
 void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
     for (auto& [name, group] : particleGroups_) {
 
-        // --- Compute Shader による Emit ---
+        // --- Compute Shader 縺ｫ繧医ｋ Emit ---
         if (!group.isAutoEmit && !group.isEmitRequested && group.activeTimeRemaining <= 0.0f) {
             continue;
         }
@@ -731,7 +795,7 @@ void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
             particleCommon_->SetEmitComputePipelineState(computeCmd);
         }
 
-        // バリア: SRV -> UAV
+        // 繝舌Μ繧｢: SRV -> UAV
         D3D12_RESOURCE_BARRIER barrier{};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier.Transition.pResource = group.instancingResource.Get();
@@ -740,21 +804,21 @@ void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
         barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         computeCmd->ResourceBarrier(1, &barrier);
 
-        // SRVヒープをセット
+        // SRV繝偵・繝励ｒ繧ｻ繝・ヨ
         srvManager_->PreDrawCompute(computeCmd);
 
-        // b0 に Emitter (CBV)
+        // b0 縺ｫ Emitter (CBV)
         computeCmd->SetComputeRootConstantBufferView(3, group.emitterResource->GetGPUVirtualAddress());
-        // b1 に PerFrame (CBV) ★追加
+        // b1 縺ｫ PerFrame (CBV) 笘・ｿｽ蜉
         computeCmd->SetComputeRootConstantBufferView(4, perFrameResource_->GetGPUVirtualAddress());
-        // u0 に Particles (UAV)
+        // u0 縺ｫ Particles (UAV)
         computeCmd->SetComputeRootDescriptorTable(0, srvManager_->GetGPUDescriptionHandle(group.instancingUavIndex));
-        // u1 に FreeListIndex (UAV)
+        // u1 縺ｫ FreeListIndex (UAV)
         computeCmd->SetComputeRootDescriptorTable(1, srvManager_->GetGPUDescriptionHandle(group.freeListIndexUavIndex));
-        // u2 に FreeList (UAV)
+        // u2 縺ｫ FreeList (UAV)
         computeCmd->SetComputeRootDescriptorTable(2, srvManager_->GetGPUDescriptionHandle(group.freeListUavIndex));
 
-        // 実行 (Emit)
+        // 螳溯｡・(Emit)
         computeCmd->Dispatch(1, 1, 1);
 
         // --- UAV Barrier ---
@@ -764,15 +828,15 @@ void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
         uavBarrier.UAV.pResource = group.instancingResource.Get();
         computeCmd->ResourceBarrier(1, &uavBarrier);
 
-        // --- Compute Shader による Update ---
+        // --- Compute Shader 縺ｫ繧医ｋ Update ---
         if (particleCommon_) {
             particleCommon_->SetUpdateComputePipelineState(computeCmd);
         }
 
-        // 実行 (Update)
+        // 螳溯｡・(Update)
         computeCmd->Dispatch(kMaxInstance / 1024 > 0 ? kMaxInstance / 1024 : 1, 1, 1);
 
-        // バリア: UAV -> SRV
+        // 繝舌Μ繧｢: UAV -> SRV
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
         computeCmd->ResourceBarrier(1, &barrier);
@@ -784,6 +848,7 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd) {
 }
 
 void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTargets) {
+    const bool hasPostEffectTargets = HasPostEffectTargets();
     for (auto& [name, group] : particleGroups_) {
         if (!group.isAutoEmit && !group.isEmitRequested && group.activeTimeRemaining <= 0.0f) {
             continue;
@@ -792,9 +857,12 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTa
         if (drawPostEffectTargets && !isPostEffectTarget) {
             continue;
         }
+        if (!drawPostEffectTargets && isPostEffectTarget && hasPostEffectTargets) {
+            continue;
+        }
 
-        // --- Graphics による描画 ---
-        // ★ ブレンド切替（PSO切替）
+        // --- Graphics 縺ｫ繧医ｋ謠冗判 ---
+        // 笘・繝悶Ξ繝ｳ繝牙・譖ｿ・・SO蛻・崛・・
         if (particleCommon_) {
             particleCommon_->SetBlendMode(group.blendMode);
             particleCommon_->SetDepthTestEnabled(group.depthTestEnabled);
@@ -803,13 +871,13 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTa
 
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-        // RootParameter 0 (b0) に Material
+        // RootParameter 0 (b0) 縺ｫ Material
         cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
-        // RootParameter 3 (b1) に DirectionalLight
+        // RootParameter 3 (b1) 縺ｫ DirectionalLight
         cmd->SetGraphicsRootConstantBufferView(3, dirLightResource_->GetGPUVirtualAddress());
-        // PerView(CBV) を RootParameter 4 にセット (b0)
+        // PerView(CBV) 繧・RootParameter 4 縺ｫ繧ｻ繝・ヨ (b0)
         cmd->SetGraphicsRootConstantBufferView(4, perViewResource_->GetGPUVirtualAddress());
-        // BillboardMode (RootConstants 32bit) を RootParameter 5 にセット (b1)
+        // BillboardMode (RootConstants 32bit) 繧・RootParameter 5 縺ｫ繧ｻ繝・ヨ (b1)
         cmd->SetGraphicsRoot32BitConstants(5, 1, &group.billboardMode, 0);
 
         srvManager_->SetGraphicsDescriptorTable(2, group.textureSrvIndex);
@@ -817,7 +885,7 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTa
 
         if (group.model) {
             auto vbv = group.model->GetVBV();
-            // モデルの読み込みに失敗している等の理由で StrideInBytes が 0 の場合はゼロ除算になるためスキップ
+            // 繝｢繝・Ν縺ｮ隱ｭ縺ｿ霎ｼ縺ｿ縺ｫ螟ｱ謨励＠縺ｦ縺・ｋ遲峨・逅・罰縺ｧ StrideInBytes 縺・0 縺ｮ蝣ｴ蜷医・繧ｼ繝ｭ髯､邂励↓縺ｪ繧九◆繧√せ繧ｭ繝・・
             if (vbv.StrideInBytes == 0) continue;
 
             cmd->IASetVertexBuffers(0, 1, &vbv);
@@ -838,7 +906,7 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTa
         } else {
             cmd->IASetVertexBuffers(0, 1, &vbView_);
             if (kVertexCount > 0) {
-                // 1024個すべて描画
+                // 1024蛟九☆縺ｹ縺ｦ謠冗判
                 cmd->DrawInstanced(kVertexCount, kMaxInstance, 0, 0);
             }
         }
@@ -881,7 +949,7 @@ void ParticleManager::ScanResources() {
         std::replace(path.begin(), path.end(), '\\', '/'); 
         
         if (ext == ".obj" || ext == ".gltf" || ext == ".glb") {
-            // モデル読み込み時は内部で "resources/" が付与されるため、先頭の "resources/" を削除する
+            // 繝｢繝・Ν隱ｭ縺ｿ霎ｼ縺ｿ譎ゅ・蜀・Κ縺ｧ "resources/" 縺御ｻ倅ｸ弱＆繧後ｋ縺溘ａ縲∝・鬆ｭ縺ｮ "resources/" 繧貞炎髯､縺吶ｋ
             std::string lowerPath = path;
             std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
             if (lowerPath.starts_with("resources/")) {
@@ -896,17 +964,21 @@ void ParticleManager::ScanResources() {
 }
 
 void ParticleManager::DrawImGui() {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     ImGui::Begin("Particle Manager");
+    DrawImGuiContents();
+    ImGui::End();
+#endif
+}
 
+void ParticleManager::DrawImGuiContents() {
+#ifdef USE_IMGUI
     if (!isResourcesScanned_) {
         ScanResources();
     }
 
-    if (ImGui::BeginCombo("Particle JSON", saveFileName_)) {
-        ImGui::InputText("Save / Load Name", saveFileName_, sizeof(saveFileName_));
-        ImGui::Separator();
-        ImGui::TextDisabled("Resources/Particles");
+    ImGui::InputText("JSON Name", saveFileName_, sizeof(saveFileName_));
+    if (ImGui::BeginCombo("Open Existing JSON", saveFileName_)) {
         if (particleJsonFiles_.empty()) {
             ImGui::TextDisabled("No json files in Resources/Particles.");
         }
@@ -914,6 +986,7 @@ void ParticleManager::DrawImGui() {
             const bool selected = fileName == saveFileName_;
             if (ImGui::Selectable(fileName.c_str(), selected)) {
                 std::snprintf(saveFileName_, sizeof(saveFileName_), "%s", fileName.c_str());
+                Load(fileName);
             }
             if (selected) {
                 ImGui::SetItemDefaultFocus();
@@ -947,7 +1020,6 @@ void ParticleManager::DrawImGui() {
     if (editorSelectedGroupName_.empty()) {
         ImGui::Separator();
         ImGui::TextDisabled("Select a particle group in Hierarchy.");
-        ImGui::End();
         return;
     }
 
@@ -957,7 +1029,7 @@ void ParticleManager::DrawImGui() {
         }
         if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
             
-            // ブレンドモード
+            // 繝悶Ξ繝ｳ繝峨Δ繝ｼ繝・
             const char* blendModes[] = { "None", "Normal", "Add", "Subtract", "Multiply", "Screen" };
             int currentBlend = static_cast<int>(group.blendMode);
             if (ImGui::Combo("Blend Mode", &currentBlend, blendModes, IM_ARRAYSIZE(blendModes))) {
@@ -982,14 +1054,14 @@ void ParticleManager::DrawImGui() {
             }
             ImGui::Checkbox("Depth Test", &group.depthTestEnabled);
 
-            // ビルボードモード
+            // 繝薙Ν繝懊・繝峨Δ繝ｼ繝・
             const char* billboardModes[] = { "Billboard (Camera Face)", "Velocity Aligned (Arrow)", "None (Fixed)" };
             int currentBMode = static_cast<int>(group.billboardMode);
             if (ImGui::Combo("Billboard Mode", &currentBMode, billboardModes, IM_ARRAYSIZE(billboardModes))) {
                 group.billboardMode = static_cast<uint32_t>(currentBMode);
             }
 
-            // モデル選択
+            // 繝｢繝・Ν驕ｸ謚・
             std::string currentModelName = group.model ? "Custom Model / Primitive" : "None (Board Polygon)";
             if (ImGui::BeginCombo("Model", currentModelName.c_str())) {
                 bool isSelected = (group.model == nullptr);
@@ -1002,8 +1074,8 @@ void ParticleManager::DrawImGui() {
 
                 ImGui::Separator();
                 ImGui::Text("Primitives");
-                const char* primNames[] = { "Ring", "Sphere", "Box", "Plane", "Torus", "Cylinder", "Cone", "Triangle" };
-                for (int i = 0; i < 8; ++i) {
+                const char* primNames[] = { "Ring", "Sphere", "Box", "Plane", "Torus", "Cylinder", "Cone", "Triangle", "Capsule", "Star", "Diamond" };
+                for (int i = 0; i < IM_ARRAYSIZE(primNames); ++i) {
                     if (ImGui::Selectable(primNames[i], false)) {
                         group.model = GetOrMakeParticlePrimitiveModel(i);
                         group.modelType = 1;
@@ -1026,7 +1098,7 @@ void ParticleManager::DrawImGui() {
                 ImGui::EndCombo();
             }
 
-            // テクスチャ選択
+            // 繝・け繧ｹ繝√Ε驕ｸ謚・
             std::string currentTexName = "Select Texture...";
             if (ImGui::BeginCombo("Texture", currentTexName.c_str())) {
                 for (size_t i = 0; i < textureFiles_.size(); ++i) {
@@ -1041,7 +1113,7 @@ void ParticleManager::DrawImGui() {
                 ImGui::EndCombo();
             }
 
-            // Emitterパラメータ
+            // Emitter繝代Λ繝｡繝ｼ繧ｿ
             if (group.mappedEmitter) {
                 ImGui::Separator();
                 ImGui::Text("Emission Settings");
@@ -1049,6 +1121,7 @@ void ParticleManager::DrawImGui() {
                 
                 if (ImGui::Button("Emit Now!")) {
                     group.isEmitRequested = true;
+                    group.activeTimeRemaining = std::max(group.activeTimeRemaining, group.mappedEmitter->lifeTimeMax + 0.5f);
                 }
 
                 int count = static_cast<int>(group.mappedEmitter->count);
@@ -1097,6 +1170,13 @@ void ParticleManager::DrawImGui() {
                 ImGui::DragFloat("Speed Max", &group.mappedEmitter->speedMax, 0.01f, 0.0f, 10.0f);
                 ImGui::DragFloat("Angle Random Deg", &group.mappedEmitter->angleRandomDeg, 1.0f, 0.0f, 360.0f);
                 ImGui::DragFloat("Jitter Deg", &group.mappedEmitter->jitterDeg, 1.0f, 0.0f, 180.0f);
+                ImGui::DragFloat("Rotation Start Deg", &group.mappedEmitter->rotationStartDeg, 1.0f, -360.0f, 360.0f);
+                ImGui::DragFloat("Rotation Random Deg", &group.mappedEmitter->rotationRandomDeg, 1.0f, 0.0f, 360.0f);
+                float angularVelocity[2] = { group.mappedEmitter->angularVelocityMinDeg, group.mappedEmitter->angularVelocityMaxDeg };
+                if (ImGui::DragFloat2("Angular Velocity Deg/s", angularVelocity, 1.0f, -1440.0f, 1440.0f)) {
+                    group.mappedEmitter->angularVelocityMinDeg = angularVelocity[0];
+                    group.mappedEmitter->angularVelocityMaxDeg = angularVelocity[1];
+                }
                 ImGui::DragFloat3("Acceleration (Gravity)", &group.mappedEmitter->acceleration.x, 0.01f);
 
                 ImGui::ColorEdit4("Start Color", &group.mappedEmitter->startColor.x);
@@ -1107,7 +1187,6 @@ void ParticleManager::DrawImGui() {
         }
     }
 
-    ImGui::End();
 #endif
 }
 
@@ -1144,6 +1223,10 @@ void ParticleManager::Save(const std::string& filename) {
             e["speedMax"] = group.mappedEmitter->speedMax;
             e["angleRandomDeg"] = group.mappedEmitter->angleRandomDeg;
             e["jitterDeg"] = group.mappedEmitter->jitterDeg;
+            e["rotationStartDeg"] = group.mappedEmitter->rotationStartDeg;
+            e["rotationRandomDeg"] = group.mappedEmitter->rotationRandomDeg;
+            e["angularVelocityMinDeg"] = group.mappedEmitter->angularVelocityMinDeg;
+            e["angularVelocityMaxDeg"] = group.mappedEmitter->angularVelocityMaxDeg;
             e["shapeType"] = group.mappedEmitter->shapeType;
             e["shapeAngle"] = group.mappedEmitter->shapeAngle;
             e["shapeSize"] = { group.mappedEmitter->shapeSize.x, group.mappedEmitter->shapeSize.y, group.mappedEmitter->shapeSize.z };
@@ -1187,7 +1270,7 @@ void ParticleManager::LoadInternal_(const std::string& filename, bool clearExist
     file >> root;
 
     if (clearExisting) {
-        particleGroups_.clear();
+        RetireAllGroups_();
     }
 
     for (const auto& g : root) {
@@ -1252,6 +1335,10 @@ void ParticleManager::LoadInternal_(const std::string& filename, bool clearExist
             group.mappedEmitter->speedMax = e.value("speedMax", group.mappedEmitter->speedMax);
             group.mappedEmitter->angleRandomDeg = e.value("angleRandomDeg", group.mappedEmitter->angleRandomDeg);
             group.mappedEmitter->jitterDeg = e.value("jitterDeg", group.mappedEmitter->jitterDeg);
+            group.mappedEmitter->rotationStartDeg = e.value("rotationStartDeg", group.mappedEmitter->rotationStartDeg);
+            group.mappedEmitter->rotationRandomDeg = e.value("rotationRandomDeg", group.mappedEmitter->rotationRandomDeg);
+            group.mappedEmitter->angularVelocityMinDeg = e.value("angularVelocityMinDeg", group.mappedEmitter->angularVelocityMinDeg);
+            group.mappedEmitter->angularVelocityMaxDeg = e.value("angularVelocityMaxDeg", group.mappedEmitter->angularVelocityMaxDeg);
             group.mappedEmitter->shapeType = e["shapeType"];
             group.mappedEmitter->shapeAngle = e["shapeAngle"];
             group.mappedEmitter->shapeSize = { e["shapeSize"][0], e["shapeSize"][1], e["shapeSize"][2] };

@@ -154,7 +154,6 @@ private:
 
     bool hitEffectEnabled_ = true;
     char hitEffectGroupName_[64] = "HitEffect";
-    int hitEffectCount_ = 24;
     Vector3 hitEffectTestPosition_{ 0.0f, 1.0f, 5.0f };
     bool fallAttackEffectEnabled_ = true;
     char fallAttackEffectGroupName_[64] = "fallAttak_HitEffect";

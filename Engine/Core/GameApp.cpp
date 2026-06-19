@@ -229,7 +229,6 @@ void GameApp::Finalize_() {
 }
 
 void GameApp::Update(float dt) {
-    OutputDebugStringA("[GameApp] Update\n");
 
     input_->Update();
 
@@ -238,7 +237,6 @@ void GameApp::Update(float dt) {
 }
 
 void GameApp::Draw() {
-    OutputDebugStringA("[GameApp] Draw\n");
 
     srv_->PreDraw();
 
@@ -259,6 +257,12 @@ void GameApp::Draw() {
     }
     render_->EndOffscreen();
 
+#ifdef USE_IMGUI
+    render_->BeginPreview();
+    sceneMgr_->DrawPreview(*this);
+    render_->EndPreview();
+#endif
+
     // ② BackBufferへ
     dx_->PreDraw(false);
 
@@ -274,6 +278,7 @@ void GameApp::Draw() {
 #ifdef USE_IMGUI
     if (imgui_) {
         imgui_->SetSceneTexture(render_->RenderPostEffectsForSceneTexture());
+        imgui_->SetPreviewTexture(render_->GetPreviewSrvIndex());
             sceneMgr_->DrawImGui(*this);
             render_->DrawImGui(); // ポストエフェクト切り替えUI
         imgui_->End(dx_->GetCommandList());

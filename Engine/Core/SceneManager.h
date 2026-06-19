@@ -22,6 +22,7 @@ public:
     void Draw2D(GameApp& app);
     void Draw(GameApp& app);
     void DrawImGui(GameApp& app);
+    void DrawPreview(GameApp& app);
 
     IScene* Current() { return current_.get(); }
     const std::string& CurrentName() const { return currentName_; }

@@ -4,6 +4,9 @@ struct Particle {
     float lifeTime;
     float3 velocity;
     float currentTime;
+    float rotation;
+    float angularVelocity;
+    float2 padding0;
     float4 color;
 };
 
@@ -40,6 +43,11 @@ struct EmitterData {
 
     float angleRandomDeg;
     float jitterDeg;
+    float rotationStartDeg;
+    float rotationRandomDeg;
+
+    float angularVelocityMinDeg;
+    float angularVelocityMaxDeg;
     float2 padding3;
 };
 
@@ -66,6 +74,7 @@ void main(uint3 DTid : SV_DispatchThreadID) {
             gParticles[particleIndex].velocity += gEmitter.acceleration * gPerFrame.deltaTime;
             
             gParticles[particleIndex].translate += gParticles[particleIndex].velocity;
+            gParticles[particleIndex].rotation += gParticles[particleIndex].angularVelocity * gPerFrame.deltaTime;
             gParticles[particleIndex].currentTime += gPerFrame.deltaTime;
             float lifeRate = saturate(gParticles[particleIndex].currentTime / max(gParticles[particleIndex].lifeTime, 0.001f));
             gParticles[particleIndex].color = lerp(gEmitter.startColor, gEmitter.endColor, lifeRate);

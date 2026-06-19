@@ -2,6 +2,7 @@
 #include "GameApp.h"
 
 #include "Camera.h"
+#include "DebugAI/DebugAIManager.h"
 #include "Sprite.h"
 #include "SpriteCommon.h"
 #include "Object3d.h"
@@ -196,23 +197,37 @@ void GameScene::DrawImGui(GameApp& app) {
     ParticleManager::GetInstance()->DrawImGui();
 
     debugAIImGuiPanelState_.botRunning = debugAIEnabled_;
-    const DebugAIImGuiPanelRequests debugAIRequests =
-        DrawDebugAIImGuiPanel(app.DebugAI(), CaptureDebugState(), debugAIImGuiPanelState_);
-    if (debugAIRequests.stopReplay) {
-        debugRequestStopReplay_ = true;
+    ImGui::Begin("Debug AI Control");
+    ImGui::Checkbox("Show Debug AI Details", &debugAIImGuiPanelState_.showDetails);
+    if (app.DebugAI()) {
+        ImGui::Text("Status: %s", app.DebugAI()->IsEnabled() ? "Running" : "Stopped");
+        ImGui::Text("Replay: %s", app.DebugAI()->IsReplayPlaying() ? "Playing" : "Stopped");
     }
-    if (debugAIRequests.startReplay) {
-        debugReplayStartPath_ = debugAIRequests.replayPath;
-        debugRequestStartReplay_ = true;
-    }
-    if (debugAIRequests.startBot) {
-        debugRequestStartBot_ = true;
-    }
-    if (debugAIRequests.stopBot) {
-        debugRequestStopBot_ = true;
-    }
-    if (debugAIRequests.restoreInitialState) {
-        debugRequestRestoreInitialState_ = true;
+    ImGui::End();
+
+    const bool drawDebugAIDetails =
+        debugAIImGuiPanelState_.showDetails ||
+        debugAIEnabled_ ||
+        (app.DebugAI() && app.DebugAI()->IsReplayPlaying());
+    if (drawDebugAIDetails) {
+        const DebugAIImGuiPanelRequests debugAIRequests =
+            DrawDebugAIImGuiPanel(app.DebugAI(), CaptureDebugState(), debugAIImGuiPanelState_);
+        if (debugAIRequests.stopReplay) {
+            debugRequestStopReplay_ = true;
+        }
+        if (debugAIRequests.startReplay) {
+            debugReplayStartPath_ = debugAIRequests.replayPath;
+            debugRequestStartReplay_ = true;
+        }
+        if (debugAIRequests.startBot) {
+            debugRequestStartBot_ = true;
+        }
+        if (debugAIRequests.stopBot) {
+            debugRequestStopBot_ = true;
+        }
+        if (debugAIRequests.restoreInitialState) {
+            debugRequestRestoreInitialState_ = true;
+        }
     }
 #endif // USE_IMGUI
 }
@@ -231,10 +246,7 @@ void GameScene::SpawnHitEffect_(const Vector3& position) {
     if (!hitEffectEnabled_) return;
 
     EnsureHitEffectGroup_();
-    ParticleManager::GetInstance()->Emit(
-        hitEffectGroupName_,
-        position,
-        static_cast<uint32_t>(std::max(1, hitEffectCount_)));
+    ParticleManager::GetInstance()->EmitConfigured(hitEffectGroupName_, position);
 }
 
 void GameScene::SpawnFallAttackEffect_(const Vector3& position) {
@@ -251,7 +263,6 @@ void GameScene::DrawHitEffectImGui_() {
 
     ImGui::Checkbox("Enable On Hit", &hitEffectEnabled_);
     ImGui::InputText("Group", hitEffectGroupName_, sizeof(hitEffectGroupName_));
-    ImGui::DragInt("Emit Count", &hitEffectCount_, 1, 1, 1024);
     ImGui::DragFloat3("Test Position", &hitEffectTestPosition_.x, 0.1f);
 
     if (ImGui::Button("Create / Reset Preset")) {

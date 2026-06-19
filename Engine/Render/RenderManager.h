@@ -34,6 +34,8 @@ public:
 
     void BeginOffscreen();
     void EndOffscreen();
+    void BeginPreview();
+    void EndPreview();
     void BeginBackBuffer();
     void BeginParticlePostLayer(PostEffectMode mode);
     void EndParticlePostLayer();
@@ -51,6 +53,7 @@ public:
     void ClearEffects();
 
     uint32_t GetOffscreenSrvIndex() const;
+    uint32_t GetPreviewSrvIndex() const;
     OffscreenPass* GetOffscreen() const { return offscreen_.get(); }
 
 private:
@@ -77,6 +80,7 @@ private:
     std::unique_ptr<OffscreenPass> particlePostLayer_;
     std::unique_ptr<OffscreenPass> particlePostBuffer_;
     std::unique_ptr<OffscreenPass> compositeBuffer_;
+    std::unique_ptr<OffscreenPass> previewBuffer_;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> copyImageRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> additiveCompositePSO_;

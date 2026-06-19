@@ -49,6 +49,7 @@ public:
         int hpAfter = 0;
         Vector3 playerPosition = {};
         Vector3 targetPosition = {};
+        Vector3 hitPosition = {};
     };
 
     struct BossAttackEffectEvent {

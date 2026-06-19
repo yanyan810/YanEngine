@@ -7,6 +7,7 @@ struct DebugGameState;
 
 struct DebugAIImGuiPanelState {
     bool botRunning = false;
+    bool showDetails = false;
     std::string selectedReplayPath;
 };
 

@@ -27,6 +27,8 @@ public:
     // ImGui描画
     virtual void DrawImGui(GameApp& app) {}
 
+    virtual void DrawPreview(GameApp& app) {}
+
     void RequestChangeScene_(const std::string& next) {
         nextScene_ = next;
     }

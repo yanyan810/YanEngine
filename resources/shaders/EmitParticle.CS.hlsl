@@ -4,6 +4,9 @@ struct Particle {
     float lifeTime;
     float3 velocity;
     float currentTime;
+    float rotation;
+    float angularVelocity;
+    float2 padding0;
     float4 color;
 };
 
@@ -40,6 +43,11 @@ struct EmitterData {
 
     float angleRandomDeg;
     float jitterDeg;
+    float rotationStartDeg;
+    float rotationRandomDeg;
+
+    float angularVelocityMinDeg;
+    float angularVelocityMaxDeg;
     float2 padding3;
 };
 
@@ -159,6 +167,9 @@ void main(uint3 DTid : SV_DispatchThreadID) {
 
                 // カラー設定
                 gParticles[particleIndex].color = gEmitter.startColor;
+                gParticles[particleIndex].rotation = radians(gEmitter.rotationStartDeg + generator.Generate1d() * gEmitter.rotationRandomDeg);
+                float angularVelocityRange = gEmitter.angularVelocityMaxDeg - gEmitter.angularVelocityMinDeg;
+                gParticles[particleIndex].angularVelocity = radians(gEmitter.angularVelocityMinDeg + generator.Generate1d() * angularVelocityRange);
                 
                 gParticles[particleIndex].currentTime = 0.0f;
                 
