@@ -11,7 +11,10 @@ void SceneManager::Change(GameApp& app, const std::string& name) {
     auto it = factories_.find(name);
     assert(it != factories_.end());
 
-    if (current_) current_->OnExit(app);
+    if (current_) {
+        current_->OnExit(app);
+        retiredScenes_.push_back(std::move(current_));
+    }
 
     if (app.Render()) {
         app.Render()->SetMode(PostEffectMode::FullScreen);
@@ -57,4 +60,22 @@ void SceneManager::Draw(GameApp& app) {
 void SceneManager::DrawImGui(GameApp& app) {
     if (!current_) return;
     current_->DrawImGui(app);
+}
+
+void SceneManager::DrawPreview(GameApp& app) {
+    if (!current_) return;
+    current_->DrawPreview(app);
+}
+
+void SceneManager::DrawPostEffectTargets(GameApp& app) {
+    if (!current_) return;
+    current_->DrawPostEffectTargets(app);
+}
+
+bool SceneManager::HasObjectBloomTargets() const {
+    return current_ && current_->HasObjectBloomTargets();
+}
+
+bool SceneManager::HasObjectOutlineBloomTargets() const {
+    return current_ && current_->HasObjectOutlineBloomTargets();
 }

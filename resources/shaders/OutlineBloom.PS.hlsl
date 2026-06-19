@@ -58,9 +58,9 @@ PixelShaderOutput main(VertexShaderOutput input)
     outerMask = outerMask / max(totalWeight, 0.001f);
     outerMask = saturate((outerMask - centerMask * 0.35f) * 2.6f);
 
-    float3 color = baseColor.rgb + bloomColor.rgb * outerMask * bloomIntensity * bloomAlpha;
+    float3 glow = bloomColor.rgb * outerMask * bloomIntensity * bloomAlpha * bloomColor.a;
 
     PixelShaderOutput output;
-    output.color = float4(color, saturate(baseColor.a + outerMask * bloomAlpha));
+    output.color = float4(glow, saturate(outerMask * bloomAlpha * bloomColor.a));
     return output;
 }

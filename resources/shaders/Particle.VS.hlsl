@@ -6,6 +6,9 @@ struct Particle {
     float32_t lifeTime;
     float32_t3 velocity;
     float32_t currentTime;
+    float32_t rotation;
+    float32_t angularVelocity;
+    float32_t2 padding0;
     float32_t4 color;
 };
 
@@ -59,6 +62,13 @@ VertexShaderOutput main(VertexShaderInput input, uint32_t instanceId : SV_Instan
         worldMatrix[3] = float32_t4(0.0f, 0.0f, 0.0f, 1.0f);
     }
     // billboardMode == 0 の場合はそのまま gPerView.billboardMatrix を使用
+
+    float s = sin(particle.rotation);
+    float c = cos(particle.rotation);
+    float3 rightAxis = worldMatrix[0].xyz;
+    float3 upAxis = worldMatrix[1].xyz;
+    worldMatrix[0].xyz = rightAxis * c + upAxis * s;
+    worldMatrix[1].xyz = -rightAxis * s + upAxis * c;
 
     worldMatrix[0] *= particle.scale.x;
     worldMatrix[1] *= particle.scale.y;

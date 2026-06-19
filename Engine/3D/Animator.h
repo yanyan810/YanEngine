@@ -9,6 +9,12 @@
 
 class Animator {
 public:
+	struct ManualJointTransform {
+		Vector3 translate{ 0.0f, 0.0f, 0.0f };
+		Vector3 rotate{ 0.0f, 0.0f, 0.0f };
+		Vector3 scale{ 1.0f, 1.0f, 1.0f };
+	};
+
 	void Initialize(Model* model);
 
 	void PlayAnimation(const std::string& animName = "", bool loop = true);
@@ -33,6 +39,9 @@ public:
 	const Model::Skeleton& GetPoseSkeleton() const { return poseSkeleton_; }
 
 	bool IsPoseReady() const { return poseReady_; }
+	void SetManualJointTransform(int32_t jointIndex, const ManualJointTransform& transform);
+	void ResetManualJointTransforms();
+	const std::vector<ManualJointTransform>& GetManualJointTransforms() const { return manualJointTransforms_; }
 
 	// スキンクラスター生成
 	void CreateSkinCluster(
@@ -46,6 +55,7 @@ public:
 
 private:
 	void ApplyAnimation(Model::Skeleton& skeleton, const Animation& animation, float time);
+	void ApplyManualJointTransforms(Model::Skeleton& skeleton);
 	static void BlendSkeletons(Model::Skeleton& dst, const Model::Skeleton& a, const Model::Skeleton& b, float t); // ★追加
 
 private:
@@ -70,4 +80,5 @@ private:
 
 	Model::Skeleton poseSkeleton_;
 	SkinCluster skinCluster_;
+	std::vector<ManualJointTransform> manualJointTransforms_;
 };

@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <functional>
+#include <vector>
 
 class GameApp;
 class IScene;
@@ -21,6 +22,10 @@ public:
     void Draw2D(GameApp& app);
     void Draw(GameApp& app);
     void DrawImGui(GameApp& app);
+    void DrawPreview(GameApp& app);
+    void DrawPostEffectTargets(GameApp& app);
+    bool HasObjectBloomTargets() const;
+    bool HasObjectOutlineBloomTargets() const;
 
     IScene* Current() { return current_.get(); }
     const std::string& CurrentName() const { return currentName_; }
@@ -28,5 +33,6 @@ public:
 private:
     std::unordered_map<std::string, Factory> factories_;
     std::unique_ptr<IScene> current_;
+    std::vector<std::unique_ptr<IScene>> retiredScenes_;
     std::string currentName_;
 };

@@ -4,6 +4,9 @@ struct Particle {
     float lifeTime;
     float3 velocity;
     float currentTime;
+    float rotation;
+    float angularVelocity;
+    float2 padding0;
     float4 color;
 };
 
@@ -40,7 +43,13 @@ struct EmitterData {
 
     float angleRandomDeg;
     float jitterDeg;
-    float2 padding3;
+    float rotationStartDeg;
+    float rotationRandomDeg;
+
+    float angularVelocityMinDeg;
+    float angularVelocityMaxDeg;
+    float timeScale;
+    float initialAge;
 };
 
 ConstantBuffer<EmitterData> gEmitter : register(b0);
@@ -62,11 +71,14 @@ void main(uint3 DTid : SV_DispatchThreadID) {
     if (particleIndex < kMaxParticles) {
         // alphaが0のparticleは死んでいるとみなして更新しない
         if (gParticles[particleIndex].color.a != 0.0f) {
+            float dt = gPerFrame.deltaTime * gEmitter.timeScale;
             // 加速度を速度に適用
-            gParticles[particleIndex].velocity += gEmitter.acceleration * gPerFrame.deltaTime;
+            gParticles[particleIndex].velocity += gEmitter.acceleration * dt;
             
-            gParticles[particleIndex].translate += gParticles[particleIndex].velocity;
-            gParticles[particleIndex].currentTime += gPerFrame.deltaTime;
+            // Existing particle JSONs author velocity as per-60fps-frame movement.
+            gParticles[particleIndex].translate += gParticles[particleIndex].velocity * (dt * 60.0f);
+            gParticles[particleIndex].rotation += gParticles[particleIndex].angularVelocity * dt;
+            gParticles[particleIndex].currentTime += dt;
             float lifeRate = saturate(gParticles[particleIndex].currentTime / max(gParticles[particleIndex].lifeTime, 0.001f));
             gParticles[particleIndex].color = lerp(gEmitter.startColor, gEmitter.endColor, lifeRate);
             gParticles[particleIndex].scale = lerp(gEmitter.scaleStart, gEmitter.scaleEnd, lifeRate);

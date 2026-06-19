@@ -4,6 +4,9 @@ struct Particle {
     float lifeTime;
     float3 velocity;
     float currentTime;
+    float rotation;
+    float angularVelocity;
+    float2 padding0;
     float4 color;
 };
 

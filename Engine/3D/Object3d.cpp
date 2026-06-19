@@ -243,6 +243,16 @@ void Object3d::Draw()
 		);
 		};
 
+	D3D12_GPU_DESCRIPTOR_HANDLE overrideTextureHandle{};
+	const D3D12_GPU_DESCRIPTOR_HANDLE* overrideTexture = nullptr;
+	if (useOverrideTexture_ && !texturePath_.empty()) {
+		if (!TextureManager::GetInstance()->HasTexture(texturePath_)) {
+			TextureManager::GetInstance()->LoadTexture(texturePath_);
+		}
+		overrideTextureHandle = TextureManager::GetInstance()->GetSrvHandleGPU(texturePath_);
+		overrideTexture = &overrideTextureHandle;
+	}
+
 	if (model_->HasSkinning()) {
 		// =====================================================
 		// =====================================================
@@ -316,7 +326,7 @@ void Object3d::Draw()
 			if (enableOutline_ && object3dCommon) {
 				object3dCommon->SetGraphicsPipelineStateOutline();
 				cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
-				model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster());
+				model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster(), overrideTexture);
 				SetNormalPipelineState();
 			}
 			
@@ -325,7 +335,7 @@ void Object3d::Draw()
 			}
 			cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 			
-			model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster());
+			model_->DrawSkinnedCompute(cmd, animator_->GetSkinCluster(), overrideTexture);
 		}
 
 		// =====================================================
@@ -411,7 +421,7 @@ void Object3d::Draw()
 				if (enableOutline_ && object3dCommon) {
 					object3dCommon->SetGraphicsPipelineStateOutline();
 					cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
-					model_->DrawOneMesh(cmd, inst.meshIndex, 2);
+					model_->DrawOneMesh(cmd, inst.meshIndex, 2, overrideTexture);
 					SetNormalPipelineState();
 				}
 				
@@ -420,7 +430,7 @@ void Object3d::Draw()
 				}
 				cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 
-				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
+				model_->DrawOneMesh(cmd, inst.meshIndex, 2, overrideTexture);
 			}
 
 			transformationMatrixDataModel->World = baseWorld;
@@ -506,11 +516,11 @@ void Object3d::Draw()
 				if (enableOutline_ && object3dCommon) {
 					object3dCommon->SetGraphicsPipelineStateOutline();
 					cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
-					model_->DrawOneMesh(cmd, inst.meshIndex, 2);
+					model_->DrawOneMesh(cmd, inst.meshIndex, 2, overrideTexture);
 					SetNormalPipelineState();
 				}
 
-				model_->DrawOneMesh(cmd, inst.meshIndex, 2);
+				model_->DrawOneMesh(cmd, inst.meshIndex, 2, overrideTexture);
 			}
 		} else {
 			cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
@@ -740,4 +750,24 @@ bool Object3d::HasJoint(const std::string& jointName) const
 
 	const auto& poseSkeleton = animator_->GetPoseSkeleton();
 	return poseSkeleton.jointMap.contains(jointName);
+}
+
+void Object3d::SetManualJointTransform(int32_t jointIndex, const Vector3& translate, const Vector3& rotate, const Vector3& scale)
+{
+	if (!animator_) {
+		return;
+	}
+
+	Animator::ManualJointTransform transform{};
+	transform.translate = translate;
+	transform.rotate = rotate;
+	transform.scale = scale;
+	animator_->SetManualJointTransform(jointIndex, transform);
+}
+
+void Object3d::ResetManualJointTransforms()
+{
+	if (animator_) {
+		animator_->ResetManualJointTransforms();
+	}
 }

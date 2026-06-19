@@ -2,13 +2,51 @@
 #include "AnimationEvaluate.h"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
+
+namespace {
+Quaternion MultiplyQuaternion(const Quaternion& a, const Quaternion& b)
+{
+	Quaternion out{};
+	out.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
+	out.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
+	out.z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w;
+	out.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+	return Normalize(out);
+}
+
+Quaternion MakeAxisAngleQuaternion(float x, float y, float z, float angle)
+{
+	const float half = angle * 0.5f;
+	const float s = std::sin(half);
+	Quaternion out{};
+	out.x = x * s;
+	out.y = y * s;
+	out.z = z * s;
+	out.w = std::cos(half);
+	return out;
+}
+
+Quaternion MakeEulerQuaternion(const Vector3& rotate)
+{
+	const Quaternion qx = MakeAxisAngleQuaternion(1.0f, 0.0f, 0.0f, rotate.x);
+	const Quaternion qy = MakeAxisAngleQuaternion(0.0f, 1.0f, 0.0f, rotate.y);
+	const Quaternion qz = MakeAxisAngleQuaternion(0.0f, 0.0f, 1.0f, rotate.z);
+	return MultiplyQuaternion(MultiplyQuaternion(qx, qy), qz);
+}
+}
 
 void Animator::Initialize(Model* model) {
 	model_ = model;
+	poseReady_ = false;
+	manualJointTransforms_.clear();
 	if (model_ && model_->HasSkinning()) {
 		poseSkeleton_ = model_->GetSkeleton();
 		poseReady_ = true;
 		Model::UpdateSkeleton(poseSkeleton_);
+		manualJointTransforms_.assign(
+			poseSkeleton_.joints.size(),
+			ManualJointTransform{});
 	}
 }
 
@@ -69,6 +107,48 @@ void Animator::ApplyAnimation(Model::Skeleton& skeleton, const Animation& animat
 		joint.transform.translate = t;
 		joint.transform.rotate = r;
 		joint.transform.scale = s;
+	}
+}
+
+void Animator::ApplyManualJointTransforms(Model::Skeleton& skeleton)
+{
+	if (manualJointTransforms_.size() != skeleton.joints.size()) {
+		manualJointTransforms_.assign(
+			skeleton.joints.size(),
+			ManualJointTransform{});
+	}
+
+	for (size_t i = 0; i < skeleton.joints.size(); ++i) {
+		const ManualJointTransform& manual = manualJointTransforms_[i];
+		auto& transform = skeleton.joints[i].transform;
+		transform.translate = transform.translate + manual.translate;
+		transform.rotate = MultiplyQuaternion(transform.rotate, MakeEulerQuaternion(manual.rotate));
+		transform.scale.x *= manual.scale.x;
+		transform.scale.y *= manual.scale.y;
+		transform.scale.z *= manual.scale.z;
+	}
+}
+
+void Animator::SetManualJointTransform(int32_t jointIndex, const ManualJointTransform& transform)
+{
+	if (!model_ || !model_->HasSkinning() || !poseReady_) {
+		return;
+	}
+	if (manualJointTransforms_.size() != poseSkeleton_.joints.size()) {
+		manualJointTransforms_.assign(
+			poseSkeleton_.joints.size(),
+			ManualJointTransform{});
+	}
+	if (jointIndex < 0 || jointIndex >= static_cast<int32_t>(manualJointTransforms_.size())) {
+		return;
+	}
+	manualJointTransforms_[jointIndex] = transform;
+}
+
+void Animator::ResetManualJointTransforms()
+{
+	for (auto& transform : manualJointTransforms_) {
+		transform = ManualJointTransform{};
 	}
 }
 
@@ -134,10 +214,22 @@ bool Animator::HasAnimation() const {
 }
 
 void Animator::Update(float dt) {
-	if (!isPlayAnimation_ || !model_ || !poseReady_) return;
+	if (!model_ || !poseReady_) return;
+
+	poseSkeleton_ = model_->GetSkeleton();
+
+	if (!isPlayAnimation_) {
+		ApplyManualJointTransforms(poseSkeleton_);
+		Model::UpdateSkeleton(poseSkeleton_);
+		return;
+	}
 
 	auto it = model_->GetAnimations().find(playingAnimName_);
-	if (it == model_->GetAnimations().end()) return;
+	if (it == model_->GetAnimations().end()) {
+		ApplyManualJointTransforms(poseSkeleton_);
+		Model::UpdateSkeleton(poseSkeleton_);
+		return;
+	}
 
 	const Animation& clip = it->second;
 	animationTime_ += dt;
@@ -175,7 +267,7 @@ void Animator::Update(float dt) {
 			}
 
 			// 次クリップも計算
-			Model::Skeleton nextSkeleton = poseSkeleton_;
+			Model::Skeleton nextSkeleton = model_->GetSkeleton();
 			ApplyAnimation(nextSkeleton, clip, animationTime_);
 
 			// 2つをブレンド
@@ -186,6 +278,7 @@ void Animator::Update(float dt) {
 		ApplyAnimation(poseSkeleton_, clip, animationTime_);
 	}
 
+	ApplyManualJointTransforms(poseSkeleton_);
 	Model::UpdateSkeleton(poseSkeleton_);
 }
 

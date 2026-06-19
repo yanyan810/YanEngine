@@ -104,6 +104,71 @@ GeometryGenerator::GenerateTriangleTriListXY(float width, float height) {
 }
 
 std::vector<Model::VertexData>
+GeometryGenerator::GenerateStarTriListXY(float outerRadius, float innerRadius, uint32_t points) {
+	std::vector<Model::VertexData> v;
+	points = std::max<uint32_t>(2, points);
+	v.reserve(points * 2 * 3);
+
+	const float pi = std::numbers::pi_v<float>;
+	const uint32_t vertexCount = points * 2;
+	const float step = (2.0f * pi) / float(vertexCount);
+	const float start = pi * 0.5f;
+
+	Model::VertexData center = MakeVertex(0.0f, 0.0f, 0.0f, 0.5f, 0.5f, 0, 0, 1);
+	for (uint32_t i = 0; i < vertexCount; ++i) {
+		float a0 = start + step * float(i);
+		float a1 = start + step * float(i + 1);
+		float r0 = (i % 2 == 0) ? outerRadius : innerRadius;
+		float r1 = ((i + 1) % 2 == 0) ? outerRadius : innerRadius;
+
+		Model::VertexData p0 = MakeVertex(
+			std::cosf(a0) * r0,
+			std::sinf(a0) * r0,
+			0.0f,
+			0.5f + std::cosf(a0) * 0.5f,
+			0.5f - std::sinf(a0) * 0.5f,
+			0, 0, 1);
+		Model::VertexData p1 = MakeVertex(
+			std::cosf(a1) * r1,
+			std::sinf(a1) * r1,
+			0.0f,
+			0.5f + std::cosf(a1) * 0.5f,
+			0.5f - std::sinf(a1) * 0.5f,
+			0, 0, 1);
+
+		v.push_back(center);
+		v.push_back(p1);
+		v.push_back(p0);
+	}
+
+	return v;
+}
+
+std::vector<Model::VertexData>
+GeometryGenerator::GenerateDiamondTriListXY(float width, float height) {
+	std::vector<Model::VertexData> v;
+	v.reserve(6);
+
+	float hw = width * 0.5f;
+	float hh = height * 0.5f;
+
+	Model::VertexData top = MakeVertex(0.0f, hh, 0.0f, 0.5f, 0.0f, 0, 0, 1);
+	Model::VertexData left = MakeVertex(-hw, 0.0f, 0.0f, 0.0f, 0.5f, 0, 0, 1);
+	Model::VertexData right = MakeVertex(hw, 0.0f, 0.0f, 1.0f, 0.5f, 0, 0, 1);
+	Model::VertexData bottom = MakeVertex(0.0f, -hh, 0.0f, 0.5f, 1.0f, 0, 0, 1);
+
+	v.push_back(top);
+	v.push_back(left);
+	v.push_back(right);
+
+	v.push_back(right);
+	v.push_back(left);
+	v.push_back(bottom);
+
+	return v;
+}
+
+std::vector<Model::VertexData>
 GeometryGenerator::GenerateBoxTriList(float width, float height, float depth) {
 	std::vector<Model::VertexData> v;
 	v.reserve(36);
@@ -317,6 +382,84 @@ GeometryGenerator::GenerateConeTriList(uint32_t divide, float radius, float heig
 		v.push_back(MakeVertex(0, -hh, 0, 0.5f, 0.5f, 0, -1, 0));
 		v.push_back(MakeVertex(radius * std::cosf(a1), -hh, radius * std::sinf(a1), 1, 0, 0, -1, 0));
 		v.push_back(MakeVertex(radius * std::cosf(a0), -hh, radius * std::sinf(a0), 0, 0, 0, -1, 0));
+	}
+
+	return v;
+}
+
+std::vector<Model::VertexData>
+GeometryGenerator::GenerateCapsuleTriList(uint32_t sliceCount, uint32_t hemisphereStackCount, float radius, float cylinderHeight) {
+	std::vector<Model::VertexData> v;
+	sliceCount = std::max<uint32_t>(3, sliceCount);
+	hemisphereStackCount = std::max<uint32_t>(2, hemisphereStackCount);
+	cylinderHeight = std::max(0.0f, cylinderHeight);
+
+	const float pi = std::numbers::pi_v<float>;
+	const float halfCylinder = cylinderHeight * 0.5f;
+
+	v.reserve(sliceCount * (2 + hemisphereStackCount * 2) * 6);
+
+	// Cylinder body
+	if (cylinderHeight > 0.0f) {
+		for (uint32_t i = 0; i < sliceCount; ++i) {
+			float a0 = 2.0f * pi * float(i) / float(sliceCount);
+			float a1 = 2.0f * pi * float(i + 1) / float(sliceCount);
+			float c0 = std::cosf(a0), s0 = std::sinf(a0);
+			float c1 = std::cosf(a1), s1 = std::sinf(a1);
+
+			Model::VertexData a = MakeVertex(radius * c0, -halfCylinder, radius * s0, float(i) / sliceCount, 1.0f, c0, 0, s0);
+			Model::VertexData b = MakeVertex(radius * c0, halfCylinder, radius * s0, float(i) / sliceCount, 0.5f, c0, 0, s0);
+			Model::VertexData c = MakeVertex(radius * c1, halfCylinder, radius * s1, float(i + 1) / sliceCount, 0.5f, c1, 0, s1);
+			Model::VertexData d = MakeVertex(radius * c1, -halfCylinder, radius * s1, float(i + 1) / sliceCount, 1.0f, c1, 0, s1);
+			PushQuad(v, a, b, c, d);
+		}
+	}
+
+	auto hemiVertex = [&](float theta, float phi, float yOffset, float vCoord) {
+		float sinPhi = std::sinf(phi);
+		float x = radius * sinPhi * std::cosf(theta);
+		float y = yOffset + radius * std::cosf(phi);
+		float z = radius * sinPhi * std::sinf(theta);
+		float nx = sinPhi * std::cosf(theta);
+		float ny = std::cosf(phi);
+		float nz = sinPhi * std::sinf(theta);
+		return MakeVertex(x, y, z, theta / (2.0f * pi), vCoord, nx, ny, nz);
+	};
+
+	// Top hemisphere: phi 0..pi/2
+	for (uint32_t stack = 0; stack < hemisphereStackCount; ++stack) {
+		float phi0 = (pi * 0.5f) * float(stack) / float(hemisphereStackCount);
+		float phi1 = (pi * 0.5f) * float(stack + 1) / float(hemisphereStackCount);
+		for (uint32_t slice = 0; slice < sliceCount; ++slice) {
+			float theta0 = 2.0f * pi * float(slice) / float(sliceCount);
+			float theta1 = 2.0f * pi * float(slice + 1) / float(sliceCount);
+			float v0 = 0.5f * float(stack) / float(hemisphereStackCount);
+			float v1 = 0.5f * float(stack + 1) / float(hemisphereStackCount);
+
+			Model::VertexData a = hemiVertex(theta0, phi0, halfCylinder, v0);
+			Model::VertexData b = hemiVertex(theta0, phi1, halfCylinder, v1);
+			Model::VertexData c = hemiVertex(theta1, phi1, halfCylinder, v1);
+			Model::VertexData d = hemiVertex(theta1, phi0, halfCylinder, v0);
+			PushQuad(v, a, b, c, d);
+		}
+	}
+
+	// Bottom hemisphere: phi pi/2..pi
+	for (uint32_t stack = 0; stack < hemisphereStackCount; ++stack) {
+		float phi0 = (pi * 0.5f) + (pi * 0.5f) * float(stack) / float(hemisphereStackCount);
+		float phi1 = (pi * 0.5f) + (pi * 0.5f) * float(stack + 1) / float(hemisphereStackCount);
+		for (uint32_t slice = 0; slice < sliceCount; ++slice) {
+			float theta0 = 2.0f * pi * float(slice) / float(sliceCount);
+			float theta1 = 2.0f * pi * float(slice + 1) / float(sliceCount);
+			float v0 = 0.5f + 0.5f * float(stack) / float(hemisphereStackCount);
+			float v1 = 0.5f + 0.5f * float(stack + 1) / float(hemisphereStackCount);
+
+			Model::VertexData a = hemiVertex(theta0, phi0, -halfCylinder, v0);
+			Model::VertexData b = hemiVertex(theta0, phi1, -halfCylinder, v1);
+			Model::VertexData c = hemiVertex(theta1, phi1, -halfCylinder, v1);
+			Model::VertexData d = hemiVertex(theta1, phi0, -halfCylinder, v0);
+			PushQuad(v, a, b, c, d);
+		}
 	}
 
 	return v;

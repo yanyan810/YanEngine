@@ -28,16 +28,30 @@ enum class PostEffectMode {
     Count
 };
 
+struct BloomParameter {
+    Vector4 color;
+    float intensity;
+    float threshold;
+    float alpha;
+    float _pad;
+};
+
 class RenderManager {
 public:
     void Initialize(DirectXCommon* dx, SrvManager* srv);
 
     void BeginOffscreen();
     void EndOffscreen();
+    void BeginPreview();
+    void EndPreview();
     void BeginBackBuffer();
     void BeginParticlePostLayer(PostEffectMode mode);
+    void BeginParticlePostLayer(bool bloom, bool outlineBloom);
     void EndParticlePostLayer();
     void ClearParticlePostLayer();
+    void BeginObjectPostLayer(bool bloom, bool outlineBloom);
+    void EndObjectPostLayer();
+    void ClearObjectPostLayer();
 
     void DrawOffscreenToBackBuffer();
     uint32_t RenderPostEffectsForSceneTexture();
@@ -49,8 +63,13 @@ public:
     void SetEffectEnabled(PostEffectMode mode, bool enabled);
     bool IsEffectEnabled(PostEffectMode mode) const;
     void ClearEffects();
+    void SetObjectLayerBloomColor(const Vector4& color) { objectLayerBloomColor_ = color; }
+    void SetObjectLayerOutlineBloomColor(const Vector4& color) { objectLayerOutlineBloomColor_ = color; }
+    void SetParticleLayerBloomColor(const Vector4& color) { particleLayerBloomColor_ = color; }
+    void SetParticleLayerOutlineBloomColor(const Vector4& color) { particleLayerOutlineBloomColor_ = color; }
 
     uint32_t GetOffscreenSrvIndex() const;
+    uint32_t GetPreviewSrvIndex() const;
     OffscreenPass* GetOffscreen() const { return offscreen_.get(); }
 
 private:
@@ -58,17 +77,29 @@ private:
     void CreatePipelineState(
         const wchar_t* psPath,
         Microsoft::WRL::ComPtr<ID3D12PipelineState>& outPSO);
-    void DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex);
+    void DrawFullscreenPass(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* bloomCBOverride = nullptr);
     void DrawFullscreenPassToBackBuffer(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* srcResource);
-    void DrawFullscreenPassToBuffer(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* srcResource, OffscreenPass& dst);
+    void DrawFullscreenPassToBuffer(PostEffectMode mode, uint32_t srcSrvIndex, ID3D12Resource* srcResource, OffscreenPass& dst, ID3D12Resource* bloomCBOverride = nullptr);
     void DrawAdditiveCompositePass(uint32_t baseSrvIndex, uint32_t addSrvIndex);
     int FindLastEnabledPostEffect_() const;
     uint32_t RenderPostEffectsToBuffer_(ID3D12Resource* srcResource, uint32_t srcSrvIndex);
     void RenderPostEffectsToBackBuffer_(ID3D12Resource* srcResource, uint32_t srcSrvIndex);
+    uint32_t RenderLayerPostEffectsToBuffer_(
+        ID3D12Resource* srcResource,
+        uint32_t srcSrvIndex,
+        bool bloom,
+        bool outlineBloom,
+        const Vector4& bloomColor,
+        ID3D12Resource* bloomCB,
+        BloomParameter* bloomCBData,
+        const Vector4& outlineBloomColor,
+        ID3D12Resource* outlineBloomCB,
+        BloomParameter* outlineBloomCBData,
+        OffscreenPass* tempCompositeBuffer = nullptr);
     uint32_t CompositeParticlePostToBuffer_(uint32_t baseSrvIndex);
     void CompositeParticlePostToBackBuffer_(uint32_t baseSrvIndex);
-
-private:
+    uint32_t CompositeObjectPostToBuffer_(uint32_t baseSrvIndex);
+    void CompositeObjectPostToBackBuffer_(uint32_t baseSrvIndex);
     DirectXCommon* dx_ = nullptr;
     SrvManager* srv_ = nullptr;
 
@@ -77,6 +108,10 @@ private:
     std::unique_ptr<OffscreenPass> particlePostLayer_;
     std::unique_ptr<OffscreenPass> particlePostBuffer_;
     std::unique_ptr<OffscreenPass> compositeBuffer_;
+    std::unique_ptr<OffscreenPass> compositeBuffer2_;
+    std::unique_ptr<OffscreenPass> previewBuffer_;
+    std::unique_ptr<OffscreenPass> objectPostLayer_;
+    std::unique_ptr<OffscreenPass> objectPostBuffer_;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> copyImageRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> additiveCompositePSO_;
@@ -141,24 +176,35 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> randomCB_;
     RandomParameter* randomCBData_ = nullptr;
 
-    struct BloomParameter {
-        Vector4 color;
-        float intensity;
-        float threshold;
-        float alpha;
-        float _pad;
-    };
     Microsoft::WRL::ComPtr<ID3D12Resource> bloomCB_;
     BloomParameter* bloomCBData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> objectBloomCB_;
+    BloomParameter* objectBloomCBData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> objectOutlineBloomCB_;
+    BloomParameter* objectOutlineBloomCBData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> particleBloomCB_;
+    BloomParameter* particleBloomCBData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> particleOutlineBloomCB_;
+    BloomParameter* particleOutlineBloomCBData_ = nullptr;
+
 
     Vector4 bloomColor_ = { 1.0f, 0.72f, 0.22f, 1.0f };
     float bloomIntensity_ = 0.9f;
     float bloomThreshold_ = 0.62f;
     float bloomAlpha_ = 1.0f;
+    Vector4 objectLayerBloomColor_ = { 1.0f, 1.0f, 1.0f, 1.0f };
+    Vector4 objectLayerOutlineBloomColor_ = { 1.0f, 1.0f, 1.0f, 1.0f };
+    Vector4 particleLayerBloomColor_ = { 1.0f, 1.0f, 1.0f, 1.0f };
+    Vector4 particleLayerOutlineBloomColor_ = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     uint32_t noiseSrvIndex_ = 0;
     uint32_t previewSrvIndex_ = 0;
     uint32_t depthSrvIndex_ = 0;
     bool hasParticlePostLayer_ = false;
     PostEffectMode particlePostEffectMode_ = PostEffectMode::FullScreen;
+    bool particlePostBloom_ = false;
+    bool particlePostOutlineBloom_ = false;
+    bool hasObjectPostLayer_ = false;
+    bool objectPostBloom_ = false;
+    bool objectPostOutlineBloom_ = false;
 };

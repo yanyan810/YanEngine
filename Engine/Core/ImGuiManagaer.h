@@ -20,6 +20,7 @@ class ImGuiManagaer {
 public:
     void Initialize(WinApp* winApp, DirectXCommon* dxCommon, SrvManager* srvManager);
     void SetSceneTexture(uint32_t srvIndex);
+    void SetPreviewTexture(uint32_t srvIndex);
     void Begin();
     void End(ID3D12GraphicsCommandList* cmd);
     void Shutdown();
@@ -38,6 +39,8 @@ private:
     bool initialized_ = false;
     int selectedParticleItem_ = 0;
     uint32_t sceneSrvIndex_ = 0;
+    uint32_t previewSrvIndex_ = 0;
     bool hasSceneTexture_ = false;
+    bool hasPreviewTexture_ = false;
     uint32_t imguiSrvIndex_ = 0; // SrvManager が 0番をImGui予約してる前提
 };

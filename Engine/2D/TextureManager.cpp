@@ -74,13 +74,17 @@ void TextureManager::LoadTexture(const std::string& filePath)
         return;
     }
 
-    if (!std::filesystem::exists(filePath)) {
-        DebugPrintA("[Texture] file not found: " + filePath);
-        return;
+    std::string resolvedPath = filePath;
+    if (!std::filesystem::exists(resolvedPath)) {
+        resolvedPath = "resources/" + filePath;
+        if (!std::filesystem::exists(resolvedPath)) {
+            DebugPrintA("[Texture] file not found: " + filePath + " (tried " + resolvedPath + ")");
+            return;
+        }
     }
 
     DirectX::ScratchImage image{};
-    std::wstring filePathW = ConvertString(filePath);
+    std::wstring filePathW = ConvertString(resolvedPath);
 
     HRESULT hr = S_OK;
 
@@ -208,7 +212,11 @@ TextureManager::GetDataByPathOrWhite_(const std::string& filePath) const
     if (filePath.empty()) {
         return textureDatas_.at(kWhiteKey);
     }
-    return textureDatas_.at(filePath);
+    auto it = textureDatas_.find(filePath);
+    if (it == textureDatas_.end()) {
+        return textureDatas_.at(kWhiteKey);
+    }
+    return it->second;
 }
 
 TextureManager::TextureData&
@@ -217,7 +225,11 @@ TextureManager::GetDataByPathOrWhite_(const std::string& filePath)
     if (filePath.empty()) {
         return textureDatas_.at(kWhiteKey);
     }
-    return textureDatas_.at(filePath);
+    auto it = textureDatas_.find(filePath);
+    if (it == textureDatas_.end()) {
+        return textureDatas_.at(kWhiteKey);
+    }
+    return it->second;
 }
 
 uint32_t TextureManager::GetSrvIndex(const std::string& filePath) const

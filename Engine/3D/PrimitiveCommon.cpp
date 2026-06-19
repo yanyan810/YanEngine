@@ -141,9 +141,9 @@ void PrimitiveCommon::CreateGraphicsPipelineState() {
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
 
         case BlendMode::kBlendModeAdd:
@@ -151,9 +151,9 @@ void PrimitiveCommon::CreateGraphicsPipelineState() {
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
 
         case BlendMode::kBlendModeSubtract:
@@ -161,9 +161,9 @@ void PrimitiveCommon::CreateGraphicsPipelineState() {
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
 
         case BlendMode::kBlendModeMultily:
@@ -171,9 +171,9 @@ void PrimitiveCommon::CreateGraphicsPipelineState() {
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
 
         case BlendMode::kBlendModeScreen:
@@ -181,9 +181,9 @@ void PrimitiveCommon::CreateGraphicsPipelineState() {
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
         }
 
@@ -266,45 +266,45 @@ void PrimitiveCommon::CreateEnvMapGraphicsPipelineState() {
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
         case BlendMode::kBlendModeAdd:
             blend.RenderTarget[0].BlendEnable = TRUE;
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
         case BlendMode::kBlendModeSubtract:
             blend.RenderTarget[0].BlendEnable = TRUE;
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
         case BlendMode::kBlendModeMultily:
             blend.RenderTarget[0].BlendEnable = TRUE;
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
         case BlendMode::kBlendModeScreen:
             blend.RenderTarget[0].BlendEnable = TRUE;
             blend.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
             blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
             blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
             blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
             break;
         }
 
@@ -314,7 +314,7 @@ void PrimitiveCommon::CreateEnvMapGraphicsPipelineState() {
 
         D3D12_DEPTH_STENCIL_DESC ds{};
         ds.DepthEnable = TRUE;
-        ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        ds.DepthWriteMask = (mode == BlendMode::kBlendModeNone) ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
         ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};

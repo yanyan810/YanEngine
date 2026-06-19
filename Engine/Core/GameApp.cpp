@@ -229,7 +229,6 @@ void GameApp::Finalize_() {
 }
 
 void GameApp::Update(float dt) {
-    OutputDebugStringA("[GameApp] Update\n");
 
     input_->Update();
 
@@ -238,7 +237,6 @@ void GameApp::Update(float dt) {
 }
 
 void GameApp::Draw() {
-    OutputDebugStringA("[GameApp] Draw\n");
 
     srv_->PreDraw();
 
@@ -249,15 +247,33 @@ void GameApp::Draw() {
     sceneMgr_->Draw2D(*this);
     sceneMgr_->Draw(*this);
 
+    if (sceneMgr_->HasObjectBloomTargets() || sceneMgr_->HasObjectOutlineBloomTargets()) {
+        render_->BeginObjectPostLayer(sceneMgr_->HasObjectBloomTargets(), sceneMgr_->HasObjectOutlineBloomTargets());
+        sceneMgr_->DrawPostEffectTargets(*this);
+        render_->EndObjectPostLayer();
+    } else {
+        render_->ClearObjectPostLayer();
+    }
+
     auto* particleManager = ParticleManager::GetInstance();
     if (particleManager->HasPostEffectTargets()) {
-        render_->BeginParticlePostLayer(particleManager->GetPrimaryPostEffectMode());
+        render_->SetParticleLayerBloomColor(particleManager->GetPrimaryPostEffectBloomColor());
+        render_->SetParticleLayerOutlineBloomColor(particleManager->GetPrimaryPostEffectOutlineBloomColor());
+        render_->BeginParticlePostLayer(
+            particleManager->HasBloomPostEffectTargets(),
+            particleManager->HasOutlineBloomPostEffectTargets());
         particleManager->Draw(dx_->GetCommandList(), true);
         render_->EndParticlePostLayer();
     } else {
         render_->ClearParticlePostLayer();
     }
     render_->EndOffscreen();
+
+#ifdef USE_IMGUI
+    render_->BeginPreview();
+    sceneMgr_->DrawPreview(*this);
+    render_->EndPreview();
+#endif
 
     // ② BackBufferへ
     dx_->PreDraw(false);
@@ -274,6 +290,7 @@ void GameApp::Draw() {
 #ifdef USE_IMGUI
     if (imgui_) {
         imgui_->SetSceneTexture(render_->RenderPostEffectsForSceneTexture());
+        imgui_->SetPreviewTexture(render_->GetPreviewSrvIndex());
             sceneMgr_->DrawImGui(*this);
             render_->DrawImGui(); // ポストエフェクト切り替えUI
         imgui_->End(dx_->GetCommandList());

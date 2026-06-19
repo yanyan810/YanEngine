@@ -1,7 +1,9 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
+#include "Effect/EffectManager.h"
 
 #include "Camera.h"
+#include "DebugAI/DebugAIManager.h"
 #include "Sprite.h"
 #include "SpriteCommon.h"
 #include "Object3d.h"
@@ -44,6 +46,9 @@ void GameScene::DrawRender(GameApp& app) {
         enemyMgr_.Draw();
         if (player_) player_->DrawDebugHitBoxes(enemyMgr_);
     }
+
+    // 3Dエフェクトオブジェクトの描画
+    EffectManager::GetInstance()->Draw();
 
     // GPU Particle
     app.ParticleCom()->SetGraphicsPipelineState();
@@ -196,23 +201,37 @@ void GameScene::DrawImGui(GameApp& app) {
     ParticleManager::GetInstance()->DrawImGui();
 
     debugAIImGuiPanelState_.botRunning = debugAIEnabled_;
-    const DebugAIImGuiPanelRequests debugAIRequests =
-        DrawDebugAIImGuiPanel(app.DebugAI(), CaptureDebugState(), debugAIImGuiPanelState_);
-    if (debugAIRequests.stopReplay) {
-        debugRequestStopReplay_ = true;
+    ImGui::Begin("Debug AI Control");
+    ImGui::Checkbox("Show Debug AI Details", &debugAIImGuiPanelState_.showDetails);
+    if (app.DebugAI()) {
+        ImGui::Text("Status: %s", app.DebugAI()->IsEnabled() ? "Running" : "Stopped");
+        ImGui::Text("Replay: %s", app.DebugAI()->IsReplayPlaying() ? "Playing" : "Stopped");
     }
-    if (debugAIRequests.startReplay) {
-        debugReplayStartPath_ = debugAIRequests.replayPath;
-        debugRequestStartReplay_ = true;
-    }
-    if (debugAIRequests.startBot) {
-        debugRequestStartBot_ = true;
-    }
-    if (debugAIRequests.stopBot) {
-        debugRequestStopBot_ = true;
-    }
-    if (debugAIRequests.restoreInitialState) {
-        debugRequestRestoreInitialState_ = true;
+    ImGui::End();
+
+    const bool drawDebugAIDetails =
+        debugAIImGuiPanelState_.showDetails ||
+        debugAIEnabled_ ||
+        (app.DebugAI() && app.DebugAI()->IsReplayPlaying());
+    if (drawDebugAIDetails) {
+        const DebugAIImGuiPanelRequests debugAIRequests =
+            DrawDebugAIImGuiPanel(app.DebugAI(), CaptureDebugState(), debugAIImGuiPanelState_);
+        if (debugAIRequests.stopReplay) {
+            debugRequestStopReplay_ = true;
+        }
+        if (debugAIRequests.startReplay) {
+            debugReplayStartPath_ = debugAIRequests.replayPath;
+            debugRequestStartReplay_ = true;
+        }
+        if (debugAIRequests.startBot) {
+            debugRequestStartBot_ = true;
+        }
+        if (debugAIRequests.stopBot) {
+            debugRequestStopBot_ = true;
+        }
+        if (debugAIRequests.restoreInitialState) {
+            debugRequestRestoreInitialState_ = true;
+        }
     }
 #endif // USE_IMGUI
 }
@@ -231,10 +250,15 @@ void GameScene::SpawnHitEffect_(const Vector3& position) {
     if (!hitEffectEnabled_) return;
 
     EnsureHitEffectGroup_();
-    ParticleManager::GetInstance()->Emit(
-        hitEffectGroupName_,
-        position,
-        static_cast<uint32_t>(std::max(1, hitEffectCount_)));
+    ParticleManager::GetInstance()->EmitConfigured(hitEffectGroupName_, position);
+}
+
+void GameScene::SpawnFallAttackEffect_(const Vector3& position) {
+    if (!fallAttackEffectEnabled_) return;
+
+    Vector3 effectPosition = position;
+    effectPosition.y += 0.05f;
+    EffectManager::GetInstance()->Play("fallAttak", effectPosition);
 }
 
 void GameScene::DrawHitEffectImGui_() {
@@ -243,7 +267,6 @@ void GameScene::DrawHitEffectImGui_() {
 
     ImGui::Checkbox("Enable On Hit", &hitEffectEnabled_);
     ImGui::InputText("Group", hitEffectGroupName_, sizeof(hitEffectGroupName_));
-    ImGui::DragInt("Emit Count", &hitEffectCount_, 1, 1, 1024);
     ImGui::DragFloat3("Test Position", &hitEffectTestPosition_.x, 0.1f);
 
     if (ImGui::Button("Create / Reset Preset")) {
@@ -258,6 +281,10 @@ void GameScene::DrawHitEffectImGui_() {
     if (ImGui::Button("Emit Test")) {
         SpawnHitEffect_(hitEffectTestPosition_);
     }
+
+    ImGui::Separator();
+    ImGui::Checkbox("Enable Boss Fall Attack", &fallAttackEffectEnabled_);
+    ImGui::InputText("Fall Attack Group", fallAttackEffectGroupName_, sizeof(fallAttackEffectGroupName_));
 
     if (ImGui::Button("Save hit_effect.json")) {
         ParticleManager::GetInstance()->Save("hit_effect.json");

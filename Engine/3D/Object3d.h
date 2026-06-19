@@ -105,6 +105,7 @@ public:
 	}
 
 	void SetBlendMode(Object3dCommon::BlendMode m) { blendMode_ = m; }
+	Object3dCommon::BlendMode GetBlendMode() const { return blendMode_; }
 
 	void SetMaterialColor(const Vector4& c) {
 		if (model_) {
@@ -133,6 +134,8 @@ public:
 	void SetSpotLightCosFalloffStart(float c) { light_->SetSpotLightCosFalloffStart(c); }
 
 	void SetTexture(const std::string& path);
+	void ClearTextureOverride() { texturePath_.clear(); useOverrideTexture_ = false; }
+	const std::string& GetTexturePath() const { return texturePath_; }
 
 	Model* GetModel() const { return model_; }
 
@@ -252,6 +255,10 @@ public:
 	bool GetJointWorldPosition(const std::string& jointName, Vector3& out, const Vector3& localOffset = { 0.0f, 0.0f, 0.0f }) const;
 	bool AttachObjectToJoint(Object3d& target, const std::string& jointName, const Vector3& localOffset, const Vector3& rotate, const Vector3& scale) const;
 	bool HasJoint(const std::string& jointName) const;
+	bool HasSkinningModel() const { return model_ && model_->HasSkinning(); }
+	const Model::Skeleton* GetSkeleton() const { return model_ && model_->HasSkinning() ? &model_->GetSkeleton() : nullptr; }
+	void SetManualJointTransform(int32_t jointIndex, const Vector3& translate, const Vector3& rotate, const Vector3& scale);
+	void ResetManualJointTransforms();
 
 	const std::string& GetPlayingAnimName() const { static std::string empty; return animator_ ? animator_->GetPlayingAnimName() : empty; }
 	void StopAnimation() { if(animator_) animator_->StopAnimation(); }

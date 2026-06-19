@@ -15,6 +15,12 @@ namespace GeometryGenerator {
 		GenerateTriangleTriListXY(float width, float height);
 
 	std::vector<Model::VertexData>
+		GenerateStarTriListXY(float outerRadius, float innerRadius, uint32_t points = 5);
+
+	std::vector<Model::VertexData>
+		GenerateDiamondTriListXY(float width, float height);
+
+	std::vector<Model::VertexData>
 		GenerateBoxTriList(float width, float height, float depth);
 
 	std::vector<Model::VertexData>
@@ -28,5 +34,8 @@ namespace GeometryGenerator {
 
 	std::vector<Model::VertexData>
 		GenerateConeTriList(uint32_t divide, float radius, float height);
+
+	std::vector<Model::VertexData>
+		GenerateCapsuleTriList(uint32_t sliceCount, uint32_t hemisphereStackCount, float radius, float cylinderHeight);
 
 }

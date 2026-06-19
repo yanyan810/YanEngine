@@ -1,5 +1,6 @@
 #include "GameScene.h"
 #include "GameApp.h"
+#include "Effect/EffectManager.h"
 
 #include "Camera.h"
 #include "DebugAI/DebugAIManager.h"
@@ -58,6 +59,8 @@ std::string BuildPlayerAttackHitMessage(
         << hit.playerPosition.x << "," << hit.playerPosition.y << "," << hit.playerPosition.z
         << ") targetPos=("
         << hit.targetPosition.x << "," << hit.targetPosition.y << "," << hit.targetPosition.z
+        << ") hitPos=("
+        << hit.hitPosition.x << "," << hit.hitPosition.y << "," << hit.hitPosition.z
         << ")";
     return message.str();
 }
@@ -143,6 +146,16 @@ void GameScene::Update(GameApp& app, float dt) {
         return;
     }
     const bool blockExternalGameInput = app.DebugAI() && app.DebugAI()->IsReplayPlaying();
+
+    if (pendingBattleParticleSetup_) {
+        pendingBattleParticleSetup_ = false;
+        ParticleManager::GetInstance()->ClearGroups();
+        const std::vector<std::string> skipPreviewGroups = { "gpu_test" };
+        ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
+        ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
+        EffectManager::GetInstance()->LoadEffect("fallAttak", "resources/effects/fallAttak.json");
+        EnsureHitEffectGroup_();
+    }
 
     camera_->Update();
 
@@ -249,8 +262,8 @@ void GameScene::Update(GameApp& app, float dt) {
             player_->Update(dt, *input_, enemyMgr_);
             const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
             for (const auto& hit : playerAttackHits) {
-                Vector3 effectPosition = hit.targetPosition;
-                effectPosition.y += 1.0f;
+                Vector3 effectPosition = hit.hitPosition;
+                effectPosition.y += 0.15f;
                 SpawnHitEffect_(effectPosition);
             }
             if (!playerAttackHits.empty() && app.DebugAI()) {
@@ -286,7 +299,13 @@ void GameScene::Update(GameApp& app, float dt) {
         if (!kDebugDisableEnemies) {
             enemyMgr_.Update(dt, playerPos2D, playerZ, *player_, skipPendingSpawn);
         }
+        for (const auto& event : enemyMgr_.ConsumeBossAttackEffectEvents()) {
+            if (event.kind == MeleeKind::Land) {
+                SpawnFallAttackEffect_(event.position);
+            }
+        }
 
+        EffectManager::GetInstance()->Update(dt);
         ParticleManager::GetInstance()->Update(dt, *camera_);
 
         if (bossHpFill_) {

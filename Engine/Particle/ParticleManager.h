@@ -23,6 +23,9 @@ struct Particles {
     float lifeTime;
     Vector3 velocity;
     float currentTime;
+    float rotation;
+    float angularVelocity;
+    float padding0[2];
     Vector4 color;
 };
 
@@ -71,7 +74,13 @@ struct EmitterData {
 
     float angleRandomDeg;
     float jitterDeg;
-    float padding3[2];
+    float rotationStartDeg;
+    float rotationRandomDeg;
+
+    float angularVelocityMinDeg;
+    float angularVelocityMaxDeg;
+    float timeScale;
+    float initialAge;
 };
 
 // ===============================
@@ -111,11 +120,16 @@ struct ParticleGroup {
 
     ParticleCommon::BlendMode blendMode = ParticleCommon::BlendMode::kBlendModeNormal; 
     PostEffectMode postEffectMode = PostEffectMode::FullScreen;
+    bool bloomPostEffect = false;
+    bool outlineBloomPostEffect = false;
+    Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+    Vector4 outlineBloomColor{ 1.0f, 0.22f, 0.22f, 1.0f };
     bool depthTestEnabled = true;
     
     // 手動/自動エミット制御用フラグ
     bool isAutoEmit = true;
     bool isEmitRequested = false;
+    float activeTimeRemaining = 0.0f;
 
     // ビルボードモード
     // 0: Billboard (カメラ追従)
@@ -127,6 +141,7 @@ struct ParticleGroup {
     std::string texturePath = "";
     int modelType = 0; // 0: None, 1: Primitive, 2: File
     std::string modelName = ""; // Primitiveの場合はインデックス文字列("0"~"7")、Fileの場合はパス
+    std::string fromFile = "";
 };
 
 
@@ -144,6 +159,10 @@ public:
     bool HasGroup(const std::string& groupName) const;
     std::vector<std::string> GetGroupNames() const;
     bool HasPostEffectTargets() const;
+    bool HasBloomPostEffectTargets() const;
+    bool HasOutlineBloomPostEffectTargets() const;
+    Vector4 GetPrimaryPostEffectBloomColor() const;
+    Vector4 GetPrimaryPostEffectOutlineBloomColor() const;
     PostEffectMode GetPrimaryPostEffectMode() const;
     void ConfigureHitEffectPreset(const std::string& groupName);
     void SetEditorSelectedGroupName(const std::string& groupName);
@@ -153,10 +172,19 @@ public:
     void Draw(ID3D12GraphicsCommandList* cmd);
     void Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTargets);
     void ClearGroups();
+    void RemoveGroup(const std::string& groupName);
+    void ClearAllParticles();
+    void ClearGPUBuffers_(ParticleGroup& group);
     void DrawImGui(); // ★追加
+    void DrawImGuiContents();
 
     void Save(const std::string& filename);
     void Load(const std::string& filename);
+    void LoadAdditional(const std::string& filename, const std::string& groupNamePrefix);
+    void LoadAdditional(const std::string& filename, const std::string& groupNamePrefix, const std::vector<std::string>& skipGroupNames);
+    std::vector<std::string> GetGroupNamesInFile(const std::string& filename);
+    std::vector<std::string> GetGroupNamesLoadedFromFile(const std::string& filename) const;
+    float GetGroupLifeTimeMax(const std::string& groupName) const;
 
     void CreateParticleGroup(
         const std::string& name,
@@ -168,13 +196,21 @@ public:
 
     void Emit(const std::string& groupName,
         const Vector3& pos,
-        uint32_t count);
+        uint32_t count,
+        float timeScale = 1.0f,
+        float initialAge = 0.0f);
+    void EmitConfigured(const std::string& groupName, const Vector3& pos, float timeScale = 1.0f, float initialAge = 0.0f);
 
 private:
     ParticleManager() = default;
     ~ParticleManager() = default;
     ParticleManager(const ParticleManager&) = delete;
     ParticleManager& operator=(const ParticleManager&) = delete;
+
+    void LoadInternal_(const std::string& filename, bool clearExisting, const std::string& groupNamePrefix, bool forceAutoEmitOff, const std::vector<std::string>* skipGroupNames = nullptr);
+    void RetireAllGroups_();
+    void RetireGroup_(const std::string& groupName);
+    void CollectRetiredGroups_();
 
 private:
     // === 外部システム ===
@@ -194,6 +230,12 @@ private:
 
     std::unordered_map<std::string, ParticleGroup> particleGroups_;
     std::string editorSelectedGroupName_;
+
+    struct RetiredParticleGroups {
+        std::unordered_map<std::string, ParticleGroup> groups;
+        int framesRemaining = 3;
+    };
+    std::vector<RetiredParticleGroups> retiredParticleGroups_;
 
 
     // === GPU リソース ===
@@ -215,13 +257,23 @@ private:
 
     // === ダミーマテリアル＆ライト ===
     Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_;
+    struct MaterialForGPU {
+        Vector4 color;
+        int enableLighting;
+        float padding[3];
+        Matrix4x4 uvTransform;
+    };
+    MaterialForGPU* mappedMaterial_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> dirLightResource_;
 
     // === ImGui・ファイル検索用 ===
     void ScanResources();
     std::vector<std::string> modelFiles_;
     std::vector<std::string> textureFiles_;
+    std::vector<std::string> particleJsonFiles_;
     bool isResourcesScanned_ = false;
 
-    char saveFileName_[256] = "particles.json";
+    char saveFileName_[256] = "test_particles.json";
+    bool OpenTextureFileDialog_(std::string& outTexturePath);
+    bool OpenModelFileDialog_(std::string& outModelPath);
 };

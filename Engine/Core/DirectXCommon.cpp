@@ -468,7 +468,7 @@ void DirectXCommon::DethCriptorHeapSpawn() {
 	descriptorSizeRTV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	descriptorSizeDSV = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 8, false);
+	rtvDescriptorHeap = CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 12, false);
 
 	
 }
@@ -643,8 +643,6 @@ void DirectXCommon::PreDraw(bool clearDepth) {
 }
 
 
-// DirectXCommon::PostDraw()
-
 void DirectXCommon::PostDraw() {
 	const UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
 
@@ -693,8 +691,8 @@ void DirectXCommon::PostDraw() {
 	hr = computeCommandAllocator->Reset(); assert(SUCCEEDED(hr));
 	hr = computeCommandList->Reset(computeCommandAllocator.Get(), nullptr); assert(SUCCEEDED(hr));
 
-	const UINT idxAfter = swapChain->GetCurrentBackBufferIndex();
-	OutputDebugStringA(std::format("[After Present] backBufferIndex = {}\n", idxAfter).c_str());
+	// const UINT idxAfter = swapChain->GetCurrentBackBufferIndex();
+	// OutputDebugStringA(std::format("[After Present] backBufferIndex = {}\n", idxAfter).c_str());
 }
 
 void DirectXCommon::WaitForGPU() {

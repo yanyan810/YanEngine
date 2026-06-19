@@ -1,5 +1,6 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
+#include "Effect/EffectManager.h"
 
 #include "Camera.h"
 #include "DebugAI/IGameDebugAdapter.h"
@@ -9,6 +10,7 @@
 #include "Object3dCommon.h"
 #include "Particle.h"
 #include "ParticleCommon.h"
+#include "ParticleManager.h"
 #include "TextureManager.h"
 #include "DirectXCommon.h"
 #include "SrvManager.h"
@@ -229,13 +231,18 @@ void GameScene::OnEnter(GameApp& app) {
      prevTab_ = false;
      pauseSel_ = PauseSel::Close;
 
-     EnsureHitEffectGroup_();
+     pendingBattleParticleSetup_ = true;
+
+     EffectManager::GetInstance()->Initialize();
+     EffectManager::GetInstance()->SetGraphicsResources(app.ObjCom(), app.Dx(), camera_.get());
 
      SetupDebugAI_(app);
 
 }
 
 void GameScene::OnExit(GameApp& app) {
+    EffectManager::GetInstance()->Finalize();
+
     ShutdownDebugAI_(app);
 
     if (auto* input = app.GetInput()) {
