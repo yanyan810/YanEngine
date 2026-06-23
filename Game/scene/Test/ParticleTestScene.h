@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IScene.h"
+#include "ParticleTestEditorTypes.h"
 #include "Object3dCommon.h"
 #include "Vector3.h"
 
@@ -30,117 +31,16 @@ public:
     bool HasObjectOutlineBloomTargets() const override;
 
 private:
-    struct ParticleNode {
-        std::string name;
-        std::string particleFileName;
-        float startTime = 0.5f;
-        float endTime = 1.0f;
-        Vector3 position{ 0.0f, 0.0f, 0.0f };
-        Vector3 rotation{ 0.0f, 0.0f, 0.0f };
-        Vector3 scale{ 1.0f, 1.0f, 1.0f };
-        int emitCount = 10;
-        float presetDuration = 1.0f;
-        bool hasEmitted = false;
-    };
-
-    struct EffectKeyframe {
-        float time = 0.0f;
-        Vector3 position{ 0.0f, 0.0f, 0.0f };
-        Vector3 rotation{ 0.0f, 0.0f, 0.0f };
-        Vector3 scale{ 1.0f, 1.0f, 1.0f };
-        Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
-        bool bloomPostEffect = false;
-        bool outlineBloomPostEffect = false;
-        Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
-        Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
-    };
-
-    struct CameraKeyframe {
-        float time = 0.0f;
-        Vector3 position{ 0.0f, 3.0f, -12.0f };
-        Vector3 rotation{ 0.0f, 0.0f, 0.0f };
-        float fovY = 0.45f;
-    };
-
-    struct EditorBonePose {
-        std::string name;
-        Vector3 translate{ 0.0f, 0.0f, 0.0f };
-        Vector3 rotate{ 0.0f, 0.0f, 0.0f };
-        Vector3 scale{ 1.0f, 1.0f, 1.0f };
-    };
-
-    struct EditorObject {
-        int id = 0;
-        std::string name;
-        std::string modelPath;
-        std::string texturePath;
-        int geometryType = -1;
-        std::unique_ptr<Object3d> object;
-        Vector3 position{ 0.0f, 0.0f, 0.0f };
-        Vector3 rotation{ 0.0f, 0.0f, 0.0f };
-        Vector3 scale{ 1.0f, 1.0f, 1.0f };
-        Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
-        Object3dCommon::BlendMode blendMode = Object3dCommon::BlendMode::kBlendModeNormal;
-        bool billboard = false;
-        bool bloomPostEffect = false;
-        bool outlineBloomPostEffect = false;
-        Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
-        Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
-        bool showBones = false;
-        int selectedBone = 0;
-        std::vector<EditorBonePose> bonePoses;
-        std::vector<EffectKeyframe> keyframes;
-    };
-
-    struct EditorObjectSnapshot {
-        int id = 0;
-        std::string name;
-        std::string modelPath;
-        std::string texturePath;
-        int geometryType = -1;
-        Vector3 position{ 0.0f, 0.0f, 0.0f };
-        Vector3 rotation{ 0.0f, 0.0f, 0.0f };
-        Vector3 scale{ 1.0f, 1.0f, 1.0f };
-        Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
-        Object3dCommon::BlendMode blendMode = Object3dCommon::BlendMode::kBlendModeNormal;
-        bool billboard = false;
-        bool bloomPostEffect = false;
-        bool outlineBloomPostEffect = false;
-        Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
-        Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
-        bool showBones = false;
-        int selectedBone = 0;
-        std::vector<EditorBonePose> bonePoses;
-        std::vector<EffectKeyframe> keyframes;
-    };
-
-    struct EditorSnapshot {
-        std::vector<EditorObjectSnapshot> objects;
-        int selectedObject = -1;
-        int nextObjectId = 1;
-        float timelineTime = 0.0f;
-        float timelineDuration = 1.0f;
-        bool timelineLoop = true;
-        Vector3 animationCameraPosition{ 0.0f, 3.0f, -12.0f };
-        Vector3 animationCameraRotation{ 0.0f, 0.0f, 0.0f };
-        float animationCameraFovY = 0.45f;
-        bool useAnimationCameraPreview = false;
-        bool animationCameraPreviewSwapped = false;
-        std::vector<CameraKeyframe> cameraKeyframes;
-        std::vector<ParticleNode> particleNodes;
-        int selectedParticleNode = -1;
-    };
-
-    enum class GizmoMode {
-        Translate = 0,
-        Rotate,
-        Scale,
-    };
-
-    enum class EditorMode {
-        Blender = 0,
-        Particle,
-    };
+    using ParticleNode = ParticleTestEditor::ParticleNode;
+    using EffectKeyframe = ParticleTestEditor::EffectKeyframe;
+    using CameraKeyframe = ParticleTestEditor::CameraKeyframe;
+    using PlayerAttackHitboxKeyframe = ParticleTestEditor::PlayerAttackHitboxKeyframe;
+    using EditorBonePose = ParticleTestEditor::EditorBonePose;
+    using EditorObject = ParticleTestEditor::EditorObject;
+    using EditorObjectSnapshot = ParticleTestEditor::EditorObjectSnapshot;
+    using EditorSnapshot = ParticleTestEditor::EditorSnapshot;
+    using GizmoMode = ParticleTestEditor::GizmoMode;
+    using EditorMode = ParticleTestEditor::EditorMode;
 
     void EnsureHitEffectGroup_();
     void ReloadParticleJson_();
@@ -172,6 +72,11 @@ private:
     void RebuildParticleTimeline_(float targetTime);
     void AddCameraKeyframe_();
     void DeleteNearestCameraKeyframe_();
+    void EnsurePlayerAttackEditor_(GameApp& app);
+    void AddPlayerAttackHitboxKeyframe_();
+    void DeleteNearestPlayerAttackHitboxKeyframe_();
+    void SortPlayerAttackHitboxKeyframes_();
+    void EvaluatePlayerAttackHitbox_();
     EditorSnapshot CaptureEditorSnapshot_() const;
     void RestoreEditorSnapshot_(GameApp& app, const EditorSnapshot& snapshot);
     void PushUndoSnapshot_(const EditorSnapshot& snapshot);
@@ -193,10 +98,12 @@ private:
     void DrawEditorCameraControls_();
     void DrawEffectEditorImGui_(GameApp& app);
     void DrawParticleModeImGui_();
+    void DrawPlayerAttackEditorImGui_(GameApp& app);
 
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Camera> animationCamera_;
     std::unique_ptr<Object3d> ground_;
+    std::unique_ptr<Object3d> playerAttackHitboxCube_;
     std::unique_ptr<Particle> editorParticle_;
     std::vector<EditorObject> editorObjects_;
     std::deque<EditorSnapshot> undoStack_;
@@ -219,6 +126,11 @@ private:
     bool useAnimationCameraPreview_ = false;
     bool animationCameraPreviewSwapped_ = false;
     std::vector<CameraKeyframe> cameraKeyframes_;
+    std::vector<PlayerAttackHitboxKeyframe> playerAttackHitboxKeyframes_;
+    PlayerAttackHitboxKeyframe currentPlayerAttackHitbox_{};
+    bool playerAttackEditorEnabled_ = false;
+    bool drawPlayerAttackHitbox_ = true;
+    int playerAttackObjectIndex_ = -1;
     EditorMode editorMode_ = EditorMode::Blender;
     GizmoMode gizmoMode_ = GizmoMode::Translate;
     Vector3 editorCameraPosition_{ 0.0f, 3.0f, -20.0f };
@@ -255,6 +167,7 @@ private:
         TimelineTime,
         ModelKeyframe,
         CameraKeyframe,
+        PlayerAttackHitboxKeyframe,
         ParticleNodeStart,
         ParticleNodeEnd,
         ParticleNodeBar,

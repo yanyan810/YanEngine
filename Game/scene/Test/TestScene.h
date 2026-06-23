@@ -35,9 +35,6 @@ public:
     void DrawImGui(GameApp& app) override;
 
 private:
-    bool SaveBossTuning_(const std::string& path);
-    bool LoadBossTuning_(const std::string& path);
-
     Input* input_ = nullptr;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Player> player_;
@@ -52,8 +49,9 @@ private:
     bool prevAtRight_ = false;
     bool enableEdgeTransition_ = false;
     bool bossAIEnabled_ = false;
-    bool applyBossHitImmediately_ = true;
+    bool applyBossHitImmediately_ = false;
     bool resetFightersRequested_ = false;
+    float hitStopTimer_ = 0.0f;
     bool outOfBoundsEnabled_ = true;
     bool resetDamageOnOutOfBounds_ = false;
     float outLeftX_ = -26.0f;
@@ -67,6 +65,8 @@ private:
 
     std::unique_ptr<Object3d> skyDome_;
     std::unique_ptr<Object3d> knockbackPreviewLine_;
+    std::unique_ptr<Object3d> bossHitboxPreview_;
+    bool drawBossHitboxPreview_ = true;
     bool drawKnockbackPreview_ = true;
     bool freezeKnockbackPreviewWhileLaunched_ = true;
     bool previewLineWasLaunched_ = false;
@@ -76,6 +76,7 @@ private:
     float previewPercent_ = 80.0f;
     float previewLineScale_ = 1.0f;
     float previewLineThickness_ = 0.08f;
+    char newBossAttackName_[64] = "Custom Attack";
     char bossTuningPath_[256] = "resources/tuning/boss_hit_tuning.json";
     std::string bossTuningStatus_;
 

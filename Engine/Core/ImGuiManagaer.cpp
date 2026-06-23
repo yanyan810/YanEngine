@@ -9,6 +9,7 @@
 #endif // USE_IMGUI
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -38,7 +39,7 @@ void ImGuiManagaer::Initialize([[maybe_unused]]WinApp* winApp, [[maybe_unused]] 
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
 
-    // Context（既にあれば作らない）
+    // Context・域里縺ｫ縺ゅｌ縺ｰ菴懊ｉ縺ｪ縺・ｼ・
     if (ImGui::GetCurrentContext() == nullptr) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -49,8 +50,18 @@ void ImGuiManagaer::Initialize([[maybe_unused]]WinApp* winApp, [[maybe_unused]] 
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.IniFilename = nullptr;
-
-    // Win32 backend（既にあればInitしない）
+    const char* japaneseFontPaths[] = {
+        "C:/Windows/Fonts/meiryo.ttc",
+        "C:/Windows/Fonts/YuGothM.ttc",
+        "C:/Windows/Fonts/msgothic.ttc",
+    };
+    for (const char* fontPath : japaneseFontPaths) {
+        if (std::filesystem::exists(fontPath)) {
+            io.Fonts->AddFontFromFileTTF(fontPath, 16.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+            break;
+        }
+    }
+    // Win32 backend・域里縺ｫ縺ゅｌ縺ｰInit縺励↑縺・ｼ・
     if (ImGui::GetIO().BackendPlatformUserData == nullptr) {
         ImGui_ImplWin32_Init(winApp_->GetHwnd());
     }
@@ -59,7 +70,7 @@ void ImGuiManagaer::Initialize([[maybe_unused]]WinApp* winApp, [[maybe_unused]] 
     ID3D12Device* device = dxCommon_->GetDevice();
 
 
-    // ★あなたのSwapChain枚数/formatに合わせる（とりあえず2枚+UNORMでOKならこのまま）
+    // 笘・≠縺ｪ縺溘・SwapChain譫壽焚/format縺ｫ蜷医ｏ縺帙ｋ・医→繧翫≠縺医★2譫・UNORM縺ｧOK縺ｪ繧峨％縺ｮ縺ｾ縺ｾ・・
     const int backBufferCount = 2;
     const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 
@@ -81,7 +92,7 @@ void ImGuiManagaer::Initialize([[maybe_unused]]WinApp* winApp, [[maybe_unused]] 
 
     bool ok = ImGui_ImplDX12_Init(&initInfo);
     assert(ok && "ImGui_ImplDX12_Init failed");
-    ImGui_ImplDX12_CreateDeviceObjects(); // ★これを追加（重要）
+    ImGui_ImplDX12_CreateDeviceObjects(); // 笘・％繧後ｒ霑ｽ蜉・磯㍾隕・ｼ・
 
     initialized_ = true;
 #endif // USE_IMGUI
@@ -171,6 +182,7 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGui::DockBuilderDockWindow("Hierarchy", leftNode);
     ImGui::DockBuilderDockWindow("Boss Knockback Test", leftNode);
     ImGui::DockBuilderDockWindow("Inspector", rightNode);
+    ImGui::DockBuilderDockWindow("Boss Attack Tuning", rightNode);
     ImGui::DockBuilderDockWindow("Scene", mainNode);
     ImGui::DockBuilderDockWindow("Console", bottomNode);
 
@@ -219,9 +231,10 @@ void ImGuiManagaer::DrawEditorPanels_()
     ImGui::SetNextWindowSize(ImVec2(220.0f, 420.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 56.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Hierarchy");
-    if (gParticleTestEditorModeSwitcherVisible && gParticleTestEditorMode == 0) {
+    const bool blenderHierarchyMode = gParticleTestEditorModeSwitcherVisible && (gParticleTestEditorMode == 0 || gParticleTestEditorMode == 2);
+    if (blenderHierarchyMode) {
         particleManager->SetEditorSelectedGroupName("");
-        ImGui::TextUnformatted("Blender Root");
+        ImGui::TextUnformatted(gParticleTestEditorMode == 2 ? "PlayerAttack Root" : "Blender Root");
         ImGui::Separator();
         if (ImGui::TreeNodeEx("Scene Models", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (gParticleTestBlenderHierarchyNames.empty()) {
@@ -295,7 +308,7 @@ void ImGuiManagaer::DrawEditorPanels_()
     static int emitCount = 24;
     static Vector3 emitPosition{ 0.0f, 1.0f, 0.0f };
 
-    if (gParticleTestEditorModeSwitcherVisible && gParticleTestEditorMode == 0) {
+    if (blenderHierarchyMode) {
         // Blender-mode inspector content is supplied by ParticleTestScene.
     } else if (selectedParticleItem_ == 0) {
         ImGui::TextUnformatted("Create New Group");
@@ -378,6 +391,8 @@ void ImGuiManagaer::DrawEditorPanels_()
         ImGui::RadioButton("Blender Mode", &gParticleTestEditorMode, 0);
         ImGui::SameLine();
         ImGui::RadioButton("Particle Mode", &gParticleTestEditorMode, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("PlayerAttack Mode", &gParticleTestEditorMode, 2);
         ImGui::Separator();
     }
     if (hasSceneTexture_ && srvManager_) {
@@ -422,7 +437,7 @@ void ImGuiManagaer::End(ID3D12GraphicsCommandList* cmd)
 
     ImGui::Render();
 
-    // ImGui描画前に SRV heap をセット
+    // ImGui謠冗判蜑阪↓ SRV heap 繧偵そ繝・ヨ
     ID3D12DescriptorHeap* heaps[] = { srvManager_->GetDescriptorHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
 

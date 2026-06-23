@@ -1,13 +1,13 @@
 #include "GameApp.h"
 #include "SceneManager.h"
-#include "scene/GameScene.h"
-#include "scene/TitleScene.h"
-#include "scene/TestScene.h"
-#include "scene/ParticleTestScene.h"
-#include "scene/GameOverScene.h"
-#include "scene/GameClearScene.h"
-#include "scene/DebugScene.h"
-#include "scene/DebugAITestScene.h"
+#include "scene/Main/GameScene.h"
+#include "scene/Flow/TitleScene.h"
+#include "scene/Test/TestScene.h"
+#include "scene/Test/ParticleTestScene.h"
+#include "scene/Flow/GameOverScene.h"
+#include "scene/Flow/GameClearScene.h"
+#include "scene/Debug/DebugScene.h"
+#include "scene/Debug/DebugAITestScene.h"
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -313,7 +313,6 @@ void GameApp::WarmupAssets_() {
     ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
     //ModelManager::GetInstance()->LoadModel("gltf/walk.glb");
     ModelManager::GetInstance()->LoadModel("Player/player.gltf");
-    ModelManager::GetInstance()->LoadModel("Player/sword.obj");
     
 	ModelManager::GetInstance()->LoadModel("plane.obj");
     ModelManager::GetInstance()->LoadModel("fence/fence.obj");

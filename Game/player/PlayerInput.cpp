@@ -58,12 +58,25 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
             command.horizontal != 0 &&
             recentHorizontalFrames_ > 0 &&
             recentHorizontalDir_ == command.horizontal;
+        if (command.horizontal != 0) {
+            command.attackVariant = PlayerAttackVariant::Side;
+        } else if (command.depth > 0) {
+            command.attackVariant = PlayerAttackVariant::Up;
+        } else {
+            command.attackVariant = PlayerAttackVariant::Neutral;
+        }
 
-        if (smashWindow) {
+        if (!onGround_) {
+            command.attackGroup = PlayerAttackGroup::Air;
+            command.attackType = PlayerAttackType::Weak;
+        } else if (smashWindow) {
+            command.attackGroup = PlayerAttackGroup::Smash;
             command.attackType = PlayerAttackType::Smash;
         } else if (command.horizontal != 0) {
+            command.attackGroup = PlayerAttackGroup::Ground;
             command.attackType = PlayerAttackType::Tilt;
         } else {
+            command.attackGroup = PlayerAttackGroup::Ground;
             command.attackType = PlayerAttackType::Weak;
         }
         return command;
@@ -91,9 +104,12 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     return command;
 }
 
-void Player::StartAttackAction_(PlayerAttackType type, int horizontal) {
+void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAttackGroup group, PlayerAttackVariant variant) {
     action_ = PlayerAction::Attack;
     attackType_ = type;
+    activeAttackGroup_ = group;
+    activeAttackVariant_ = variant;
+    attackElapsedSec_ = 0.0f;
     ++attackSerial_;
     crouching_ = false;
     fastFalling_ = false;
@@ -103,26 +119,14 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal) {
         facing_ = horizontal;
     }
 
-    switch (type) {
-    case PlayerAttackType::Weak:
-        actionTimer_ = 0.28f;
-        break;
-    case PlayerAttackType::Tilt:
-        actionTimer_ = 0.38f;
-        break;
-    case PlayerAttackType::Smash:
-        actionTimer_ = 0.55f;
-        break;
-    case PlayerAttackType::NeutralSpecial:
+    if (type == PlayerAttackType::NeutralSpecial) {
         actionTimer_ = 0.45f;
-        break;
-    case PlayerAttackType::SideSpecial:
+    } else if (type == PlayerAttackType::SideSpecial) {
         actionTimer_ = 0.50f;
-        break;
-    case PlayerAttackType::None:
-    default:
+    } else if (type == PlayerAttackType::None) {
         actionTimer_ = 0.0f;
-        break;
+    } else {
+        actionTimer_ = AttackDefinition(group, variant).actionSec;
     }
 
     LockMove(actionTimer_);
@@ -133,39 +137,36 @@ bool Player::GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) con
         return false;
     }
 
-    float offsetX = 0.9f;
-    outHalfSize = { 0.55f, 0.75f, 0.45f };
-
-    switch (attackType_) {
-    case PlayerAttackType::Weak:
-        offsetX = 0.9f;
-        outHalfSize = { 0.55f, 0.70f, 0.45f };
-        break;
-    case PlayerAttackType::Tilt:
-        offsetX = 1.15f;
-        outHalfSize = { 0.80f, 0.80f, 0.50f };
-        break;
-    case PlayerAttackType::Smash:
-        offsetX = 1.45f;
-        outHalfSize = { 1.15f, 0.95f, 0.60f };
-        break;
-    case PlayerAttackType::NeutralSpecial:
-        offsetX = 1.00f;
+    if (attackType_ == PlayerAttackType::NeutralSpecial) {
         outHalfSize = { 0.75f, 0.85f, 0.55f };
-        break;
-    case PlayerAttackType::SideSpecial:
-        offsetX = 1.55f;
+        outCenter = {
+            pos_.x + 1.00f * static_cast<float>(facing_),
+            pos_.y + outHalfSize.y,
+            pos_.z
+        };
+        return true;
+    }
+    if (attackType_ == PlayerAttackType::SideSpecial) {
         outHalfSize = { 1.25f, 0.85f, 0.65f };
-        break;
-    case PlayerAttackType::None:
-    default:
+        outCenter = {
+            pos_.x + 1.55f * static_cast<float>(facing_),
+            pos_.y + outHalfSize.y,
+            pos_.z
+        };
+        return true;
+    }
+
+    const PlayerAttackDefinition& attack = AttackDefinition(activeAttackGroup_, activeAttackVariant_);
+    if (attackElapsedSec_ < attack.startDelaySec ||
+        attackElapsedSec_ > attack.startDelaySec + attack.activeSec) {
         return false;
     }
 
+    outHalfSize = attack.halfSize;
     outCenter = {
-        pos_.x + offsetX * static_cast<float>(facing_),
-        pos_.y + outHalfSize.y,
-        pos_.z
+        pos_.x + attack.offset.x * static_cast<float>(facing_),
+        pos_.y + attack.offset.y,
+        pos_.z + attack.offset.z
     };
     return true;
 }
@@ -191,21 +192,16 @@ bool Player::GetAttackHitBox(AABB& outHitBox) const {
 }
 
 int Player::GetAttackDamage() const {
-    switch (attackType_) {
-    case PlayerAttackType::Weak:
-        return 8;
-    case PlayerAttackType::Tilt:
-        return 12;
-    case PlayerAttackType::Smash:
-        return 20;
-    case PlayerAttackType::NeutralSpecial:
+    if (attackType_ == PlayerAttackType::NeutralSpecial) {
         return 14;
-    case PlayerAttackType::SideSpecial:
+    }
+    if (attackType_ == PlayerAttackType::SideSpecial) {
         return 18;
-    case PlayerAttackType::None:
-    default:
+    }
+    if (attackType_ == PlayerAttackType::None) {
         return 0;
     }
+    return AttackDefinition(activeAttackGroup_, activeAttackVariant_).damage;
 }
 
 void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
@@ -220,7 +216,7 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
     switch (command.action) {
     case PlayerAction::Attack:
         if (actionTimer_ <= 0.0f) {
-            StartAttackAction_(command.attackType, command.horizontal);
+            StartAttackAction_(command.attackType, command.horizontal, command.attackGroup, command.attackVariant);
         }
         break;
 
@@ -276,10 +272,15 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
 void Player::UpdateActionTimer_(float dt) {
     if (actionTimer_ <= 0.0f) return;
 
+    if (action_ == PlayerAction::Attack) {
+        attackElapsedSec_ += dt;
+    }
+
     actionTimer_ -= dt;
     if (actionTimer_ <= 0.0f) {
         actionTimer_ = 0.0f;
         attackType_ = PlayerAttackType::None;
+        attackElapsedSec_ = 0.0f;
         if (action_ == PlayerAction::Attack) {
             action_ = isMoving ? PlayerAction::Move : PlayerAction::Idle;
         }

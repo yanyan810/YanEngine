@@ -150,20 +150,6 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::End();
 
     ImGui::Begin("Bone Attach");
-    static char weaponBoneName[128] = "ボーン.017";
-    static Vector3 weaponOffset{ 0.0f, 0.0f, 0.0f };
-    static Vector3 weaponRotate{ 0.0f, 0.0f, 0.0f };
-    static Vector3 weaponScale{ 0.15f, 0.15f, 0.15f };
-
-    ImGui::InputText("Weapon Bone", weaponBoneName, sizeof(weaponBoneName));
-    ImGui::DragFloat3("Weapon Offset", &weaponOffset.x, 0.01f);
-    ImGui::DragFloat3("Weapon Rotate", &weaponRotate.x, 0.01f);
-    ImGui::DragFloat3("Weapon Scale", &weaponScale.x, 0.01f, 0.001f, 10.0f);
-    if (player_ && ImGui::Button("Apply Weapon Attach")) {
-        player_->SetWeaponAttachment({ weaponBoneName }, weaponOffset, weaponRotate, weaponScale);
-    }
-
-    ImGui::Separator();
     static char particleGroupName[128] = "BoneSpark";
     static char particleBoneName[128] = "ボーン.017";
     static Vector3 particleOffset{ 0.0f, 0.0f, 0.0f };

@@ -1,12 +1,59 @@
 {
+    "bossAttackHitboxes": {
+        "jumpSlash": {
+            "activeSec": 0.07999999821186066,
+            "damage": 10,
+            "halfSize": [
+                2.200000047683716,
+                1.2999999523162842,
+                1.2000000476837158
+            ],
+            "offset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "startDelaySec": 0.0
+        },
+        "normal": {
+            "activeSec": 0.10000000149011612,
+            "damage": 5,
+            "halfSize": [
+                0.949999988079071,
+                3.0999999046325684,
+                0.5
+            ],
+            "offset": [
+                0.8999999761581421,
+                2.75,
+                0.0
+            ],
+            "startDelaySec": 0.0
+        },
+        "rush": {
+            "activeSec": 0.05999999865889549,
+            "damage": 10,
+            "halfSize": [
+                3.109999895095825,
+                1.899999976158142,
+                1.2000000476837158
+            ],
+            "offset": [
+                0.25,
+                1.2999999523162842,
+                0.0
+            ],
+            "startDelaySec": 0.0
+        }
+    },
     "bossHits": {
         "jumpSlash": {
-            "baseKnockback": 12.0,
+            "baseKnockback": 21.799999237060547,
             "damagePercent": 16.0,
             "hitStunSec": 0.44999998807907104,
             "knockbackDir": [
-                0.800000011920929,
-                0.6000000238418579,
+                0.5199999809265137,
+                2.0,
                 0.0
             ],
             "knockbackScale": 0.10000000149011612
@@ -23,16 +70,17 @@
             "knockbackScale": 0.029999999329447746
         },
         "rush": {
-            "baseKnockback": 10.0,
-            "damagePercent": 12.0,
+            "baseKnockback": 11.600000381469727,
+            "damagePercent": 5.0,
             "hitStunSec": 0.3499999940395355,
             "knockbackDir": [
                 1.0,
-                0.3499999940395355,
+                0.9700000286102295,
                 0.0
             ],
-            "knockbackScale": 0.07999999821186066
+            "knockbackScale": 0.0
         }
     },
+    "customBossAttacks": [],
     "version": 1
 }
