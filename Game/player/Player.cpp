@@ -58,6 +58,24 @@ void Player::ChangeModelSet_(Player::PlayerModelSet set) {
 void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam) {
     cam_ = cam;
 
+    attackDefinitions_ = { {
+        { {
+            { "Ground Neutral U", { 0.9f, 0.70f, 0.0f }, { 0.55f, 0.70f, 0.45f }, 0.03f, 0.12f, 0.28f, 8 },
+            { "Ground Side U", { 1.15f, 0.75f, 0.0f }, { 0.80f, 0.80f, 0.50f }, 0.04f, 0.13f, 0.38f, 12 },
+            { "Ground Up U", { 0.25f, 1.45f, 0.0f }, { 0.70f, 1.05f, 0.50f }, 0.04f, 0.14f, 0.36f, 11 },
+        } },
+        { {
+            { "Smash Neutral U", { 1.25f, 0.85f, 0.0f }, { 0.95f, 0.90f, 0.55f }, 0.08f, 0.12f, 0.48f, 16 },
+            { "Smash Side U", { 1.45f, 0.85f, 0.0f }, { 1.15f, 0.95f, 0.60f }, 0.10f, 0.14f, 0.55f, 20 },
+            { "Smash Up U", { 0.35f, 1.65f, 0.0f }, { 0.90f, 1.20f, 0.60f }, 0.09f, 0.13f, 0.52f, 18 },
+        } },
+        { {
+            { "Air Neutral U", { 0.85f, 0.75f, 0.0f }, { 0.70f, 0.70f, 0.50f }, 0.02f, 0.16f, 0.34f, 9 },
+            { "Air Side U", { 1.10f, 0.70f, 0.0f }, { 0.85f, 0.75f, 0.55f }, 0.04f, 0.15f, 0.40f, 12 },
+            { "Air Up U", { 0.20f, 1.35f, 0.0f }, { 0.80f, 1.00f, 0.55f }, 0.03f, 0.16f, 0.38f, 11 },
+        } },
+    } };
+
     model_ = std::make_unique<Object3d>();
     model_->Initialize(objCommon, dx);
     model_->SetCamera(cam_);
@@ -103,30 +121,12 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
 
     shadow_->SetMaterialColor({ 255,255,255, shadowMaxAlpha_ });
 
-    swordObj_ = std::make_unique<Object3d>();
-    swordObj_->Initialize(objCommon, dx);
-    swordObj_->SetModel("Player/sword.obj");
-    swordObj_->SetCamera(cam_);
-    swordObj_->SetTranslate({ 0,0,0 });
-
-
 }
 
 
 void Player::SetCamera(Camera* cam) {
     cam_ = cam;
     if (model_) model_->SetCamera(cam_);
-}
-
-void Player::SetWeaponAttachment(
-    const std::vector<std::string>& jointCandidates,
-    const Vector3& localOffset,
-    const Vector3& rotate,
-    const Vector3& scale) {
-    weaponJointCandidates_ = jointCandidates;
-    weaponLocalOffset_ = localOffset;
-    weaponRotate_ = rotate;
-    weaponScale_ = scale;
 }
 
 bool Player::TryGetBoneWorldPosition(const std::string& jointName, Vector3& out, const Vector3& localOffset) const {
@@ -233,21 +233,6 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     }
 
     if (model_) model_->Update(dt);
-    if (model_ && swordObj_) {
-        for (const std::string& jointName : weaponJointCandidates_) {
-            if (model_->AttachObjectToJoint(*swordObj_, jointName, weaponLocalOffset_, weaponRotate_, weaponScale_)) {
-                break;
-            }
-        }
-    }
-
-
-    //static bool once = true;
-    //if (once && swordObj_) {
-    //    once = false;
-    //}
-
-	if (swordObj_) swordObj_->Update(dt);
     if (debugAtkCube_) debugAtkCube_->Update(dt);
 
     if (hitFlashSec_ > 0.0f) {
@@ -269,6 +254,40 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 void Player::QueueDebugCommand(const PlayerInputCommand& command) {
     debugCommand_ = command;
     hasDebugCommand_ = true;
+}
+
+Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) {
+    return attackDefinitions_[static_cast<size_t>(group)][static_cast<size_t>(variant)];
+}
+
+const Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) const {
+    return attackDefinitions_[static_cast<size_t>(group)][static_cast<size_t>(variant)];
+}
+
+const char* Player::AttackGroupName(PlayerAttackGroup group) {
+    switch (group) {
+    case PlayerAttackGroup::Ground:
+        return "Ground U";
+    case PlayerAttackGroup::Smash:
+        return "Smash U";
+    case PlayerAttackGroup::Air:
+        return "Air U";
+    default:
+        return "Unknown";
+    }
+}
+
+const char* Player::AttackVariantName(PlayerAttackVariant variant) {
+    switch (variant) {
+    case PlayerAttackVariant::Neutral:
+        return "Neutral";
+    case PlayerAttackVariant::Side:
+        return "Side";
+    case PlayerAttackVariant::Up:
+        return "Up";
+    default:
+        return "Unknown";
+    }
 }
 
 

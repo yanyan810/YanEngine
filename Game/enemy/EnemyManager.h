@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,8 +29,17 @@ public:
         int damage = 5;
         bool fromBoss = false;
         MeleeKind kind = MeleeKind::Normal;
+        size_t attackIndex = 0;
         Vector3 attackerPos = {};
         int facing = 1;
+    };
+
+    struct BossAttackHitboxTuning {
+        Vector3 offset = { 1.2f, 0.0f, 0.0f };
+        Vector3 halfSize = { 0.6f, 0.5f, 0.5f };
+        float startDelaySec = 0.0f;
+        float activeSec = 0.10f;
+        int damage = 5;
     };
 
     struct BossHitTuning {
@@ -38,6 +48,13 @@ public:
         float knockbackScale = 0.08f;
         Vector3 knockbackDir = { 1.0f, 0.35f, 0.0f };
         float hitStunSec = 0.35f;
+    };
+
+    struct BossAttackDefinition {
+        std::string name;
+        BossHitTuning hit;
+        BossAttackHitboxTuning hitbox;
+        bool custom = false;
     };
 
     struct PlayerAttackHitEvent {
@@ -57,6 +74,12 @@ public:
         Vector3 position = {};
     };
 
+    struct HitStopTuning {
+        bool enabled = true;
+        float playerAttackSec = 0.08f;
+        float bossAttackSec = 0.10f;
+    };
+
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
 
     void Clear();
@@ -71,12 +94,27 @@ public:
 
     std::vector<PlayerAttackHitEvent> ApplyPlayerAttack(Player& player);
     std::vector<BossAttackEffectEvent> ConsumeBossAttackEffectEvents();
+    float ConsumeHitStopRequest();
     void AppendDebugEntities(std::vector<DebugEntityState>& outEntities) const;
     void RestoreDebugEntities(const std::vector<DebugEntityState>& entities);
 
     void SetDebugDrawMeleeHitbox(bool enable) { debugDrawMeleeHitbox_ = enable; }
     BossHitTuning& BossTuning(MeleeKind kind);
     const BossHitTuning& BossTuning(MeleeKind kind) const;
+    BossAttackHitboxTuning& BossAttackHitboxTuningFor(MeleeKind kind);
+    const BossAttackHitboxTuning& BossAttackHitboxTuningFor(MeleeKind kind) const;
+    AABB3 MakeBossAttackHitbox(MeleeKind kind, const Vector3& bossPos, int facing) const;
+    size_t BossAttackCount() const { return bossAttacks_.size(); }
+    BossAttackDefinition& BossAttackAt(size_t index);
+    const BossAttackDefinition& BossAttackAt(size_t index) const;
+    size_t BossAttackIndex(MeleeKind kind) const;
+    AABB3 MakeBossAttackHitbox(size_t attackIndex, const Vector3& bossPos, int facing) const;
+    size_t AddCustomBossAttack(const std::string& name);
+    bool RemoveCustomBossAttack(size_t index);
+    void ClearCustomBossAttacks();
+    void QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, float targetX);
+    HitStopTuning& HitStop() { return hitStopTuning_; }
+    const HitStopTuning& HitStop() const { return hitStopTuning_; }
 
     void QueueSpawn(EnemyType type, float delaySec);
     void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
@@ -106,10 +144,11 @@ private:
     Camera* cam_ = nullptr;
 
     std::vector<MeleeHitbox> meleeHitboxes_;
+    std::vector<MeleeHitbox> pendingMeleeHitboxes_;
     std::vector<BossAttackEffectEvent> bossAttackEffectEvents_;
-    BossHitTuning bossNormalTuning_{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f };
-    BossHitTuning bossLandTuning_{ 16.0f, 12.0f, 0.10f, { 0.8f, 0.60f, 0.0f }, 0.45f };
-    BossHitTuning bossRushTuning_{ 12.0f, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f };
+    std::vector<BossAttackDefinition> bossAttacks_;
+    HitStopTuning hitStopTuning_{};
+    float pendingHitStopSec_ = 0.0f;
 
     std::vector<Enemy> enemies_;
 

@@ -1,4 +1,7 @@
 #include "TestScene.h"
+#include "TestSceneBossTuning.h"
+#include "TestSceneKnockbackPreview.h"
+
 #include "GameApp.h"
 #include "Input.h"
 #include "Camera.h"
@@ -11,281 +14,11 @@
 #include "SrvManager.h"
 
 #include <d3d12.h>
-#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
-#include <fstream>
-
-namespace {
-
-constexpr float kRadToDeg = 57.29577951308232f;
-using json = nlohmann::json;
-
-MeleeKind PreviewKindFromIndex(int index) {
-    if (index == 0) {
-        return MeleeKind::Normal;
-    }
-    if (index == 1) {
-        return MeleeKind::Land;
-    }
-    return MeleeKind::Rush;
-}
-
-float Length3(const Vector3& v) {
-    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-Vector3 NormalizeOr(const Vector3& v, const Vector3& fallback) {
-    const float len = Length3(v);
-    if (len <= 1.0e-6f) {
-        return fallback;
-    }
-    return { v.x / len, v.y / len, v.z / len };
-}
-
-json ToJson(const Vector3& v) {
-    return json::array({ v.x, v.y, v.z });
-}
-
-Vector3 Vector3FromJson(const json& value, const Vector3& fallback) {
-    if (!value.is_array() || value.size() < 3) {
-        return fallback;
-    }
-    return {
-        value.at(0).get<float>(),
-        value.at(1).get<float>(),
-        value.at(2).get<float>(),
-    };
-}
-
-json ToJson(const EnemyManager::BossHitTuning& tuning) {
-    return {
-        { "damagePercent", tuning.damagePercent },
-        { "baseKnockback", tuning.baseKnockback },
-        { "knockbackScale", tuning.knockbackScale },
-        { "knockbackDir", ToJson(tuning.knockbackDir) },
-        { "hitStunSec", tuning.hitStunSec },
-    };
-}
-
-void ApplyJsonToTuning(const json& value, EnemyManager::BossHitTuning& tuning) {
-    if (!value.is_object()) {
-        return;
-    }
-    tuning.damagePercent = value.value("damagePercent", tuning.damagePercent);
-    tuning.baseKnockback = value.value("baseKnockback", tuning.baseKnockback);
-    tuning.knockbackScale = value.value("knockbackScale", tuning.knockbackScale);
-    if (value.contains("knockbackDir")) {
-        tuning.knockbackDir = Vector3FromJson(value.at("knockbackDir"), tuning.knockbackDir);
-    }
-    tuning.hitStunSec = value.value("hitStunSec", tuning.hitStunSec);
-}
-
-void SetLineSegment(Object3d& line, const Vector3& start, const Vector3& end, float thickness, float dt) {
-    const Vector3 v{
-        end.x - start.x,
-        end.y - start.y,
-        end.z - start.z,
-    };
-    const float length = Length3(v);
-    const Vector3 mid{
-        start.x + v.x * 0.5f,
-        start.y + v.y * 0.5f,
-        start.z + v.z * 0.5f,
-    };
-
-    line.SetTranslate(mid);
-    line.SetRotate({ 0.0f, 0.0f, std::atan2(v.y, v.x) });
-    // cube.obj spans -1..1 on each axis, so half-scale keeps the segment endpoints exact.
-    line.SetScale({ std::max(length * 0.5f, 0.001f), thickness, thickness });
-    line.Update(dt);
-}
-
-float SolveTimeToY(float startY, float velocityY, float gravity, float targetY) {
-    const float g = std::max(gravity, 0.0001f);
-    const float height = startY - targetY;
-    const float disc = velocityY * velocityY + 2.0f * g * height;
-    if (disc < 0.0f) {
-        return 0.0f;
-    }
-    return std::max(0.0f, (velocityY + std::sqrt(disc)) / g);
-}
-
-float SolvePositiveBoundaryTime(float start, float velocity, float boundary) {
-    if (std::abs(velocity) <= 1.0e-6f) {
-        return -1.0f;
-    }
-    const float t = (boundary - start) / velocity;
-    return t > 0.0f ? t : -1.0f;
-}
-
-struct KnockbackPreviewMetrics {
-    Vector3 direction{};
-    Vector3 velocity{};
-    Vector3 landingPos{};
-    Vector3 outPos{};
-    float power = 0.0f;
-    float launchAngleDeg = 0.0f;
-    float signedScreenAngleDeg = 0.0f;
-    float airTimeSec = 0.0f;
-    float travelX = 0.0f;
-    float travelZ = 0.0f;
-    float groundDistance = 0.0f;
-    float straightDistance = 0.0f;
-    float maxHeightY = 0.0f;
-    float outTimeSec = 0.0f;
-    float outDistance = 0.0f;
-    bool reachesOutBeforeLanding = false;
-};
-
-KnockbackPreviewMetrics CalcKnockbackPreviewMetrics(
-    const Player& player,
-    const EnemyManager& enemyMgr,
-    MeleeKind kind,
-    float percent,
-    bool outOfBoundsEnabled,
-    float outLeftX,
-    float outRightX,
-    float outBottomY) {
-
-    KnockbackPreviewMetrics m{};
-    const EnemyManager::BossHitTuning& tuning = enemyMgr.BossTuning(kind);
-    m.power = tuning.baseKnockback + percent * tuning.knockbackScale;
-
-    Vector3 dir = tuning.knockbackDir;
-    if (const Enemy* boss = enemyMgr.GetBoss()) {
-        const float dirX = (player.GetX() >= boss->GetPos3D().x) ? 1.0f : -1.0f;
-        dir.x = std::abs(dir.x) * dirX;
-    }
-    m.direction = NormalizeOr(dir, { 1.0f, 0.0f, 0.0f });
-    m.velocity = {
-        m.direction.x * m.power,
-        m.direction.y * m.power,
-        m.direction.z * m.power,
-    };
-
-    const Vector3 start = player.GetPos3D();
-    const float gravity = player.GetGravity();
-    m.airTimeSec = SolveTimeToY(start.y, m.velocity.y, gravity, 0.0f);
-    m.travelX = m.velocity.x * m.airTimeSec;
-    m.travelZ = m.velocity.z * m.airTimeSec;
-    m.groundDistance = std::sqrt(m.travelX * m.travelX + m.travelZ * m.travelZ);
-    m.straightDistance = std::sqrt(
-        m.travelX * m.travelX +
-        start.y * start.y +
-        m.travelZ * m.travelZ);
-    m.landingPos = {
-        start.x + m.travelX,
-        0.0f,
-        start.z + m.travelZ,
-    };
-
-    const float horizontalSpeed = std::sqrt(m.velocity.x * m.velocity.x + m.velocity.z * m.velocity.z);
-    m.launchAngleDeg = std::atan2(m.velocity.y, horizontalSpeed) * kRadToDeg;
-    m.signedScreenAngleDeg = std::atan2(m.velocity.y, m.velocity.x) * kRadToDeg;
-    if (m.velocity.y > 0.0f) {
-        const float apexAdd = (m.velocity.y * m.velocity.y) / (2.0f * std::max(gravity, 0.0001f));
-        m.maxHeightY = start.y + apexAdd;
-    } else {
-        m.maxHeightY = start.y;
-    }
-
-    if (outOfBoundsEnabled) {
-        float firstOutTime = -1.0f;
-
-        const float sideTime = SolvePositiveBoundaryTime(
-            start.x,
-            m.velocity.x,
-            m.velocity.x >= 0.0f ? outRightX : outLeftX);
-        if (sideTime >= 0.0f) {
-            firstOutTime = sideTime;
-        }
-
-        const float bottomTime = SolveTimeToY(start.y, m.velocity.y, gravity, outBottomY);
-        if (bottomTime > 0.0f && (firstOutTime < 0.0f || bottomTime < firstOutTime)) {
-            firstOutTime = bottomTime;
-        }
-
-        if (firstOutTime >= 0.0f && firstOutTime < m.airTimeSec) {
-            m.reachesOutBeforeLanding = true;
-            m.outTimeSec = firstOutTime;
-            m.outPos = {
-                start.x + m.velocity.x * firstOutTime,
-                start.y + m.velocity.y * firstOutTime - 0.5f * gravity * firstOutTime * firstOutTime,
-                start.z + m.velocity.z * firstOutTime,
-            };
-            const float outDx = m.outPos.x - start.x;
-            const float outDz = m.outPos.z - start.z;
-            m.outDistance = std::sqrt(outDx * outDx + outDz * outDz);
-        }
-    }
-
-    return m;
-}
-
-} // namespace
-
-bool TestScene::SaveBossTuning_(const std::string& path) {
-    try {
-        json root;
-        root["version"] = 1;
-        root["bossHits"] = {
-            { "normal", ToJson(enemyMgr_.BossTuning(MeleeKind::Normal)) },
-            { "jumpSlash", ToJson(enemyMgr_.BossTuning(MeleeKind::Land)) },
-            { "rush", ToJson(enemyMgr_.BossTuning(MeleeKind::Rush)) },
-        };
-
-        const std::filesystem::path filePath(path);
-        if (filePath.has_parent_path()) {
-            std::filesystem::create_directories(filePath.parent_path());
-        }
-
-        std::ofstream file(filePath, std::ios::out | std::ios::trunc);
-        if (!file) {
-            bossTuningStatus_ = "Save failed: cannot open file";
-            return false;
-        }
-        file << root.dump(4);
-        bossTuningStatus_ = "Saved: " + path;
-        return true;
-    } catch (const std::exception& e) {
-        bossTuningStatus_ = std::string("Save failed: ") + e.what();
-        return false;
-    }
-}
-
-bool TestScene::LoadBossTuning_(const std::string& path) {
-    try {
-        std::ifstream file(path);
-        if (!file) {
-            bossTuningStatus_ = "Load failed: cannot open file";
-            return false;
-        }
-
-        json root;
-        file >> root;
-        const json& bossHits = root.contains("bossHits") ? root.at("bossHits") : root;
-
-        if (bossHits.contains("normal")) {
-            ApplyJsonToTuning(bossHits.at("normal"), enemyMgr_.BossTuning(MeleeKind::Normal));
-        }
-        if (bossHits.contains("jumpSlash")) {
-            ApplyJsonToTuning(bossHits.at("jumpSlash"), enemyMgr_.BossTuning(MeleeKind::Land));
-        }
-        if (bossHits.contains("rush")) {
-            ApplyJsonToTuning(bossHits.at("rush"), enemyMgr_.BossTuning(MeleeKind::Rush));
-        }
-
-        bossTuningStatus_ = "Loaded: " + path;
-        previewLineWasLaunched_ = false;
-        return true;
-    } catch (const std::exception& e) {
-        bossTuningStatus_ = std::string("Load failed: ") + e.what();
-        return false;
-    }
-}
 
 void TestScene::OnEnter(GameApp& app) {
   //  TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
@@ -295,7 +28,7 @@ void TestScene::OnEnter(GameApp& app) {
 
     camera_ = std::make_unique<Camera>();
 
-    // GameSceneと同じカメラでOK
+    // GameScene縺ｨ蜷後§繧ｫ繝｡繝ｩ縺ｧOK
     camera_->SetTranslate({ 0.0f, 20.0f, -50.0f });
     camera_->SetRotate({ 0.35f, 0.0f, 0.0f });
 
@@ -308,13 +41,16 @@ void TestScene::OnEnter(GameApp& app) {
 
     // EnemyManager
     enemyMgr_.Initialize(app.ObjCom(), app.Dx(), camera_.get());
+    if (std::filesystem::exists(bossTuningPath_)) {
+        TestSceneBossTuning::Load(bossTuningPath_, enemyMgr_, *player_, bossTuningStatus_);
+    }
 
     enemyMgr_.Spawn(EnemyType::Boss, bossSpawnPos_);
     
-    // ★凍結（GetEnemies() はデバッグ確認にも使うので存在してる前提）
+    // 笘・㍾邨撰ｼ・etEnemies() 縺ｯ繝・ヰ繝・げ遒ｺ隱阪↓繧ゆｽｿ縺・・縺ｧ蟄伜惠縺励※繧句燕謠撰ｼ・
     auto& enemies = enemyMgr_.GetEnemies();
     if (!enemies.empty()) {
-        enemies.back().SetInvincible(true); // 死なない
+        enemies.back().SetInvincible(true); // 豁ｻ縺ｪ縺ｪ縺・
         enemies.back().SetAIDisabled(!bossAIEnabled_);
     }
 
@@ -334,9 +70,9 @@ void TestScene::OnEnter(GameApp& app) {
     enemyMgr_.SetLighting(light_);
 
 
-    // どこかで（OnEnterの中）
+    // 縺ｩ縺薙°縺ｧ・・nEnter縺ｮ荳ｭ・・
     //auto* mgr = ModelManager::GetInstance();
-    //mgr->LoadModel("ground/ground.obj");   // resources/ground/ground.obj を想定
+    //mgr->LoadModel("ground/ground.obj");   // resources/ground/ground.obj 繧呈Φ螳・
 
     ground_ = std::make_unique<Object3d>();
     ground_->Initialize(app.ObjCom(), app.Dx());
@@ -345,31 +81,31 @@ void TestScene::OnEnter(GameApp& app) {
 
     
 
-    // 位置・大きさは好みで調整
+    // 菴咲ｽｮ繝ｻ螟ｧ縺阪＆縺ｯ螂ｽ縺ｿ縺ｧ隱ｿ謨ｴ
     ground_->SetTranslate({ 0.0f, -5.0f, 0.0f });
     ground_->SetScale({ 1.0f, 1.0f, 1.0f });
     ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
-    ground_->SetEnableLighting(2);     // 2はハーフランバート
+    ground_->SetEnableLighting(2);     // 2縺ｯ繝上・繝輔Λ繝ｳ繝舌・繝・
     ground_->SetIntensity(2.0f);
     ground_->SetLightColor(light_.dirColor);
     ground_->SetEnableLighting(0);
-    // Groundは pointだけ使う
-    groundLight_ = light_;              // とりあえず既存をコピーしてもOK
-    groundLight_.dirIntensity = 0.0f;   // ★Directional 無効
-    groundLight_.spotIntensity = 0.0f;  // ★Spot 無効
+    // Ground縺ｯ point縺縺台ｽｿ縺・
+    groundLight_ = light_;              // 縺ｨ繧翫≠縺医★譌｢蟄倥ｒ繧ｳ繝斐・縺励※繧０K
+    groundLight_.dirIntensity = 0.0f;   // 笘・irectional 辟｡蜉ｹ
+    groundLight_.spotIntensity = 0.0f;  // 笘・pot 辟｡蜉ｹ
 
     groundLight_.pointIntensity = 16.0f;
     groundLight_.pointPos = { 0.0f, -42.0f, -1.0f };
     groundLight_.pointRadius = 200.0f;
     groundLight_.pointDecay = 1.0f;
-    groundLight_.pointColor = { 1.0f, 1.0f, 1.0f }; // Vector3想定
+    groundLight_.pointColor = { 1.0f, 1.0f, 1.0f }; // Vector3諠ｳ螳・
 
     // Spot ON
     groundLight_.spotIntensity = 20.0f;
     groundLight_.spotPos = { 0.0f, 15.0f, 15.0f };
 
-    // ★direction は「どこを向くか」
-    // とりあえず地面の中央へ向ける（後で毎フレ更新してもOK）
+    // 笘・irection 縺ｯ縲後←縺薙ｒ蜷代￥縺九・
+    // 縺ｨ繧翫≠縺医★蝨ｰ髱｢縺ｮ荳ｭ螟ｮ縺ｸ蜷代￠繧具ｼ亥ｾ後〒豈弱ヵ繝ｬ譖ｴ譁ｰ縺励※繧０K・・
     Vector3 target = { 0.0f, 0.0f, 15.0f };
     Vector3 d = { target.x - groundLight_.spotPos.x, target.y - groundLight_.spotPos.y, target.z - groundLight_.spotPos.z };
     {
@@ -381,29 +117,29 @@ void TestScene::OnEnter(GameApp& app) {
     groundLight_.spotDistance = 80.0f;
     groundLight_.spotDecay = 1.0f;
 
-    // 角度（degree管理してる前提）
+    // 隗貞ｺｦ・・egree邂｡逅・＠縺ｦ繧句燕謠撰ｼ・
     groundLight_.spotAngleDeg = 25.0f;
     groundLight_.spotFalloffStartDeg = 15.0f;
     groundLight_.spotColor = { 1.0f, 1.0f, 1.0f };
 
-    // --- Spot マーカー ---
+    // --- Spot 繝槭・繧ｫ繝ｼ ---
     spotMarker_ = std::make_unique<Object3d>();
     spotMarker_->Initialize(app.ObjCom(), app.Dx());
     spotMarker_->SetCamera(camera_.get());
     spotMarker_->SetModel("cube/cube.obj");
     spotMarker_->SetEnableLighting(0);
-    spotMarker_->SetMaterialColor({ 0, 1, 1, 1 }); // シアン
+    spotMarker_->SetMaterialColor({ 0, 1, 1, 1 }); // 繧ｷ繧｢繝ｳ
     spotMarker_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
-    // PointLightマーカー
+    // PointLight繝槭・繧ｫ繝ｼ
     pointMarker_ = std::make_unique<Object3d>();
     pointMarker_->Initialize(app.ObjCom(), app.Dx());
     pointMarker_->SetCamera(camera_.get());
     pointMarker_->SetModel("cube/cube.obj");
 
-    // 見た目
-    pointMarker_->SetEnableLighting(0);                 // ★ライトの影響を受けない
-    pointMarker_->SetMaterialColor({ 1, 1, 0, 1 });     // 黄色とか（好みで）
+    // 隕九◆逶ｮ
+    pointMarker_->SetEnableLighting(0);                 // 笘・Λ繧､繝医・蠖ｱ髻ｿ繧貞女縺代↑縺・
+    pointMarker_->SetMaterialColor({ 1, 1, 0, 1 });     // 鮟・牡縺ｨ縺具ｼ亥･ｽ縺ｿ縺ｧ・・
     pointMarker_->SetShininess(1.0f);
     pointMarker_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
@@ -411,10 +147,10 @@ void TestScene::OnEnter(GameApp& app) {
     skyDome_->Initialize(app.ObjCom(), app.Dx());
     skyDome_->SetModel("skydome/SkyDome.obj");
 
-    // ★スカイドームは基本「ライト無視」
-    skyDome_->SetEnableLighting(0);              // ← あなたの仕様の「無照明モード」に合わせて
-    skyDome_->SetMaterialColor({ 1,1,1,1 });       // 念のため
-    skyDome_->SetShininess(1.0f);                // 影響しないけど保険
+    // 笘・せ繧ｫ繧､繝峨・繝縺ｯ蝓ｺ譛ｬ縲後Λ繧､繝育┌隕悶・
+    skyDome_->SetEnableLighting(0);              // 竊・縺ゅ↑縺溘・莉墓ｧ倥・縲檎┌辣ｧ譏弱Δ繝ｼ繝峨阪↓蜷医ｏ縺帙※
+    skyDome_->SetMaterialColor({ 1,1,1,1 });       // 蠢ｵ縺ｮ縺溘ａ
+    skyDome_->SetShininess(1.0f);                // 蠖ｱ髻ｿ縺励↑縺・￠縺ｩ菫晞匱
     skyDome_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
     knockbackPreviewLine_ = std::make_unique<Object3d>();
@@ -425,10 +161,18 @@ void TestScene::OnEnter(GameApp& app) {
     knockbackPreviewLine_->SetMaterialColor({ 1.0f, 0.15f, 0.05f, 1.0f });
     knockbackPreviewLine_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
-    // ===== LevelLoader: JSONからオブジェクトを読み込む =====
-    // 1. BlenderアドオンでJSONをエクスポートする
-    // 2. resources/levels/stage1.json に配置する
-    // 3. 下のコメントアウトを外す
+    bossHitboxPreview_ = std::make_unique<Object3d>();
+    bossHitboxPreview_->Initialize(app.ObjCom(), app.Dx());
+    bossHitboxPreview_->SetCamera(camera_.get());
+    bossHitboxPreview_->SetModel("cube/cube.obj");
+    bossHitboxPreview_->SetEnableLighting(0);
+    bossHitboxPreview_->SetMaterialColor({ 0.1f, 0.8f, 1.0f, 0.35f });
+    bossHitboxPreview_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
+
+    // ===== LevelLoader: JSON縺九ｉ繧ｪ繝悶ず繧ｧ繧ｯ繝医ｒ隱ｭ縺ｿ霎ｼ繧 =====
+    // 1. Blender繧｢繝峨が繝ｳ縺ｧJSON繧偵お繧ｯ繧ｹ繝昴・繝医☆繧・
+    // 2. resources/levels/stage1.json 縺ｫ驟咲ｽｮ縺吶ｋ
+    // 3. 荳九・繧ｳ繝｡繝ｳ繝医い繧ｦ繝医ｒ螟悶☆
     /*
     LevelLoader::LevelData levelData = LevelLoader::Load("stage1");
     for (auto& objData : levelData.objects) {
@@ -483,6 +227,7 @@ void TestScene::Update(GameApp& app, float dt) {
 
         reachedEdge_ = false;
         previewLineWasLaunched_ = false;
+        hitStopTimer_ = 0.0f;
     }
 
     camera_->Update();
@@ -490,13 +235,20 @@ void TestScene::Update(GameApp& app, float dt) {
     ground_->Update(dt);
     skyDome_->Update(dt);
 
-    // LevelLoader で読み込んだオブジェクトの更新
+    // LevelLoader 縺ｧ隱ｭ縺ｿ霎ｼ繧薙□繧ｪ繝悶ず繧ｧ繧ｯ繝医・譖ｴ譁ｰ
     for (auto& obj : levelObjects_) {
         obj->Update(dt);
     }
 
-    if (player_) {
+    const bool hitStopActive = hitStopTimer_ > 0.0f;
+    if (hitStopActive) {
+        hitStopTimer_ = std::max(0.0f, hitStopTimer_ - dt);
+    }
+
+    if (!hitStopActive && player_) {
         player_->Update(dt, *input_, enemyMgr_);
+        enemyMgr_.ApplyPlayerAttack(*player_);
+        hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
     }
 
     Vector2 playerPos2D = player_->GetPos2D();
@@ -507,10 +259,13 @@ void TestScene::Update(GameApp& app, float dt) {
         boss->SetAIDisabled(!bossAIEnabled_ && !isAttacking);
     }
 
-    enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
+    if (!hitStopActive && hitStopTimer_ <= 0.0f) {
+        enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
+        hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
+    }
 
     // ===============================
-    // ★ クランプ到達チェック
+    // 笘・繧ｯ繝ｩ繝ｳ繝怜芦驕斐メ繧ｧ繝・け
     // ===============================
     const float zNear = -10.0f;
     const float zFar = 20.0f;
@@ -524,7 +279,7 @@ void TestScene::Update(GameApp& app, float dt) {
 
     float x = player_->GetX();
 
-    // ★ 右端に到達したら GameScene へ
+    // 笘・蜿ｳ遶ｯ縺ｫ蛻ｰ驕斐＠縺溘ｉ GameScene 縺ｸ
 
     if (enableEdgeTransition_ && !reachedEdge_ && x >= xMax - 0.01f) {
         reachedEdge_ = true;
@@ -552,12 +307,14 @@ void TestScene::Update(GameApp& app, float dt) {
         const bool shouldFreezeLine = freezeKnockbackPreviewWhileLaunched_ && launched && !justLaunched;
 
         if (!shouldFreezeLine) {
-        const MeleeKind previewKind = PreviewKindFromIndex(previewAttackKind_);
+        const size_t previewAttackIndex = std::min<size_t>(
+            static_cast<size_t>(std::max(previewAttackKind_, 0)),
+            enemyMgr_.BossAttackCount() > 0 ? enemyMgr_.BossAttackCount() - 1 : 0);
         const float percent = previewUsesPlayerPercent_ ? player_->GetDamagePercent() : previewPercent_;
-        const KnockbackPreviewMetrics metrics = CalcKnockbackPreviewMetrics(
+        const TestSceneKnockbackPreview::Metrics metrics = TestSceneKnockbackPreview::Calculate(
             *player_,
             enemyMgr_,
-            previewKind,
+            previewAttackIndex,
             percent,
             outOfBoundsEnabled_,
             outLeftX_,
@@ -588,10 +345,23 @@ void TestScene::Update(GameApp& app, float dt) {
             previewStart.z + previewVec.z * previewLineScale_,
         };
 
-        SetLineSegment(*knockbackPreviewLine_, previewStart, previewEnd, previewLineThickness_, dt);
+        TestSceneKnockbackPreview::SetLineSegment(*knockbackPreviewLine_, previewStart, previewEnd, previewLineThickness_, dt);
         }
 
         previewLineWasLaunched_ = launched;
+    }
+
+    if (bossHitboxPreview_) {
+        if (Enemy* boss = enemyMgr_.GetBoss()) {
+            const size_t previewAttackIndex = std::min<size_t>(
+                static_cast<size_t>(std::max(previewAttackKind_, 0)),
+                enemyMgr_.BossAttackCount() > 0 ? enemyMgr_.BossAttackCount() - 1 : 0);
+            const int facing = player_ && player_->GetX() < boss->GetPos3D().x ? -1 : 1;
+            const EnemyManager::AABB3 box = enemyMgr_.MakeBossAttackHitbox(previewAttackIndex, boss->GetPos3D(), facing);
+            bossHitboxPreview_->SetTranslate({ box.x, box.y, box.z });
+            bossHitboxPreview_->SetScale({ box.hx, box.hy, box.hz });
+            bossHitboxPreview_->Update(dt);
+        }
     }
 
     player_->SetLighting(light_);
@@ -603,13 +373,14 @@ void TestScene::Update(GameApp& app, float dt) {
         }
     }
 
-    EffectManager::GetInstance()->Update(dt);
-    ParticleManager::GetInstance()->Update(dt, *camera_);
+    const float effectDt = hitStopTimer_ > 0.0f ? 0.0f : dt;
+    EffectManager::GetInstance()->Update(effectDt);
+    ParticleManager::GetInstance()->Update(effectDt, *camera_);
    
 }
 
 
-// ポストエフェクト対象の3D描画（オフスクリーンへ）
+// 繝昴せ繝医お繝輔ぉ繧ｯ繝亥ｯｾ雎｡縺ｮ3D謠冗判・医が繝輔せ繧ｯ繝ｪ繝ｼ繝ｳ縺ｸ・・
 void TestScene::DrawRender(GameApp& app) {
     auto* cmd = app.Dx()->GetCommandList();
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -619,7 +390,7 @@ void TestScene::DrawRender(GameApp& app) {
 
     skyDome_->Draw();
 
-    // LevelLoader で読み込んだオブジェクトの描画
+    // LevelLoader 縺ｧ隱ｭ縺ｿ霎ｼ繧薙□繧ｪ繝悶ず繧ｧ繧ｯ繝医・謠冗判
     for (auto& obj : levelObjects_) {
         obj->Draw();
     }
@@ -629,6 +400,7 @@ void TestScene::DrawRender(GameApp& app) {
 
     if (player_) player_->Draw();
     if (drawKnockbackPreview_ && knockbackPreviewLine_) knockbackPreviewLine_->Draw();
+    if (drawBossHitboxPreview_ && bossHitboxPreview_) bossHitboxPreview_->Draw();
 
 #ifdef _DEBUG
     player_->DrawDebugHitBoxes(enemyMgr_);
@@ -636,7 +408,7 @@ void TestScene::DrawRender(GameApp& app) {
 
     enemyMgr_.Draw();
 
-    // 3Dエフェクトオブジェクトの描画
+    // 3D繧ｨ繝輔ぉ繧ｯ繝医が繝悶ず繧ｧ繧ｯ繝医・謠冗判
     EffectManager::GetInstance()->Draw();
 
     // GPU Particle
@@ -644,9 +416,9 @@ void TestScene::DrawRender(GameApp& app) {
     ParticleManager::GetInstance()->Draw(cmd);
 }
 
-// バックバッファへ直接描く3D（ポストエフェクト不要なもの）
+// 繝舌ャ繧ｯ繝舌ャ繝輔ぃ縺ｸ逶ｴ謗･謠上￥3D・医・繧ｹ繝医お繝輔ぉ繧ｯ繝井ｸ崎ｦ√↑繧ゅ・・・
 void TestScene::Draw3D(GameApp& app) {
-    // 今は特になし
+    // 莉翫・迚ｹ縺ｫ縺ｪ縺・
 }
 
 // 2D / Sprite
@@ -667,7 +439,7 @@ void TestScene::Draw2D(GameApp& app) {
     }
 }
 
-// その他（空でOK）
+// 縺昴・莉厄ｼ育ｩｺ縺ｧOK・・
 void TestScene::Draw(GameApp& app) {
 }
 
@@ -679,6 +451,27 @@ void TestScene::DrawImGui(GameApp& app) {
     ImGui::Checkbox("Boss AI Enabled", &bossAIEnabled_);
     ImGui::Checkbox("Enable Edge Transition", &enableEdgeTransition_);
     ImGui::Checkbox("Apply Hit Immediately", &applyBossHitImmediately_);
+    ImGui::Checkbox("Draw Boss Hitbox Preview", &drawBossHitboxPreview_);
+
+    auto clampPreviewAttackIndex = [&]() {
+        const int attackCount = static_cast<int>(enemyMgr_.BossAttackCount());
+        if (attackCount <= 0) {
+            previewAttackKind_ = 0;
+            return;
+        }
+        previewAttackKind_ = std::clamp(previewAttackKind_, 0, attackCount - 1);
+    };
+
+    auto makeAttackLabels = [&]() {
+        std::vector<const char*> labels;
+        labels.reserve(enemyMgr_.BossAttackCount());
+        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
+            labels.push_back(enemyMgr_.BossAttackAt(i).name.c_str());
+        }
+        return labels;
+    };
+
+    clampPreviewAttackIndex();
 
     if (player_) {
         Vector3 p = player_->GetPos3D();
@@ -692,14 +485,18 @@ void TestScene::DrawImGui(GameApp& app) {
         }
     }
 
-    auto triggerBossTestHit = [&](Enemy& boss, MeleeKind kind) {
-        boss.RequestMelee(kind);
+    auto triggerBossTestHit = [&](Enemy& boss, size_t attackIndex) {
+        if (attackIndex <= enemyMgr_.BossAttackIndex(MeleeKind::Rush)) {
+            boss.RequestMelee(TestSceneKnockbackPreview::KindFromIndex(static_cast<int>(attackIndex)));
+        } else {
+            enemyMgr_.QueueBossAttackHitbox(boss, attackIndex, player_ ? player_->GetX() : boss.GetPos3D().x + 1.0f);
+        }
 
         if (!applyBossHitImmediately_ || !player_) {
             return;
         }
 
-        EnemyManager::BossHitTuning tuning = enemyMgr_.BossTuning(kind);
+        EnemyManager::BossHitTuning tuning = enemyMgr_.BossAttackAt(attackIndex).hit;
         Vector3 dir = tuning.knockbackDir;
         const float dirX = (player_->GetX() >= boss.GetPos3D().x) ? 1.0f : -1.0f;
         dir.x = std::abs(dir.x) * dirX;
@@ -710,6 +507,10 @@ void TestScene::DrawImGui(GameApp& app) {
             tuning.knockbackScale,
             dir,
             tuning.hitStunSec);
+        const EnemyManager::HitStopTuning& hitStop = enemyMgr_.HitStop();
+        if (hitStop.enabled) {
+            hitStopTimer_ = std::max(hitStopTimer_, hitStop.bossAttackSec);
+        }
     };
 
     if (Enemy* boss = enemyMgr_.GetBoss()) {
@@ -720,17 +521,22 @@ void TestScene::DrawImGui(GameApp& app) {
 
         if (ImGui::Button("Boss Normal")) {
             boss->GetBossAIMutable().ForceChangeState(BossAI::State::Melee_Dash);
-            triggerBossTestHit(*boss, MeleeKind::Normal);
+            triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::Normal));
         }
         ImGui::SameLine();
         if (ImGui::Button("Boss Jump Slash")) {
             boss->GetBossAIMutable().ForceChangeState(BossAI::State::Drop_Windup);
-            triggerBossTestHit(*boss, MeleeKind::Land);
+            triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::Land));
         }
         ImGui::SameLine();
         if (ImGui::Button("Boss Rush")) {
             boss->GetBossAIMutable().ForceChangeState(BossAI::State::Rush_ToRight);
-            triggerBossTestHit(*boss, MeleeKind::Rush);
+            triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::Rush));
+        }
+        if (previewAttackKind_ > static_cast<int>(enemyMgr_.BossAttackIndex(MeleeKind::Rush))) {
+            if (ImGui::Button("Boss Selected Custom")) {
+                triggerBossTestHit(*boss, static_cast<size_t>(previewAttackKind_));
+            }
         }
     } else {
         ImGui::TextUnformatted("Boss: none");
@@ -740,27 +546,96 @@ void TestScene::DrawImGui(GameApp& app) {
         resetFightersRequested_ = true;
     }
 
-    if (ImGui::CollapsingHeader("Boss Tuning Preset", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Save / Load Tuning", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputText("Tuning Path", bossTuningPath_, IM_ARRAYSIZE(bossTuningPath_));
-        if (ImGui::Button("Save Boss Tuning")) {
-            SaveBossTuning_(bossTuningPath_);
+        if (ImGui::Button("Save Attack Tuning")) {
+            TestSceneBossTuning::Save(bossTuningPath_, enemyMgr_, *player_, bossTuningStatus_);
         }
         ImGui::SameLine();
-        if (ImGui::Button("Load Boss Tuning")) {
-            LoadBossTuning_(bossTuningPath_);
+        if (ImGui::Button("Load Attack Tuning")) {
+            if (TestSceneBossTuning::Load(bossTuningPath_, enemyMgr_, *player_, bossTuningStatus_)) {
+                clampPreviewAttackIndex();
+                previewLineWasLaunched_ = false;
+            }
         }
         if (!bossTuningStatus_.empty()) {
             ImGui::TextUnformatted(bossTuningStatus_.c_str());
         }
     }
 
-    if (ImGui::CollapsingHeader("Knockback Preview", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const char* attackLabels[] = { "Normal / Combo", "Jump Slash / Land", "Rush" };
+    if (ImGui::CollapsingHeader("HitStop", ImGuiTreeNodeFlags_DefaultOpen)) {
+        EnemyManager::HitStopTuning& hitStop = enemyMgr_.HitStop();
+        ImGui::Checkbox("Enable HitStop", &hitStop.enabled);
+        ImGui::DragFloat("Player Attack Sec", &hitStop.playerAttackSec, 0.005f, 0.0f, 1.0f, "%.3f");
+        ImGui::DragFloat("Boss Attack Sec", &hitStop.bossAttackSec, 0.005f, 0.0f, 1.0f, "%.3f");
+        ImGui::Text("Current Timer: %.3f", hitStopTimer_);
+    }
+
+    if (ImGui::CollapsingHeader("Attack Creation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputText("New Attack Name", newBossAttackName_, IM_ARRAYSIZE(newBossAttackName_));
+        if (ImGui::Button("Add Attack")) {
+            previewAttackKind_ = static_cast<int>(enemyMgr_.AddCustomBossAttack(newBossAttackName_));
+            previewLineWasLaunched_ = false;
+        }
+        ImGui::SameLine();
+        const bool canRemove = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_)).custom;
+        if (!canRemove) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Remove Selected")) {
+            if (enemyMgr_.RemoveCustomBossAttack(static_cast<size_t>(previewAttackKind_))) {
+                clampPreviewAttackIndex();
+                previewLineWasLaunched_ = false;
+            }
+        }
+        if (!canRemove) {
+            ImGui::EndDisabled();
+        }
+
+        std::vector<const char*> attackLabels = makeAttackLabels();
+        if (!attackLabels.empty()) {
+            ImGui::Combo("Selected Attack", &previewAttackKind_, attackLabels.data(), static_cast<int>(attackLabels.size()));
+        }
+
+        EnemyManager::BossAttackDefinition& selectedAttack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+        char attackName[128]{};
+        std::snprintf(attackName, sizeof(attackName), "%s", selectedAttack.name.c_str());
+        if (ImGui::InputText("Selected Name", attackName, IM_ARRAYSIZE(attackName))) {
+            selectedAttack.name = attackName;
+        }
+        ImGui::Text("Custom: %s", selectedAttack.custom ? "true" : "false");
+    }
+
+    if (ImGui::CollapsingHeader("Out Of Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Enabled", &outOfBoundsEnabled_);
+        ImGui::DragFloat("Left X", &outLeftX_, 0.5f, -200.0f, 0.0f);
+        ImGui::DragFloat("Right X", &outRightX_, 0.5f, 0.0f, 200.0f);
+        ImGui::DragFloat("Bottom Y", &outBottomY_, 0.5f, -200.0f, 0.0f);
+        ImGui::DragFloat3("Drop Respawn Pos", &dropRespawnPos_.x, 0.1f);
+        ImGui::Checkbox("Reset Damage On Out", &resetDamageOnOutOfBounds_);
+    }
+
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Next Work", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BulletText("Add recovery special after launch");
+        ImGui::BulletText("Promote test respawn into proper stock/KO flow");
+        ImGui::BulletText("Add KO effect before drop respawn or result transition");
+        ImGui::BulletText("Move tuned boss hit values into battle-side defaults");
+    }
+
+    ImGui::End();
+
+    ImGui::Begin("Boss Attack Tuning");
+
+    if (ImGui::CollapsingHeader("Knockback", ImGuiTreeNodeFlags_DefaultOpen)) {
+        std::vector<const char*> attackLabels = makeAttackLabels();
         const char* lineModeLabels[] = { "Actual Distance", "Launch Velocity" };
         ImGui::Checkbox("Draw Preview Line", &drawKnockbackPreview_);
         ImGui::Checkbox("Freeze Line While Launched", &freezeKnockbackPreviewWhileLaunched_);
         ImGui::Combo("Preview Line Mode", &previewLineMode_, lineModeLabels, 2);
-        ImGui::Combo("Preview Attack", &previewAttackKind_, attackLabels, 3);
+        if (!attackLabels.empty()) {
+            ImGui::Combo("Preview Attack", &previewAttackKind_, attackLabels.data(), static_cast<int>(attackLabels.size()));
+        }
         ImGui::Checkbox("Use Player Damage", &previewUsesPlayerPercent_);
         if (!previewUsesPlayerPercent_) {
             ImGui::DragFloat("Preview Percent", &previewPercent_, 1.0f, 0.0f, 999.0f);
@@ -769,13 +644,13 @@ void TestScene::DrawImGui(GameApp& app) {
         ImGui::DragFloat(scaleLabel, &previewLineScale_, 0.01f, 0.01f, 5.0f);
         ImGui::DragFloat("Line Thickness", &previewLineThickness_, 0.01f, 0.01f, 2.0f);
 
-        const MeleeKind previewKind = PreviewKindFromIndex(previewAttackKind_);
+        const size_t previewAttackIndex = static_cast<size_t>(previewAttackKind_);
         const float percent = previewUsesPlayerPercent_ && player_ ? player_->GetDamagePercent() : previewPercent_;
         if (player_) {
-            const KnockbackPreviewMetrics metrics = CalcKnockbackPreviewMetrics(
+            const TestSceneKnockbackPreview::Metrics metrics = TestSceneKnockbackPreview::Calculate(
                 *player_,
                 enemyMgr_,
-                previewKind,
+                previewAttackIndex,
                 percent,
                 outOfBoundsEnabled_,
                 outLeftX_,
@@ -805,41 +680,84 @@ void TestScene::DrawImGui(GameApp& app) {
                 ImGui::TextUnformatted("Out Before Landing: false");
             }
         }
-    }
 
-    if (ImGui::CollapsingHeader("Out Of Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Enabled", &outOfBoundsEnabled_);
-        ImGui::DragFloat("Left X", &outLeftX_, 0.5f, -200.0f, 0.0f);
-        ImGui::DragFloat("Right X", &outRightX_, 0.5f, 0.0f, 200.0f);
-        ImGui::DragFloat("Bottom Y", &outBottomY_, 0.5f, -200.0f, 0.0f);
-        ImGui::DragFloat3("Drop Respawn Pos", &dropRespawnPos_.x, 0.1f);
-        ImGui::Checkbox("Reset Damage On Out", &resetDamageOnOutOfBounds_);
-    }
-
-    auto drawBossTuning = [](const char* label, EnemyManager::BossHitTuning& tuning) {
-        ImGui::PushID(label);
-        if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto drawBossTuning = [](const char* label, EnemyManager::BossHitTuning& tuning) {
+            ImGui::PushID(label);
+            if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::PopID();
+                return;
+            }
+            ImGui::DragFloat("Damage Percent", &tuning.damagePercent, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Base Knockback", &tuning.baseKnockback, 0.1f, 0.0f, 80.0f);
+            ImGui::DragFloat("Knockback Scale", &tuning.knockbackScale, 0.005f, 0.0f, 1.0f);
+            ImGui::DragFloat3("Knockback Dir", &tuning.knockbackDir.x, 0.01f, -2.0f, 2.0f);
+            ImGui::DragFloat("Hit Stun Sec", &tuning.hitStunSec, 0.01f, 0.0f, 3.0f);
             ImGui::PopID();
-            return;
+        };
+
+        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
+            drawBossTuning(enemyMgr_.BossAttackAt(i).name.c_str(), enemyMgr_.BossAttackAt(i).hit);
         }
-        ImGui::DragFloat("Damage Percent", &tuning.damagePercent, 0.5f, 0.0f, 100.0f);
-        ImGui::DragFloat("Base Knockback", &tuning.baseKnockback, 0.1f, 0.0f, 80.0f);
-        ImGui::DragFloat("Knockback Scale", &tuning.knockbackScale, 0.005f, 0.0f, 1.0f);
-        ImGui::DragFloat3("Knockback Dir", &tuning.knockbackDir.x, 0.01f, -2.0f, 2.0f);
-        ImGui::DragFloat("Hit Stun Sec", &tuning.hitStunSec, 0.01f, 0.0f, 3.0f);
-        ImGui::PopID();
-    };
+    }
 
-    drawBossTuning("Normal / Combo", enemyMgr_.BossTuning(MeleeKind::Normal));
-    drawBossTuning("Jump Slash / Land", enemyMgr_.BossTuning(MeleeKind::Land));
-    drawBossTuning("Rush", enemyMgr_.BossTuning(MeleeKind::Rush));
+    if (ImGui::CollapsingHeader("HitBox", ImGuiTreeNodeFlags_DefaultOpen)) {
+        std::vector<const char*> attackLabels = makeAttackLabels();
+        if (!attackLabels.empty()) {
+            ImGui::Combo("Preview Hitbox Attack", &previewAttackKind_, attackLabels.data(), static_cast<int>(attackLabels.size()));
+        }
 
-    ImGui::Separator();
-    if (ImGui::CollapsingHeader("Next Work", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::BulletText("Add recovery special after launch");
-        ImGui::BulletText("Promote test respawn into proper stock/KO flow");
-        ImGui::BulletText("Add KO effect before drop respawn or result transition");
-        ImGui::BulletText("Move tuned boss hit values into battle-side defaults");
+        auto drawBossHitboxTuning = [](const char* label, EnemyManager::BossAttackHitboxTuning& tuning) {
+            ImGui::PushID(label);
+            if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::PopID();
+                return;
+            }
+            ImGui::DragFloat3("Offset", &tuning.offset.x, 0.05f, -20.0f, 20.0f);
+            ImGui::DragFloat3("Half Size", &tuning.halfSize.x, 0.05f, 0.01f, 20.0f);
+            ImGui::DragFloat("Start Delay Sec", &tuning.startDelaySec, 0.01f, 0.0f, 5.0f);
+            ImGui::DragFloat("Active Sec", &tuning.activeSec, 0.01f, 0.01f, 5.0f);
+            ImGui::DragInt("Damage", &tuning.damage, 1, 0, 999);
+            ImGui::PopID();
+        };
+
+        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
+            drawBossHitboxTuning(enemyMgr_.BossAttackAt(i).name.c_str(), enemyMgr_.BossAttackAt(i).hitbox);
+        }
+    }
+
+    if (player_ && ImGui::CollapsingHeader("Player U Attacks", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto drawPlayerAttack = [](const char* label, Player::PlayerAttackDefinition& attack) {
+            ImGui::PushID(label);
+            if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::PopID();
+                return;
+            }
+
+            char name[128]{};
+            std::snprintf(name, sizeof(name), "%s", attack.name.c_str());
+            if (ImGui::InputText("Name", name, IM_ARRAYSIZE(name))) {
+                attack.name = name;
+            }
+            ImGui::DragFloat3("Offset", &attack.offset.x, 0.05f, -20.0f, 20.0f);
+            ImGui::DragFloat3("Half Size", &attack.halfSize.x, 0.05f, 0.01f, 20.0f);
+            ImGui::DragFloat("Start Delay Sec", &attack.startDelaySec, 0.01f, 0.0f, 5.0f);
+            ImGui::DragFloat("Active Sec", &attack.activeSec, 0.01f, 0.01f, 5.0f);
+            ImGui::DragFloat("Action Sec", &attack.actionSec, 0.01f, 0.01f, 5.0f);
+            ImGui::DragInt("Damage", &attack.damage, 1, 0, 999);
+            ImGui::PopID();
+        };
+
+        for (int groupIndex = 0; groupIndex < static_cast<int>(Player::PlayerAttackGroup::Count); ++groupIndex) {
+            const auto group = static_cast<Player::PlayerAttackGroup>(groupIndex);
+            if (!ImGui::TreeNodeEx(Player::AttackGroupName(group), ImGuiTreeNodeFlags_DefaultOpen)) {
+                continue;
+            }
+            for (int variantIndex = 0; variantIndex < static_cast<int>(Player::PlayerAttackVariant::Count); ++variantIndex) {
+                const auto variant = static_cast<Player::PlayerAttackVariant>(variantIndex);
+                drawPlayerAttack(Player::AttackVariantName(variant), player_->AttackDefinition(group, variant));
+            }
+            ImGui::TreePop();
+        }
     }
 
     ImGui::End();
@@ -885,7 +803,7 @@ void TestScene::DrawImGui(GameApp& app) {
     ImGui::DragFloat3("Spot Pos", &groundLight_.spotPos.x, 0.1f);
     ImGui::DragFloat3("Spot Dir", &groundLight_.spotDir.x, 0.01f, -1.0f, 1.0f);
 
-    // ★Dirは正規化しないと壊れやすいので、ボタンで正規化も入れる
+    // 笘・ir縺ｯ豁｣隕丞喧縺励↑縺・→螢翫ｌ繧・☆縺・・縺ｧ縲√・繧ｿ繝ｳ縺ｧ豁｣隕丞喧繧ょ・繧後ｋ
     if (ImGui::Button("Normalize Dir")) {
         Vector3 d = groundLight_.spotDir;
         float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);

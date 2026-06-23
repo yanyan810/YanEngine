@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 // -------- EnemyManager --------
@@ -94,13 +95,31 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 	dx_ = dx;
 	cam_ = cam;
 
+	bossAttacks_ = {
+		{ "Normal / Combo",
+			{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f },
+			{ { 1.2f, 0.0f, 0.0f }, { 0.6f, 0.5f, 0.5f }, 0.0f, 0.10f, 5 },
+			false },
+		{ "Jump Slash / Land",
+			{ 16.0f, 12.0f, 0.10f, { 0.8f, 0.60f, 0.0f }, 0.45f },
+			{ { 0.0f, 0.0f, 0.0f }, { 2.2f, 1.3f, 1.2f }, 0.0f, 0.08f, 10 },
+			false },
+		{ "Rush",
+			{ 12.0f, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f },
+			{ { 0.8f, 0.0f, 0.0f }, { 1.4f, 1.0f, 1.2f }, 0.0f, 0.06f, 10 },
+			false },
+	};
+
 	enemies_.clear();
 	meleeHitboxes_.clear();
 
 	debugHitboxCube_ = std::make_unique<Object3d>();
 	debugHitboxCube_->Initialize(objCommon_, dx_);
 	debugHitboxCube_->SetCamera(cam_);
-	debugHitboxCube_->SetModel("heal/heal.obj");
+	debugHitboxCube_->SetModel("cube/cube.obj");
+	debugHitboxCube_->SetEnableLighting(0);
+	debugHitboxCube_->SetMaterialColor({ 1.0f, 0.2f, 0.05f, 0.35f });
+	debugHitboxCube_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
 
 	bullets_.Initialize(objCommon_, dx_, cam_);
 
@@ -109,8 +128,10 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 void EnemyManager::Clear() {
 	enemies_.clear();
 	meleeHitboxes_.clear();
+	pendingMeleeHitboxes_.clear();
 	healDrops_.clear();
 	pendingSpawns_.clear();
+	pendingHitStopSec_ = 0.0f;
 	bossDefeated_ = false;
 	bullets_.Clear();
 }
@@ -123,26 +144,110 @@ void EnemyManager::Spawn(EnemyType type, const Vector3& posXYZ) {
 }
 
 EnemyManager::BossHitTuning& EnemyManager::BossTuning(MeleeKind kind) {
-	switch (kind) {
-	case MeleeKind::Land:
-		return bossLandTuning_;
-	case MeleeKind::Rush:
-		return bossRushTuning_;
-	case MeleeKind::Normal:
-	default:
-		return bossNormalTuning_;
-	}
+	return BossAttackAt(BossAttackIndex(kind)).hit;
 }
 
 const EnemyManager::BossHitTuning& EnemyManager::BossTuning(MeleeKind kind) const {
+	return BossAttackAt(BossAttackIndex(kind)).hit;
+}
+
+EnemyManager::BossAttackHitboxTuning& EnemyManager::BossAttackHitboxTuningFor(MeleeKind kind) {
+	return BossAttackAt(BossAttackIndex(kind)).hitbox;
+}
+
+const EnemyManager::BossAttackHitboxTuning& EnemyManager::BossAttackHitboxTuningFor(MeleeKind kind) const {
+	return BossAttackAt(BossAttackIndex(kind)).hitbox;
+}
+
+EnemyManager::AABB3 EnemyManager::MakeBossAttackHitbox(MeleeKind kind, const Vector3& bossPos, int facing) const {
+	return MakeBossAttackHitbox(BossAttackIndex(kind), bossPos, facing);
+}
+
+EnemyManager::BossAttackDefinition& EnemyManager::BossAttackAt(size_t index) {
+	if (bossAttacks_.empty()) {
+		bossAttacks_.push_back({
+			"Normal / Combo",
+			{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f },
+			{ { 1.2f, 0.0f, 0.0f }, { 0.6f, 0.5f, 0.5f }, 0.0f, 0.10f, 5 },
+			false });
+	}
+	if (index >= bossAttacks_.size()) {
+		index = 0;
+	}
+	return bossAttacks_[index];
+}
+
+const EnemyManager::BossAttackDefinition& EnemyManager::BossAttackAt(size_t index) const {
+	if (index >= bossAttacks_.size()) {
+		index = 0;
+	}
+	return bossAttacks_[index];
+}
+
+size_t EnemyManager::BossAttackIndex(MeleeKind kind) const {
 	switch (kind) {
 	case MeleeKind::Land:
-		return bossLandTuning_;
+		return 1;
 	case MeleeKind::Rush:
-		return bossRushTuning_;
+		return 2;
 	case MeleeKind::Normal:
 	default:
-		return bossNormalTuning_;
+		return 0;
+	}
+}
+
+EnemyManager::AABB3 EnemyManager::MakeBossAttackHitbox(size_t attackIndex, const Vector3& bossPos, int facing) const {
+	const BossAttackHitboxTuning& tuning = BossAttackAt(attackIndex).hitbox;
+	AABB3 hb{};
+	hb.x = bossPos.x + tuning.offset.x * static_cast<float>(facing);
+	hb.y = bossPos.y + tuning.offset.y;
+	hb.z = bossPos.z + tuning.offset.z;
+	hb.hx = tuning.halfSize.x;
+	hb.hy = tuning.halfSize.y;
+	hb.hz = tuning.halfSize.z;
+	return hb;
+}
+
+size_t EnemyManager::AddCustomBossAttack(const std::string& name) {
+	BossAttackDefinition attack{};
+	attack.name = name.empty() ? "Custom Attack" : name;
+	attack.hit = BossAttackAt(BossAttackIndex(MeleeKind::Normal)).hit;
+	attack.hitbox = BossAttackAt(BossAttackIndex(MeleeKind::Normal)).hitbox;
+	attack.custom = true;
+	bossAttacks_.push_back(attack);
+	return bossAttacks_.size() - 1;
+}
+
+bool EnemyManager::RemoveCustomBossAttack(size_t index) {
+	if (index >= bossAttacks_.size() || !bossAttacks_[index].custom) {
+		return false;
+	}
+	bossAttacks_.erase(bossAttacks_.begin() + static_cast<std::ptrdiff_t>(index));
+	return true;
+}
+
+void EnemyManager::ClearCustomBossAttacks() {
+	bossAttacks_.erase(
+		std::remove_if(bossAttacks_.begin(), bossAttacks_.end(),
+			[](const BossAttackDefinition& attack) { return attack.custom; }),
+		bossAttacks_.end());
+}
+
+void EnemyManager::QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, float targetX) {
+	if (!boss.IsBoss()) {
+		return;
+	}
+
+	const Vector3 ep = boss.GetPos3D();
+	const int facing = (targetX < ep.x) ? -1 : +1;
+	const BossAttackDefinition& attack = BossAttackAt(attackIndex);
+	const AABB3 hb = MakeBossAttackHitbox(attackIndex, ep, facing);
+	MeleeHitbox hitbox{ hb, attack.hitbox.activeSec, attack.hitbox.damage, true, MeleeKind::Normal, attackIndex, ep, facing };
+	if (attack.hitbox.startDelaySec > 0.0f) {
+		hitbox.life = attack.hitbox.startDelaySec;
+		pendingMeleeHitboxes_.push_back(hitbox);
+	} else {
+		meleeHitboxes_.push_back(hitbox);
 	}
 }
 
@@ -168,7 +273,12 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 
 		const int hpBefore = enemy.GetHP();
 		const float knockDir = (enemy.GetPos3D().x >= player.GetPos3D().x) ? 1.0f : -1.0f;
-		enemy.ApplyHit2D(8.0f * knockDir, 8.0f, true, damage);
+		if (enemy.IsBoss()) {
+			enemy.ApplyHit2D(0.0f, 0.0f, false, damage);
+			enemy.SetVel({});
+		} else {
+			enemy.ApplyHit2D(8.0f * knockDir, 8.0f, true, damage);
+		}
 		enemy.MarkHitByPlayerAttack(attackSerial);
 
 		PlayerAttackHitEvent event;
@@ -182,6 +292,9 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		event.targetPosition = enemy.GetPos3D();
 		event.hitPosition = OverlapCenter(attackBox, enemyBodyBox);
 		hitEvents.push_back(event);
+		if (hitStopTuning_.enabled) {
+			pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.playerAttackSec);
+		}
 	}
 
 	return hitEvents;
@@ -320,6 +433,20 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 		e.SetLighting(light_);
 	}
 
+	for (auto& h : pendingMeleeHitboxes_) h.life -= dt;
+	for (size_t i = 0; i < pendingMeleeHitboxes_.size();) {
+		if (pendingMeleeHitboxes_[i].life <= 0.0f) {
+			MeleeHitbox hitbox = pendingMeleeHitboxes_[i];
+			hitbox.life = hitbox.fromBoss
+				? BossAttackAt(hitbox.attackIndex).hitbox.activeSec
+				: 0.10f;
+			meleeHitboxes_.push_back(hitbox);
+			pendingMeleeHitboxes_.erase(pendingMeleeHitboxes_.begin() + i);
+		} else {
+			++i;
+		}
+	}
+
 	for (auto& h : meleeHitboxes_) h.life -= dt;
 	meleeHitboxes_.erase(
 		std::remove_if(meleeHitboxes_.begin(), meleeHitboxes_.end(),
@@ -333,7 +460,7 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 		if (Intersect3(h.box, playerBody3)) {
 			player.TriggerHitFlash(0.25f);
 			if (h.fromBoss) {
-				BossHitTuning tuning = BossTuning(h.kind);
+				BossHitTuning tuning = BossAttackAt(h.attackIndex).hit;
 				Vector3 dir = tuning.knockbackDir;
 				const float dirX = (player.GetX() >= h.attackerPos.x) ? 1.0f : -1.0f;
 				dir.x = std::abs(dir.x) * dirX;
@@ -343,6 +470,9 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 					tuning.knockbackScale,
 					dir,
 					tuning.hitStunSec);
+				if (hitStopTuning_.enabled) {
+					pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.bossAttackSec);
+				}
 			} else {
 				player.Damage(h.damage);
 			}
@@ -374,11 +504,6 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			}
 
 			int facing = (playerXY.x < ep.x) ? -1 : +1;
-			const float zCenter = ep.z;
-
-			float offX = 1.2f, offY = 0.0f;
-			float halfX = 0.6f, halfY = 0.5f, halfZ = 0.5f;
-			float life = 0.10f;
 
 			int dmg = 1;
 
@@ -392,29 +517,40 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			case MeleeKind::Land:
 
 				dmg = 10;
-
-				offX = 0.0f; halfX = 2.2f; halfY = 1.3f; halfZ = 1.2f; life = 0.08f;
 				break;
 
 			case MeleeKind::Rush:
 
 				dmg = 10;
-
-				offX = 0.8f; halfX = 1.4f; halfY = 1.0f; halfZ = 1.2f; life = 0.06f;
 				break;
 			}
 
-
-
 			AABB3 hb{};
-			hb.x = ep.x + offX * float(facing);
-			hb.y = ep.y + offY;
-			hb.z = zCenter;
-			hb.hx = halfX;
-			hb.hy = halfY;
-			hb.hz = halfZ;
+			float startDelay = 0.0f;
+			float activeSec = 0.10f;
+			if (isBoss) {
+				const size_t attackIndex = BossAttackIndex(kind);
+				const BossAttackHitboxTuning& tuning = BossAttackAt(attackIndex).hitbox;
+				hb = MakeBossAttackHitbox(attackIndex, ep, facing);
+				startDelay = tuning.startDelaySec;
+				activeSec = tuning.activeSec;
+				dmg = tuning.damage;
+			} else {
+				hb.x = ep.x + 1.2f * float(facing);
+				hb.y = ep.y;
+				hb.z = ep.z;
+				hb.hx = 0.6f;
+				hb.hy = 0.5f;
+				hb.hz = 0.5f;
+			}
 
-			meleeHitboxes_.push_back({ hb, life, dmg, isBoss, kind, ep, facing });
+			MeleeHitbox hitbox{ hb, activeSec, dmg, isBoss, kind, isBoss ? BossAttackIndex(kind) : 0, ep, facing };
+			if (isBoss && startDelay > 0.0f) {
+				hitbox.life = startDelay;
+				pendingMeleeHitboxes_.push_back(hitbox);
+			} else {
+				meleeHitboxes_.push_back(hitbox);
+			}
 			if (isBoss && kind == MeleeKind::Land) {
 				bossAttackEffectEvents_.push_back({ kind, ep });
 			}
@@ -458,6 +594,13 @@ std::vector<EnemyManager::BossAttackEffectEvent> EnemyManager::ConsumeBossAttack
 	return events;
 }
 
+float EnemyManager::ConsumeHitStopRequest()
+{
+	const float sec = pendingHitStopSec_;
+	pendingHitStopSec_ = 0.0f;
+	return sec;
+}
+
 void EnemyManager::Draw() {
 
 	DrawHealDrops_();
@@ -466,19 +609,18 @@ void EnemyManager::Draw() {
 
 	bullets_.Draw();
 
-	//if (debugDrawMeleeHitbox_ && debugHitboxCube_) {
-	//	for (const auto& h : meleeHitboxes_) {
+	if (debugDrawMeleeHitbox_ && debugHitboxCube_) {
+		for (const auto& h : meleeHitboxes_) {
+			const auto& b = h.box;
+			Vector3 center{ b.x, b.y, b.z };
+			Vector3 halfSize{ b.hx, b.hy, b.hz };
 
-	//		Vector3 center{ b.x, b.y, b.z };
-
-	//		Vector3 size{ b.hx * 2.0f, b.hy * 2.0f, b.hz * 2.0f };
-
-	//		debugHitboxCube_->SetTranslate(center);
-	//		debugHitboxCube_->SetScale(size);
-	//		debugHitboxCube_->Update();
-	//		debugHitboxCube_->Draw();
-	//	}
-	//}
+			debugHitboxCube_->SetTranslate(center);
+			debugHitboxCube_->SetScale(halfSize);
+			debugHitboxCube_->Update(1.0f / 60.0f);
+			debugHitboxCube_->Draw();
+		}
+	}
 
 
 

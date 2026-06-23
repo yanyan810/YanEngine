@@ -194,9 +194,15 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="externals\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="externals\imgui\imgui_tables.cpp" />
     <ClCompile Include="externals\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="Game\scene\GameClearScene.cpp" />
-    <ClCompile Include="Game\scene\GameOverScene.cpp" />
-    <ClCompile Include="Game\scene\ParticleTestScene.cpp" />
+    <ClCompile Include="Game\scene\Flow\GameClearScene.cpp" />
+    <ClCompile Include="Game\scene\Flow\GameOverScene.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.Dialogs.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.DopeSheet.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.ImGui.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.Objects.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.Serialization.cpp" />
+    <ClCompile Include="Game\scene\Test\ParticleTestScene.Timeline.cpp" />
     <ClCompile Include="Game\enemy\BossAI.cpp" />
     <ClCompile Include="Game\enemy\Bullet.cpp" />
     <ClCompile Include="Game\enemy\Enemy.cpp" />
@@ -225,13 +231,13 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp" />
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
-    <ClCompile Include="Game\scene\GameScene.cpp" />
-    <ClCompile Include="Game\scene\GameScene.DebugAI.cpp" />
-    <ClCompile Include="Game\scene\GameSceneDebugProfile.cpp" />
-    <ClCompile Include="Game\scene\GameScene.Lifecycle.cpp" />
-    <ClCompile Include="Game\scene\GameScene.Render.cpp" />
-    <ClCompile Include="Game\scene\GameScene.UI.cpp" />
-    <ClCompile Include="Game\scene\GameScene.Update.cpp" />
+    <ClCompile Include="Game\scene\Main\GameScene.cpp" />
+    <ClCompile Include="Game\scene\Main\GameScene.DebugAI.cpp" />
+    <ClCompile Include="Game\scene\Main\GameSceneDebugProfile.cpp" />
+    <ClCompile Include="Game\scene\Main\GameScene.Lifecycle.cpp" />
+    <ClCompile Include="Game\scene\Main\GameScene.Render.cpp" />
+    <ClCompile Include="Game\scene\Main\GameScene.UI.cpp" />
+    <ClCompile Include="Game\scene\Main\GameScene.Update.cpp" />
     <ClCompile Include="main.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">MaxSpeed</Optimization>
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">false</WholeProgramOptimization>
@@ -245,14 +251,16 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Effect\EffectManager.cpp" />
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
-    <ClCompile Include="Game\scene\TitleScene.cpp" />
+    <ClCompile Include="Game\scene\Flow\TitleScene.cpp" />
     <ClCompile Include="Game\player\Player.cpp" />
     <ClCompile Include="Game\player\PlayerInput.cpp" />
     <ClCompile Include="Game\player\PlayerMovement.cpp" />
     <ClCompile Include="Game\player\PlayerPresentation.cpp" />
-    <ClCompile Include="Game\scene\TestScene.cpp" />
-    <ClCompile Include="Game\scene\DebugScene.cpp" />
-    <ClCompile Include="Game\scene\DebugAITestScene.cpp" />
+    <ClCompile Include="Game\scene\Test\TestScene.cpp" />
+    <ClCompile Include="Game\scene\Test\TestSceneBossTuning.cpp" />
+    <ClCompile Include="Game\scene\Test\TestSceneKnockbackPreview.cpp" />
+    <ClCompile Include="Game\scene\Debug\DebugScene.cpp" />
+    <ClCompile Include="Game\scene\Debug\DebugAITestScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl">
@@ -474,9 +482,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
-    <ClInclude Include="Game\scene\GameClearScene.h" />
-    <ClInclude Include="Game\scene\GameOverScene.h" />
-    <ClInclude Include="Game\scene\ParticleTestScene.h" />
+    <ClInclude Include="Game\scene\Flow\GameClearScene.h" />
+    <ClInclude Include="Game\scene\Flow\GameOverScene.h" />
+    <ClInclude Include="Game\scene\Test\ParticleTestEditorTypes.h" />
+    <ClInclude Include="Game\scene\Test\ParticleTestSceneSupport.h" />
+    <ClInclude Include="Game\scene\Test\ParticleTestScene.h" />
     <ClInclude Include="Game\enemy\BossAI.h" />
     <ClInclude Include="Game\enemy\Bullet.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />
@@ -522,14 +532,16 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Core\SceneManager.h" />
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
-    <ClInclude Include="Game\scene\GameScene.h" />
-    <ClInclude Include="Game\scene\GameSceneDebugAdapter.h" />
-    <ClInclude Include="Game\scene\GameSceneDebugProfile.h" />
-    <ClInclude Include="Game\scene\TitleScene.h" />
+    <ClInclude Include="Game\scene\Main\GameScene.h" />
+    <ClInclude Include="Game\scene\Main\GameSceneDebugAdapter.h" />
+    <ClInclude Include="Game\scene\Main\GameSceneDebugProfile.h" />
+    <ClInclude Include="Game\scene\Flow\TitleScene.h" />
     <ClInclude Include="Game\player\Player.h" />
-    <ClInclude Include="Game\scene\TestScene.h" />
-    <ClInclude Include="Game\scene\DebugScene.h" />
-    <ClInclude Include="Game\scene\DebugAITestScene.h" />
+    <ClInclude Include="Game\scene\Test\TestScene.h" />
+    <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h" />
+    <ClInclude Include="Game\scene\Test\TestSceneKnockbackPreview.h" />
+    <ClInclude Include="Game\scene\Debug\DebugScene.h" />
+    <ClInclude Include="Game\scene\Debug\DebugAITestScene.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="externals\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">

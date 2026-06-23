@@ -1,10 +1,11 @@
 #pragma once
 #include <memory>
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "AABB.h"   // Vector2 / Vector3 が入っている想定
+#include "AABB.h"
 #include "Input.h"
 #include "Model.h"
 #include "ModelManager.h"
@@ -17,7 +18,7 @@ class Camera;
 
 class EnemyManager;
 
-// あなたが既に作ったコンボクラスに差し替えてOK
+
 class Player {
 public:
 
@@ -29,7 +30,7 @@ public:
         Player2Gltf,
     };
 
-    enum class ModelId { Walk, I0, I1, I2, O0, O1, O2 /*など*/ };
+    enum class ModelId { Walk, I0, I1, I2, O0, O1, O2 /*邵ｺ・ｪ邵ｺ・ｩ*/ };
 
     enum class PlayerAction {
         Idle,
@@ -51,9 +52,35 @@ public:
         SideSpecial,
     };
 
+    enum class PlayerAttackGroup : uint8_t {
+        Ground,
+        Smash,
+        Air,
+        Count,
+    };
+
+    enum class PlayerAttackVariant : uint8_t {
+        Neutral,
+        Side,
+        Up,
+        Count,
+    };
+
+    struct PlayerAttackDefinition {
+        std::string name;
+        Vector3 offset = { 0.9f, 0.7f, 0.0f };
+        Vector3 halfSize = { 0.55f, 0.70f, 0.45f };
+        float startDelaySec = 0.0f;
+        float activeSec = 0.12f;
+        float actionSec = 0.28f;
+        int damage = 8;
+    };
+
     struct PlayerInputCommand {
         PlayerAction action = PlayerAction::Idle;
         PlayerAttackType attackType = PlayerAttackType::None;
+        PlayerAttackGroup attackGroup = PlayerAttackGroup::Ground;
+        PlayerAttackVariant attackVariant = PlayerAttackVariant::Neutral;
         int horizontal = 0;
         int depth = 0;
         bool down = false;
@@ -74,7 +101,7 @@ public:
     int GetAttackDamage() const;
     unsigned int GetAttackSerial() const { return attackSerial_; }
 
-    // ★I/O 攻撃中など「一定時間移動不可」にする
+
     void LockMove(float sec) { if (sec > moveLockSec_) moveLockSec_ = sec; }
     bool IsMoveLocked() const { return moveLockSec_ > 0.0f; }
 
@@ -82,13 +109,13 @@ public:
     Vector2 GetVel2D() const { return { vel_.x, vel_.y }; }
 
     float GetZ() const { return pos_.z; }
-    Vector3 GetPos3D() const { return pos_; } // 使いたければ
+    Vector3 GetPos3D() const { return pos_; }
 
     bool IsOnGround() const { return onGround_; }
     int  GetFacing() const { return facing_; }
 
-    // デバッグ可視化用（ヒットボックス取り出しに使える）
-    //void ClampToScreenX_(const Camera& cam, float marginNdc /*例:0.08f*/);
+
+
 
     AABB GetBodyAABB() const { return body_; }
 
@@ -109,7 +136,7 @@ public:
     float GetX() const { return pos_.x; }
 
 	int GetHP() const { return hp_; }
-	int GetMaxHP() const { return 100; } // 固定値で良ければ
+	int GetMaxHP() const { return 100; }
 
     void SetSpawnPos(const Vector3& p);
     void SetDropRespawnPos(const Vector3& p);
@@ -120,20 +147,21 @@ public:
 
     void ChangeModelSet_(Player::PlayerModelSet set);
 
-    // タイトル用デモ
+
     void UpdateTitleAttackDemo(float dt, float intervalSec = 1.0f);
     void ResetTitleAttackDemo();
-    //void UpdateTitleAttackDemo(float dt, float intervalSec = 1.0f);
+
     void SetTitleTransform(const Vector3& t, const Vector3& r, const Vector3& s);
 
     Object3d* GetModelObject() const { return model_.get(); }
     PlayerAction GetCurrentAction() const { return action_; }
     PlayerAttackType GetCurrentAttackType() const { return attackType_; }
-    void SetWeaponAttachment(
-        const std::vector<std::string>& jointCandidates,
-        const Vector3& localOffset = { 0.0f, 0.0f, 0.0f },
-        const Vector3& rotate = { 0.0f, 0.0f, 0.0f },
-        const Vector3& scale = { 0.15f, 0.15f, 0.15f });
+    PlayerAttackGroup GetCurrentAttackGroup() const { return activeAttackGroup_; }
+    PlayerAttackVariant GetCurrentAttackVariant() const { return activeAttackVariant_; }
+    PlayerAttackDefinition& AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant);
+    const PlayerAttackDefinition& AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) const;
+    static const char* AttackGroupName(PlayerAttackGroup group);
+    static const char* AttackVariantName(PlayerAttackVariant variant);
     bool TryGetBoneWorldPosition(
         const std::string& jointName,
         Vector3& out,
@@ -148,7 +176,7 @@ private:
     PlayerInputCommand ResolveInput_(const Input& input);
     void UpdateSmashInputWindow_(const Input& input);
     void ApplyActionCommand_(const PlayerInputCommand& command);
-    void StartAttackAction_(PlayerAttackType type, int horizontal);
+    void StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAttackGroup group, PlayerAttackVariant variant);
     void UpdateActionTimer_(float dt);
     void PlayActionAnimation_(const PlayerInputCommand& command);
     bool GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
@@ -163,37 +191,24 @@ private:
 
 private:
     
-    ModelId currentModel_ = ModelId::Walk; // 今表示中
+    ModelId currentModel_ = ModelId::Walk;
 
-    // 見た目
+
     std::unique_ptr<Object3d> model_;
-    std::unique_ptr<Object3d> debugAtkCube_;   // 攻撃HB用
-    std::unique_ptr<Object3d> debugEnemyCube_; // 敵AABB用
-    std::unique_ptr<Object3d> swordObj_;
-    std::vector<std::string> weaponJointCandidates_{
-        "mixamorig:RightHand",
-        "RightHand",
-        "hand.R",
-        "Hand.R",
-        "ボーン.017",
-        "ボーン.005",
-    };
-    Vector3 weaponLocalOffset_{ 0.0f, 0.0f, 0.0f };
-    Vector3 weaponRotate_{ 0.0f, 0.0f, 0.0f };
-    Vector3 weaponScale_{ 0.15f, 0.15f, 0.15f };
-
+    std::unique_ptr<Object3d> debugAtkCube_;
+    std::unique_ptr<Object3d> debugEnemyCube_;
     Camera* cam_ = nullptr;
 
-    // 内部は3Dで持つが、Zは固定（見た目だけ）
+
     Vector3 pos_{ 0.0f, 0.0f, 15.0f };
     Vector3 vel_{ 0.0f, 0.0f, 0.0f };
 
     bool onGround_ = true;
-    int  facing_ = +1; // +1:right / -1:left
+    int  facing_ = +1;
     int jumpCount_ = 0;
     int maxJumpCount_ = 2;
 
-    // ★移動ロック（秒）: >0 の間は移動入力を無視する
+
     float moveLockSec_ = 0.0f;
 
     static constexpr int kSmashInputWindowFrames_ = 5;
@@ -202,7 +217,10 @@ private:
 
     PlayerAction action_ = PlayerAction::Idle;
     PlayerAttackType attackType_ = PlayerAttackType::None;
+    PlayerAttackGroup activeAttackGroup_ = PlayerAttackGroup::Ground;
+    PlayerAttackVariant activeAttackVariant_ = PlayerAttackVariant::Neutral;
     float actionTimer_ = 0.0f;
+    float attackElapsedSec_ = 0.0f;
     bool guarding_ = false;
     bool crouching_ = false;
     bool fastFalling_ = false;
@@ -210,7 +228,7 @@ private:
     float launchedTimer_ = 0.0f;
     float fastFallSpeed_ = 28.0f;
 
-    // パラメータ
+
     float moveSpeed_ = 10.0f;
     float depthSpeed_ = 14.0f;
     float jumpVel_ = 12.0f;
@@ -220,38 +238,38 @@ private:
     int hp_ = 100;
     float damagePercent_ = 0.0f;
 
-    // コンボ（あなたの既存クラスに差し替える）
+
     AABB body_{};
 
     float hitFlashSec_ = 0.0f;
     Vector4 normalColor_{ 1,1,1,1 };
-    Vector4 hitColor_{ 1,0.2f,0.2f,1 }; // 赤っぽく
+    Vector4 hitColor_{ 1,0.2f,0.2f,1 };
 
-    // 歩き（OBJ差し替え）アニメ
+
     float walkAnimTime_ = 0.0f;
     static constexpr int   kWalkFrameCount_ = 5;
-    static constexpr float kWalkFps_ = 10.0f; // 1秒に10コマ → 5枚なら0.5秒で一周（好みで）
+    static constexpr float kWalkFps_ = 10.0f;
 
     Model* walkModels_[5];
 
     Model* iAtkModels_[3] = { nullptr, nullptr, nullptr };
     float iAtkAnimTime_ = 0.0f;
-    static constexpr float kIAttackFps_ = 12.0f; // 2↔3の切り替え速度（好み）
+    static constexpr float kIAttackFps_ = 12.0f;
 
     Model* oAtkModels_[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
     float oAtkAnimTime_ = 0.0f;
     static constexpr int   kOFrameCount_ = 5;
-    static constexpr float kOAttackFps_ = 12.0f; // 好みで（強攻撃っぽくなら 8〜12 くらい）
+    static constexpr float kOAttackFps_ = 12.0f;
 
     bool dead_ = false;
  
     LightingParam light_;
 
     std::unique_ptr<Object3d> shadow_;
-    float shadowBaseScale_ = 1.2f;   // 影の基本サイズ
-    float shadowMaxAlpha_ = 0.45f;  // 影の最大濃さ
-    float shadowLiftY_ = 0.02f;  // 地面から少し浮かせる（z-fight回避）
-    float shadowMinAlpha_ = 0.05f;  // 最低でもうっすら
+    float shadowBaseScale_ = 1.2f;
+    float shadowMaxAlpha_ = 0.45f;
+    float shadowLiftY_ = 0.02f;
+    float shadowMinAlpha_ = 0.05f;
 
     PlayerModelSet currentModelSet_ = PlayerModelSet::HumanWalk;
 
@@ -260,13 +278,14 @@ private:
     bool externalInputBlocked_ = false;
     PlayerInputCommand debugCommand_{};
     unsigned int attackSerial_ = 0;
+    std::array<std::array<PlayerAttackDefinition, static_cast<size_t>(PlayerAttackVariant::Count)>, static_cast<size_t>(PlayerAttackGroup::Count)> attackDefinitions_{};
 
-    // Player.h
+
     std::string curAnim_ = "";
     bool prevAtkI_ = false;
     bool prevAtkO_ = false;
 
-    // Title demo
+
     float titleDemoTimer_ = 0.0f;
     bool  titleDemoNextIsI_ = true;
 

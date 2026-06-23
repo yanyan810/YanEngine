@@ -164,7 +164,6 @@ void Player::UpdateModel_() {
 void Player::Draw() {
     if (shadow_) shadow_->Draw();
     if (model_) model_->Draw();
-    if (swordObj_) swordObj_->Draw();
 }
 
 void Player::DrawDebugHitBoxes(EnemyManager& enemyMgr) {

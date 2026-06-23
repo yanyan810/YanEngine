@@ -39,32 +39,6 @@ void Player::SetLighting(const LightingParam& p)
     model_->SetSpotLightCosAngle(cosOuter);
     model_->SetSpotLightCosFalloffStart(cosInner);
     model_->SetSpotLightColor({ light_.spotColor.x, light_.spotColor.y, light_.spotColor.z, 1.0f });
-    if (!swordObj_) return;
-
-    swordObj_->SetEnableLighting(light_.lightingMode);
-
-    swordObj_->SetDirection(light_.dir);
-    swordObj_->SetIntensity(light_.dirIntensity);
-    swordObj_->SetLightColor(light_.dirColor);
-
-    swordObj_->SetPointLightPos(light_.pointPos);
-    swordObj_->SetPointLightIntensity(light_.pointIntensity);
-    swordObj_->SetPointLightColor(light_.pointColor);
-    swordObj_->SetPointLightRadius(light_.pointRadius);
-    swordObj_->SetPointLightDecay(light_.pointDecay);
-
-    light_.spotFalloffStartDeg = std::min(light_.spotFalloffStartDeg, light_.spotAngleDeg - 0.1f);
-
-  
-    swordObj_->SetSpotLightPos(light_.spotPos);
-    swordObj_->SetSpotLightDirection(light_.spotDir);
-    swordObj_->SetSpotLightIntensity(light_.spotIntensity);
-    swordObj_->SetSpotLightDistance(light_.spotDistance);
-    swordObj_->SetSpotLightDecay(light_.spotDecay);
-    swordObj_->SetSpotLightCosAngle(cosOuter);
-    swordObj_->SetSpotLightCosFalloffStart(cosInner);
-    swordObj_->SetSpotLightColor({ light_.spotColor.x, light_.spotColor.y, light_.spotColor.z, 1.0f });
-
 }
 
 
