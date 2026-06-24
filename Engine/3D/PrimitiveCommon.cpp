@@ -1,4 +1,4 @@
-#include "PrimitiveCommon.h"
+﻿#include "PrimitiveCommon.h"
 
 void PrimitiveCommon::Initialize(DirectXCommon* dxCommon) {
     // 初期化処理

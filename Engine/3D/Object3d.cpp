@@ -1,4 +1,4 @@
-#include "Object3d.h"
+﻿#include "Object3d.h"
 #include "Object3dCommon.h"
 #include "PrimitiveCommon.h"
 
@@ -124,6 +124,36 @@ void Object3d::Initialize(Object3dCommon* object3dCommon, DirectXCommon* dx, Srv
 	if (!maskTexturePath_.empty()) {
 		TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
 	}
+}
+
+void Object3d::EnsureInstanceMaterial_()
+{
+	if (!dx_) {
+		return;
+	}
+
+	if (!instanceMaterialResource_) {
+		instanceMaterialResource_ = dx_->CreateBufferResource(sizeof(Model::Material));
+		if (!instanceMaterialResource_) {
+			return;
+		}
+		instanceMaterialResource_->Map(0, nullptr, reinterpret_cast<void**>(&instanceMaterialData_));
+		if (instanceMaterialData_) {
+			*instanceMaterialData_ = {};
+			instanceMaterialData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
+			instanceMaterialData_->enableLighting = 1;
+			instanceMaterialData_->uvTransform = Matrix4x4::MakeIdentity4x4();
+			instanceMaterialData_->shininess = 64.0f;
+			instanceMaterialData_->environmentCoefficient = 0.0f;
+		}
+	}
+
+	if (!instanceMaterialData_ || instanceMaterialInitializedFromModel_ || !model_ || !model_->GetMaterial()) {
+		return;
+	}
+
+	*instanceMaterialData_ = *model_->GetMaterial();
+	instanceMaterialInitializedFromModel_ = true;
 }
 
 void Object3d::Update(float dt)
@@ -254,6 +284,10 @@ void Object3d::Draw()
 	}
 
 	if (model_->HasSkinning()) {
+		EnsureInstanceMaterial_();
+		if (instanceMaterialResource_) {
+			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress());
+		}
 		// =====================================================
 		// =====================================================
 		if (animator_ && animator_->IsPoseReady()) {
@@ -374,7 +408,11 @@ void Object3d::Draw()
 		cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 
 			// Material / VB / IB
-			cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
+			cmd->SetGraphicsRootConstantBufferView(
+				0,
+				instanceMaterialResource_
+					? instanceMaterialResource_->GetGPUVirtualAddress()
+					: model_->GetMaterialCBV());
 			cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());
 			cmd->IASetIndexBuffer(&model_->GetIBV());
 
@@ -439,6 +477,10 @@ void Object3d::Draw()
 				Matrix4x4::Transpose(Matrix4x4::Inverse(baseWorld));
 		}
 	} else {
+		EnsureInstanceMaterial_();
+		if (instanceMaterialResource_) {
+			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress());
+		}
 		auto SetNormalPipelineState = [&]() {
 			if (primitiveCommon_) {
 				if (useEnvironmentMap_) {
@@ -475,7 +517,11 @@ void Object3d::Draw()
 		// VB/IB/Material
 		cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());
 		cmd->IASetIndexBuffer(&model_->GetIBV());
-		cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
+		cmd->SetGraphicsRootConstantBufferView(
+			0,
+			instanceMaterialResource_
+				? instanceMaterialResource_->GetGPUVirtualAddress()
+				: model_->GetMaterialCBV());
 
 		if (animator_ && animator_->HasAnimation()) {
 
@@ -560,6 +606,8 @@ void Object3d::Draw()
 		}
 	}
 
+	model_->ClearMaterialCBVOverride();
+
 	// debug bones
 	if (debugDrawBones_ && !boneMarkers_.empty()) {
 		for (auto& m : boneMarkers_) {
@@ -613,7 +661,15 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 
 	cmd->IASetVertexBuffers(0, 1, &model_->GetVBV());
 	cmd->IASetIndexBuffer(&model_->GetIBV());
-	cmd->SetGraphicsRootConstantBufferView(0, model_->GetMaterialCBV());
+	EnsureInstanceMaterial_();
+	if (instanceMaterialResource_) {
+		model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress());
+	}
+	cmd->SetGraphicsRootConstantBufferView(
+		0,
+		instanceMaterialResource_
+			? instanceMaterialResource_->GetGPUVirtualAddress()
+			: model_->GetMaterialCBV());
 	cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 
 	if (!maskTexturePath_.empty()) {
@@ -622,6 +678,7 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 	cmd->SetGraphicsRootConstantBufferView(8, effectParamResource_->GetGPUVirtualAddress());
 
 	model_->Draw(cmd, 1, &srv);
+	model_->ClearMaterialCBVOverride();
 }
 
 void Object3d::SetTexture(const std::string& path)

@@ -1,11 +1,11 @@
-#pragma once
+﻿#pragma once
 #include "ModelCommon.h"
 #include "MathStruct.h"
+#include "AABB.h"
 #include "TextureManager.h"
 #include <format>
 #include <filesystem>
 #include <fstream>
-//#include "Animation.h"
 #include <unordered_map>
 #include <algorithm>
 #include <map>      // std::map
@@ -22,8 +22,6 @@ public:
 		Vector2 texcoord;
 		Vector3 normal;
 	};
-
-
 
 	static_assert(offsetof(Model::VertexData, position) == 0);
 	static_assert(offsetof(Model::VertexData, texcoord) == 16);
@@ -76,6 +74,7 @@ public:
 		uint32_t indexCount = 0;
 
 		bool skinned = false;
+		std::string name; // ★追加：メッシュ名
 	};
 
 
@@ -178,6 +177,14 @@ public:
 	Material* GetMaterial() { return materialData_; }
 
 	const Matrix4x4& GetRootLocalMatrix() const;
+	bool GetLocalAABB(AABB& out) const;
+
+	// ★追加：メッシュごとの衝突判定データ
+	struct MeshCollisionData {
+		std::string name;
+		AABB localAABB;
+	};
+	std::vector<MeshCollisionData> GetMeshesLocalAABBs() const;
 
 	//modeldataを取得
 	const std::unordered_map<std::string, Animation>& GetAnimations() const {
@@ -229,6 +236,8 @@ public:
 	D3D12_GPU_VIRTUAL_ADDRESS GetMaterialCBV() const {
 		return materialResource_ ? materialResource_->GetGPUVirtualAddress() : 0;
 	}
+	void SetMaterialCBVOverride(D3D12_GPU_VIRTUAL_ADDRESS cbv) { materialCBVOverride_ = cbv; }
+	void ClearMaterialCBVOverride() { materialCBVOverride_ = 0; }
 
 	int32_t GetMeshOwnerNodeIndex(uint32_t meshIndex) const {
 		if (meshIndex >= meshOwnerNodeIndex_.size()) return -1;
@@ -286,6 +295,12 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_;
 	//マテリアルにデータを書き込む
 	Material* materialData_ = nullptr;
+	D3D12_GPU_VIRTUAL_ADDRESS materialCBVOverride_ = 0;
+	D3D12_GPU_VIRTUAL_ADDRESS GetActiveMaterialCBV_() const {
+		return materialCBVOverride_ != 0
+			? materialCBVOverride_
+			: (materialResource_ ? materialResource_->GetGPUVirtualAddress() : 0);
+	}
 
 	Skeleton skeleton_;
 
@@ -314,4 +329,3 @@ private:
 	std::vector<int32_t> meshOwnerNodeIndex_;
 
 };
-

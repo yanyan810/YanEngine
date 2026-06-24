@@ -1,4 +1,4 @@
-#include "BasicCombatDebugBot.h"
+﻿#include "BasicCombatDebugBot.h"
 
 #include <cmath>
 #include <limits>

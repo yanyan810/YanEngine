@@ -19,6 +19,144 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <cctype>
+
+namespace {
+
+bool FitAABBToObject(Object3d& object, Vector3& outCenter, Vector3& outHalfSize, float padding) {
+    Model* model = object.GetModel();
+    if (!model) {
+        return false;
+    }
+
+    AABB local{};
+    if (!model->GetLocalAABB(local)) {
+        return false;
+    }
+
+    const Vector3 translate = object.GetTranslate();
+    const Vector3 scale = object.GetScale();
+    Vector3 worldMin{
+        local.min.x * scale.x + translate.x,
+        local.min.y * scale.y + translate.y,
+        local.min.z * scale.z + translate.z,
+    };
+    Vector3 worldMax{
+        local.max.x * scale.x + translate.x,
+        local.max.y * scale.y + translate.y,
+        local.max.z * scale.z + translate.z,
+    };
+
+    if (worldMin.x > worldMax.x) std::swap(worldMin.x, worldMax.x);
+    if (worldMin.y > worldMax.y) std::swap(worldMin.y, worldMax.y);
+    if (worldMin.z > worldMax.z) std::swap(worldMin.z, worldMax.z);
+
+    const float pad = std::max(0.0f, padding);
+    worldMin.x -= pad;
+    worldMin.y -= pad;
+    worldMin.z -= pad;
+    worldMax.x += pad;
+    worldMax.y += pad;
+    worldMax.z += pad;
+
+    outCenter = {
+        (worldMin.x + worldMax.x) * 0.5f,
+        (worldMin.y + worldMax.y) * 0.5f,
+        (worldMin.z + worldMax.z) * 0.5f,
+    };
+    outHalfSize = {
+        std::max((worldMax.x - worldMin.x) * 0.5f, 0.01f),
+        std::max((worldMax.y - worldMin.y) * 0.5f, 0.01f),
+        std::max((worldMax.z - worldMin.z) * 0.5f, 0.01f),
+    };
+    return true;
+}
+
+bool FitMeshAABBsToObject(Object3d& object, std::vector<TestScene::MeshCollisionInfo>& outMeshes, float padding) {
+    Model* model = object.GetModel();
+    if (!model) {
+        return false;
+    }
+
+    std::vector<Model::MeshCollisionData> localAABBs = model->GetMeshesLocalAABBs();
+    if (localAABBs.empty()) {
+        return false;
+    }
+
+    const Vector3 translate = object.GetTranslate();
+    const Vector3 scale = object.GetScale();
+    const float pad = std::max(0.0f, padding);
+
+    outMeshes.clear();
+    outMeshes.reserve(localAABBs.size());
+
+    for (const auto& local : localAABBs) {
+        Vector3 worldMin{
+            local.localAABB.min.x * scale.x + translate.x,
+            local.localAABB.min.y * scale.y + translate.y,
+            local.localAABB.min.z * scale.z + translate.z,
+        };
+        Vector3 worldMax{
+            local.localAABB.max.x * scale.x + translate.x,
+            local.localAABB.max.y * scale.y + translate.y,
+            local.localAABB.max.z * scale.z + translate.z,
+        };
+
+        if (worldMin.x > worldMax.x) std::swap(worldMin.x, worldMax.x);
+        if (worldMin.y > worldMax.y) std::swap(worldMin.y, worldMax.y);
+        if (worldMin.z > worldMax.z) std::swap(worldMin.z, worldMax.z);
+
+        worldMin.x -= pad;
+        worldMin.y -= pad;
+        worldMin.z -= pad;
+        worldMax.x += pad;
+        worldMax.y += pad;
+        worldMax.z += pad;
+
+        TestScene::MeshCollisionInfo info{};
+        info.name = local.name;
+        info.worldAABB.min = worldMin;
+        info.worldAABB.max = worldMax;
+
+        // フィルタリングロジックの適用
+        std::string nameLower = info.name;
+        std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), [](unsigned char c) { return std::tolower(c); });
+        
+        bool shouldDisable = false;
+        const std::vector<std::string> excludeKeywords = {
+            "sky", "dome", "cloud", "bg", "background", "water", "sea", "ocean", 
+            "light", "marker", "camera", "player", "enemy", "boss", "preview"
+        };
+        for (const auto& keyword : excludeKeywords) {
+            if (nameLower.find(keyword) != std::string::npos) {
+                shouldDisable = true;
+                break;
+            }
+        }
+
+        const float halfX = (worldMax.x - worldMin.x) * 0.5f;
+        const float halfY = (worldMax.y - worldMin.y) * 0.5f;
+        const float halfZ = (worldMax.z - worldMin.z) * 0.5f;
+        if (halfX > 100.0f || halfY > 100.0f || halfZ > 100.0f) {
+            shouldDisable = true;
+        }
+
+        if (worldMax.z < -20.0f || worldMin.z > 25.0f) {
+            shouldDisable = true;
+        }
+
+        if (halfX < 0.05f && halfY < 0.05f && halfZ < 0.05f) {
+            shouldDisable = true;
+        }
+
+        info.enabled = !shouldDisable;
+        outMeshes.push_back(info);
+    }
+
+    return true;
+}
+
+} // namespace
 
 void TestScene::OnEnter(GameApp& app) {
   //  TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
@@ -28,7 +166,7 @@ void TestScene::OnEnter(GameApp& app) {
 
     camera_ = std::make_unique<Camera>();
 
-    // GameScene縺ｨ蜷後§繧ｫ繝｡繝ｩ縺ｧOK
+    // GameSceneと同じカメラでOK
     camera_->SetTranslate({ 0.0f, 20.0f, -50.0f });
     camera_->SetRotate({ 0.35f, 0.0f, 0.0f });
 
@@ -47,7 +185,7 @@ void TestScene::OnEnter(GameApp& app) {
 
     enemyMgr_.Spawn(EnemyType::Boss, bossSpawnPos_);
     
-    // 笘・㍾邨撰ｼ・etEnemies() 縺ｯ繝・ヰ繝・げ遒ｺ隱阪↓繧ゆｽｿ縺・・縺ｧ蟄伜惠縺励※繧句燕謠撰ｼ・
+    // ★重要：GetEnemies() はデバッグ確認にも使うので存在している前提
     auto& enemies = enemyMgr_.GetEnemies();
     if (!enemies.empty()) {
         enemies.back().SetInvincible(true); // 豁ｻ縺ｪ縺ｪ縺・
@@ -70,7 +208,7 @@ void TestScene::OnEnter(GameApp& app) {
     enemyMgr_.SetLighting(light_);
 
 
-    // 縺ｩ縺薙°縺ｧ・・nEnter縺ｮ荳ｭ・・
+    // どこかで（OnEnterの中など）
     //auto* mgr = ModelManager::GetInstance();
     //mgr->LoadModel("ground/ground.obj");   // resources/ground/ground.obj 繧呈Φ螳・
 
@@ -81,18 +219,18 @@ void TestScene::OnEnter(GameApp& app) {
 
     
 
-    // 菴咲ｽｮ繝ｻ螟ｧ縺阪＆縺ｯ螂ｽ縺ｿ縺ｧ隱ｿ謨ｴ
+    // 位置・大きさは好みで調整
     ground_->SetTranslate({ 0.0f, -5.0f, 0.0f });
     ground_->SetScale({ 1.0f, 1.0f, 1.0f });
     ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
-    ground_->SetEnableLighting(2);     // 2縺ｯ繝上・繝輔Λ繝ｳ繝舌・繝・
+    ground_->SetEnableLighting(2);     // 2はハーフランバート
     ground_->SetIntensity(2.0f);
     ground_->SetLightColor(light_.dirColor);
     ground_->SetEnableLighting(0);
-    // Ground縺ｯ point縺縺台ｽｿ縺・
-    groundLight_ = light_;              // 縺ｨ繧翫≠縺医★譌｢蟄倥ｒ繧ｳ繝斐・縺励※繧０K
-    groundLight_.dirIntensity = 0.0f;   // 笘・irectional 辟｡蜉ｹ
-    groundLight_.spotIntensity = 0.0f;  // 笘・pot 辟｡蜉ｹ
+    // Groundはpointだけ使う
+    groundLight_ = light_;              // とりあえず既存をコピーしてもOK
+    groundLight_.dirIntensity = 0.0f;   // ★Directional 無効
+    groundLight_.spotIntensity = 0.0f;  // ★Spot 無効
 
     groundLight_.pointIntensity = 16.0f;
     groundLight_.pointPos = { 0.0f, -42.0f, -1.0f };
@@ -104,8 +242,8 @@ void TestScene::OnEnter(GameApp& app) {
     groundLight_.spotIntensity = 20.0f;
     groundLight_.spotPos = { 0.0f, 15.0f, 15.0f };
 
-    // 笘・irection 縺ｯ縲後←縺薙ｒ蜷代￥縺九・
-    // 縺ｨ繧翫≠縺医★蝨ｰ髱｢縺ｮ荳ｭ螟ｮ縺ｸ蜷代￠繧具ｼ亥ｾ後〒豈弱ヵ繝ｬ譖ｴ譁ｰ縺励※繧０K・・
+    // ★direction は「どこを向くか」
+    // とりあえず地面の中央へ向ける（後で毎フレ更新してもOK）
     Vector3 target = { 0.0f, 0.0f, 15.0f };
     Vector3 d = { target.x - groundLight_.spotPos.x, target.y - groundLight_.spotPos.y, target.z - groundLight_.spotPos.z };
     {
@@ -117,7 +255,7 @@ void TestScene::OnEnter(GameApp& app) {
     groundLight_.spotDistance = 80.0f;
     groundLight_.spotDecay = 1.0f;
 
-    // 隗貞ｺｦ・・egree邂｡逅・＠縺ｦ繧句燕謠撰ｼ・
+    // 角度（degree）管理している前提
     groundLight_.spotAngleDeg = 25.0f;
     groundLight_.spotFalloffStartDeg = 15.0f;
     groundLight_.spotColor = { 1.0f, 1.0f, 1.0f };
@@ -138,8 +276,8 @@ void TestScene::OnEnter(GameApp& app) {
     pointMarker_->SetModel("cube/cube.obj");
 
     // 隕九◆逶ｮ
-    pointMarker_->SetEnableLighting(0);                 // 笘・Λ繧､繝医・蠖ｱ髻ｿ繧貞女縺代↑縺・
-    pointMarker_->SetMaterialColor({ 1, 1, 0, 1 });     // 鮟・牡縺ｨ縺具ｼ亥･ｽ縺ｿ縺ｧ・・
+    pointMarker_->SetEnableLighting(0);                 // ★ライトの影響を受けない
+    pointMarker_->SetMaterialColor({ 1, 1, 0, 1 });     // 黄色とか（好みで）
     pointMarker_->SetShininess(1.0f);
     pointMarker_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
@@ -147,10 +285,10 @@ void TestScene::OnEnter(GameApp& app) {
     skyDome_->Initialize(app.ObjCom(), app.Dx());
     skyDome_->SetModel("skydome/SkyDome.obj");
 
-    // 笘・せ繧ｫ繧､繝峨・繝縺ｯ蝓ｺ譛ｬ縲後Λ繧､繝育┌隕悶・
-    skyDome_->SetEnableLighting(0);              // 竊・縺ゅ↑縺溘・莉墓ｧ倥・縲檎┌辣ｧ譏弱Δ繝ｼ繝峨阪↓蜷医ｏ縺帙※
-    skyDome_->SetMaterialColor({ 1,1,1,1 });       // 蠢ｵ縺ｮ縺溘ａ
-    skyDome_->SetShininess(1.0f);                // 蠖ｱ髻ｿ縺励↑縺・￠縺ｩ菫晞匱
+    // ★スカイドームは基本「ライト無視」
+    skyDome_->SetEnableLighting(0);              // ← あなたの仕様の「無照明モード」に合わせて
+    skyDome_->SetMaterialColor({ 1,1,1,1 });       // 念のため
+    skyDome_->SetShininess(1.0f);                // 影響しないけど一応設定
     skyDome_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
     knockbackPreviewLine_ = std::make_unique<Object3d>();
@@ -169,10 +307,22 @@ void TestScene::OnEnter(GameApp& app) {
     bossHitboxPreview_->SetMaterialColor({ 0.1f, 0.8f, 1.0f, 0.35f });
     bossHitboxPreview_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
 
-    // ===== LevelLoader: JSON縺九ｉ繧ｪ繝悶ず繧ｧ繧ｯ繝医ｒ隱ｭ縺ｿ霎ｼ繧 =====
-    // 1. Blender繧｢繝峨が繝ｳ縺ｧJSON繧偵お繧ｯ繧ｹ繝昴・繝医☆繧・
-    // 2. resources/levels/stage1.json 縺ｫ驟咲ｽｮ縺吶ｋ
-    // 3. 荳九・繧ｳ繝｡繝ｳ繝医い繧ｦ繝医ｒ螟悶☆
+    outLeftPreview_ = CreateBoundaryPreview(app, { 1.0f, 0.1f, 0.05f, 0.45f });
+    outRightPreview_ = CreateBoundaryPreview(app, { 1.0f, 0.1f, 0.05f, 0.45f });
+    outBottomPreview_ = CreateBoundaryPreview(app, { 1.0f, 0.75f, 0.05f, 0.45f });
+    outTopPreview_ = CreateBoundaryPreview(app, { 1.0f, 0.75f, 0.05f, 0.45f });
+    if (autoFitGroundCollisionToObj_ && ground_) {
+        FitMeshAABBsToObject(*ground_, groundMeshes_, groundCollisionPadding_);
+        groundCollisionPreviews_.clear();
+        for (const auto& mesh : groundMeshes_) {
+            groundCollisionPreviews_.push_back(CreateBoundaryPreview(app, { 0.1f, 1.0f, 0.35f, 0.35f }));
+        }
+    }
+
+    // ===== LevelLoader: JSONからオブジェクトを読み込む =====
+    // 1. BlenderアドオンでJSONをエクスポートする
+    // 2. resources/levels/stage1.json に配置する
+    // 3. 下のコメントアウトを外す
     /*
     LevelLoader::LevelData levelData = LevelLoader::Load("stage1");
     for (auto& objData : levelData.objects) {
@@ -235,7 +385,7 @@ void TestScene::Update(GameApp& app, float dt) {
     ground_->Update(dt);
     skyDome_->Update(dt);
 
-    // LevelLoader 縺ｧ隱ｭ縺ｿ霎ｼ繧薙□繧ｪ繝悶ず繧ｧ繧ｯ繝医・譖ｴ譁ｰ
+    // LevelLoader で読み込んだオブジェクトの更新
     for (auto& obj : levelObjects_) {
         obj->Update(dt);
     }
@@ -264,8 +414,42 @@ void TestScene::Update(GameApp& app, float dt) {
         hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
     }
 
+    if (dynamicBattleCamera_ && player_) {
+        Vector3 target = player_->GetPos3D();
+        float battleDistance = 0.0f;
+        if (Enemy* boss = enemyMgr_.GetBoss()) {
+            const Vector3 bossPos = boss->GetPos3D();
+            const Vector3 playerPos = player_->GetPos3D();
+            target.x = (playerPos.x + bossPos.x) * 0.5f;
+            target.y = (playerPos.y + bossPos.y) * 0.5f;
+            target.z = (playerPos.z + bossPos.z) * 0.5f;
+            const float dx = playerPos.x - bossPos.x;
+            const float dz = playerPos.z - bossPos.z;
+            battleDistance = std::sqrt(dx * dx + dz * dz);
+        }
+
+        const float cameraDistance = std::clamp(
+            battleCameraMinDistance_ + battleDistance * battleCameraDistanceScale_,
+            battleCameraMinDistance_,
+            battleCameraMaxDistance_);
+        const Vector3 desiredCamera{
+            target.x,
+            battleCameraHeight_,
+            target.z - cameraDistance,
+        };
+        const Vector3 currentCamera = camera_->GetTranslate();
+        const float follow = std::clamp(dt * battleCameraFollowLerp_, 0.0f, 1.0f);
+        camera_->SetTranslate({
+            currentCamera.x + (desiredCamera.x - currentCamera.x) * follow,
+            currentCamera.y + (desiredCamera.y - currentCamera.y) * follow,
+            currentCamera.z + (desiredCamera.z - currentCamera.z) * follow,
+        });
+        camera_->SetRotate({ 0.35f, 0.0f, 0.0f });
+        camera_->Update();
+    }
+
     // ===============================
-    // 笘・繧ｯ繝ｩ繝ｳ繝怜芦驕斐メ繧ｧ繝・け
+    // ★ クランプ・到達チェック
     // ===============================
     const float zNear = -10.0f;
     const float zFar = 20.0f;
@@ -276,27 +460,97 @@ void TestScene::Update(GameApp& app, float dt) {
     float t = (z - zNear) / (zFar - zNear);
     t = std::clamp(t, 0.0f, 1.0f);
     float xMax = xMaxNear + (xMaxFar - xMaxNear) * t;
-
+    
     float x = player_->GetX();
 
-    // 笘・蜿ｳ遶ｯ縺ｫ蛻ｰ驕斐＠縺溘ｉ GameScene 縺ｸ
+    // ★ 右端に到達したら GameScene へ
 
     if (enableEdgeTransition_ && !reachedEdge_ && x >= xMax - 0.01f) {
         reachedEdge_ = true;
         RequestChangeScene_("Game");
     }
 
+    if (groundCollisionEnabled_ && player_) {
+        std::vector<AABB> activeGrounds;
+        for (const auto& mesh : groundMeshes_) {
+            if (mesh.enabled) {
+                activeGrounds.push_back(mesh.worldAABB);
+            }
+        }
+        if (!activeGrounds.empty()) {
+            player_->ResolveObstaclesAABB(activeGrounds);
+        }
+    }
+
     if (outOfBoundsEnabled_ && player_) {
         const Vector3 p = player_->GetPos3D();
+        const float left = std::min(outLeftX_, outRightX_);
+        const float right = std::max(outLeftX_, outRightX_);
+        const float bottom = std::min(outBottomY_, outTopY_);
+        const float top = std::max(outBottomY_, outTopY_);
         const bool isOut =
-            p.x < outLeftX_ ||
-            p.x > outRightX_ ||
-            p.y < outBottomY_;
+            p.x < left ||
+            p.x > right ||
+            p.y < bottom ||
+            p.y > top;
 
         if (isOut) {
             player_->SetDropRespawnPos(dropRespawnPos_);
             if (resetDamageOnOutOfBounds_) {
                 player_->SetDamagePercent(0.0f);
+            }
+        }
+    }
+
+    if (outLeftPreview_ && outRightPreview_ && outBottomPreview_ && outTopPreview_) {
+        const float left = std::min(outLeftX_, outRightX_);
+        const float right = std::max(outLeftX_, outRightX_);
+        const float bottom = std::min(outBottomY_, outTopY_);
+        const float top = std::max(outBottomY_, outTopY_);
+        const float zNear = std::min(outPreviewZNear_, outPreviewZFar_);
+        const float zFar = std::max(outPreviewZNear_, outPreviewZFar_);
+        const float xCenter = (left + right) * 0.5f;
+        const float yCenter = (bottom + top) * 0.5f;
+        const float zCenter = (zNear + zFar) * 0.5f;
+        const float xHalf = std::max((right - left) * 0.5f, outPreviewThickness_);
+        const float yHalf = std::max((top - bottom) * 0.5f, outPreviewThickness_);
+        const float zHalf = std::max((zFar - zNear) * 0.5f, outPreviewThickness_);
+
+        outLeftPreview_->SetTranslate({ left, yCenter, zCenter });
+        outLeftPreview_->SetScale({ outPreviewThickness_, yHalf, zHalf });
+        outLeftPreview_->Update(dt);
+
+        outRightPreview_->SetTranslate({ right, yCenter, zCenter });
+        outRightPreview_->SetScale({ outPreviewThickness_, yHalf, zHalf });
+        outRightPreview_->Update(dt);
+
+        outBottomPreview_->SetTranslate({ xCenter, bottom, zCenter });
+        outBottomPreview_->SetScale({ xHalf, outPreviewThickness_, zHalf });
+        outBottomPreview_->Update(dt);
+
+        outTopPreview_->SetTranslate({ xCenter, top, zCenter });
+        outTopPreview_->SetScale({ xHalf, outPreviewThickness_, zHalf });
+        outTopPreview_->Update(dt);
+    }
+
+    if (groundCollisionPreviews_.size() == groundMeshes_.size()) {
+        for (size_t i = 0; i < groundMeshes_.size(); ++i) {
+            const auto& mesh = groundMeshes_[i];
+            auto& preview = groundCollisionPreviews_[i];
+            if (preview && mesh.enabled) {
+                const Vector3 center = {
+                    (mesh.worldAABB.min.x + mesh.worldAABB.max.x) * 0.5f,
+                    (mesh.worldAABB.min.y + mesh.worldAABB.max.y) * 0.5f,
+                    (mesh.worldAABB.min.z + mesh.worldAABB.max.z) * 0.5f,
+                };
+                const Vector3 halfSize = {
+                    (mesh.worldAABB.max.x - mesh.worldAABB.min.x) * 0.5f,
+                    (mesh.worldAABB.max.y - mesh.worldAABB.min.y) * 0.5f,
+                    (mesh.worldAABB.max.z - mesh.worldAABB.min.z) * 0.5f,
+                };
+                preview->SetTranslate(center);
+                preview->SetScale(halfSize);
+                preview->Update(dt);
             }
         }
     }
@@ -319,7 +573,8 @@ void TestScene::Update(GameApp& app, float dt) {
             outOfBoundsEnabled_,
             outLeftX_,
             outRightX_,
-            outBottomY_);
+            outBottomY_,
+            outTopY_);
 
         const AABB body = player_->GetBodyAABB();
         const Vector3 previewStart{
@@ -380,7 +635,7 @@ void TestScene::Update(GameApp& app, float dt) {
 }
 
 
-// 繝昴せ繝医お繝輔ぉ繧ｯ繝亥ｯｾ雎｡縺ｮ3D謠冗判・医が繝輔せ繧ｯ繝ｪ繝ｼ繝ｳ縺ｸ・・
+// ポストエフェクト対象の3D描画（オフスクリーンへ）
 void TestScene::DrawRender(GameApp& app) {
     auto* cmd = app.Dx()->GetCommandList();
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -390,7 +645,7 @@ void TestScene::DrawRender(GameApp& app) {
 
     skyDome_->Draw();
 
-    // LevelLoader 縺ｧ隱ｭ縺ｿ霎ｼ繧薙□繧ｪ繝悶ず繧ｧ繧ｯ繝医・謠冗判
+    // LevelLoader で読み込んだオブジェクトの描画
     for (auto& obj : levelObjects_) {
         obj->Draw();
     }
@@ -401,6 +656,19 @@ void TestScene::DrawRender(GameApp& app) {
     if (player_) player_->Draw();
     if (drawKnockbackPreview_ && knockbackPreviewLine_) knockbackPreviewLine_->Draw();
     if (drawBossHitboxPreview_ && bossHitboxPreview_) bossHitboxPreview_->Draw();
+    if (drawOutOfBoundsPreview_) {
+        if (outLeftPreview_) outLeftPreview_->Draw();
+        if (outRightPreview_) outRightPreview_->Draw();
+        if (outBottomPreview_) outBottomPreview_->Draw();
+        if (outTopPreview_) outTopPreview_->Draw();
+    }
+    if (drawGroundCollisionPreview_ && groundCollisionPreviews_.size() == groundMeshes_.size()) {
+        for (size_t i = 0; i < groundCollisionPreviews_.size(); ++i) {
+            if (groundMeshes_[i].enabled && groundCollisionPreviews_[i]) {
+                groundCollisionPreviews_[i]->Draw();
+            }
+        }
+    }
 
 #ifdef _DEBUG
     player_->DrawDebugHitBoxes(enemyMgr_);
@@ -408,7 +676,7 @@ void TestScene::DrawRender(GameApp& app) {
 
     enemyMgr_.Draw();
 
-    // 3D繧ｨ繝輔ぉ繧ｯ繝医が繝悶ず繧ｧ繧ｯ繝医・謠冗判
+    // 3Dエフェクトオブジェクトの描画
     EffectManager::GetInstance()->Draw();
 
     // GPU Particle
@@ -416,9 +684,9 @@ void TestScene::DrawRender(GameApp& app) {
     ParticleManager::GetInstance()->Draw(cmd);
 }
 
-// 繝舌ャ繧ｯ繝舌ャ繝輔ぃ縺ｸ逶ｴ謗･謠上￥3D・医・繧ｹ繝医お繝輔ぉ繧ｯ繝井ｸ崎ｦ√↑繧ゅ・・・
+// バックバッファへ直接描く3D（ポストエフェクト不要なもの）
 void TestScene::Draw3D(GameApp& app) {
-    // 莉翫・迚ｹ縺ｫ縺ｪ縺・
+    // 今は特になし
 }
 
 // 2D / Sprite
@@ -439,7 +707,7 @@ void TestScene::Draw2D(GameApp& app) {
     }
 }
 
-// 縺昴・莉厄ｼ育ｩｺ縺ｧOK・・
+// その他（空でOK）
 void TestScene::Draw(GameApp& app) {
 }
 
@@ -476,9 +744,14 @@ void TestScene::DrawImGui(GameApp& app) {
     if (player_) {
         Vector3 p = player_->GetPos3D();
         ImGui::Text("Player Pos: %.2f, %.2f, %.2f", p.x, p.y, p.z);
+        ImGui::Text("Player HP: %d / %d", player_->GetHP(), player_->GetMaxHP());
         ImGui::Text("Player Damage: %.1f%%", player_->GetDamagePercent());
         ImGui::Text("Launched: %s", player_->IsLaunched() ? "true" : "false");
 
+        int hp = player_->GetHP();
+        if (ImGui::DragInt("Player HP", &hp, 1, 0, player_->GetMaxHP())) {
+            player_->SetHP(hp);
+        }
         float percent = player_->GetDamagePercent();
         if (ImGui::DragFloat("Player Damage Percent", &percent, 1.0f, 0.0f, 999.0f)) {
             player_->SetDamagePercent(percent);
@@ -501,12 +774,27 @@ void TestScene::DrawImGui(GameApp& app) {
         const float dirX = (player_->GetX() >= boss.GetPos3D().x) ? 1.0f : -1.0f;
         dir.x = std::abs(dir.x) * dirX;
 
-        player_->ApplyBossHit(
-            tuning.damagePercent,
-            tuning.baseKnockback,
-            tuning.knockbackScale,
-            dir,
-            tuning.hitStunSec);
+        if (enemyMgr_.Battle().useHpDamage) {
+            player_->Damage(tuning.hpDamage);
+            const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+            if (len > 1.0e-6f) {
+                dir.x /= len;
+                dir.y /= len;
+                dir.z /= len;
+            } else {
+                dir = { 1.0f, 0.35f, 0.0f };
+            }
+            const float power = tuning.baseKnockback;
+            player_->ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec);
+            player_->TriggerHitFlash(0.25f);
+        } else {
+            player_->ApplyBossHit(
+                tuning.damagePercent,
+                tuning.baseKnockback,
+                tuning.knockbackScale,
+                dir,
+                tuning.hitStunSec);
+        }
         const EnemyManager::HitStopTuning& hitStop = enemyMgr_.HitStop();
         if (hitStop.enabled) {
             hitStopTimer_ = std::max(hitStopTimer_, hitStop.bossAttackSec);
@@ -571,6 +859,11 @@ void TestScene::DrawImGui(GameApp& app) {
         ImGui::Text("Current Timer: %.3f", hitStopTimer_);
     }
 
+    if (ImGui::CollapsingHeader("Battle Rules", ImGuiTreeNodeFlags_DefaultOpen)) {
+        EnemyManager::BattleTuning& battle = enemyMgr_.Battle();
+        ImGui::Checkbox("Use HP Damage For Boss Attacks", &battle.useHpDamage);
+    }
+
     if (ImGui::CollapsingHeader("Attack Creation", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputText("New Attack Name", newBossAttackName_, IM_ARRAYSIZE(newBossAttackName_));
         if (ImGui::Button("Add Attack")) {
@@ -608,11 +901,71 @@ void TestScene::DrawImGui(GameApp& app) {
 
     if (ImGui::CollapsingHeader("Out Of Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Enabled", &outOfBoundsEnabled_);
+        ImGui::Checkbox("Draw Boundary Preview", &drawOutOfBoundsPreview_);
         ImGui::DragFloat("Left X", &outLeftX_, 0.5f, -200.0f, 0.0f);
         ImGui::DragFloat("Right X", &outRightX_, 0.5f, 0.0f, 200.0f);
         ImGui::DragFloat("Bottom Y", &outBottomY_, 0.5f, -200.0f, 0.0f);
+        ImGui::DragFloat("Top Y", &outTopY_, 0.5f, -20.0f, 80.0f);
+        ImGui::DragFloat("Preview Z Near", &outPreviewZNear_, 0.5f, -100.0f, 100.0f);
+        ImGui::DragFloat("Preview Z Far", &outPreviewZFar_, 0.5f, -100.0f, 100.0f);
+        ImGui::DragFloat("Preview Thickness", &outPreviewThickness_, 0.01f, 0.01f, 2.0f);
         ImGui::DragFloat3("Drop Respawn Pos", &dropRespawnPos_.x, 0.1f);
         ImGui::Checkbox("Reset Damage On Out", &resetDamageOnOutOfBounds_);
+    }
+
+    if (ImGui::CollapsingHeader("Stage Obj Collision", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Ground AABB Enabled", &groundCollisionEnabled_);
+        ImGui::Checkbox("Draw Ground AABB", &drawGroundCollisionPreview_);
+        ImGui::Checkbox("Auto Fit From Ground OBJ", &autoFitGroundCollisionToObj_);
+        ImGui::DragFloat("OBJ Fit Padding", &groundCollisionPadding_, 0.01f, 0.0f, 10.0f);
+        if (ImGui::Button("Fit Ground AABB From OBJ") && ground_) {
+            FitMeshAABBsToObject(*ground_, groundMeshes_, groundCollisionPadding_);
+            groundCollisionPreviews_.clear();
+            for (const auto& mesh : groundMeshes_) {
+                groundCollisionPreviews_.push_back(CreateBoundaryPreview(app, { 0.1f, 1.0f, 0.35f, 0.35f }));
+            }
+        }
+
+        if (!groundMeshes_.empty()) {
+            ImGui::SeparatorText("Mesh Collision List");
+            if (ImGui::Button("Enable All")) {
+                for (auto& m : groundMeshes_) m.enabled = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Disable All")) {
+                for (auto& m : groundMeshes_) m.enabled = false;
+            }
+
+            for (size_t i = 0; i < groundMeshes_.size(); ++i) {
+                auto& m = groundMeshes_[i];
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::Checkbox(m.name.c_str(), &m.enabled);
+                if (m.enabled) {
+                    Vector3 center = {
+                        (m.worldAABB.min.x + m.worldAABB.max.x) * 0.5f,
+                        (m.worldAABB.min.y + m.worldAABB.max.y) * 0.5f,
+                        (m.worldAABB.min.z + m.worldAABB.max.z) * 0.5f,
+                    };
+                    Vector3 half = {
+                        (m.worldAABB.max.x - m.worldAABB.min.x) * 0.5f,
+                        (m.worldAABB.max.y - m.worldAABB.min.y) * 0.5f,
+                        (m.worldAABB.max.z - m.worldAABB.min.z) * 0.5f,
+                    };
+                    ImGui::Text("  Center: %.2f, %.2f, %.2f", center.x, center.y, center.z);
+                    ImGui::Text("  Half:   %.2f, %.2f, %.2f", half.x, half.y, half.z);
+                }
+                ImGui::PopID();
+            }
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Battle Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Dynamic Distance", &dynamicBattleCamera_);
+        ImGui::DragFloat("Min Distance", &battleCameraMinDistance_, 0.5f, 5.0f, 120.0f);
+        ImGui::DragFloat("Max Distance", &battleCameraMaxDistance_, 0.5f, 5.0f, 160.0f);
+        ImGui::DragFloat("Distance Scale", &battleCameraDistanceScale_, 0.01f, 0.0f, 5.0f);
+        ImGui::DragFloat("Height", &battleCameraHeight_, 0.5f, 2.0f, 80.0f);
+        ImGui::DragFloat("Follow Lerp", &battleCameraFollowLerp_, 0.1f, 0.1f, 30.0f);
     }
 
     ImGui::Separator();
@@ -627,7 +980,7 @@ void TestScene::DrawImGui(GameApp& app) {
 
     ImGui::Begin("Boss Attack Tuning");
 
-    if (ImGui::CollapsingHeader("Knockback", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Knockback Preview Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         std::vector<const char*> attackLabels = makeAttackLabels();
         const char* lineModeLabels[] = { "Actual Distance", "Launch Velocity" };
         ImGui::Checkbox("Draw Preview Line", &drawKnockbackPreview_);
@@ -655,7 +1008,8 @@ void TestScene::DrawImGui(GameApp& app) {
                 outOfBoundsEnabled_,
                 outLeftX_,
                 outRightX_,
-                outBottomY_);
+                outBottomY_,
+                outTopY_);
 
             ImGui::SeparatorText("Actual Prediction");
             ImGui::Text("Launch Velocity: %.2f, %.2f, %.2f", metrics.velocity.x, metrics.velocity.y, metrics.velocity.z);
@@ -680,7 +1034,9 @@ void TestScene::DrawImGui(GameApp& app) {
                 ImGui::TextUnformatted("Out Before Landing: false");
             }
         }
+    }
 
+    if (ImGui::CollapsingHeader("Boss Attacks Knockback Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto drawBossTuning = [](const char* label, EnemyManager::BossHitTuning& tuning) {
             ImGui::PushID(label);
             if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -688,6 +1044,7 @@ void TestScene::DrawImGui(GameApp& app) {
                 return;
             }
             ImGui::DragFloat("Damage Percent", &tuning.damagePercent, 0.5f, 0.0f, 100.0f);
+            ImGui::DragInt("HP Damage", &tuning.hpDamage, 1, 0, 999);
             ImGui::DragFloat("Base Knockback", &tuning.baseKnockback, 0.1f, 0.0f, 80.0f);
             ImGui::DragFloat("Knockback Scale", &tuning.knockbackScale, 0.005f, 0.0f, 1.0f);
             ImGui::DragFloat3("Knockback Dir", &tuning.knockbackDir.x, 0.01f, -2.0f, 2.0f);
@@ -700,7 +1057,7 @@ void TestScene::DrawImGui(GameApp& app) {
         }
     }
 
-    if (ImGui::CollapsingHeader("HitBox", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Boss Attacks Hitbox Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         std::vector<const char*> attackLabels = makeAttackLabels();
         if (!attackLabels.empty()) {
             ImGui::Combo("Preview Hitbox Attack", &previewAttackKind_, attackLabels.data(), static_cast<int>(attackLabels.size()));
@@ -762,7 +1119,6 @@ void TestScene::DrawImGui(GameApp& app) {
 
     ImGui::End();
 #endif
-}
 
 #if 0
 
@@ -803,7 +1159,7 @@ void TestScene::DrawImGui(GameApp& app) {
     ImGui::DragFloat3("Spot Pos", &groundLight_.spotPos.x, 0.1f);
     ImGui::DragFloat3("Spot Dir", &groundLight_.spotDir.x, 0.01f, -1.0f, 1.0f);
 
-    // 笘・ir縺ｯ豁｣隕丞喧縺励↑縺・→螢翫ｌ繧・☆縺・・縺ｧ縲√・繧ｿ繝ｳ縺ｧ豁｣隕丞喧繧ょ・繧後ｋ
+    // ★dirは正規化しないと壊れやすいので、ボタンで正規化も入れる
     if (ImGui::Button("Normalize Dir")) {
         Vector3 d = groundLight_.spotDir;
         float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
@@ -842,3 +1198,15 @@ void TestScene::DrawImGui(GameApp& app) {
 
     ImGui::End();
 #endif
+}
+
+std::unique_ptr<Object3d> TestScene::CreateBoundaryPreview(GameApp& app, const Vector4& color) {
+    auto object = std::make_unique<Object3d>();
+    object->Initialize(app.ObjCom(), app.Dx());
+    object->SetCamera(camera_.get());
+    object->SetModel("cube/cube.obj");
+    object->SetEnableLighting(0);
+    object->SetMaterialColor(color);
+    object->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
+    return object;
+}

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "MathStruct.h"
 #include <string>
 #include <vector>
@@ -88,32 +88,38 @@ public:
 	float          GetIntensity() const { return light_->GetDirectionalLightIntensity(); }
 
 	void SetEnableLighting(int enable) {
-		if (model_ && model_->GetMaterial()) {
-			model_->GetMaterial()->enableLighting = enable;
+		EnsureInstanceMaterial_();
+		if (instanceMaterialData_) {
+			instanceMaterialData_->enableLighting = enable;
+			instanceMaterialInitializedFromModel_ = true;
 		}
 	}
 	void SetShininess(float s) {
-		if (model_ && model_->GetMaterial()) {
-			model_->GetMaterial()->shininess = s;
+		EnsureInstanceMaterial_();
+		if (instanceMaterialData_) {
+			instanceMaterialData_->shininess = s;
+			instanceMaterialInitializedFromModel_ = true;
 		}
 	}
 	int GetEnableLighting() const {
-		return (model_ && model_->GetMaterial()) ? model_->GetMaterial()->enableLighting : 0;
+		return instanceMaterialData_ ? instanceMaterialData_->enableLighting : 0;
 	}
 	float GetShininess() const {
-		return (model_ && model_->GetMaterial()) ? model_->GetMaterial()->shininess : 0.0f;
+		return instanceMaterialData_ ? instanceMaterialData_->shininess : 0.0f;
 	}
 
 	void SetBlendMode(Object3dCommon::BlendMode m) { blendMode_ = m; }
 	Object3dCommon::BlendMode GetBlendMode() const { return blendMode_; }
 
 	void SetMaterialColor(const Vector4& c) {
-		if (model_) {
-			model_->SetMaterialColor(c);
+		EnsureInstanceMaterial_();
+		if (instanceMaterialData_) {
+			instanceMaterialData_->color = c;
+			instanceMaterialInitializedFromModel_ = true;
 		}
 	}
 	Vector4 GetMaterialColor() const {
-		return model_ ? model_->GetMaterialColor() : Vector4{ 1,1,1,1 };
+		return instanceMaterialData_ ? instanceMaterialData_->color : Vector4{ 1,1,1,1 };
 	}
 
 	void SetCamera(Camera* camera) { camera_ = camera; }
@@ -181,17 +187,20 @@ public:
 	const std::string& GetEnvironmentTexturePath() const { return environmentTexturePath_; }
 
 	void SetEnvironmentCoefficient(float v) {
-		if (model_ && model_->GetMaterial()) {
-			model_->GetMaterial()->environmentCoefficient = v;
+		EnsureInstanceMaterial_();
+		if (instanceMaterialData_) {
+			instanceMaterialData_->environmentCoefficient = v;
+			instanceMaterialInitializedFromModel_ = true;
 		}
 	}
 
 	float GetEnvironmentCoefficient() const {
-		return (model_ && model_->GetMaterial()) ?
-			model_->GetMaterial()->environmentCoefficient : 0.0f;
+		return instanceMaterialData_ ? instanceMaterialData_->environmentCoefficient : 0.0f;
 	}
 
 private:
+	void EnsureInstanceMaterial_();
+
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
 
@@ -219,6 +228,9 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> effectParamResource_;
 	EffectParam* effectParamData_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> instanceMaterialResource_;
+	Model::Material* instanceMaterialData_ = nullptr;
+	bool instanceMaterialInitializedFromModel_ = false;
 	
 	bool enableOutline_ = false;
 	Vector4 outlineColor_ = {1.0f, 0.0f, 0.0f, 1.0f}; // Default Red

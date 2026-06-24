@@ -1,4 +1,4 @@
-#include "Skeleton.h"
+﻿#include "Skeleton.h"
 
 // ==============================
 // 構築

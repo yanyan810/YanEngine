@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "IScene.h"
 #include <memory>
 #include <string>
@@ -158,6 +158,7 @@ private:
     bool fallAttackEffectEnabled_ = true;
     char fallAttackEffectGroupName_[64] = "fallAttak_HitEffect";
     bool pendingBattleParticleSetup_ = false;
+    bool showParticleManager_ = false;
 
     enum class PauseSel { Close, ToTitle };
     PauseSel pauseSel_ = PauseSel::Close;

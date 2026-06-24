@@ -1,4 +1,4 @@
-#include "GameScene.h"
+﻿#include "GameScene.h"
 #include "GameApp.h"
 #include "Effect/EffectManager.h"
 
@@ -184,7 +184,9 @@ void GameScene::DrawImGui(GameApp& app) {
 
     DrawHitEffectImGui_();
 
-    ParticleManager::GetInstance()->DrawImGui();
+    if (showParticleManager_) {
+        ParticleManager::GetInstance()->DrawImGui();
+    }
 
     debugAIImGuiPanelState_.botRunning = debugAIEnabled_;
     ImGui::Begin("Debug AI Control");
@@ -252,6 +254,7 @@ void GameScene::DrawHitEffectImGui_() {
     ImGui::Begin("Hit Effect");
 
     ImGui::Checkbox("Enable On Hit", &hitEffectEnabled_);
+    ImGui::Checkbox("Show Particle Manager", &showParticleManager_);
     ImGui::InputText("Group", hitEffectGroupName_, sizeof(hitEffectGroupName_));
     ImGui::DragFloat3("Test Position", &hitEffectTestPosition_.x, 0.1f);
 

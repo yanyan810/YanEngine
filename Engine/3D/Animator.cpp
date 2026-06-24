@@ -1,4 +1,4 @@
-#include "Animator.h"
+﻿#include "Animator.h"
 #include "AnimationEvaluate.h"
 #include <algorithm>
 #include <cassert>

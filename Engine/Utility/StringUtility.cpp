@@ -1,4 +1,4 @@
-#include "StringUtility.h"
+﻿#include "StringUtility.h"
 
 namespace StringUtility {
 

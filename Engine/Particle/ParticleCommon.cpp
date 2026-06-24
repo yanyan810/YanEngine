@@ -1,4 +1,4 @@
-#include "ParticleCommon.h"
+﻿#include "ParticleCommon.h"
 #include <cassert>
 
 void ParticleCommon::Initialize(DirectXCommon* dxCommon)

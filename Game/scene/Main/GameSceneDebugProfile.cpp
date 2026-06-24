@@ -1,4 +1,4 @@
-#include "GameSceneDebugProfile.h"
+﻿#include "GameSceneDebugProfile.h"
 
 #include <cmath>
 

@@ -1,4 +1,4 @@
-#include "Camera.h"
+﻿#include "Camera.h"
 
 Camera::Camera()
 	:transform_({ 1.0f,1.0f,1.0f },

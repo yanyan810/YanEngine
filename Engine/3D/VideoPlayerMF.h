@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>

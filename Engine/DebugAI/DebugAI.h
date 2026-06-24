@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "ApiDebugBot.h"
 #include "BasicCombatDebugBot.h"

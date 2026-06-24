@@ -1,4 +1,4 @@
-#include "EnemyManager.h"
+﻿#include "EnemyManager.h"
 #include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -97,15 +97,15 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 
 	bossAttacks_ = {
 		{ "Normal / Combo",
-			{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f },
+			{ 5.0f, 5, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f },
 			{ { 1.2f, 0.0f, 0.0f }, { 0.6f, 0.5f, 0.5f }, 0.0f, 0.10f, 5 },
 			false },
 		{ "Jump Slash / Land",
-			{ 16.0f, 12.0f, 0.10f, { 0.8f, 0.60f, 0.0f }, 0.45f },
+			{ 16.0f, 16, 12.0f, 0.10f, { 0.8f, 0.60f, 0.0f }, 0.45f },
 			{ { 0.0f, 0.0f, 0.0f }, { 2.2f, 1.3f, 1.2f }, 0.0f, 0.08f, 10 },
 			false },
 		{ "Rush",
-			{ 12.0f, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f },
+			{ 12.0f, 12, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f },
 			{ { 0.8f, 0.0f, 0.0f }, { 1.4f, 1.0f, 1.2f }, 0.0f, 0.06f, 10 },
 			false },
 	};
@@ -167,7 +167,7 @@ EnemyManager::BossAttackDefinition& EnemyManager::BossAttackAt(size_t index) {
 	if (bossAttacks_.empty()) {
 		bossAttacks_.push_back({
 			"Normal / Combo",
-			{ 5.0f, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f },
+			{ 5.0f, 5, 4.0f, 0.03f, { 0.4f, 0.15f, 0.0f }, 0.20f },
 			{ { 1.2f, 0.0f, 0.0f }, { 0.6f, 0.5f, 0.5f }, 0.0f, 0.10f, 5 },
 			false });
 	}
@@ -464,12 +464,27 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 				Vector3 dir = tuning.knockbackDir;
 				const float dirX = (player.GetX() >= h.attackerPos.x) ? 1.0f : -1.0f;
 				dir.x = std::abs(dir.x) * dirX;
-				player.ApplyBossHit(
-					tuning.damagePercent,
-					tuning.baseKnockback,
-					tuning.knockbackScale,
-					dir,
-					tuning.hitStunSec);
+				if (battleTuning_.useHpDamage) {
+					player.Damage(tuning.hpDamage);
+					const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+					if (len > 1.0e-6f) {
+						dir.x /= len;
+						dir.y /= len;
+						dir.z /= len;
+					} else {
+						dir = { 1.0f, 0.35f, 0.0f };
+					}
+					const float power = tuning.baseKnockback;
+					player.ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec);
+					player.TriggerHitFlash(0.25f);
+				} else {
+					player.ApplyBossHit(
+						tuning.damagePercent,
+						tuning.baseKnockback,
+						tuning.knockbackScale,
+						dir,
+						tuning.hitStunSec);
+				}
 				if (hitStopTuning_.enabled) {
 					pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.bossAttackSec);
 				}

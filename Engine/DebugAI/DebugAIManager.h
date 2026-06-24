@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "DebugAIConfig.h"
 #include "DebugLogger.h"

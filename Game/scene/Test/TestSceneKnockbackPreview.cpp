@@ -1,4 +1,4 @@
-#include "TestSceneKnockbackPreview.h"
+﻿#include "TestSceneKnockbackPreview.h"
 
 #include "Enemy.h"
 #include "EnemyManager.h"
@@ -34,6 +34,21 @@ float SolveTimeToY(float startY, float velocityY, float gravity, float targetY) 
     return std::max(0.0f, (velocityY + std::sqrt(disc)) / g);
 }
 
+float SolveAscendingTimeToY(float startY, float velocityY, float gravity, float targetY) {
+    if (targetY <= startY || velocityY <= 0.0f) {
+        return -1.0f;
+    }
+
+    const float g = std::max(gravity, 0.0001f);
+    const float disc = velocityY * velocityY - 2.0f * g * (targetY - startY);
+    if (disc < 0.0f) {
+        return -1.0f;
+    }
+
+    const float t = (velocityY - std::sqrt(disc)) / g;
+    return t > 0.0f ? t : -1.0f;
+}
+
 float SolvePositiveBoundaryTime(float start, float velocity, float boundary) {
     if (std::abs(velocity) <= 1.0e-6f) {
         return -1.0f;
@@ -62,7 +77,8 @@ TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
     bool outOfBoundsEnabled,
     float outLeftX,
     float outRightX,
-    float outBottomY) {
+    float outBottomY,
+    float outTopY) {
     return Calculate(
         player,
         enemyManager,
@@ -71,7 +87,8 @@ TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
         outOfBoundsEnabled,
         outLeftX,
         outRightX,
-        outBottomY);
+        outBottomY,
+        outTopY);
 }
 
 TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
@@ -82,7 +99,8 @@ TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
     bool outOfBoundsEnabled,
     float outLeftX,
     float outRightX,
-    float outBottomY) {
+    float outBottomY,
+    float outTopY) {
 
     Metrics m{};
     const EnemyManager::BossHitTuning& tuning = enemyManager.BossAttackAt(attackIndex).hit;
@@ -128,18 +146,27 @@ TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
 
     if (outOfBoundsEnabled) {
         float firstOutTime = -1.0f;
+        const float bottom = std::min(outBottomY, outTopY);
+        const float top = std::max(outBottomY, outTopY);
+        const float left = std::min(outLeftX, outRightX);
+        const float right = std::max(outLeftX, outRightX);
 
         const float sideTime = SolvePositiveBoundaryTime(
             start.x,
             m.velocity.x,
-            m.velocity.x >= 0.0f ? outRightX : outLeftX);
+            m.velocity.x >= 0.0f ? right : left);
         if (sideTime >= 0.0f) {
             firstOutTime = sideTime;
         }
 
-        const float bottomTime = SolveTimeToY(start.y, m.velocity.y, gravity, outBottomY);
+        const float bottomTime = SolveTimeToY(start.y, m.velocity.y, gravity, bottom);
         if (bottomTime > 0.0f && (firstOutTime < 0.0f || bottomTime < firstOutTime)) {
             firstOutTime = bottomTime;
+        }
+
+        const float topTime = SolveAscendingTimeToY(start.y, m.velocity.y, gravity, top);
+        if (topTime > 0.0f && (firstOutTime < 0.0f || topTime < firstOutTime)) {
+            firstOutTime = topTime;
         }
 
         if (firstOutTime >= 0.0f && firstOutTime < m.airTimeSec) {

@@ -1,4 +1,4 @@
-#include "Model.h"
+﻿#include "Model.h"
 #include <sstream>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -61,6 +61,7 @@ static Model::MeshData BuildMeshTriList(const aiMesh* mesh)
 {
 	Model::MeshData md{};
 	md.materialIndex = mesh->mMaterialIndex;
+	md.name = mesh->mName.C_Str();
 
 	std::vector<Model::VertexData> base(mesh->mNumVertices);
 	aiVector3D zero3(0, 0, 0);
@@ -455,7 +456,7 @@ void Model::Initialize(ModelCommon* modelCommon,
 				OutputDebugStringA(
 					(std::string("[AnimMap] anim='") + animName +
 						"' node='" + nodeName +
-						"' exists=" + (exists ? "1" : "0") + "\n").c_str()
+						"'exists=" + (exists ? "1" : "0") + "\n").c_str()
 				);
 			}
 		}
@@ -553,19 +554,6 @@ void Model::Initialize(ModelCommon* modelCommon,
 
 	vertexResource_ = dx->CreateBufferResource(sizeof(VertexData) * totalVtx);
 	vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData_));
-
-	/* uint32_t cursor = 0;
-	 for (auto& mesh : modelData_.meshes) {
-		 mesh.startVertex = cursor;
-		 mesh.vertexCount = static_cast<uint32_t>(mesh.vertices.size());
-
-		 if (!mesh.vertices.empty()) {
-			 std::memcpy(vertexData_ + cursor,
-				 mesh.vertices.data(),
-				 sizeof(VertexData) * mesh.vertices.size());
-		 }
-		 cursor += mesh.vertexCount;
-	 }*/
 
 	uint32_t cursor = 0;
 	for (auto& mesh : modelData_.meshes) {
@@ -774,7 +762,7 @@ void Model::Draw(ID3D12GraphicsCommandList* cmd) {
 	cmd->IASetVertexBuffers(0, 1, &vertexBufferView_);
 	cmd->IASetIndexBuffer(&indexBufferView_);
 
-	cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
 	for (const auto& mesh : modelData_.meshes) {
 
@@ -898,7 +886,7 @@ void Model::Draw(ID3D12GraphicsCommandList* cmd,
 	const bool useIndexed = (indexResource_ != nullptr);
 	if (useIndexed) cmd->IASetIndexBuffer(&indexBufferView_);
 
-	cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
 	for (const auto& mesh : modelData_.meshes) {
 
@@ -956,7 +944,7 @@ void Model::DrawSkinned(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc)
 	cmd->IASetIndexBuffer(&indexBufferView_);
 
 	// Material (b0)
-	cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
 	for (const auto& mesh : modelData_.meshes) {
 
@@ -1002,7 +990,7 @@ void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster
 	cmd->IASetIndexBuffer(&indexBufferView_);
 
 	// Material (b0)
-	cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
 	for (const auto& mesh : modelData_.meshes) {
 
@@ -1077,45 +1065,34 @@ void Model::DrawSkinnedOneMesh(ID3D12GraphicsCommandList* cmd, const SkinCluster
 {
 	const auto& mesh = modelData_.meshes[meshIndex];
 
-	// VB slot0/1 + IB
-	D3D12_VERTEX_BUFFER_VIEW vbvs[2] = { vertexBufferView_, sc.influenceBufferView };
+	D3D12_VERTEX_BUFFER_VIEW vbvs[2] = {
+		vertexBufferView_,
+		sc.influenceBufferView
+	};
 	cmd->IASetVertexBuffers(0, 2, vbvs);
 	cmd->IASetIndexBuffer(&indexBufferView_);
 
-	// Material
-	cmd->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
-	// texture (Root 3)
 	std::string texPath;
-	if (mesh.materialIndex < modelData_.materials.size()) texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
+	if (mesh.materialIndex < modelData_.materials.size()) {
+		texPath = modelData_.materials[mesh.materialIndex].textureFilePath;
+	}
 
 	D3D12_GPU_DESCRIPTOR_HANDLE handle{};
-	if (!texPath.empty()) handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
-	else handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+	if (!texPath.empty()) {
+		if (!TextureManager::GetInstance()->HasTexture(texPath)) {
+			TextureManager::GetInstance()->LoadTexture(texPath);
+		}
+		handle = TextureManager::GetInstance()->GetSrvHandleGPU(texPath);
+	}
+	else {
+		handle = TextureManager::GetInstance()->GetSrvHandleGPU("");
+	}
 
 	cmd->SetGraphicsRootDescriptorTable(3, handle);
 
 	cmd->DrawIndexedInstanced(mesh.indexCount, 1, mesh.startIndex, 0, 0);
-}
-
-Model::MaterialData Model::LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename) {
-	MaterialData materialData;//構築するMaterialData
-	std::string line;// ファイルから読んだ1行を格納するもの
-	std::ifstream file(directoryPath + "/" + filename);//ファイルを開く
-	assert(file.is_open()); // ファイルが開けなかったらエラー
-
-	while (std::getline(file, line)) {
-		std::string identifer;
-		std::istringstream s(line);
-		s >> identifer; // 先頭の識別子を読む
-		if (identifer == "map_Kd") {
-			std::string textureFilePath;
-			s >> textureFilePath; // テクスチャファイルのパスを読み込む
-			materialData.textureFilePath = directoryPath + "/" + textureFilePath; // ディレクトリパスと結合
-		}
-	}
-
-	return materialData;
 }
 
 Model::ModelData Model::LoadObjFile(
@@ -1411,6 +1388,7 @@ Model::ModelData Model::LoadAssimpFile(const std::string& fullPath)
 
 		MeshData md{};
 		md.materialIndex = mesh->mMaterialIndex;
+		md.name = mesh->mName.C_Str();
 
 		md.skinned = mesh->HasBones();   // ★追加
 		if (md.skinned) {
@@ -1465,37 +1443,6 @@ Model::ModelData Model::LoadAssimpFile(const std::string& fullPath)
 			md.indexCount += 3;
 		}
 
-
-		//for (uint32_t boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex) {
-
-		//    aiBone* bone = mesh->mBones[boneIndex];
-		//    std::string jointName = bone->mName.C_Str();
-		//    JointWeightData& jointWeightData = out.skinClusterData[jointName];
-
-		//    aiMatrix4x4 bindPoseMatrixAssimp = bone->mOffsetMatrix.Inverse();
-		//    aiVector3D scale, translate;
-		//    aiQuaternion rotate;
-		//    bindPoseMatrixAssimp.Decompose(scale, rotate, translate);
-		//    Matrix4x4 bindPoseMatrix = MakeAffineMatrix(
-		//        {scale.x,scale.y,scale.z},
-		//        {rotate.x,-rotate.y,-rotate.z,rotate.w},
-		//        {-translate.x,translate.y,translate.z}
-		//    );
-		//    jointWeightData.inverseBindPoseMatrix = Matrix4x4::Inverse(bindPoseMatrix);
-
-		//    for (uint32_t weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex) {
-
-		//        const float w = bone->mWeights[weightIndex].mWeight;
-		//        const uint32_t localV = bone->mWeights[weightIndex].mVertexId;
-
-
-		//        const uint32_t globalV = globalVertexBase + localV;
-		//        jointWeightData.vertexWeights.push_back({ w, globalV }); // ★globalV を入れる
-
-		//    }
-
-
-		//}
 
 		for (uint32_t boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex) {
 
@@ -1552,6 +1499,60 @@ Model::ModelData Model::LoadAssimpFile(const std::string& fullPath)
 
 const Matrix4x4& Model::GetRootLocalMatrix() const {
 	return modelData_.rootNode.localMatrix;
+}
+
+bool Model::GetLocalAABB(AABB& out) const {
+	bool hasAny = false;
+	Vector3 minPos{ +FLT_MAX, +FLT_MAX, +FLT_MAX };
+	Vector3 maxPos{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
+
+	for (const auto& mesh : modelData_.meshes) {
+		for (const auto& v : mesh.vertices) {
+			hasAny = true;
+			const Vector4& p = v.position;
+			minPos.x = std::min(minPos.x, p.x);
+			minPos.y = std::min(minPos.y, p.y);
+			minPos.z = std::min(minPos.z, p.z);
+			maxPos.x = std::max(maxPos.x, p.x);
+			maxPos.y = std::max(maxPos.y, p.y);
+			maxPos.z = std::max(maxPos.z, p.z);
+		}
+	}
+
+	if (!hasAny) {
+		return false;
+	}
+
+	out.min = minPos;
+	out.max = maxPos;
+	return true;
+}
+
+std::vector<Model::MeshCollisionData> Model::GetMeshesLocalAABBs() const {
+	std::vector<Model::MeshCollisionData> aabbs;
+	aabbs.reserve(modelData_.meshes.size());
+
+	for (const auto& mesh : modelData_.meshes) {
+		if (mesh.vertices.empty()) continue;
+
+		Vector3 minPos{ +FLT_MAX, +FLT_MAX, +FLT_MAX };
+		Vector3 maxPos{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
+		for (const auto& v : mesh.vertices) {
+			const Vector4& p = v.position;
+			minPos.x = std::min(minPos.x, p.x);
+			minPos.y = std::min(minPos.y, p.y);
+			minPos.z = std::min(minPos.z, p.z);
+			maxPos.x = std::max(maxPos.x, p.x);
+			maxPos.y = std::max(maxPos.y, p.y);
+			maxPos.z = std::max(maxPos.z, p.z);
+		}
+		MeshCollisionData data{};
+		data.name = mesh.name;
+		data.localAABB.min = minPos;
+		data.localAABB.max = maxPos;
+		aabbs.push_back(data);
+	}
+	return aabbs;
 }
 
 Model::Skeleton Model::CreateSkeleton(const Model::Node& rootNode) {
@@ -1619,63 +1620,6 @@ void Model::UpdateSkeleton(Skeleton& skeleton) {
 	}
 }
 
-//=================================
-//ノード描画用
-//=================================
-
-//{
-//    nodePtrs_.clear();
-//    parentIndex_.clear();
-//    nodeNameToIndex_.clear();
-//    void Model::BuildNodeRuntime_()
-//nodeInstances_.clear();
-//
-//    TraverseNode_(&modelData_.rootNode, -1);
-//
-//    meshOwnerNodeIndex_.assign(modelData_.meshes.size(), -1);
-//
-//    // デバッグ：インスタンス数
-//    {
-//        std::string s = "[Model] NodeInstances=" + std::to_string(nodeInstances_.size()) + "\n";
-//        OutputDebugStringA(s.c_str());
-//    }
-//
-//    char buf[256];
-//    std::snprintf(buf, sizeof(buf),
-//        "[NodeRuntime] nodes=%zu instances=%zu\n",
-//        nodePtrs_.size(), nodeInstances_.size());
-//    OutputDebugStringA(buf);
-//
-//
-//
-//}
-//
-//void Model::TraverseNode_(const Node* n, int32_t parent)
-//{
-//    const uint32_t myIndex = static_cast<uint32_t>(nodePtrs_.size());
-//    nodePtrs_.push_back(n);
-//    parentIndex_.push_back(parent);
-//
-//    if (!n->name.empty()) {
-//        nodeNameToIndex_[n->name] = myIndex;
-//    }
-//
-//    // ★このノードが参照する mesh を全部「インスタンス」として追加
-//    for (uint32_t meshIndex : n->meshIndices) {
-//        nodeInstances_.push_back({ myIndex, meshIndex });
-//
-//        // ★このmeshを最初に見つけたnodeを「owner」とする
-//        if (meshIndex < meshOwnerNodeIndex_.size() && meshOwnerNodeIndex_[meshIndex] < 0) {
-//            meshOwnerNodeIndex_[meshIndex] = (int32_t)myIndex;
-//        }
-//
-//    }
-//
-//    // 子へ
-//    for (const auto& c : n->children) {
-//        TraverseNode_(&c, static_cast<int32_t>(myIndex));
-//    }
-//}
 
 void Model::ComputeNodeGlobalMatrices(const Animation* anim, float time,
 	std::vector<Matrix4x4>& outGlobals) const

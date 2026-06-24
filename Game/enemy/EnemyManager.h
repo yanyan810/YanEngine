@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -44,6 +44,7 @@ public:
 
     struct BossHitTuning {
         float damagePercent = 10.0f;
+        int hpDamage = 10;
         float baseKnockback = 10.0f;
         float knockbackScale = 0.08f;
         Vector3 knockbackDir = { 1.0f, 0.35f, 0.0f };
@@ -78,6 +79,10 @@ public:
         bool enabled = true;
         float playerAttackSec = 0.08f;
         float bossAttackSec = 0.10f;
+    };
+
+    struct BattleTuning {
+        bool useHpDamage = false;
     };
 
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
@@ -115,6 +120,8 @@ public:
     void QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, float targetX);
     HitStopTuning& HitStop() { return hitStopTuning_; }
     const HitStopTuning& HitStop() const { return hitStopTuning_; }
+    BattleTuning& Battle() { return battleTuning_; }
+    const BattleTuning& Battle() const { return battleTuning_; }
 
     void QueueSpawn(EnemyType type, float delaySec);
     void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
@@ -148,6 +155,7 @@ private:
     std::vector<BossAttackEffectEvent> bossAttackEffectEvents_;
     std::vector<BossAttackDefinition> bossAttacks_;
     HitStopTuning hitStopTuning_{};
+    BattleTuning battleTuning_{};
     float pendingHitStopSec_ = 0.0f;
 
     std::vector<Enemy> enemies_;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "MathStruct.h"
 #include "DirectXCommon.h"
 #include <wrl.h>

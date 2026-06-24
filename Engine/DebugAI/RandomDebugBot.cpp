@@ -1,4 +1,4 @@
-#include "RandomDebugBot.h"
+﻿#include "RandomDebugBot.h"
 
 RandomDebugBot::RandomDebugBot(unsigned int seed)
     : random_(seed) {

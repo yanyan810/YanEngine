@@ -1,4 +1,4 @@
-#include "DebugReplayRecorder.h"
+﻿#include "DebugReplayRecorder.h"
 
 #include <filesystem>
 #include <iomanip>

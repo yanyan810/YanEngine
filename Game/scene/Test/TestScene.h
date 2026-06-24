@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "IScene.h"
 #include <memory>
 #include "WinApp.h"
@@ -34,6 +34,12 @@ public:
     void Draw(GameApp& app) override;       // その他（空でOK）
     void DrawImGui(GameApp& app) override;
 
+    struct MeshCollisionInfo {
+        std::string name;
+        AABB worldAABB;
+        bool enabled = true;
+    };
+
 private:
     Input* input_ = nullptr;
     std::unique_ptr<Camera> camera_;
@@ -53,10 +59,27 @@ private:
     bool resetFightersRequested_ = false;
     float hitStopTimer_ = 0.0f;
     bool outOfBoundsEnabled_ = true;
+    bool drawOutOfBoundsPreview_ = true;
     bool resetDamageOnOutOfBounds_ = false;
     float outLeftX_ = -26.0f;
     float outRightX_ = 26.0f;
     float outBottomY_ = -8.0f;
+    float outTopY_ = 18.0f;
+    float outPreviewZNear_ = -15.0f;
+    float outPreviewZFar_ = 20.0f;
+    float outPreviewThickness_ = 0.08f;
+    bool groundCollisionEnabled_ = true;
+    bool drawGroundCollisionPreview_ = true;
+    bool autoFitGroundCollisionToObj_ = true;
+    float groundCollisionPadding_ = 0.05f;
+    Vector3 groundCollisionCenter_{ 0.0f, -0.25f, 5.0f };
+    Vector3 groundCollisionHalfSize_{ 26.0f, 0.25f, 17.5f };
+    bool dynamicBattleCamera_ = true;
+    float battleCameraMinDistance_ = 42.0f;
+    float battleCameraMaxDistance_ = 70.0f;
+    float battleCameraDistanceScale_ = 1.15f;
+    float battleCameraHeight_ = 20.0f;
+    float battleCameraFollowLerp_ = 8.0f;
     Vector3 bossSpawnPos_{ 0.0f, 0.0f, 5.0f };
     Vector3 playerSpawnPos_{ -12.0f, 0.0f, 5.0f };
     Vector3 dropRespawnPos_{ 0.0f, 12.0f, 5.0f };
@@ -66,6 +89,13 @@ private:
     std::unique_ptr<Object3d> skyDome_;
     std::unique_ptr<Object3d> knockbackPreviewLine_;
     std::unique_ptr<Object3d> bossHitboxPreview_;
+    std::unique_ptr<Object3d> outLeftPreview_;
+    std::unique_ptr<Object3d> outRightPreview_;
+    std::unique_ptr<Object3d> outBottomPreview_;
+    std::unique_ptr<Object3d> outTopPreview_;
+ 
+    std::vector<MeshCollisionInfo> groundMeshes_;
+    std::vector<std::unique_ptr<Object3d>> groundCollisionPreviews_;
     bool drawBossHitboxPreview_ = true;
     bool drawKnockbackPreview_ = true;
     bool freezeKnockbackPreviewWhileLaunched_ = true;
@@ -100,4 +130,5 @@ private:
     // ===== LevelLoader =====
     std::vector<std::unique_ptr<Object3d>> levelObjects_;
 
+    std::unique_ptr<Object3d> CreateBoundaryPreview(GameApp& app, const Vector4& color);
 };

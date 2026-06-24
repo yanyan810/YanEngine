@@ -1,4 +1,4 @@
-#include "TextureManager.h"
+﻿#include "TextureManager.h"
 #include <cassert>
 #include <filesystem>
 #include <Windows.h>
