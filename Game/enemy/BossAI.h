@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <cstdint>
 #include "Matrix4x4.h"
 
@@ -23,6 +23,12 @@ public:
         Rush_Charge,
         Rush_ExitLeft,
         Rush_Return,
+
+        Double_Melee_Dash,
+        Double_Melee_Attack_1,
+        Double_Melee_Rock,
+        Double_Melee_Attack_2,
+        Double_Melee_Finish,
 
         Super50,
         Super25,
@@ -140,6 +146,7 @@ private:
     void DoDrop_(Enemy& e, float dt, const Vector2& playerXY);
     void DoMelee_(Enemy& e, float dt, const Vector2& playerXY);
     void DoRush_(Enemy& e, float dt);
+    void DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float playerZ);
 
     // 補助
     float Rand01_(); // 0..1

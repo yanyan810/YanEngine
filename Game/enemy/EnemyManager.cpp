@@ -1,4 +1,4 @@
-﻿#include "EnemyManager.h"
+#include "EnemyManager.h"
 #include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -108,6 +108,14 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 			{ 12.0f, 12, 10.0f, 0.08f, { 1.0f, 0.35f, 0.0f }, 0.35f },
 			{ { 0.8f, 0.0f, 0.0f }, { 1.4f, 1.0f, 1.2f }, 0.0f, 0.06f, 10 },
 			false },
+		{ "Double Melee 1",
+			{ 8.0f, 8, 12.0f, 0.05f, { 0.0f, 1.0f, 0.0f }, 0.40f },
+			{ { 1.4f, 0.0f, 0.0f }, { 0.7f, 0.6f, 0.6f }, 0.0f, 0.12f, 8 },
+			false },
+		{ "Double Melee 2",
+			{ 12.0f, 12, 15.0f, 0.08f, { 1.0f, -0.6f, 0.0f }, 0.50f },
+			{ { 1.4f, 0.0f, 0.0f }, { 0.8f, 0.6f, 0.6f }, 0.0f, 0.12f, 12 },
+			false },
 	};
 
 	enemies_.clear();
@@ -190,6 +198,10 @@ size_t EnemyManager::BossAttackIndex(MeleeKind kind) const {
 		return 1;
 	case MeleeKind::Rush:
 		return 2;
+	case MeleeKind::DoubleMelee1:
+		return 3;
+	case MeleeKind::DoubleMelee2:
+		return 4;
 	case MeleeKind::Normal:
 	default:
 		return 0;
@@ -242,7 +254,13 @@ void EnemyManager::QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, 
 	const int facing = (targetX < ep.x) ? -1 : +1;
 	const BossAttackDefinition& attack = BossAttackAt(attackIndex);
 	const AABB3 hb = MakeBossAttackHitbox(attackIndex, ep, facing);
-	MeleeHitbox hitbox{ hb, attack.hitbox.activeSec, attack.hitbox.damage, true, MeleeKind::Normal, attackIndex, ep, facing };
+	MeleeKind kind = MeleeKind::Normal;
+	if (attackIndex == 1) kind = MeleeKind::Land;
+	else if (attackIndex == 2) kind = MeleeKind::Rush;
+	else if (attackIndex == 3) kind = MeleeKind::DoubleMelee1;
+	else if (attackIndex == 4) kind = MeleeKind::DoubleMelee2;
+
+	MeleeHitbox hitbox{ hb, attack.hitbox.activeSec, attack.hitbox.damage, true, kind, attackIndex, ep, facing };
 	if (attack.hitbox.startDelaySec > 0.0f) {
 		hitbox.life = attack.hitbox.startDelaySec;
 		pendingMeleeHitboxes_.push_back(hitbox);
@@ -488,6 +506,12 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 				if (hitStopTuning_.enabled) {
 					pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.bossAttackSec);
 				}
+				if (h.kind == MeleeKind::DoubleMelee1) {
+					Enemy* boss = GetBoss();
+					if (boss) {
+						boss->GetBossAIMutable().ForceChangeState(BossAI::State::Double_Melee_Rock);
+					}
+				}
 			} else {
 				player.Damage(h.damage);
 			}
@@ -524,19 +548,19 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 
 			switch (kind) {
 			case MeleeKind::Normal:
-
 				dmg = 5;
-
 				break;
-
 			case MeleeKind::Land:
-
 				dmg = 10;
 				break;
-
 			case MeleeKind::Rush:
-
 				dmg = 10;
+				break;
+			case MeleeKind::DoubleMelee1:
+				dmg = 8;
+				break;
+			case MeleeKind::DoubleMelee2:
+				dmg = 12;
 				break;
 			}
 

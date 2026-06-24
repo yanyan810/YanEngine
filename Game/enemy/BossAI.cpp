@@ -1,4 +1,4 @@
-﻿#include "BossAI.h"
+#include "BossAI.h"
 #include "Enemy.h"
 #include <cstdlib>
 #include <cmath>
@@ -63,12 +63,14 @@ void BossAI::Update(Enemy& e, float dt, const Vector2& playerXY, float playerZ) 
         // 攻撃選択（追従なし）
         if (stateTime_ > 1.8f) {
             // フェーズで攻撃頻度UP
-            float pDrop = (phase_ == Phase::P1) ? 0.45f : 0.35f;
-            float pMelee = (phase_ == Phase::P1) ? 0.35f : 0.40f;
+            float pDrop = (phase_ == Phase::P1) ? 0.35f : 0.25f;
+            float pMelee = (phase_ == Phase::P1) ? 0.30f : 0.35f;
+            float pDouble = 0.20f; // 20%でダブル近接
             float r = Rand01_();
 
             if (r < pDrop) ChangeState_(State::Drop_Windup);
             else if (r < pDrop + pMelee) ChangeState_(State::Melee_Dash);
+            else if (r < pDrop + pMelee + pDouble) ChangeState_(State::Double_Melee_Dash);
             else ChangeState_(State::Rush_ToRight);
         }
         break;
@@ -92,6 +94,13 @@ void BossAI::Update(Enemy& e, float dt, const Vector2& playerXY, float playerZ) 
         DoRush_(e, dt);
         break;
 
+    case State::Double_Melee_Dash:
+    case State::Double_Melee_Attack_1:
+    case State::Double_Melee_Rock:
+    case State::Double_Melee_Attack_2:
+        DoDoubleMelee_(e, dt, playerXY, playerZ);
+        break;
+
     case State::Super50:
         // 例：落下攻撃×3（あとで派手に）
         // とりあえず短い演出時間だけ確保
@@ -112,16 +121,17 @@ void BossAI::Update(Enemy& e, float dt, const Vector2& playerXY, float playerZ) 
 }
 
 void BossAI::DoWander_(Enemy& e, float dt, const Vector2& playerXY, float playerZ) {
+    (void)playerZ; // Z軸は使用しない
     Vector3 p = e.GetPos();
 
-    // XY追従
+    // XY追従のみ
     float dx = playerXY.x - p.x;
     float dy = playerXY.y - p.y;
 
     float dist = std::sqrtf(dx * dx + dy * dy);
     if (dist < 1e-4f) dist = 1e-4f;
 
-    Vector3 v{ 0,0,0 };
+    Vector3 v{ 0, 0, 0 };
 
     if (dist > chaseStopDist_) {
         float nx = dx / dist;
@@ -130,10 +140,6 @@ void BossAI::DoWander_(Enemy& e, float dt, const Vector2& playerXY, float player
         v.x = nx * spd;
         v.y = ny * spd;
     }
-
-    // Z追従（滑らかに寄せる）
-    float dz = playerZ - p.z;
-    v.z = dz * 3.0f; // 係数はお好みで（大きいほど追従が速い）
 
     e.SetVel(v);
 }
@@ -264,3 +270,75 @@ void BossAI::DoRush_(Enemy& e, float dt) {
         break;
     }
 }
+
+void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float playerZ) {
+    Vector3 p = e.GetPos();
+    Vector3 v = e.GetVel();
+
+    switch (st_) {
+    case State::Double_Melee_Dash: {
+        // プレイヤーへの方向ベクトルを算出（超高速追従・XY軸のみ）
+        float dx = playerXY.x - p.x;
+        float dy = playerXY.y - p.y;
+
+        float dist = std::sqrtf(dx * dx + dy * dy);
+        if (dist < 1e-4f) dist = 1e-4f;
+
+        float spd = 22.0f; // Melee_Dashよりかなり速い
+
+        v.x = (dx / dist) * spd;
+        v.y = (dy / dist) * spd;
+        v.z = 0.0f; // Z軸は使わない
+        e.SetVel(v);
+
+        // 接近するか、一定時間経過で第1撃へ
+        if (dist < 1.5f || stateTime_ > 0.25f) {
+            ChangeState_(State::Double_Melee_Attack_1);
+        }
+    } break;
+
+    case State::Double_Melee_Attack_1:
+        // 移動を止め攻撃リクエスト
+        e.SetVel({ 0.0f, 0.0f, 0.0f });
+        if (stateTime_ <= dt) {
+            e.RequestMelee(MeleeKind::DoubleMelee1);
+        }
+        // ヒットした場合はEnemyManager側でDouble_Melee_Rockに移行される。
+        // 回避された場合は、一定時間（0.3秒）経過後にWanderへ戻る。
+        if (stateTime_ > 0.30f) {
+            ChangeState_(State::Wander);
+        }
+        break;
+
+    case State::Double_Melee_Rock: {
+        // 空中に打ち上げられたプレイヤーをXY平面で高速追従
+        float dx = playerXY.x - p.x;
+        float dy = playerXY.y - p.y;
+
+        float dist = std::sqrtf(dx * dx + dy * dy);
+        if (dist < 1e-4f) dist = 1e-4f;
+
+        float spd = 25.0f; // 空中追従用の超高速
+        v.x = (dx / dist) * spd;
+        v.y = (dy / dist) * spd;
+        v.z = 0.0f; // Z軸は使わない
+        e.SetVel(v);
+
+        // プレイヤーに接近するか（ヒット直後の密着での即遷移を防ぐため0.15秒のディレイ）、一定時間（0.4秒）経過で叩き落とし第2打へ
+        if ((stateTime_ > 0.15f && dist < 1.8f) || stateTime_ > 0.40f) {
+            ChangeState_(State::Double_Melee_Attack_2);
+        }
+    } break;
+
+    case State::Double_Melee_Attack_2:
+        e.SetVel({ 0.0f, 0.0f, 0.0f });
+        if (stateTime_ <= dt) {
+            e.RequestMelee(MeleeKind::DoubleMelee2);
+        }
+        if (stateTime_ > 0.40f) {
+            ChangeState_(State::Wander);
+        }
+        break;
+    }
+}
+

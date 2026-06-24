@@ -405,7 +405,9 @@ void TestScene::Update(GameApp& app, float dt) {
     float playerZ = player_->GetZ();
 
     if (Enemy* boss = enemyMgr_.GetBoss()) {
-        bool isAttacking = boss->GetBossAI().GetState() != BossAI::State::Wander;
+        // bossAIEnabled_ が OFF でも、攻撃シーケンス中（Wander以外）はAIを動かし続ける
+        // Wander（シーケンス終了）に戻ったときだけ無効化する
+        const bool isAttacking = boss->GetBossAI().GetState() != BossAI::State::Wander;
         boss->SetAIDisabled(!bossAIEnabled_ && !isAttacking);
     }
 
@@ -799,6 +801,10 @@ void TestScene::DrawImGui(GameApp& app) {
         if (hitStop.enabled) {
             hitStopTimer_ = std::max(hitStopTimer_, hitStop.bossAttackSec);
         }
+
+        if (attackIndex == 3) { // DoubleMelee1
+            boss.GetBossAIMutable().ForceChangeState(BossAI::State::Double_Melee_Rock);
+        }
     };
 
     if (Enemy* boss = enemyMgr_.GetBoss()) {
@@ -806,6 +812,28 @@ void TestScene::DrawImGui(GameApp& app) {
         if (ImGui::DragFloat3("Boss Pos", &bossPos.x, 0.1f)) {
             boss->SetPos(bossPos);
         }
+
+        const char* stateStr = "Unknown";
+        switch (boss->GetBossAI().GetState()) {
+        case BossAI::State::Wander: stateStr = "Wander"; break;
+        case BossAI::State::Drop_Windup: stateStr = "Drop_Windup"; break;
+        case BossAI::State::Drop_Fall: stateStr = "Drop_Fall"; break;
+        case BossAI::State::Drop_Land: stateStr = "Drop_Land"; break;
+        case BossAI::State::Melee_Dash: stateStr = "Melee_Dash"; break;
+        case BossAI::State::Melee_Attack: stateStr = "Melee_Attack"; break;
+        case BossAI::State::Melee_Recover: stateStr = "Melee_Recover"; break;
+        case BossAI::State::Double_Melee_Dash: stateStr = "Double_Melee_Dash"; break;
+        case BossAI::State::Double_Melee_Attack_1: stateStr = "Double_Melee_Attack_1"; break;
+        case BossAI::State::Double_Melee_Rock: stateStr = "Double_Melee_Rock"; break;
+        case BossAI::State::Double_Melee_Attack_2: stateStr = "Double_Melee_Attack_2"; break;
+        case BossAI::State::Rush_ToRight: stateStr = "Rush_ToRight"; break;
+        case BossAI::State::Rush_Charge: stateStr = "Rush_Charge"; break;
+        case BossAI::State::Rush_ExitLeft: stateStr = "Rush_ExitLeft"; break;
+        case BossAI::State::Rush_Return: stateStr = "Rush_Return"; break;
+        case BossAI::State::Super50: stateStr = "Super50"; break;
+        case BossAI::State::Super25: stateStr = "Super25"; break;
+        }
+        ImGui::Text("Boss State: %s", stateStr);
 
         if (ImGui::Button("Boss Normal")) {
             boss->GetBossAIMutable().ForceChangeState(BossAI::State::Melee_Dash);
@@ -820,6 +848,21 @@ void TestScene::DrawImGui(GameApp& app) {
         if (ImGui::Button("Boss Rush")) {
             boss->GetBossAIMutable().ForceChangeState(BossAI::State::Rush_ToRight);
             triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::Rush));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Boss Double Melee")) {
+            // AIをダッシュから開始するだけ（ヒット判定はAIに任せる）
+            boss->GetBossAIMutable().ForceChangeState(BossAI::State::Double_Melee_Dash);
+        }
+        // 個別ヒットテスト用ボタン（別行）
+        if (ImGui::Button("Hit1 (Launch)")) {
+            // 第1打：プレイヤーを打ち上げ、ボスをDouble_Melee_Rockへ移行
+            triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::DoubleMelee1));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Hit2 (Slam)")) {
+            // 第2打：プレイヤーを斜め下に叩き落とす
+            triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::DoubleMelee2));
         }
         if (previewAttackKind_ > static_cast<int>(enemyMgr_.BossAttackIndex(MeleeKind::Rush))) {
             if (ImGui::Button("Boss Selected Custom")) {

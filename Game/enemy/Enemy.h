@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -23,6 +23,8 @@ enum class MeleeKind : uint8_t {
     Normal,
     Land,
     Rush,
+    DoubleMelee1,
+    DoubleMelee2,
 };
 
 struct EnemyHitResult {
