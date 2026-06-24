@@ -1,4 +1,4 @@
-#include "D3DResourceLeakChecker.h"
+﻿#include "D3DResourceLeakChecker.h"
 
 #ifdef _DEBUG
 #include <dxgidebug.h>

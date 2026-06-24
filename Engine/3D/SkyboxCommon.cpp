@@ -1,4 +1,4 @@
-#include "SkyboxCommon.h"
+﻿#include "SkyboxCommon.h"
 #include <cassert>
 
 void SkyboxCommon::Initialize(DirectXCommon* dx)

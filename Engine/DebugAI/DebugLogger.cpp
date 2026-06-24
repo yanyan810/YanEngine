@@ -1,4 +1,4 @@
-#include "DebugLogger.h"
+﻿#include "DebugLogger.h"
 
 #include <filesystem>
 #include <sstream>

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "EnemyManager.h"
 #include "Vector3.h"
@@ -39,7 +39,8 @@ public:
         bool outOfBoundsEnabled,
         float outLeftX,
         float outRightX,
-        float outBottomY);
+        float outBottomY,
+        float outTopY);
     static Metrics Calculate(
         const Player& player,
         const EnemyManager& enemyManager,
@@ -48,6 +49,7 @@ public:
         bool outOfBoundsEnabled,
         float outLeftX,
         float outRightX,
-        float outBottomY);
+        float outBottomY,
+        float outTopY);
     static void SetLineSegment(Object3d& line, const Vector3& start, const Vector3& end, float thickness, float dt);
 };

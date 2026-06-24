@@ -1,4 +1,4 @@
-#include "Sprite.h"
+﻿#include "Sprite.h"
 #include "SpriteCommon.h"
 #include "DirectXCommon.h"
 #include <cassert>

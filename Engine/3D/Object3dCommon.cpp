@@ -1,4 +1,4 @@
-#include "Object3dCommon.h"
+﻿#include "Object3dCommon.h"
 
 void Object3dCommon::Initialize(DirectXCommon* dxCommon) {
 	// 初期化処理

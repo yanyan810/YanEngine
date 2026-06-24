@@ -1,4 +1,4 @@
-#include "SpriteCommon.h"
+﻿#include "SpriteCommon.h"
 #include "DirectXCommon.h"   // GetDevice(), CompilesSharder() を使うため
 #include <d3d12.h>
 #include <dxcapi.h>

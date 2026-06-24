@@ -149,6 +149,141 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     UpdateModel_();
 }
 
+bool Player::ResolveGroundAABB(const AABB& ground) {
+    UpdateBody_();
+
+    const bool overlapX = body_.max.x >= ground.min.x && body_.min.x <= ground.max.x;
+    const bool overlapZ = body_.max.z >= ground.min.z && body_.min.z <= ground.max.z;
+    if (!overlapX || !overlapZ) {
+        return false;
+    }
+
+    const float groundTopY = ground.max.y;
+    if (pos_.y <= groundTopY && vel_.y <= 0.0f) {
+        pos_.y = groundTopY;
+        vel_.y = 0.0f;
+        onGround_ = true;
+        jumpCount_ = 0;
+        UpdateBody_();
+        UpdateModel_();
+        if (model_) {
+            model_->Update(0.0f);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool Player::ResolveGroundAABB(const std::vector<AABB>& grounds) {
+    UpdateBody_();
+
+    const AABB* bestGround = nullptr;
+    float highestGroundY = -FLT_MAX;
+
+    for (const auto& ground : grounds) {
+        const bool overlapX = body_.max.x >= ground.min.x && body_.min.x <= ground.max.x;
+        const bool overlapZ = body_.max.z >= ground.min.z && body_.min.z <= ground.max.z;
+        if (!overlapX || !overlapZ) {
+            continue;
+        }
+
+        const float groundTopY = ground.max.y;
+        if (pos_.y <= groundTopY + 0.1f && vel_.y <= 0.0f) {
+            if (groundTopY > highestGroundY) {
+                highestGroundY = groundTopY;
+                bestGround = &ground;
+            }
+        }
+    }
+
+    if (bestGround) {
+        pos_.y = highestGroundY;
+        vel_.y = 0.0f;
+        onGround_ = true;
+        jumpCount_ = 0;
+        UpdateBody_();
+        UpdateModel_();
+        if (model_) {
+            model_->Update(0.0f);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool Player::ResolveObstaclesAABB(const std::vector<AABB>& obstacles) {
+    UpdateBody_();
+
+    // 地面（Y=0）より上にいる場合は、衝突解決前に一旦空中判定にする
+    // 障害物の上に乗っていれば、ループ内で onGround_ = true に設定される
+    if (pos_.y > 0.0f) {
+        onGround_ = false;
+    }
+
+    bool resolved = false;
+
+    for (const auto& obstacle : obstacles) {
+        // 衝突判定
+        const bool overlapX = body_.max.x > obstacle.min.x && body_.min.x < obstacle.max.x;
+        const bool overlapY = body_.max.y > obstacle.min.y && body_.min.y < obstacle.max.y;
+        const bool overlapZ = body_.max.z > obstacle.min.z && body_.min.z < obstacle.max.z;
+        if (!overlapX || !overlapY || !overlapZ) {
+            continue;
+        }
+
+        // 各軸の食い込み量を計算
+        float overlapXDist = std::min(body_.max.x - obstacle.min.x, obstacle.max.x - body_.min.x);
+        float overlapYDist = std::min(body_.max.y - obstacle.min.y, obstacle.max.y - body_.min.y);
+        float overlapZDist = std::min(body_.max.z - obstacle.min.z, obstacle.max.z - body_.min.z);
+
+        // 押し戻し方向の決定
+        float pushX = (pos_.x < (obstacle.min.x + obstacle.max.x) * 0.5f) ? -overlapXDist : overlapXDist;
+        float pushY = (pos_.y + (body_.max.y - body_.min.y) * 0.5f < (obstacle.min.y + obstacle.max.y) * 0.5f) ? -overlapYDist : overlapYDist;
+        float pushZ = (pos_.z < (obstacle.min.z + obstacle.max.z) * 0.5f) ? -overlapZDist : overlapZDist;
+
+        // 接地可能かどうかの判定（落下中かつ上方向への押し戻し）
+        bool canLand = (vel_.y <= 0.0f) && (pushY > 0.0f) && (overlapYDist < (body_.max.y - body_.min.y) * 0.8f);
+
+        // 最も食い込みが浅い軸で押し戻す（接地可能なら少しの猶予付きで優先）
+        float minOverlap = std::min({overlapXDist, overlapYDist, overlapZDist});
+
+        if (canLand && (overlapYDist <= overlapXDist + 0.2f && overlapYDist <= overlapZDist + 0.2f)) {
+            // 接地（着地）
+            pos_.y += pushY;
+            vel_.y = 0.0f;
+            onGround_ = true;
+            jumpCount_ = 0;
+        } else {
+            // 壁・天井などの衝突解決
+            if (minOverlap == overlapYDist) {
+                pos_.y += pushY;
+                if (pushY < 0.0f) { // 天井頭ぶつけ
+                    if (vel_.y > 0.0f) vel_.y = 0.0f;
+                } else {
+                    vel_.y = 0.0f;
+                }
+            } else if (minOverlap == overlapXDist) {
+                pos_.x += pushX;
+                vel_.x = 0.0f;
+            } else {
+                pos_.z += pushZ;
+                vel_.z = 0.0f;
+            }
+        }
+
+        UpdateBody_();
+        UpdateModel_();
+        if (model_) {
+            model_->Update(0.0f);
+        }
+        resolved = true;
+    }
+
+    return resolved;
+}
+
 void Player::UpdateModel_() {
     if (!model_) return;
 

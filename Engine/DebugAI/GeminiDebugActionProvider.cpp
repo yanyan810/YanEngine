@@ -1,4 +1,4 @@
-#include "GeminiDebugActionProvider.h"
+﻿#include "GeminiDebugActionProvider.h"
 
 #include "DebugJson.h"
 

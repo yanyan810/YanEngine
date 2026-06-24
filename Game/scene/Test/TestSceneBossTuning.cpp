@@ -1,4 +1,4 @@
-#include "TestSceneBossTuning.h"
+﻿#include "TestSceneBossTuning.h"
 
 #include "EnemyManager.h"
 #include "Player.h"
@@ -31,6 +31,7 @@ Vector3 Vector3FromJson(const json& value, const Vector3& fallback) {
 json ToJson(const EnemyManager::BossHitTuning& tuning) {
     return {
         { "damagePercent", tuning.damagePercent },
+        { "hpDamage", tuning.hpDamage },
         { "baseKnockback", tuning.baseKnockback },
         { "knockbackScale", tuning.knockbackScale },
         { "knockbackDir", ToJson(tuning.knockbackDir) },
@@ -76,11 +77,18 @@ json ToJson(const EnemyManager::HitStopTuning& tuning) {
     };
 }
 
+json ToJson(const EnemyManager::BattleTuning& tuning) {
+    return {
+        { "useHpDamage", tuning.useHpDamage },
+    };
+}
+
 void ApplyJsonToTuning(const json& value, EnemyManager::BossHitTuning& tuning) {
     if (!value.is_object()) {
         return;
     }
     tuning.damagePercent = value.value("damagePercent", tuning.damagePercent);
+    tuning.hpDamage = value.value("hpDamage", tuning.hpDamage);
     tuning.baseKnockback = value.value("baseKnockback", tuning.baseKnockback);
     tuning.knockbackScale = value.value("knockbackScale", tuning.knockbackScale);
     if (value.contains("knockbackDir")) {
@@ -130,6 +138,13 @@ void ApplyJsonToHitStop(const json& value, EnemyManager::HitStopTuning& tuning) 
     tuning.bossAttackSec = value.value("bossAttackSec", tuning.bossAttackSec);
 }
 
+void ApplyJsonToBattle(const json& value, EnemyManager::BattleTuning& tuning) {
+    if (!value.is_object()) {
+        return;
+    }
+    tuning.useHpDamage = value.value("useHpDamage", tuning.useHpDamage);
+}
+
 } // namespace
 
 bool TestSceneBossTuning::Save(const std::string& path, const EnemyManager& enemyManager, const Player& player, std::string& status) {
@@ -154,6 +169,7 @@ bool TestSceneBossTuning::Save(const std::string& path, const EnemyManager& enem
             }
         }
         root["hitStop"] = ToJson(enemyManager.HitStop());
+        root["battle"] = ToJson(enemyManager.Battle());
         root["playerUAttacks"] = json::object();
         for (int groupIndex = 0; groupIndex < static_cast<int>(Player::PlayerAttackGroup::Count); ++groupIndex) {
             const auto group = static_cast<Player::PlayerAttackGroup>(groupIndex);
@@ -258,6 +274,9 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
 
         if (root.contains("hitStop")) {
             ApplyJsonToHitStop(root.at("hitStop"), enemyManager.HitStop());
+        }
+        if (root.contains("battle")) {
+            ApplyJsonToBattle(root.at("battle"), enemyManager.Battle());
         }
 
         status = "Loaded: " + path;

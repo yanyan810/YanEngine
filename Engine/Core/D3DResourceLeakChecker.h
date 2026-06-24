@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "WinApp.h"
 #include <dxgi1_3.h>
 

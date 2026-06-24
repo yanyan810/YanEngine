@@ -1,4 +1,4 @@
-#include "Logger.h"
+﻿#include "Logger.h"
 namespace Logger {
 
 	void Log(const std::string& message) {

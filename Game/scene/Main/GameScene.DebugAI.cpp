@@ -1,4 +1,4 @@
-#include "GameScene.h"
+﻿#include "GameScene.h"
 
 #include "DebugAI/DebugAIManager.h"
 #include "GameApp.h"

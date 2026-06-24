@@ -1,4 +1,4 @@
-#include "SceneManager.h"
+﻿#include "SceneManager.h"
 #include "IScene.h"
 #include "GameApp.h"
 #include <cassert>

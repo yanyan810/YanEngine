@@ -1,4 +1,4 @@
-#include "Object3dLight.h"
+﻿#include "Object3dLight.h"
 
 void Object3dLight::Initialize(DirectXCommon* dx) {
 	dx_ = dx;

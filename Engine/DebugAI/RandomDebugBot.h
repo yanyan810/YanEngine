@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "DebugTypes.h"
 #include "IDebugBot.h"

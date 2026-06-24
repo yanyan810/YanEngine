@@ -1,4 +1,4 @@
-#include "SkinningCommon.h"
+﻿#include "SkinningCommon.h"
 #include <cassert>
 
 void SkinningCommon::Initialize(DirectXCommon* dxCommon)

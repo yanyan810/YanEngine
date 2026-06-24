@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <dinput.h>
 #include <Windows.h>

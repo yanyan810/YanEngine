@@ -1,4 +1,4 @@
-#include "GeometryGenerator.h"
+﻿#include "GeometryGenerator.h"
 #include <numbers>
 #include <cmath>
 #include <algorithm>

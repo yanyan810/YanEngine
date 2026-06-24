@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <memory>
 #include <array>
 #include <cstdint>
@@ -140,6 +140,9 @@ public:
 
     void SetSpawnPos(const Vector3& p);
     void SetDropRespawnPos(const Vector3& p);
+    bool ResolveGroundAABB(const AABB& ground);
+    bool ResolveGroundAABB(const std::vector<AABB>& grounds);
+    bool ResolveObstaclesAABB(const std::vector<AABB>& obstacles);
 
     bool IsDead() const { return dead_; }
 
