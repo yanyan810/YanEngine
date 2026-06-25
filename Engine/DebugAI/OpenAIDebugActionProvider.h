@@ -2,6 +2,7 @@
 
 #include "DebugTypes.h"
 
+#include <future>
 #include <string>
 #include <utility>
 
@@ -22,7 +23,7 @@ public:
 
 private:
     std::string BuildRequestBody_(const DebugGameState& state) const;
-    bool PostJson_(const std::string& requestBody, std::string& outResponseBody);
+    bool PostJson_(const std::string& requestBody, std::string& outResponseBody, std::string* outStatus) const;
     bool ExtractOutputText_(const std::string& responseBody, std::string& outText) const;
 
 private:
@@ -35,5 +36,7 @@ private:
     unsigned long long lastRequestFrame_ = 0;
     bool hasCachedResponse_ = false;
     std::string cachedResponseJson_;
+    bool requestPending_ = false;
+    std::future<std::string> pendingResponseJson_;
     std::string lastStatus_;
 };

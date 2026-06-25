@@ -126,9 +126,9 @@ bool GameApp::Initialize_() {
 
     debugAI_ = std::make_unique<DebugAIManager>();
     DebugAIConfig debugAIConfig;
-    debugAIConfig.logDirectory = "generated/debug_ai";
-    debugAIConfig.playerLogDirectory = "generated/debug_ai/player";
-    debugAIConfig.aiLogDirectory = "generated/debug_ai/ai";
+    debugAIConfig.logDirectory = "C:/tmp/CG5_debug_ai";
+    debugAIConfig.playerLogDirectory = "C:/tmp/CG5_debug_ai/player";
+    debugAIConfig.aiLogDirectory = "C:/tmp/CG5_debug_ai/ai";
     debugAIConfig.detectMapBounds = false;
     debugAI_->Initialize(debugAIConfig);
 

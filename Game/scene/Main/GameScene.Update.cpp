@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdlib>
 #include <d3d12.h>
 #include <sstream>
@@ -121,6 +122,17 @@ bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
 void GameScene::Update(GameApp& app, float dt) {
     if (!input_) return;
     ++debugFrameNumber_;
+    const auto debugNow = std::chrono::steady_clock::now();
+    if (debugHasFrameTime_) {
+        const float realDt = std::chrono::duration<float>(debugNow - debugLastFrameTime_).count();
+        if (realDt > 0.0f) {
+            const float instantFps = 1.0f / realDt;
+            debugMeasuredFps_ = debugMeasuredFps_ * 0.90f + instantFps * 0.10f;
+        }
+    } else {
+        debugHasFrameTime_ = true;
+    }
+    debugLastFrameTime_ = debugNow;
     
     if (input_->IsKeyTrigger(DIK_ESCAPE)) {
         app.RequestQuit();

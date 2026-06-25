@@ -1,5 +1,6 @@
 ﻿#include "DebugAIManager.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <sstream>
@@ -242,6 +243,9 @@ void DebugAIManager::SetEnabled(bool enabled) {
     enabled_ = enabled;
     if (!enabled_) {
         StopReplay();
+        heldActionFramesRemaining_ = 0;
+        hasPendingAction_ = false;
+        idleAfterUpdateFrames_ = 0;
     }
 }
 
@@ -329,6 +333,13 @@ void DebugAIManager::InjectAction() {
     }
     hasPendingAction_ = false;
 
+    if (!replayMode_ && heldActionFramesRemaining_ > 0) {
+        adapter_->ExecuteDebugAction(heldAction_);
+        lastAction_ = heldAction_;
+        --heldActionFramesRemaining_;
+        return;
+    }
+
     if (replayMode_) {
         DebugGameState currentState = adapter_->CaptureDebugState();
         DebugReplayAction replayAction;
@@ -355,12 +366,25 @@ void DebugAIManager::InjectAction() {
         hasPendingAction_ = true;
         adapter_->ExecuteDebugAction(chosenAction);
         lastAction_ = chosenAction;
+        heldAction_ = chosenAction;
+        heldActionFramesRemaining_ = chosenAction.holdFrames > 1 ? chosenAction.holdFrames - 1 : 0;
     }
 }
 
 void DebugAIManager::ProcessAfterUpdate(float dt) {
     if (!enabled_ || adapter_ == nullptr) {
         return;
+    }
+
+    if (!hasPendingAction_ && !replayMode_) {
+        const unsigned int interval = std::max(1u, config_.idleSampleIntervalFrames);
+        ++idleAfterUpdateFrames_;
+        if (idleAfterUpdateFrames_ < interval) {
+            return;
+        }
+        idleAfterUpdateFrames_ = 0;
+    } else {
+        idleAfterUpdateFrames_ = 0;
     }
 
     DebugGameState afterState = adapter_->CaptureDebugState();

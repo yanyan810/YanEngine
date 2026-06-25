@@ -1,4 +1,4 @@
-﻿#include "Enemy.h"
+#include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
 #include "Camera.h"
@@ -708,6 +708,19 @@ void Enemy::UpdateModel_(float dt) {
 			break;
 		case BossAI::State::Melee_Recover:
 			ChangeAnimIfChanged_("Idle", true);
+			break;
+
+		case BossAI::State::Double_Melee_Dash:
+			ChangeAnimIfChanged_("Melee_Dash", true);
+			break;
+		case BossAI::State::Double_Melee_Attack_1:
+			ChangeAnimIfChanged_("Melee_Attack", false);
+			break;
+		case BossAI::State::Double_Melee_Rock:
+			ChangeAnimIfChanged_("Melee_Dash", true);
+			break;
+		case BossAI::State::Double_Melee_Attack_2:
+			ChangeAnimIfChanged_("Melee_Attack", false);
 			break;
 
 		case BossAI::State::Rush_ToRight:

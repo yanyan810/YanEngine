@@ -128,10 +128,11 @@ bool GeminiDebugActionProvider::RequestActionJson(const DebugGameState& state, s
         return true;
     }
 
-    const std::string requestBody = BuildRequestBody_(state);
+    const DebugGameState requestState = state;
     lastRequestFrame_ = state.frameNumber;
     requestPending_ = true;
-    pendingResponseJson_ = std::async(std::launch::async, [this, requestBody]() {
+    pendingResponseJson_ = std::async(std::launch::async, [this, requestState]() {
+        const std::string requestBody = BuildRequestBody_(requestState);
         std::string responseBody;
         std::string status;
         if (!PostJson_(requestBody, responseBody, &status)) {

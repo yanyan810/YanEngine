@@ -34,4 +34,5 @@ private:
     std::string directoryPath_;
     std::string sessionDirectoryPath_;
     std::vector<DebugIssue> issues_;
+    unsigned int frameLogWriteCount_ = 0;
 };

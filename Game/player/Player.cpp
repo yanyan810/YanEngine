@@ -247,7 +247,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     SetLighting(light_);
 
-    OutputDebugStringA(("[PlayerAnim] " + curAnim_ + "\n").c_str());
+ //   OutputDebugStringA(("[PlayerAnim] " + curAnim_ + "\n").c_str());
 
 }
 

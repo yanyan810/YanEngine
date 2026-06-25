@@ -13,6 +13,9 @@ bool DebugLogger::Open(const std::string& directoryPath) {
 
 void DebugLogger::Close() {
     if (frameLog_.is_open()) {
+        frameLog_.flush();
+    }
+    if (frameLog_.is_open()) {
         frameLog_.close();
     }
     if (issueLog_.is_open()) {
@@ -44,6 +47,7 @@ bool DebugLogger::OpenLogFiles_(const std::string& directoryPath, bool append) {
     frameLog_.open(directoryPath + "/debug_ai_frames.jsonl", mode);
     issueLog_.open(directoryPath + "/debug_ai_issues.jsonl", mode);
     eventLog_.open(directoryPath + "/debug_ai_events.jsonl", mode);
+    frameLogWriteCount_ = 0;
     return frameLog_.is_open() && issueLog_.is_open() && eventLog_.is_open();
 }
 
@@ -69,7 +73,11 @@ void DebugLogger::LogFrame(const DebugGameState& state, const DebugAction* actio
         << "\"randomSeed\":" << state.randomSeed << ","
         << "\"action\":\"" << EscapeJson_(action ? ActionToString_(*action) : "") << "\""
         << "}\n";
-    frameLog_.flush();
+    ++frameLogWriteCount_;
+    if (frameLogWriteCount_ >= 60) {
+        frameLog_.flush();
+        frameLogWriteCount_ = 0;
+    }
 }
 
 void DebugLogger::LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message) {

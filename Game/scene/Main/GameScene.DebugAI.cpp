@@ -63,7 +63,7 @@ DebugGameState GameScene::CaptureDebugState() const {
     DebugGameState state;
     state.sceneName = "Game";
     state.frameNumber = debugFrameNumber_;
-    state.fps = 60.0f;
+    state.fps = debugMeasuredFps_;
     state.randomSeed = debugRandomSeed_;
     GameSceneDebugPhase debugPhase = GameSceneDebugPhase::Unknown;
     switch (phase_) {

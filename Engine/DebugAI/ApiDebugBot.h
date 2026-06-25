@@ -15,6 +15,7 @@ public:
     void SetProvider(ActionProvider provider);
     void SetJsonProvider(JsonProvider provider);
     void SetFallbackBot(IDebugBot* fallbackBot);
+    void SetFallbackOnJsonMiss(bool enabled) { fallbackOnJsonMiss_ = enabled; }
 
     bool ChooseAction(const DebugGameState& state, DebugAction& outAction) override;
     const char* Name() const override { return "ApiDebugBot"; }
@@ -28,6 +29,7 @@ private:
     ActionProvider provider_;
     JsonProvider jsonProvider_;
     IDebugBot* fallbackBot_ = nullptr;
+    bool fallbackOnJsonMiss_ = true;
     std::string lastStatus_;
     std::string lastReason_;
 };

@@ -120,14 +120,14 @@ bool BasicCombatDebugBot::TryChooseEnemyAction_(const DebugGameState& state, Deb
             outAction = { "AttackWeak" };
             outAction.targetId = nearest->id;
             outAction.intParam = dx > 0.2f ? +1 : (dx < -0.2f ? -1 : 0);
-            outAction.holdFrames = 1;
+            outAction.holdFrames = 12;
             return true;
         }
         if (HasAction_(state, "AttackTilt")) {
             outAction = { "AttackTilt" };
             outAction.targetId = nearest->id;
             outAction.intParam = dx >= 0.0f ? +1 : -1;
-            outAction.holdFrames = 1;
+            outAction.holdFrames = 12;
             return true;
         }
     }
