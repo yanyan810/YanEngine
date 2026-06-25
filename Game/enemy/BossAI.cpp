@@ -1,4 +1,4 @@
-#include "BossAI.h"
+﻿#include "BossAI.h"
 #include "Enemy.h"
 #include <cstdlib>
 #include <cmath>
@@ -318,14 +318,22 @@ void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float p
         float dist = std::sqrtf(dx * dx + dy * dy);
         if (dist < 1e-4f) dist = 1e-4f;
 
-        float spd = 25.0f; // 空中追従用の超高速
-        v.x = (dx / dist) * spd;
-        v.y = (dy / dist) * spd;
+        const float attackDist = 1.8f;
+        const float spd = 25.0f; // 空中追従用の超高速
+        if (dist > attackDist) {
+            v.x = (dx / dist) * spd;
+            v.y = (dy / dist) * spd;
+        } else {
+            v.x = 0.0f;
+            v.y = 0.0f;
+        }
         v.z = 0.0f; // Z軸は使わない
         e.SetVel(v);
 
-        // プレイヤーに接近するか（ヒット直後の密着での即遷移を防ぐため0.15秒のディレイ）、一定時間（0.4秒）経過で叩き落とし第2打へ
-        if ((stateTime_ > 0.15f && dist < 1.8f) || stateTime_ > 0.40f) {
+        // 最低1.5秒は追従。
+        // 1.5秒以降に近ければ攻撃。
+        // 2.2秒経過したら距離に関係なく攻撃。
+        if ((stateTime_ > 1.0f && dist < attackDist) || stateTime_ > 2.2f) {
             ChangeState_(State::Double_Melee_Attack_2);
         }
     } break;

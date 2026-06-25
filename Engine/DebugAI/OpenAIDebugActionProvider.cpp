@@ -7,8 +7,10 @@
 #include <winhttp.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cstdlib>
+#include <future>
 #include <sstream>
 #include <vector>
 
@@ -100,6 +102,25 @@ bool OpenAIDebugActionProvider::RequestActionJson(const DebugGameState& state, s
         return false;
     }
 
+    if (requestPending_) {
+        if (pendingResponseJson_.valid() &&
+            pendingResponseJson_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            const std::string responseJson = pendingResponseJson_.get();
+            requestPending_ = false;
+            if (!responseJson.empty()) {
+                cachedResponseJson_ = responseJson;
+                hasCachedResponse_ = true;
+                outJsonResponse = cachedResponseJson_;
+                lastStatus_ = "OpenAI async action received.";
+                return true;
+            }
+            lastStatus_ = "OpenAI async request failed.";
+        } else {
+            lastStatus_ = "OpenAI async request pending.";
+            return false;
+        }
+    }
+
     if (hasCachedResponse_ &&
         requestIntervalFrames_ > 0 &&
         state.frameNumber < lastRequestFrame_ + requestIntervalFrames_) {
@@ -108,23 +129,27 @@ bool OpenAIDebugActionProvider::RequestActionJson(const DebugGameState& state, s
         return true;
     }
 
-    std::string responseBody;
-    if (!PostJson_(BuildRequestBody_(state), responseBody)) {
-        return false;
-    }
-
-    std::string outputText;
-    if (!ExtractOutputText_(responseBody, outputText)) {
-        lastStatus_ = "OpenAI response did not contain output text.";
-        return false;
-    }
-
-    cachedResponseJson_ = outputText;
-    hasCachedResponse_ = true;
+    const DebugGameState requestState = state;
     lastRequestFrame_ = state.frameNumber;
-    outJsonResponse = outputText;
-    lastStatus_ = "OpenAI action received.";
-    return true;
+    requestPending_ = true;
+    pendingResponseJson_ = std::async(std::launch::async, [this, requestState]() {
+        const std::string requestBody = BuildRequestBody_(requestState);
+        std::string responseBody;
+        std::string status;
+        if (!PostJson_(requestBody, responseBody, &status)) {
+            return std::string{};
+        }
+
+        std::string outputText;
+        if (!ExtractOutputText_(responseBody, outputText)) {
+            return std::string{};
+        }
+
+        return outputText;
+    });
+
+    lastStatus_ = "OpenAI async request started.";
+    return false;
 }
 
 std::string OpenAIDebugActionProvider::BuildRequestBody_(const DebugGameState& state) const {
@@ -208,7 +233,7 @@ std::string OpenAIDebugActionProvider::BuildRequestBody_(const DebugGameState& s
     return request.dump();
 }
 
-bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::string& outResponseBody) {
+bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::string& outResponseBody, std::string* outStatus) const {
     outResponseBody.clear();
 
     HINTERNET session = WinHttpOpen(
@@ -218,7 +243,9 @@ bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::s
         WINHTTP_NO_PROXY_BYPASS,
         0);
     if (!session) {
-        lastStatus_ = "WinHttpOpen failed.";
+        if (outStatus != nullptr) {
+            *outStatus = "WinHttpOpen failed.";
+        }
         return false;
     }
 
@@ -232,7 +259,9 @@ bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::s
     HINTERNET connection = WinHttpConnect(session, L"api.openai.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (!connection) {
         WinHttpCloseHandle(session);
-        lastStatus_ = "WinHttpConnect failed.";
+        if (outStatus != nullptr) {
+            *outStatus = "WinHttpConnect failed.";
+        }
         return false;
     }
 
@@ -247,7 +276,9 @@ bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::s
     if (!request) {
         WinHttpCloseHandle(connection);
         WinHttpCloseHandle(session);
-        lastStatus_ = "WinHttpOpenRequest failed.";
+        if (outStatus != nullptr) {
+            *outStatus = "WinHttpOpenRequest failed.";
+        }
         return false;
     }
 
@@ -268,7 +299,9 @@ bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::s
         WinHttpCloseHandle(request);
         WinHttpCloseHandle(connection);
         WinHttpCloseHandle(session);
-        lastStatus_ = "OpenAI request failed.";
+        if (outStatus != nullptr) {
+            *outStatus = "OpenAI request failed.";
+        }
         return false;
     }
 
@@ -311,7 +344,9 @@ bool OpenAIDebugActionProvider::PostJson_(const std::string& requestBody, std::s
         if (!outResponseBody.empty()) {
             message << ": " << outResponseBody.substr(0, 256);
         }
-        lastStatus_ = message.str();
+        if (outStatus != nullptr) {
+            *outStatus = message.str();
+        }
         return false;
     }
 

@@ -75,6 +75,9 @@ private:
     DebugGameState pendingBeforeState_;
     DebugAction pendingAction_;
     bool hasPendingAction_ = false;
+    DebugAction heldAction_;
+    unsigned int heldActionFramesRemaining_ = 0;
+    unsigned int idleAfterUpdateFrames_ = 0;
 
     std::string lastStableStateKey_;
     std::string lastProgressKey_;

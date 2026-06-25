@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "IScene.h"
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -91,6 +92,9 @@ private:
     DebugAIImGuiPanelState debugAIImGuiPanelState_;
     unsigned long long debugFrameNumber_ = 0;
     unsigned int debugRandomSeed_ = 0;
+    bool debugHasFrameTime_ = false;
+    std::chrono::steady_clock::time_point debugLastFrameTime_{};
+    float debugMeasuredFps_ = 60.0f;
 
     // 数字テクスチャ（0..9）
     std::string numTex_[10];

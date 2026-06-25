@@ -41,6 +41,9 @@ bool ApiDebugBot::ChooseAction(const DebugGameState& state, DebugAction& outActi
             return true;
         }
         lastStatus_ = "JsonProviderFallback";
+        if (!fallbackOnJsonMiss_) {
+            return false;
+        }
     } else if (provider_) {
         lastStatus_ = "ActionProviderFallback";
     } else {

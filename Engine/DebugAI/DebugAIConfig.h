@@ -20,4 +20,5 @@ struct DebugAIConfig {
     float lowFpsLimitSeconds = 3.0f;
     float lowFpsThreshold = 30.0f;
     unsigned long long duplicateIssueCooldownFrames = 60;
+    unsigned int idleSampleIntervalFrames = 6;
 };
