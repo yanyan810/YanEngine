@@ -104,7 +104,9 @@ TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
 
     Metrics m{};
     const EnemyManager::BossHitTuning& tuning = enemyManager.BossAttackAt(attackIndex).hit;
-    m.power = tuning.baseKnockback + percent * tuning.knockbackScale;
+    m.power = tuning.useFixedKnockback
+        ? tuning.baseKnockback
+        : tuning.baseKnockback + percent * tuning.knockbackScale;
 
     Vector3 dir = tuning.knockbackDir;
     if (const Enemy* boss = enemyManager.GetBoss()) {

@@ -30,6 +30,12 @@ public:
         Double_Melee_Attack_2,
         Double_Melee_Finish,
 
+        Grab_WindUp,
+        Grab_Catch,
+        Grab_Delay,
+        Grab_Attack,
+        Grab_Finish,
+
         Super50,
         Super25,
     };
@@ -45,6 +51,8 @@ public:
     bool Did50() const { return did50_; }
     bool Did25() const { return did25_; }
     void ForceChangeState(State s) { ChangeState_(s); }
+    // プレイヤーが入力をガチャガチャしたときに外部から呼ぶ（Grab脱出カウンター）
+    void IncrementGrabEscape() { grabEscapeCount_++; }
 
     struct BossDebugState {
         State st = State::Wander;
@@ -134,6 +142,11 @@ private:
     float rushZMin_ = -10.0f;
     float rushZMax_ = 20.0f;
 
+    // Grab
+    float grabAttackTimer_ = 0.0f; // Grab_Attack内の間隔タイマー
+    int   grabHitCount_    = 0;    // Grab_Attack中のヒット数
+    int   grabEscapeCount_ = 0;    // プレイヤーの脱出入力回数（外部からIncrementGrabEscape()で加算）
+
 	State st_ = State::Wander;
 	Phase phase_ = Phase::P1;
 
@@ -147,6 +160,7 @@ private:
     void DoMelee_(Enemy& e, float dt, const Vector2& playerXY);
     void DoRush_(Enemy& e, float dt);
     void DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float playerZ);
+	void DoGrab_(Enemy& e, float dt, const Vector2& playerXY, float playerZ);
 
     // 補助
     float Rand01_(); // 0..1

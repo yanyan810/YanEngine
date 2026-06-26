@@ -1011,6 +1011,53 @@ void TestScene::DrawImGui(GameApp& app) {
         ImGui::DragFloat("Follow Lerp", &battleCameraFollowLerp_, 0.1f, 0.1f, 30.0f);
     }
 
+    if (player_ && ImGui::CollapsingHeader("Player Launch Ease-Out Tuning", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float dragHigh = player_->GetLaunchXZDragHigh();
+        float dragLow = player_->GetLaunchXZDragLow();
+        float threshold = player_->GetLaunchDragThreshold();
+        bool useTime = player_->GetLaunchDragUseTime();
+
+        if (ImGui::DragFloat("Drag High (Fast phase)", &dragHigh, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchXZDragHigh(dragHigh);
+        }
+        ImGui::Text(" (1.0 = no deceleration. Closer to 1.0 makes fast phase longer)");
+        
+        if (ImGui::DragFloat("Drag Low (Slow phase)", &dragLow, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchXZDragLow(dragLow);
+        }
+        ImGui::Text(" (Deceleration rate after threshold. Smaller values decelerate faster)");
+
+        if (ImGui::DragFloat("Transition Threshold", &threshold, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchDragThreshold(threshold);
+        }
+        ImGui::Text(" (1.0 -> 0.0. The point where physics switches from High to Low drag)");
+
+        if (ImGui::Checkbox("Use Remaining Time For Threshold", &useTime)) {
+            player_->SetLaunchDragUseTime(useTime);
+        }
+        ImGui::Text(" (If unchecked, uses remaining velocity ratio instead)");
+
+        ImGui::SeparatorText("Bounce / Reflection Settings");
+        float bRest = player_->GetLaunchBounceRestitution();
+        float bFric = player_->GetLaunchBounceFriction();
+        float bMinSpeed = player_->GetLaunchBounceMinSpeed();
+
+        if (ImGui::DragFloat("Bounce Restitution", &bRest, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchBounceRestitution(bRest);
+        }
+        ImGui::Text(" (Bounciness of walls & floor. Default: 0.65)");
+
+        if (ImGui::DragFloat("Bounce Friction", &bFric, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchBounceFriction(bFric);
+        }
+        ImGui::Text(" (Deceleration multiplier for other axes during bounce. Default: 0.90)");
+
+        if (ImGui::DragFloat("Bounce Min Speed", &bMinSpeed, 0.1f, 0.0f, 40.0f, "%.1f")) {
+            player_->SetLaunchBounceMinSpeed(bMinSpeed);
+        }
+        ImGui::Text(" (Minimum speed required to bounce. Below this, player slides or stops. Default: 4.0)");
+    }
+
     ImGui::Separator();
     if (ImGui::CollapsingHeader("Next Work", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::BulletText("Add recovery special after launch");
@@ -1095,8 +1142,9 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::PopID();
         };
 
-        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
-            drawBossTuning(enemyMgr_.BossAttackAt(i).name.c_str(), enemyMgr_.BossAttackAt(i).hit);
+        if (previewAttackKind_ >= 0 && previewAttackKind_ < static_cast<int>(enemyMgr_.BossAttackCount())) {
+            auto& attack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+            drawBossTuning(attack.name.c_str(), attack.hit);
         }
     }
 
@@ -1120,8 +1168,9 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::PopID();
         };
 
-        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
-            drawBossHitboxTuning(enemyMgr_.BossAttackAt(i).name.c_str(), enemyMgr_.BossAttackAt(i).hitbox);
+        if (previewAttackKind_ >= 0 && previewAttackKind_ < static_cast<int>(enemyMgr_.BossAttackCount())) {
+            auto& attack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+            drawBossHitboxTuning(attack.name.c_str(), attack.hitbox);
         }
     }
 

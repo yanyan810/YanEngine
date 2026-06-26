@@ -1,4 +1,4 @@
-﻿#include "Player.h"
+#include "Player.h"
 #include "Object3d.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -6,6 +6,9 @@
 #include "ParticleManager.h"
 
 #include "EnemyManager.h"
+
+#include <algorithm>
+#include <cmath>
 
 static const char* kHumanWalk_Set[] = {
     "human/walk.gltf",
@@ -160,9 +163,18 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         if (launchedTimer_ > 0.0f) {
             launchedTimer_ -= dt;
         }
+        if (!launchControlUnlocked_ && launchActionSpeedRatio_ > 0.0f && launchInitialSpeed_ > 1.0e-4f) {
+            const float speed = std::sqrt(vel_.x * vel_.x + vel_.y * vel_.y + vel_.z * vel_.z);
+            if (speed <= launchInitialSpeed_ * launchActionSpeedRatio_) {
+                launchControlUnlocked_ = true;
+            }
+        }
         if (launchedTimer_ <= 0.0f && onGround_) {
             launched_ = false;
             launchedTimer_ = 0.0f;
+            launchInitialSpeed_ = 0.0f;
+            launchActionSpeedRatio_ = 0.0f;
+            launchControlUnlocked_ = false;
             action_ = PlayerAction::Idle;
         }
     }
@@ -172,23 +184,55 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         if (moveLockSec_ < 0.0f) moveLockSec_ = 0.0f;
     }
 
-    const bool inputBlockedByLaunch = launched_;
+    const bool inputBlockedByLaunch = launched_ && !launchControlUnlocked_;
     const bool useDebugCommand = hasDebugCommand_ && !inputBlockedByLaunch;
     PlayerInputCommand command = useDebugCommand
         ? debugCommand_
         : ((externalInputBlocked_ || inputBlockedByLaunch) ? PlayerInputCommand{} : ResolveInput_(input));
-    if (launched_) {
+    if (launched_ && !launchControlUnlocked_) {
         command.action = PlayerAction::Launched;
     }
     hasDebugCommand_ = false;
 
     if (command.jumpTriggered && jumpCount_ < maxJumpCount_ && actionTimer_ <= 0.0f && !command.guard) {
         onGround_ = false;
-        vel_.y = jumpVel_;
+        vel_.y = launched_ ? std::max(vel_.y, jumpVel_) : jumpVel_;
         ++jumpCount_;
+        if (launched_) {
+            launched_ = false;
+            launchedTimer_ = 0.0f;
+            launchedTotalTime_ = 0.0f;
+            launchInitialSpeed_ = 0.0f;
+            launchActionSpeedRatio_ = 0.0f;
+            launchControlUnlocked_ = false;
+            action_ = PlayerAction::Jump;
+        }
     }
 
-    if (!inputBlockedByLaunch && !IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
+    if (launched_ && launchControlUnlocked_) {
+        const float airControlAccelX = moveSpeed_ * 3.0f;
+        const float airControlAccelZ = depthSpeed_ * 3.0f;
+        const float airControlBrakeMul = 1.35f;
+
+        const float inputX = static_cast<float>(command.horizontal);
+        const float inputZ = static_cast<float>(command.depth);
+        const float accelX = (inputX != 0.0f && vel_.x * inputX < 0.0f)
+            ? airControlAccelX * airControlBrakeMul
+            : airControlAccelX;
+        const float accelZ = (inputZ != 0.0f && vel_.z * inputZ < 0.0f)
+            ? airControlAccelZ * airControlBrakeMul
+            : airControlAccelZ;
+
+        vel_.x += inputX * accelX * dt;
+        vel_.z += inputZ * accelZ * dt;
+
+        const float maxHorizontalSpeed = std::max(launchInitialSpeed_ * 1.15f, moveSpeed_);
+        const float maxDepthSpeed = std::max(launchInitialSpeed_ * 0.80f, depthSpeed_);
+        vel_.x = std::clamp(vel_.x, -maxHorizontalSpeed, maxHorizontalSpeed);
+        vel_.z = std::clamp(vel_.z, -maxDepthSpeed, maxDepthSpeed);
+        isMoving = command.horizontal != 0 || command.depth != 0;
+    }
+    else if (!inputBlockedByLaunch && !IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
         if (useDebugCommand) {
             UpdateMove_(dt, command);
         } else {
@@ -201,7 +245,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     }
 
     ApplyActionCommand_(command);
-    if (command.down) {
+    if (command.down && !launched_) {
         vel_.z = 0.0f;
     }
     PlayActionAnimation_(command);

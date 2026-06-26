@@ -1,4 +1,4 @@
-#include "EnemyManager.h"
+﻿#include "EnemyManager.h"
 #include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -116,6 +116,22 @@ void EnemyManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Came
 			{ 12.0f, 12, 15.0f, 0.08f, { 1.0f, -0.6f, 0.0f }, 0.50f },
 			{ { 1.4f, 0.0f, 0.0f }, { 0.8f, 0.6f, 0.6f }, 0.0f, 0.12f, 12 },
 			false },
+		// --- Grab 掴み攻撃 ---
+		{ "Grab Catch",
+			// 掴み判定: ノックバックなし・長いヒットスタンで拘束
+			{ 0.0f, 0, 0.0f, 0.0f, { 1.0f, 0.0f, 0.0f }, 0.5f },
+			{ { 0.0f, 0.5f, 0.0f }, { 0.8f, 0.7f, 0.6f }, 0.0f, 0.10f, 0 },
+			false },
+		{ "Grab Hit",
+			// 掴み中の小ダメージを繰り返し: ノックバックなし
+			{ 3.0f, 3, 0.5f, 0.0f, { 0.0f, 0.1f, 0.0f }, 0.1f },
+			{ { 0.0f, 0.5f, 0.0f }, { 0.8f, 0.7f, 0.6f }, 0.0f, 0.10f, 3 },
+			false },
+		{ "Grab Finish",
+			// 解放時の強吹っ飛ばし: 斜め上方向へ
+			{ 15.0f, 15, 14.0f, 0.08f, { 0.8f, 0.5f, 0.0f }, 0.4f },
+			{ { 0.5f, 0.0f, 0.0f }, { 1.0f, 0.8f, 0.8f }, 0.0f, 0.12f, 12 },
+			false },
 	};
 
 	enemies_.clear();
@@ -140,6 +156,7 @@ void EnemyManager::Clear() {
 	healDrops_.clear();
 	pendingSpawns_.clear();
 	pendingHitStopSec_ = 0.0f;
+	grabHitPatternIndex_ = 0;
 	bossDefeated_ = false;
 	bullets_.Clear();
 }
@@ -202,6 +219,12 @@ size_t EnemyManager::BossAttackIndex(MeleeKind kind) const {
 		return 3;
 	case MeleeKind::DoubleMelee2:
 		return 4;
+	case MeleeKind::GrabCatch:
+		return 5;
+	case MeleeKind::GrabHit:
+		return 6;
+	case MeleeKind::GrabFinish:
+		return 7;
 	case MeleeKind::Normal:
 	default:
 		return 0;
@@ -259,6 +282,9 @@ void EnemyManager::QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, 
 	else if (attackIndex == 2) kind = MeleeKind::Rush;
 	else if (attackIndex == 3) kind = MeleeKind::DoubleMelee1;
 	else if (attackIndex == 4) kind = MeleeKind::DoubleMelee2;
+	else if (attackIndex == 5) kind = MeleeKind::GrabCatch;
+	else if (attackIndex == 6) kind = MeleeKind::GrabHit;
+	else if (attackIndex == 7) kind = MeleeKind::GrabFinish;
 
 	MeleeHitbox hitbox{ hb, attack.hitbox.activeSec, attack.hitbox.damage, true, kind, attackIndex, ep, facing };
 	if (attack.hitbox.startDelaySec > 0.0f) {
@@ -493,23 +519,47 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 						dir = { 1.0f, 0.35f, 0.0f };
 					}
 					const float power = tuning.baseKnockback;
-					player.ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec);
+					player.ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec, tuning.actionSpeedRatio);
 					player.TriggerHitFlash(0.25f);
 				} else {
-					player.ApplyBossHit(
-						tuning.damagePercent,
-						tuning.baseKnockback,
-						tuning.knockbackScale,
-						dir,
-						tuning.hitStunSec);
+					if (tuning.useFixedKnockback) {
+						player.AddDamagePercent(tuning.damagePercent);
+						const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+						if (len > 1.0e-6f) {
+							dir.x /= len;
+							dir.y /= len;
+							dir.z /= len;
+						} else {
+							dir = { 1.0f, 0.35f, 0.0f };
+						}
+						const float power = tuning.baseKnockback;
+						player.ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec, tuning.actionSpeedRatio);
+						player.TriggerHitFlash(0.25f);
+					} else {
+						player.ApplyBossHit(
+							tuning.damagePercent,
+							tuning.baseKnockback,
+							tuning.knockbackScale,
+							dir,
+							tuning.hitStunSec,
+							tuning.actionSpeedRatio);
+					}
 				}
 				if (hitStopTuning_.enabled) {
-					pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.bossAttackSec);
+					const float hitStopSec = (h.hitStopSec >= 0.0f) ? h.hitStopSec : hitStopTuning_.bossAttackSec;
+					pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopSec);
 				}
 				if (h.kind == MeleeKind::DoubleMelee1) {
 					Enemy* boss = GetBoss();
 					if (boss) {
 						boss->GetBossAIMutable().ForceChangeState(BossAI::State::Double_Melee_Rock);
+					}
+				}
+				// GrabCatchヒット時: ボスをGrab_Delayへ移行させる
+				if (h.kind == MeleeKind::GrabCatch) {
+					Enemy* boss = GetBoss();
+					if (boss) {
+						boss->GetBossAIMutable().ForceChangeState(BossAI::State::Grab_Delay);
 					}
 				}
 			} else {
@@ -567,6 +617,7 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			AABB3 hb{};
 			float startDelay = 0.0f;
 			float activeSec = 0.10f;
+			float overrideHitStopSec = -1.0f;
 			if (isBoss) {
 				const size_t attackIndex = BossAttackIndex(kind);
 				const BossAttackHitboxTuning& tuning = BossAttackAt(attackIndex).hitbox;
@@ -574,6 +625,39 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 				startDelay = tuning.startDelaySec;
 				activeSec = tuning.activeSec;
 				dmg = tuning.damage;
+
+				if (kind == MeleeKind::GrabCatch || kind == MeleeKind::GrabFinish) {
+					grabHitPatternIndex_ = 0;
+				}
+				if (kind == MeleeKind::GrabHit) {
+					struct GrabHitPattern {
+						float offsetX;
+						float offsetY;
+						float halfMulX;
+						float halfMulY;
+						float activeSec;
+						float hitStopSec;
+					};
+					static constexpr GrabHitPattern patterns[] = {
+						{ -0.18f,  0.35f, 0.85f, 0.70f, 0.055f, 0.035f },
+						{  0.22f,  0.05f, 0.75f, 0.85f, 0.045f, 0.025f },
+						{ -0.05f,  0.65f, 0.90f, 0.65f, 0.060f, 0.040f },
+						{  0.28f,  0.35f, 0.70f, 0.75f, 0.050f, 0.030f },
+						{ -0.28f,  0.12f, 0.80f, 0.80f, 0.045f, 0.025f },
+						{  0.08f,  0.78f, 0.85f, 0.60f, 0.060f, 0.040f },
+					};
+					const int patternCount = static_cast<int>(sizeof(patterns) / sizeof(patterns[0]));
+					const GrabHitPattern& pattern = patterns[grabHitPatternIndex_ % patternCount];
+					grabHitPatternIndex_++;
+
+					hb.x += pattern.offsetX * static_cast<float>(facing);
+					hb.y += pattern.offsetY;
+					hb.hx *= pattern.halfMulX;
+					hb.hy *= pattern.halfMulY;
+					activeSec = pattern.activeSec;
+					overrideHitStopSec = pattern.hitStopSec;
+					startDelay = 0.0f;
+				}
 			} else {
 				hb.x = ep.x + 1.2f * float(facing);
 				hb.y = ep.y;
@@ -584,6 +668,7 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			}
 
 			MeleeHitbox hitbox{ hb, activeSec, dmg, isBoss, kind, isBoss ? BossAttackIndex(kind) : 0, ep, facing };
+			hitbox.hitStopSec = overrideHitStopSec;
 			if (isBoss && startDelay > 0.0f) {
 				hitbox.life = startDelay;
 				pendingMeleeHitboxes_.push_back(hitbox);
@@ -623,6 +708,29 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 
 	if (!disablePendingSpawn) {
 		UpdatePendingSpawns_(dt, playerXY, playerZ);
+	}
+
+	// ボスが掴み攻撃中（Grab_Delay, Grab_Attack）の場合、プレイヤーをボス位置に強制固定する
+	if (Enemy* boss = GetBoss()) {
+		const BossAI::State bossState = boss->GetBossAI().GetState();
+		if (bossState == BossAI::State::Grab_Delay || bossState == BossAI::State::Grab_Attack) {
+			const Vector3 bossPos = boss->GetPos3D();
+			const int bossFacing = boss->GetFacing();
+			const float facingMul = grabHoldTuning_.mirrorXByFacing
+				? static_cast<float>(bossFacing)
+				: 1.0f;
+			Vector3 targetPlayerPos = bossPos;
+			targetPlayerPos.x += grabHoldTuning_.offset.x * facingMul;
+			targetPlayerPos.y += grabHoldTuning_.offset.y;
+			targetPlayerPos.z += grabHoldTuning_.offset.z;
+
+			player.SetGrabbed(true);
+			player.SetPos(targetPlayerPos);
+		} else {
+			player.SetGrabbed(false);
+		}
+	} else {
+		player.SetGrabbed(false);
 	}
 }
 

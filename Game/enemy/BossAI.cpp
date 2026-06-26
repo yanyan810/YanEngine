@@ -21,6 +21,10 @@ void BossAI::Reset(int maxHP) {
 
     wanderChange_ = 0.0f;
     wanderVel_ = { 0,0,0 };
+
+    grabAttackTimer_ = 0.0f;
+    grabHitCount_    = 0;
+    grabEscapeCount_ = 0;
 }
 
 void BossAI::ChangeState_(State s) {
@@ -59,19 +63,21 @@ void BossAI::Update(Enemy& e, float dt, const Vector2& playerXY, float playerZ) 
 
     switch (st_) {
     case State::Wander:
-        DoWander_(e, dt, playerXY,playerZ);
+        DoWander_(e, dt, playerXY, playerZ);
         // 攻撃選択（追従なし）
         if (stateTime_ > 1.8f) {
             // フェーズで攻撃頻度UP
-            float pDrop = (phase_ == Phase::P1) ? 0.35f : 0.25f;
-            float pMelee = (phase_ == Phase::P1) ? 0.30f : 0.35f;
-            float pDouble = 0.20f; // 20%でダブル近接
+            float pDrop   = (phase_ == Phase::P1) ? 0.35f : 0.20f;
+            float pMelee  = (phase_ == Phase::P1) ? 0.30f : 0.35f;
+            float pDouble = (phase_ == Phase::P1) ? 0.20f : 0.15f;
+            float pGrab   = (phase_ == Phase::P1) ? 0.00f : 0.10f; // P1では掘みなし
             float r = Rand01_();
 
-            if (r < pDrop) ChangeState_(State::Drop_Windup);
-            else if (r < pDrop + pMelee) ChangeState_(State::Melee_Dash);
-            else if (r < pDrop + pMelee + pDouble) ChangeState_(State::Double_Melee_Dash);
-            else ChangeState_(State::Rush_ToRight);
+            if      (r < pDrop)                              ChangeState_(State::Drop_Windup);
+            else if (r < pDrop + pMelee)                    ChangeState_(State::Melee_Dash);
+            else if (r < pDrop + pMelee + pDouble)          ChangeState_(State::Double_Melee_Dash);
+            else if (r < pDrop + pMelee + pDouble + pGrab)  ChangeState_(State::Grab_WindUp);
+            else                                             ChangeState_(State::Rush_ToRight);
         }
         break;
 
@@ -99,6 +105,14 @@ void BossAI::Update(Enemy& e, float dt, const Vector2& playerXY, float playerZ) 
     case State::Double_Melee_Rock:
     case State::Double_Melee_Attack_2:
         DoDoubleMelee_(e, dt, playerXY, playerZ);
+        break;
+
+    case State::Grab_WindUp:
+    case State::Grab_Catch:
+    case State::Grab_Delay:
+    case State::Grab_Attack:
+    case State::Grab_Finish:
+        DoGrab_(e, dt, playerXY, playerZ);
         break;
 
     case State::Super50:
@@ -272,6 +286,7 @@ void BossAI::DoRush_(Enemy& e, float dt) {
 }
 
 void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float playerZ) {
+    (void)playerZ;
     Vector3 p = e.GetPos();
     Vector3 v = e.GetVel();
 
@@ -311,7 +326,7 @@ void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float p
         break;
 
     case State::Double_Melee_Rock: {
-        // 空中に打ち上げられたプレイヤーをXY平面で高速追従
+        // 打ち上げ後、少し間を置いてから空中のプレイヤーへ接近する。
         float dx = playerXY.x - p.x;
         float dy = playerXY.y - p.y;
 
@@ -319,10 +334,21 @@ void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float p
         if (dist < 1e-4f) dist = 1e-4f;
 
         const float attackDist = 1.8f;
-        const float spd = 25.0f; // 空中追従用の超高速
-        if (dist > attackDist) {
-            v.x = (dx / dist) * spd;
-            v.y = (dy / dist) * spd;
+        const float stopDist = 1.35f;
+        const float waitTime = 0.45f;
+        const float attackReadyTime = 0.75f;
+        const float forceAttackTime = 1.75f;
+        const float spd = 18.0f;
+
+        if (stateTime_ < waitTime) {
+            v.x = 0.0f;
+            v.y = 0.0f;
+        } else if (dist > stopDist) {
+            const float safeDt = std::max(dt, 1e-4f);
+            const float noOvershootSpeed = (dist - stopDist) / safeDt;
+            const float moveSpeed = std::min(spd, noOvershootSpeed);
+            v.x = (dx / dist) * moveSpeed;
+            v.y = (dy / dist) * moveSpeed;
         } else {
             v.x = 0.0f;
             v.y = 0.0f;
@@ -330,10 +356,8 @@ void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float p
         v.z = 0.0f; // Z軸は使わない
         e.SetVel(v);
 
-        // 最低1.5秒は追従。
-        // 1.5秒以降に近ければ攻撃。
-        // 2.2秒経過したら距離に関係なく攻撃。
-        if ((stateTime_ > 1.0f && dist < attackDist) || stateTime_ > 2.2f) {
+        // 待つ -> 接近 -> 近ければ2撃目。長引いた場合も攻撃へ移る。
+        if ((stateTime_ > attackReadyTime && dist < attackDist) || stateTime_ > forceAttackTime) {
             ChangeState_(State::Double_Melee_Attack_2);
         }
     } break;
@@ -350,3 +374,101 @@ void BossAI::DoDoubleMelee_(Enemy& e, float dt, const Vector2& playerXY, float p
     }
 }
 
+void BossAI::DoGrab_(Enemy& e, float dt, const Vector2& playerXY, float playerZ) {
+    (void)playerZ;
+    Vector3 p = e.GetPos();
+    Vector3 v = e.GetVel();
+
+    switch (st_) {
+
+    case State::Grab_WindUp: {
+        // プレイヤーへ高速接近（Double_Melee_Dashより少し遅め）
+        float dx = playerXY.x - p.x;
+        float dy = playerXY.y - p.y;
+        float dist = std::sqrtf(dx * dx + dy * dy);
+        if (dist < 1e-4f) dist = 1e-4f;
+
+        const float spd = 18.0f * moveMul_;
+        v.x = (dx / dist) * spd;
+        v.y = (dy / dist) * spd;
+        v.z = 0.0f;
+        e.SetVel(v);
+
+        // 十分近づいたか、一定時間経過でGrab_Catchへ
+        if (dist < 1.8f || stateTime_ > 0.4f) {
+            ChangeState_(State::Grab_Catch);
+        }
+    } break;
+
+    case State::Grab_Catch: {
+        // 掴み判定を1回だけ出す
+        // ヒットした場合はEnemyManager側がGrab_Delayへ移行させる
+        // 一定時間内に当たらなければWanderへ戻る
+        e.SetVel({ 0.0f, 0.0f, 0.0f });
+        if (stateTime_ <= dt) {
+            e.RequestMelee(MeleeKind::GrabCatch);
+            grabEscapeCount_ = 0;
+        }
+        if (stateTime_ > 0.25f) {
+            ChangeState_(State::Wander);
+        }
+    } break;
+
+    case State::Grab_Delay: {
+        // 掴んだまま待機ボスはその場に止まる
+        // ★プレイヤーをボス位置に固定する処理はEnemyManager/TestScene側で実装が必要
+        e.SetVel({ 0.0f, 0.0f, 0.0f });
+
+        // プレイヤーが指定回数以上ガチャガチャしたら早期解放（外部からIncrementGrabEscape()で加算）
+        const int   escapeThreshold = 8;   // 複数回レバガチャで早期移行
+        const float delayMax        = 1.5f; // 最大待機時間（秒）
+
+        if (grabEscapeCount_ >= escapeThreshold || stateTime_ > delayMax) {
+            grabHitCount_    = 0;
+            grabAttackTimer_ = 0.0f;
+            ChangeState_(State::Grab_Attack);
+        }
+    } break;
+
+    case State::Grab_Attack: {
+        // 攻撃判定をパターン化した間隔で複数回出す。
+        e.SetVel({ 0.0f, 0.0f, 0.0f });
+
+        static constexpr float hitIntervals[] = {
+            0.04f, 0.06f, 0.05f, 0.08f,
+            0.04f, 0.07f, 0.05f, 0.06f
+        };
+        const int maxHits = 24;
+        const int patternCount = static_cast<int>(sizeof(hitIntervals) / sizeof(hitIntervals[0]));
+
+        grabAttackTimer_ += dt;
+        while (grabHitCount_ < maxHits) {
+            const float hitInterval = hitIntervals[grabHitCount_ % patternCount];
+            if (grabAttackTimer_ < hitInterval) {
+                break;
+            }
+            grabAttackTimer_ -= hitInterval;
+            e.RequestMelee(MeleeKind::GrabHit);
+            grabHitCount_++;
+        }
+
+        // 全ヒット完了でGrab_Finishへ
+        if (grabHitCount_ >= maxHits) {
+            ChangeState_(State::Grab_Finish);
+        }
+    } break;
+
+    case State::Grab_Finish: {
+        // プレイヤーを吹っ飛ばして解放する
+        // 強いノックバック値はEnemyManagerのGrabFinishチューニングで調整
+        e.SetVel({ 0.0f, 0.0f, 0.0f });
+        if (stateTime_ <= dt) {
+            e.RequestMelee(MeleeKind::GrabFinish);
+        }
+        if (stateTime_ > 0.3f) {
+            ChangeState_(State::Wander);
+        }
+    } break;
+
+    }
+}
