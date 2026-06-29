@@ -170,12 +170,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
             }
         }
         if (launchedTimer_ <= 0.0f && onGround_) {
-            launched_ = false;
-            launchedTimer_ = 0.0f;
-            launchInitialSpeed_ = 0.0f;
-            launchActionSpeedRatio_ = 0.0f;
-            launchControlUnlocked_ = false;
-            action_ = PlayerAction::Idle;
+            ResetLaunchState_(PlayerAction::Idle);
         }
     }
 
@@ -199,13 +194,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         vel_.y = launched_ ? std::max(vel_.y, jumpVel_) : jumpVel_;
         ++jumpCount_;
         if (launched_) {
-            launched_ = false;
-            launchedTimer_ = 0.0f;
-            launchedTotalTime_ = 0.0f;
-            launchInitialSpeed_ = 0.0f;
-            launchActionSpeedRatio_ = 0.0f;
-            launchControlUnlocked_ = false;
-            action_ = PlayerAction::Jump;
+            ResetLaunchState_(PlayerAction::Jump);
         }
     }
 

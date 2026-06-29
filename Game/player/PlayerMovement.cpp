@@ -46,6 +46,84 @@ void Player::UpdateMove_(float /*dt*/, const PlayerInputCommand& command) {
     isMoving = std::abs(mx) > 0.1f || std::abs(mz) > 0.1f;
 }
 
+float Player::GetLaunchSpeed_() const {
+    return std::sqrt(vel_.x * vel_.x + vel_.y * vel_.y + vel_.z * vel_.z);
+}
+
+void Player::ResetLaunchState_(PlayerAction nextAction) {
+    launched_ = false;
+    launchedTimer_ = 0.0f;
+    launchedTotalTime_ = 0.0f;
+    launchInitialSpeed_ = 0.0f;
+    launchActionSpeedRatio_ = 0.0f;
+    launchControlUnlocked_ = false;
+    launchState_ = LaunchState::None;
+    freeFallSmallBounceUsed_ = false;
+    launchHasBounced_ = false;
+    action_ = nextAction;
+}
+
+void Player::EnterFreeFall_() {
+    if (!launched_) {
+        return;
+    }
+    launchState_ = LaunchState::FreeFall;
+    launchControlUnlocked_ = false;
+    action_ = PlayerAction::Launched;
+}
+
+void Player::UpdateLaunchStateAfterBounce_() {
+    if (!launched_ || launchState_ != LaunchState::Launch) {
+        return;
+    }
+    launchHasBounced_ = true;
+    if (GetLaunchSpeed_() < launchKeepSpeedThreshold_) {
+        EnterFreeFall_();
+    }
+}
+
+bool Player::HandleFreeFallGroundContact_() {
+    if (!launched_ || launchState_ != LaunchState::FreeFall) {
+        return false;
+    }
+
+    if (!freeFallSmallBounceUsed_) {
+        const float bounceFromFall = std::abs(vel_.y) * freeFallGroundBounceDamping_;
+        vel_.y = std::max(1.5f, std::min(freeFallGroundBounceSpeed_, bounceFromFall));
+        vel_.x *= launchBounceFriction_;
+        vel_.z *= launchBounceFriction_;
+        onGround_ = false;
+        freeFallSmallBounceUsed_ = true;
+        action_ = PlayerAction::Launched;
+        return true;
+    }
+
+    vel_.y = 0.0f;
+    onGround_ = true;
+    jumpCount_ = 0;
+    launchState_ = LaunchState::Down;
+    ResetLaunchState_(PlayerAction::Idle);
+    return true;
+}
+
+bool Player::HandleLaunchGroundContact_() {
+    if (!launched_) {
+        return false;
+    }
+
+    if (launchState_ == LaunchState::Launch && vel_.y < -launchBounceMinSpeed_) {
+        vel_.y = -vel_.y * launchBounceRestitution_;
+        vel_.x *= launchBounceFriction_;
+        vel_.z *= launchBounceFriction_;
+        onGround_ = false;
+        UpdateLaunchStateAfterBounce_();
+        return true;
+    }
+
+    EnterFreeFall_();
+    return HandleFreeFallGroundContact_();
+}
+
 void Player::ApplyPhysics_(float dt) {
     if (isGrabbed_) {
         vel_ = { 0.0f, 0.0f, 0.0f };
@@ -83,6 +161,10 @@ void Player::ApplyPhysics_(float dt) {
                 vel_.x *= dragMul;
                 vel_.z *= dragMul;
             }
+
+            if (launchState_ == LaunchState::Launch && launchHasBounced_ && GetLaunchSpeed_() < launchKeepSpeedThreshold_) {
+                EnterFreeFall_();
+            }
         }
     }
 
@@ -92,23 +174,14 @@ void Player::ApplyPhysics_(float dt) {
 
     if (pos_.y <= 0.0f) {
         pos_.y = 0.0f;
-        if (launched_ && vel_.y < -launchBounceMinSpeed_) {
-            vel_.y = -vel_.y * launchBounceRestitution_;
-            vel_.x *= launchBounceFriction_;
-            vel_.z *= launchBounceFriction_;
-            onGround_ = false;
+        if (HandleLaunchGroundContact_()) {
+            // Launch/FreeFall ground behavior handled by state.
         } else {
             vel_.y = 0.0f;
             onGround_ = true;
             jumpCount_ = 0;
             if (launched_) {
-                launched_ = false;
-                launchedTimer_ = 0.0f;
-                launchedTotalTime_ = 0.0f;
-                launchInitialSpeed_ = 0.0f;
-                launchActionSpeedRatio_ = 0.0f;
-                launchControlUnlocked_ = false;
-                action_ = PlayerAction::Idle;
+                ResetLaunchState_(PlayerAction::Idle);
             }
         }
     }
@@ -117,16 +190,28 @@ void Player::ApplyPhysics_(float dt) {
     const float zFar = 20.0f;
     if (pos_.z < zNear) {
         pos_.z = zNear;
-        if (launched_ && vel_.z < -launchBounceMinSpeed_) {
+        if (launched_ && launchState_ == LaunchState::Launch && vel_.z < -launchBounceMinSpeed_) {
             vel_.z = -vel_.z * launchBounceRestitution_;
+            vel_.x *= launchBounceFriction_;
+            vel_.y *= launchBounceFriction_;
+            UpdateLaunchStateAfterBounce_();
         } else {
+            if (launched_ && launchState_ == LaunchState::Launch) {
+                EnterFreeFall_();
+            }
             vel_.z = 0.0f;
         }
     } else if (pos_.z > zFar) {
         pos_.z = zFar;
-        if (launched_ && vel_.z > launchBounceMinSpeed_) {
+        if (launched_ && launchState_ == LaunchState::Launch && vel_.z > launchBounceMinSpeed_) {
             vel_.z = -vel_.z * launchBounceRestitution_;
+            vel_.x *= launchBounceFriction_;
+            vel_.y *= launchBounceFriction_;
+            UpdateLaunchStateAfterBounce_();
         } else {
+            if (launched_ && launchState_ == LaunchState::Launch) {
+                EnterFreeFall_();
+            }
             vel_.z = 0.0f;
         }
     }
@@ -154,6 +239,9 @@ void Player::ApplyLaunch(const Vector3& velocity, float hitStunSec, float action
     vel_ = velocity;
     onGround_ = false;
     launched_ = true;
+    launchState_ = LaunchState::Launch;
+    freeFallSmallBounceUsed_ = false;
+    launchHasBounced_ = false;
     launchedTimer_ = std::max(0.0f, hitStunSec);
     launchedTotalTime_ = launchedTimer_;
     launchInitialSpeed_ = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
@@ -203,6 +291,9 @@ void Player::SetSpawnPos(const Vector3& p) {
     onGround_ = true;
     jumpCount_ = 0;
     launched_ = false;
+    launchState_ = LaunchState::None;
+    freeFallSmallBounceUsed_ = false;
+    launchHasBounced_ = false;
     launchedTimer_ = 0.0f;
     launchedTotalTime_ = 0.0f;
     launchInitialSpeed_ = 0.0f;
@@ -219,6 +310,9 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     onGround_ = false;
     jumpCount_ = 0;
     launched_ = false;
+    launchState_ = LaunchState::None;
+    freeFallSmallBounceUsed_ = false;
+    launchHasBounced_ = false;
     launchedTimer_ = 0.0f;
     launchedTotalTime_ = 0.0f;
     launchInitialSpeed_ = 0.0f;
@@ -244,9 +338,11 @@ bool Player::ResolveGroundAABB(const AABB& ground) {
     const float groundTopY = ground.max.y;
     if (pos_.y <= groundTopY && vel_.y <= 0.0f) {
         pos_.y = groundTopY;
-        vel_.y = 0.0f;
-        onGround_ = true;
-        jumpCount_ = 0;
+        if (!HandleLaunchGroundContact_()) {
+            vel_.y = 0.0f;
+            onGround_ = true;
+            jumpCount_ = 0;
+        }
         UpdateBody_();
         UpdateModel_();
         if (model_) {
@@ -282,9 +378,11 @@ bool Player::ResolveGroundAABB(const std::vector<AABB>& grounds) {
 
     if (bestGround) {
         pos_.y = highestGroundY;
-        vel_.y = 0.0f;
-        onGround_ = true;
-        jumpCount_ = 0;
+        if (!HandleLaunchGroundContact_()) {
+            vel_.y = 0.0f;
+            onGround_ = true;
+            jumpCount_ = 0;
+        }
         UpdateBody_();
         UpdateModel_();
         if (model_) {
@@ -336,48 +434,55 @@ bool Player::ResolveObstaclesAABB(const std::vector<AABB>& obstacles) {
             if (minOverlap == overlapYDist) {
                 pos_.y += pushY;
                 if (pushY > 0.0f) {
-                    if (vel_.y < -launchBounceMinSpeed_) {
+                    if (launchState_ == LaunchState::Launch && vel_.y < -launchBounceMinSpeed_) {
                         vel_.y = -vel_.y * launchBounceRestitution_;
                         vel_.x *= launchBounceFriction_;
                         vel_.z *= launchBounceFriction_;
                         onGround_ = false;
+                        UpdateLaunchStateAfterBounce_();
                     } else {
-                        vel_.y = 0.0f;
-                        onGround_ = true;
-                        jumpCount_ = 0;
-                        launched_ = false;
-                        launchedTimer_ = 0.0f;
-                        launchedTotalTime_ = 0.0f;
-                        launchInitialSpeed_ = 0.0f;
-                        launchActionSpeedRatio_ = 0.0f;
-                        launchControlUnlocked_ = false;
-                        action_ = PlayerAction::Idle;
+                        EnterFreeFall_();
+                        HandleFreeFallGroundContact_();
                     }
                 } else if (vel_.y > 0.0f) {
                     // 天井ぶつけ
-                    if (vel_.y > launchBounceMinSpeed_) {
+                    if (launchState_ == LaunchState::Launch && vel_.y > launchBounceMinSpeed_) {
                         vel_.y = -vel_.y * launchBounceRestitution_;
+                        vel_.x *= launchBounceFriction_;
+                        vel_.z *= launchBounceFriction_;
                         onGround_ = false;
+                        UpdateLaunchStateAfterBounce_();
                     } else {
+                        if (launchState_ == LaunchState::Launch) {
+                            EnterFreeFall_();
+                        }
                         vel_.y = 0.0f;
                     }
                 }
             } else if (minOverlap == overlapXDist) {
                 pos_.x += pushX;
-                if (std::abs(vel_.x) > launchBounceMinSpeed_) {
+                if (launchState_ == LaunchState::Launch && std::abs(vel_.x) > launchBounceMinSpeed_) {
                     vel_.x = std::abs(vel_.x) * (pushX < 0.0f ? -1.0f : 1.0f) * launchBounceRestitution_;
                     vel_.y *= launchBounceFriction_;
                     vel_.z *= launchBounceFriction_;
+                    UpdateLaunchStateAfterBounce_();
                 } else {
+                    if (launchState_ == LaunchState::Launch) {
+                        EnterFreeFall_();
+                    }
                     vel_.x = 0.0f;
                 }
             } else {
                 pos_.z += pushZ;
-                if (std::abs(vel_.z) > launchBounceMinSpeed_) {
+                if (launchState_ == LaunchState::Launch && std::abs(vel_.z) > launchBounceMinSpeed_) {
                     vel_.z = std::abs(vel_.z) * (pushZ < 0.0f ? -1.0f : 1.0f) * launchBounceRestitution_;
                     vel_.x *= launchBounceFriction_;
                     vel_.y *= launchBounceFriction_;
+                    UpdateLaunchStateAfterBounce_();
                 } else {
+                    if (launchState_ == LaunchState::Launch) {
+                        EnterFreeFall_();
+                    }
                     vel_.z = 0.0f;
                 }
             }

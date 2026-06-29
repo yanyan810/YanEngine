@@ -139,7 +139,7 @@
             "custom": false,
             "hit": {
                 "actionSpeedRatio": 0.3499999940395355,
-                "baseKnockback": 15.0,
+                "baseKnockback": 23.299999237060547,
                 "damagePercent": 12.0,
                 "hitStunSec": 0.5,
                 "hpDamage": 12,

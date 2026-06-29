@@ -6,7 +6,6 @@
 #include <cstddef>
 
 class EnemyManager;
-class Object3d;
 class Player;
 
 class TestSceneKnockbackPreview {
@@ -51,5 +50,4 @@ public:
         float outRightX,
         float outBottomY,
         float outTopY);
-    static void SetLineSegment(Object3d& line, const Vector3& start, const Vector3& end, float thickness, float dt);
 };

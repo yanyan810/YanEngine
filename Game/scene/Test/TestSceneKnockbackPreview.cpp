@@ -2,7 +2,6 @@
 
 #include "Enemy.h"
 #include "EnemyManager.h"
-#include "Object3d.h"
 #include "Player.h"
 
 #include <algorithm>
@@ -188,26 +187,3 @@ TestSceneKnockbackPreview::Metrics TestSceneKnockbackPreview::Calculate(
     return m;
 }
 
-void TestSceneKnockbackPreview::SetLineSegment(
-    Object3d& line,
-    const Vector3& start,
-    const Vector3& end,
-    float thickness,
-    float dt) {
-    const Vector3 v{
-        end.x - start.x,
-        end.y - start.y,
-        end.z - start.z,
-    };
-    const float length = Length3(v);
-    const Vector3 mid{
-        start.x + v.x * 0.5f,
-        start.y + v.y * 0.5f,
-        start.z + v.z * 0.5f,
-    };
-
-    line.SetTranslate(mid);
-    line.SetRotate({ 0.0f, 0.0f, std::atan2(v.y, v.x) });
-    line.SetScale({ std::max(length * 0.5f, 0.001f), thickness, thickness });
-    line.Update(dt);
-}

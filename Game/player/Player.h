@@ -20,6 +20,13 @@ class EnemyManager;
 
 
 class Player {
+    enum class LaunchState {
+        None,
+        Launch,
+        FreeFall,
+        Down,
+    };
+
 public:
 
     enum class PlayerModelSet {
@@ -148,7 +155,16 @@ public:
     void  SetLaunchBounceFriction(float fric) { launchBounceFriction_ = std::clamp(fric, 0.0f, 1.0f); }
     float GetLaunchBounceMinSpeed() const { return launchBounceMinSpeed_; }
     void  SetLaunchBounceMinSpeed(float speed) { launchBounceMinSpeed_ = std::max(0.0f, speed); }
+    float GetLaunchKeepSpeedThreshold() const { return launchKeepSpeedThreshold_; }
+    void  SetLaunchKeepSpeedThreshold(float speed) { launchKeepSpeedThreshold_ = std::max(0.0f, speed); }
+    float GetFreeFallGroundBounceSpeed() const { return freeFallGroundBounceSpeed_; }
+    void  SetFreeFallGroundBounceSpeed(float speed) { freeFallGroundBounceSpeed_ = std::max(0.0f, speed); }
+    float GetFreeFallGroundBounceDamping() const { return freeFallGroundBounceDamping_; }
+    void  SetFreeFallGroundBounceDamping(float damping) { freeFallGroundBounceDamping_ = std::clamp(damping, 0.0f, 1.0f); }
     bool IsLaunched() const { return launched_; }
+    bool IsLaunchFastPhase() const {
+        return launched_ && launchState_ == LaunchState::Launch;
+    }
     void SetHP(int hp);
 
     float GetX() const { return pos_.x; }
@@ -220,6 +236,12 @@ private:
     void UpdateModel_();
 
     void UpdateBody_();
+    float GetLaunchSpeed_() const;
+    void ResetLaunchState_(PlayerAction nextAction);
+    void EnterFreeFall_();
+    void UpdateLaunchStateAfterBounce_();
+    bool HandleLaunchGroundContact_();
+    bool HandleFreeFallGroundContact_();
 
 
 private:
@@ -271,6 +293,12 @@ private:
     float launchBounceRestitution_ = 0.65f; // 跳ね返り反発係数 (0.0〜1.0)
     float launchBounceFriction_ = 0.90f;    // 跳ね返り時の他軸摩擦係数 (0.0〜1.0)
     float launchBounceMinSpeed_ = 4.0f;     // 跳ね返りが発生する最低速度
+    LaunchState launchState_ = LaunchState::None;
+    bool freeFallSmallBounceUsed_ = false;
+    bool launchHasBounced_ = false;
+    float launchKeepSpeedThreshold_ = 8.0f;
+    float freeFallGroundBounceSpeed_ = 3.5f;
+    float freeFallGroundBounceDamping_ = 0.35f;
     float fastFallSpeed_ = 28.0f;
 
 

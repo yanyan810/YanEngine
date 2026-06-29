@@ -116,12 +116,7 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     guarding_ = false;
 
     if (launched_) {
-        launched_ = false;
-        launchedTimer_ = 0.0f;
-        launchedTotalTime_ = 0.0f;
-        launchInitialSpeed_ = 0.0f;
-        launchActionSpeedRatio_ = 0.0f;
-        launchControlUnlocked_ = false;
+        ResetLaunchState_(PlayerAction::Attack);
     }
 
     if (horizontal != 0) {
