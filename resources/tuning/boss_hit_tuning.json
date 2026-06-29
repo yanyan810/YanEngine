@@ -116,7 +116,7 @@
                     0.0
                 ],
                 "knockbackScale": 0.05000000074505806,
-                "useFixedKnockback": false
+                "useFixedKnockback": true
             },
             "hitbox": {
                 "activeSec": 0.11999999731779099,

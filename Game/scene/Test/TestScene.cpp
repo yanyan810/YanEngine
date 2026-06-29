@@ -981,12 +981,27 @@ void TestScene::DrawImGui(GameApp& app) {
             player_->ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec);
             player_->TriggerHitFlash(0.25f);
         } else {
-            player_->ApplyBossHit(
-                tuning.damagePercent,
-                tuning.baseKnockback,
-                tuning.knockbackScale,
-                dir,
-                tuning.hitStunSec);
+            if (tuning.useFixedKnockback) {
+                player_->AddDamagePercent(tuning.damagePercent);
+                const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+                if (len > 1.0e-6f) {
+                    dir.x /= len;
+                    dir.y /= len;
+                    dir.z /= len;
+                } else {
+                    dir = { 1.0f, 0.35f, 0.0f };
+                }
+                const float power = tuning.baseKnockback;
+                player_->ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, tuning.hitStunSec);
+                player_->TriggerHitFlash(0.25f);
+            } else {
+                player_->ApplyBossHit(
+                    tuning.damagePercent,
+                    tuning.baseKnockback,
+                    tuning.knockbackScale,
+                    dir,
+                    tuning.hitStunSec);
+            }
         }
         const EnemyManager::HitStopTuning& hitStop = enemyMgr_.HitStop();
         if (hitStop.enabled) {
@@ -1336,7 +1351,11 @@ void TestScene::DrawImGui(GameApp& app) {
     }
 
     if (ImGui::CollapsingHeader("Boss Attacks Knockback Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto drawBossTuning = [](const char* label, EnemyManager::BossHitTuning& tuning) {
+        const float fixedBakePercent = (previewUsesPlayerPercent_ && player_)
+            ? player_->GetDamagePercent()
+            : previewPercent_;
+
+        auto drawBossTuning = [fixedBakePercent](const char* label, EnemyManager::BossHitTuning& tuning) {
             ImGui::PushID(label);
             if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::PopID();
@@ -1348,6 +1367,15 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::DragFloat("Knockback Scale", &tuning.knockbackScale, 0.005f, 0.0f, 1.0f);
             ImGui::DragFloat3("Knockback Dir", &tuning.knockbackDir.x, 0.01f, -2.0f, 2.0f);
             ImGui::DragFloat("Hit Stun Sec", &tuning.hitStunSec, 0.01f, 0.0f, 3.0f);
+            ImGui::SeparatorText("Fixed Knockback");
+            ImGui::Checkbox("Use Fixed Knockback", &tuning.useFixedKnockback);
+            const float currentScaledPower = tuning.baseKnockback + fixedBakePercent * tuning.knockbackScale;
+            if (ImGui::Button("Set Fixed From Current %")) {
+                tuning.baseKnockback = currentScaledPower;
+                tuning.knockbackScale = 0.0f;
+                tuning.useFixedKnockback = true;
+            }
+            ImGui::Text("Current %.1f%% power: %.2f", fixedBakePercent, currentScaledPower);
             ImGui::PopID();
         };
 
