@@ -157,6 +157,7 @@ private:
     bool prevTab_ = false;
 
     bool hitEffectEnabled_ = true;
+    float hitStopTimer_ = 0.0f;
     char hitEffectGroupName_[64] = "HitEffect";
     Vector3 hitEffectTestPosition_{ 0.0f, 1.0f, 5.0f };
     bool fallAttackEffectEnabled_ = true;

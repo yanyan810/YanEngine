@@ -21,7 +21,150 @@
 #include <filesystem>
 #include <cctype>
 
+#ifdef USE_IMGUI
+extern ImVec2 gSceneImageMin;
+extern ImVec2 gSceneImageMax;
+extern bool gHasSceneImageRect;
+#endif
+
 namespace {
+
+constexpr float kKnockbackPreviewLineThicknessToPixels = 40.0f;
+
+bool ProjectWorldToRect(
+    const Camera& camera,
+    const Vector3& world,
+    float rectMinX,
+    float rectMinY,
+    float rectWidth,
+    float rectHeight,
+    Vector2& out) {
+    const Matrix4x4& vp = camera.GetViewProjectionMatrix();
+    const float x = world.x * vp.m[0][0] + world.y * vp.m[1][0] + world.z * vp.m[2][0] + vp.m[3][0];
+    const float y = world.x * vp.m[0][1] + world.y * vp.m[1][1] + world.z * vp.m[2][1] + vp.m[3][1];
+    const float w = world.x * vp.m[0][3] + world.y * vp.m[1][3] + world.z * vp.m[2][3] + vp.m[3][3];
+    if (w <= 0.001f) {
+        return false;
+    }
+
+    const float ndcX = x / w;
+    const float ndcY = y / w;
+    out.x = rectMinX + (ndcX * 0.5f + 0.5f) * rectWidth;
+    out.y = rectMinY + (0.5f - ndcY * 0.5f) * rectHeight;
+    return true;
+}
+
+bool ProjectWorldToScreen(const Camera& camera, const Vector3& world, Vector2& out) {
+    return ProjectWorldToRect(
+        camera,
+        world,
+        0.0f,
+        0.0f,
+        static_cast<float>(WinApp::kClientWidth),
+        static_cast<float>(WinApp::kClientHeight),
+        out);
+}
+
+std::vector<Vector3> SimulateKnockbackTrajectory(
+    const Player& player,
+    const Vector3& start,
+    const Vector3& initialVelocity,
+    float hitStunSec,
+    bool outOfBoundsEnabled,
+    float outLeftX,
+    float outRightX,
+    float outBottomY,
+    float outTopY,
+    float scale) {
+    constexpr float kStep = 1.0f / 60.0f;
+    constexpr float kMaxTime = 8.0f;
+
+    const float gravity = player.GetGravity();
+    const float initialSpeed = std::sqrt(
+        initialVelocity.x * initialVelocity.x +
+        initialVelocity.y * initialVelocity.y +
+        initialVelocity.z * initialVelocity.z);
+    const float totalTime = std::max(0.0f, hitStunSec);
+
+    Vector3 pos = start;
+    Vector3 vel = initialVelocity;
+    float timer = totalTime;
+    std::vector<Vector3> points;
+    points.reserve(64);
+    points.push_back(start);
+
+    const float left = std::min(outLeftX, outRightX);
+    const float right = std::max(outLeftX, outRightX);
+    const float bottom = std::min(outBottomY, outTopY);
+    const float top = std::max(outBottomY, outTopY);
+    const float pointScale = std::max(0.0f, scale);
+
+    auto pushScaledPoint = [&](const Vector3& p) {
+        points.push_back({
+            start.x + (p.x - start.x) * pointScale,
+            start.y + (p.y - start.y) * pointScale,
+            start.z + (p.z - start.z) * pointScale,
+        });
+    };
+
+    for (float elapsed = 0.0f; elapsed < kMaxTime; elapsed += kStep) {
+        const Vector3 prev = pos;
+
+        vel.y -= gravity * kStep;
+
+        float drag = 1.0f;
+        if (player.GetLaunchDragUseTime()) {
+            const float timeRatio = (totalTime > 0.0f) ? (timer / totalTime) : 0.0f;
+            drag = timeRatio >= player.GetLaunchDragThreshold()
+                ? player.GetLaunchXZDragHigh()
+                : player.GetLaunchXZDragLow();
+        } else {
+            const float speed = std::sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+            const float speedRatio = (initialSpeed > 1.0e-4f) ? (speed / initialSpeed) : 0.0f;
+            drag = speedRatio >= player.GetLaunchDragThreshold()
+                ? player.GetLaunchXZDragHigh()
+                : player.GetLaunchXZDragLow();
+        }
+
+        if (drag < 1.0f) {
+            const float dragMul = std::pow(drag, kStep);
+            vel.x *= dragMul;
+            vel.z *= dragMul;
+        }
+
+        pos.x += vel.x * kStep;
+        pos.y += vel.y * kStep;
+        pos.z += vel.z * kStep;
+        timer = std::max(0.0f, timer - kStep);
+
+        if (pos.y <= 0.0f && vel.y <= 0.0f) {
+            const float denom = prev.y - pos.y;
+            const float t = (std::abs(denom) > 1.0e-5f) ? std::clamp(prev.y / denom, 0.0f, 1.0f) : 1.0f;
+            const Vector3 hitGround{
+                prev.x + (pos.x - prev.x) * t,
+                0.0f,
+                prev.z + (pos.z - prev.z) * t,
+            };
+            pushScaledPoint(hitGround);
+            break;
+        }
+
+        if (outOfBoundsEnabled &&
+            (pos.x < left || pos.x > right || pos.y < bottom || pos.y > top)) {
+            pushScaledPoint(pos);
+            break;
+        }
+
+        if (points.empty() || elapsed == 0.0f || (static_cast<int>(elapsed / kStep) % 3) == 0) {
+            pushScaledPoint(pos);
+        }
+    }
+
+    if (points.size() == 1) {
+        pushScaledPoint(pos);
+    }
+    return points;
+}
 
 bool FitAABBToObject(Object3d& object, Vector3& outCenter, Vector3& outHalfSize, float padding) {
     Model* model = object.GetModel();
@@ -291,13 +434,10 @@ void TestScene::OnEnter(GameApp& app) {
     skyDome_->SetShininess(1.0f);                // 影響しないけど一応設定
     skyDome_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
 
-    knockbackPreviewLine_ = std::make_unique<Object3d>();
-    knockbackPreviewLine_->Initialize(app.ObjCom(), app.Dx());
-    knockbackPreviewLine_->SetCamera(camera_.get());
-    knockbackPreviewLine_->SetModel("cube/cube.obj");
-    knockbackPreviewLine_->SetEnableLighting(0);
-    knockbackPreviewLine_->SetMaterialColor({ 1.0f, 0.15f, 0.05f, 1.0f });
-    knockbackPreviewLine_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNone);
+    knockbackPreviewLine_ = std::make_unique<Sprite>();
+    knockbackPreviewLine_->Initialize(app.SpriteCom(), app.Dx(), "resources/white1x1.png");
+    knockbackPreviewLine_->SetAnchorPoint({ 0.0f, 0.5f });
+    knockbackPreviewLine_->SetColor({ 1.0f, 0.15f, 0.05f, 1.0f });
 
     bossHitboxPreview_ = std::make_unique<Object3d>();
     bossHitboxPreview_->Initialize(app.ObjCom(), app.Dx());
@@ -559,14 +699,18 @@ void TestScene::Update(GameApp& app, float dt) {
 
     if (knockbackPreviewLine_ && player_) {
         const bool launched = player_->IsLaunched();
-        const bool justLaunched = launched && !previewLineWasLaunched_;
-        const bool shouldFreezeLine = freezeKnockbackPreviewWhileLaunched_ && launched && !justLaunched;
+        const bool shouldFreezeLine = freezeKnockbackPreviewWhileLaunched_ && launched;
 
         if (!shouldFreezeLine) {
         const size_t previewAttackIndex = std::min<size_t>(
             static_cast<size_t>(std::max(previewAttackKind_, 0)),
             enemyMgr_.BossAttackCount() > 0 ? enemyMgr_.BossAttackCount() - 1 : 0);
-        const float percent = previewUsesPlayerPercent_ ? player_->GetDamagePercent() : previewPercent_;
+        if (previewUsesPlayerPercent_ && !launched) {
+            knockbackPreviewDamagePercent_ = player_->GetDamagePercent();
+        }
+        const float percent = previewUsesPlayerPercent_
+            ? knockbackPreviewDamagePercent_
+            : previewPercent_;
         const TestSceneKnockbackPreview::Metrics metrics = TestSceneKnockbackPreview::Calculate(
             *player_,
             enemyMgr_,
@@ -584,25 +728,36 @@ void TestScene::Update(GameApp& app, float dt) {
             (body.min.y + body.max.y) * 0.5f,
             (body.min.z + body.max.z) * 0.5f,
         };
-        Vector3 previewVec{};
+        knockbackPreviewLinePoints_.clear();
         if (previewLineMode_ == 0) {
-            const float previewDistance = metrics.reachesOutBeforeLanding ? metrics.outDistance : metrics.groundDistance;
-            previewVec = {
-                metrics.direction.x * previewDistance,
-                metrics.direction.y * previewDistance,
-                metrics.direction.z * previewDistance,
-            };
+            const EnemyManager::BossHitTuning& tuning = enemyMgr_.BossAttackAt(previewAttackIndex).hit;
+            knockbackPreviewLinePoints_ = SimulateKnockbackTrajectory(
+                *player_,
+                player_->GetPos3D(),
+                metrics.velocity,
+                tuning.hitStunSec,
+                outOfBoundsEnabled_,
+                outLeftX_,
+                outRightX_,
+                outBottomY_,
+                outTopY_,
+                previewLineScale_);
         } else {
-            previewVec = metrics.velocity;
+            knockbackPreviewLinePoints_.push_back(previewStart);
+            knockbackPreviewLinePoints_.push_back({
+                previewStart.x + metrics.velocity.x * previewLineScale_,
+                previewStart.y + metrics.velocity.y * previewLineScale_,
+                previewStart.z + metrics.velocity.z * previewLineScale_,
+            });
         }
 
-        const Vector3 previewEnd{
-            previewStart.x + previewVec.x * previewLineScale_,
-            previewStart.y + previewVec.y * previewLineScale_,
-            previewStart.z + previewVec.z * previewLineScale_,
-        };
-
-        TestSceneKnockbackPreview::SetLineSegment(*knockbackPreviewLine_, previewStart, previewEnd, previewLineThickness_, dt);
+        if (knockbackPreviewLinePoints_.size() >= 2) {
+            knockbackPreviewLineStart_ = knockbackPreviewLinePoints_.front();
+            knockbackPreviewLineEnd_ = knockbackPreviewLinePoints_.back();
+            knockbackPreviewLineVisible_ = true;
+        } else {
+            knockbackPreviewLineVisible_ = false;
+        }
         }
 
         previewLineWasLaunched_ = launched;
@@ -656,7 +811,6 @@ void TestScene::DrawRender(GameApp& app) {
     if (drawSpotMarker_ && spotMarker_) spotMarker_->Draw();
 
     if (player_) player_->Draw();
-    if (drawKnockbackPreview_ && knockbackPreviewLine_) knockbackPreviewLine_->Draw();
     if (drawBossHitboxPreview_ && bossHitboxPreview_) bossHitboxPreview_->Draw();
     if (drawOutOfBoundsPreview_) {
         if (outLeftPreview_) outLeftPreview_->Draw();
@@ -707,6 +861,7 @@ void TestScene::Draw2D(GameApp& app) {
         playTxst_->Update(view, proj);
         playTxst_->Draw();
     }
+
 }
 
 // その他（空でOK）
@@ -716,6 +871,42 @@ void TestScene::Draw(GameApp& app) {
 
 void TestScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI
+    if (drawKnockbackPreview_ && knockbackPreviewLineVisible_ && camera_ && gHasSceneImageRect && knockbackPreviewLinePoints_.size() >= 2) {
+        const float sceneW = std::max(1.0f, gSceneImageMax.x - gSceneImageMin.x);
+        const float sceneH = std::max(1.0f, gSceneImageMax.y - gSceneImageMin.y);
+        const float thickness = std::max(1.0f, previewLineThickness_ * kKnockbackPreviewLineThicknessToPixels);
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
+        drawList->PushClipRect(gSceneImageMin, gSceneImageMax, true);
+        for (size_t i = 1; i < knockbackPreviewLinePoints_.size(); ++i) {
+            Vector2 start{};
+            Vector2 end{};
+            if (!ProjectWorldToRect(
+                *camera_,
+                knockbackPreviewLinePoints_[i - 1],
+                gSceneImageMin.x,
+                gSceneImageMin.y,
+                sceneW,
+                sceneH,
+                start) ||
+                !ProjectWorldToRect(
+                    *camera_,
+                    knockbackPreviewLinePoints_[i],
+                    gSceneImageMin.x,
+                    gSceneImageMin.y,
+                    sceneW,
+                    sceneH,
+                    end)) {
+                continue;
+            }
+            drawList->AddLine(
+                ImVec2(start.x, start.y),
+                ImVec2(end.x, end.y),
+                IM_COL32(255, 38, 13, 255),
+                thickness);
+        }
+        drawList->PopClipRect();
+    }
+
     ImGui::Begin("Boss Knockback Test");
 
     ImGui::Checkbox("Boss AI Enabled", &bossAIEnabled_);
@@ -1011,6 +1202,71 @@ void TestScene::DrawImGui(GameApp& app) {
         ImGui::DragFloat("Follow Lerp", &battleCameraFollowLerp_, 0.1f, 0.1f, 30.0f);
     }
 
+    if (player_ && ImGui::CollapsingHeader("Player Launch Ease-Out Tuning", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float dragHigh = player_->GetLaunchXZDragHigh();
+        float dragLow = player_->GetLaunchXZDragLow();
+        float threshold = player_->GetLaunchDragThreshold();
+        bool useTime = player_->GetLaunchDragUseTime();
+
+        if (ImGui::DragFloat("Drag High (Fast phase)", &dragHigh, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchXZDragHigh(dragHigh);
+        }
+        ImGui::Text(" (1.0 = no deceleration. Closer to 1.0 makes fast phase longer)");
+        
+        if (ImGui::DragFloat("Drag Low (Slow phase)", &dragLow, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchXZDragLow(dragLow);
+        }
+        ImGui::Text(" (Deceleration rate after threshold. Smaller values decelerate faster)");
+
+        if (ImGui::DragFloat("Transition Threshold", &threshold, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchDragThreshold(threshold);
+        }
+        ImGui::Text(" (1.0 -> 0.0. The point where physics switches from High to Low drag)");
+
+        if (ImGui::Checkbox("Use Remaining Time For Threshold", &useTime)) {
+            player_->SetLaunchDragUseTime(useTime);
+        }
+        ImGui::Text(" (If unchecked, uses remaining velocity ratio instead)");
+
+        ImGui::SeparatorText("Bounce / Reflection Settings");
+        float bRest = player_->GetLaunchBounceRestitution();
+        float bFric = player_->GetLaunchBounceFriction();
+        float bMinSpeed = player_->GetLaunchBounceMinSpeed();
+        float keepSpeed = player_->GetLaunchKeepSpeedThreshold();
+        float ffBounce = player_->GetFreeFallGroundBounceSpeed();
+        float ffDamping = player_->GetFreeFallGroundBounceDamping();
+
+        if (ImGui::DragFloat("Bounce Restitution", &bRest, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchBounceRestitution(bRest);
+        }
+        ImGui::Text(" (Bounciness of walls & floor. Default: 0.65)");
+
+        if (ImGui::DragFloat("Bounce Friction", &bFric, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetLaunchBounceFriction(bFric);
+        }
+        ImGui::Text(" (Deceleration multiplier for other axes during bounce. Default: 0.90)");
+
+        if (ImGui::DragFloat("Bounce Min Speed", &bMinSpeed, 0.1f, 0.0f, 40.0f, "%.1f")) {
+            player_->SetLaunchBounceMinSpeed(bMinSpeed);
+        }
+        ImGui::Text(" (Minimum speed required to bounce. Below this, player slides or stops. Default: 4.0)");
+
+        if (ImGui::DragFloat("Launch Keep Speed", &keepSpeed, 0.1f, 0.0f, 80.0f, "%.1f")) {
+            player_->SetLaunchKeepSpeedThreshold(keepSpeed);
+        }
+        ImGui::Text(" (After a bounce, below this total speed switches to FreeFall. Default: 8.0)");
+
+        if (ImGui::DragFloat("FreeFall Ground Bounce", &ffBounce, 0.1f, 0.0f, 20.0f, "%.1f")) {
+            player_->SetFreeFallGroundBounceSpeed(ffBounce);
+        }
+        ImGui::Text(" (Small one-shot landing bounce while in FreeFall. Default: 3.5)");
+
+        if (ImGui::DragFloat("FreeFall Bounce Damping", &ffDamping, 0.005f, 0.0f, 1.0f, "%.3f")) {
+            player_->SetFreeFallGroundBounceDamping(ffDamping);
+        }
+        ImGui::Text(" (How much falling speed feeds the small FreeFall bounce. Default: 0.35)");
+    }
+
     ImGui::Separator();
     if (ImGui::CollapsingHeader("Next Work", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::BulletText("Add recovery special after launch");
@@ -1095,8 +1351,9 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::PopID();
         };
 
-        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
-            drawBossTuning(enemyMgr_.BossAttackAt(i).name.c_str(), enemyMgr_.BossAttackAt(i).hit);
+        if (previewAttackKind_ >= 0 && previewAttackKind_ < static_cast<int>(enemyMgr_.BossAttackCount())) {
+            auto& attack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+            drawBossTuning(attack.name.c_str(), attack.hit);
         }
     }
 
@@ -1120,8 +1377,9 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::PopID();
         };
 
-        for (size_t i = 0; i < enemyMgr_.BossAttackCount(); ++i) {
-            drawBossHitboxTuning(enemyMgr_.BossAttackAt(i).name.c_str(), enemyMgr_.BossAttackAt(i).hitbox);
+        if (previewAttackKind_ >= 0 && previewAttackKind_ < static_cast<int>(enemyMgr_.BossAttackCount())) {
+            auto& attack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+            drawBossHitboxTuning(attack.name.c_str(), attack.hitbox);
         }
     }
 

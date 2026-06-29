@@ -1,4 +1,4 @@
-﻿#include "TestSceneBossTuning.h"
+#include "TestSceneBossTuning.h"
 
 #include "EnemyManager.h"
 #include "Player.h"
@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -36,6 +37,8 @@ json ToJson(const EnemyManager::BossHitTuning& tuning) {
         { "knockbackScale", tuning.knockbackScale },
         { "knockbackDir", ToJson(tuning.knockbackDir) },
         { "hitStunSec", tuning.hitStunSec },
+        { "useFixedKnockback", tuning.useFixedKnockback },
+        { "actionSpeedRatio", tuning.actionSpeedRatio },
     };
 }
 
@@ -52,6 +55,7 @@ json ToJson(const EnemyManager::BossAttackHitboxTuning& tuning) {
 json ToJson(const EnemyManager::BossAttackDefinition& attack) {
     return {
         { "name", attack.name },
+        { "custom", attack.custom },
         { "hit", ToJson(attack.hit) },
         { "hitbox", ToJson(attack.hitbox) },
     };
@@ -77,6 +81,13 @@ json ToJson(const EnemyManager::HitStopTuning& tuning) {
     };
 }
 
+json ToJson(const EnemyManager::GrabHoldTuning& tuning) {
+    return {
+        { "offset", ToJson(tuning.offset) },
+        { "mirrorXByFacing", tuning.mirrorXByFacing },
+    };
+}
+
 json ToJson(const EnemyManager::BattleTuning& tuning) {
     return {
         { "useHpDamage", tuning.useHpDamage },
@@ -87,7 +98,7 @@ void ApplyJsonToTuning(const json& value, EnemyManager::BossHitTuning& tuning) {
     if (!value.is_object()) {
         return;
     }
-    tuning.damagePercent = value.value("damagePercent", tuning.damagePercent);
+    tuning.damagePercent = std::max(0.0f, value.value("damagePercent", tuning.damagePercent));
     tuning.hpDamage = value.value("hpDamage", tuning.hpDamage);
     tuning.baseKnockback = value.value("baseKnockback", tuning.baseKnockback);
     tuning.knockbackScale = value.value("knockbackScale", tuning.knockbackScale);
@@ -95,6 +106,8 @@ void ApplyJsonToTuning(const json& value, EnemyManager::BossHitTuning& tuning) {
         tuning.knockbackDir = Vector3FromJson(value.at("knockbackDir"), tuning.knockbackDir);
     }
     tuning.hitStunSec = value.value("hitStunSec", tuning.hitStunSec);
+    tuning.useFixedKnockback = value.value("useFixedKnockback", tuning.useFixedKnockback);
+    tuning.actionSpeedRatio = std::clamp(value.value("actionSpeedRatio", tuning.actionSpeedRatio), 0.0f, 1.0f);
 }
 
 void ApplyJsonToHitboxTuning(const json& value, EnemyManager::BossAttackHitboxTuning& tuning) {
@@ -138,6 +151,16 @@ void ApplyJsonToHitStop(const json& value, EnemyManager::HitStopTuning& tuning) 
     tuning.bossAttackSec = value.value("bossAttackSec", tuning.bossAttackSec);
 }
 
+void ApplyJsonToGrabHold(const json& value, EnemyManager::GrabHoldTuning& tuning) {
+    if (!value.is_object()) {
+        return;
+    }
+    if (value.contains("offset")) {
+        tuning.offset = Vector3FromJson(value.at("offset"), tuning.offset);
+    }
+    tuning.mirrorXByFacing = value.value("mirrorXByFacing", tuning.mirrorXByFacing);
+}
+
 void ApplyJsonToBattle(const json& value, EnemyManager::BattleTuning& tuning) {
     if (!value.is_object()) {
         return;
@@ -150,25 +173,17 @@ void ApplyJsonToBattle(const json& value, EnemyManager::BattleTuning& tuning) {
 bool TestSceneBossTuning::Save(const std::string& path, const EnemyManager& enemyManager, const Player& player, std::string& status) {
     try {
         json root;
-        root["version"] = 1;
-        root["bossHits"] = {
-            { "normal", ToJson(enemyManager.BossTuning(MeleeKind::Normal)) },
-            { "jumpSlash", ToJson(enemyManager.BossTuning(MeleeKind::Land)) },
-            { "rush", ToJson(enemyManager.BossTuning(MeleeKind::Rush)) },
-        };
-        root["bossAttackHitboxes"] = {
-            { "normal", ToJson(enemyManager.BossAttackHitboxTuningFor(MeleeKind::Normal)) },
-            { "jumpSlash", ToJson(enemyManager.BossAttackHitboxTuningFor(MeleeKind::Land)) },
-            { "rush", ToJson(enemyManager.BossAttackHitboxTuningFor(MeleeKind::Rush)) },
-        };
-        root["customBossAttacks"] = json::array();
+        root["version"] = 3;
+
+        // 全攻撃（組み込み＋カスタム）をまとめて配列で保存
+        // → 新しい攻撃を EnemyManager::Initialize() に追加するだけで自動的に保存対象になる
+        root["bossAttacks"] = json::array();
         for (size_t i = 0; i < enemyManager.BossAttackCount(); ++i) {
-            const EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(i);
-            if (attack.custom) {
-                root["customBossAttacks"].push_back(ToJson(attack));
-            }
+            root["bossAttacks"].push_back(ToJson(enemyManager.BossAttackAt(i)));
         }
+
         root["hitStop"] = ToJson(enemyManager.HitStop());
+        root["grabHold"] = ToJson(enemyManager.GrabHold());
         root["battle"] = ToJson(enemyManager.Battle());
         root["playerUAttacks"] = json::object();
         for (int groupIndex = 0; groupIndex < static_cast<int>(Player::PlayerAttackGroup::Count); ++groupIndex) {
@@ -210,45 +225,81 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
 
         json root;
         file >> root;
-        const json& bossHits = root.contains("bossHits") ? root.at("bossHits") : root;
 
-        if (bossHits.contains("normal")) {
-            ApplyJsonToTuning(bossHits.at("normal"), enemyManager.BossTuning(MeleeKind::Normal));
-        }
-        if (bossHits.contains("jumpSlash")) {
-            ApplyJsonToTuning(bossHits.at("jumpSlash"), enemyManager.BossTuning(MeleeKind::Land));
-        }
-        if (bossHits.contains("rush")) {
-            ApplyJsonToTuning(bossHits.at("rush"), enemyManager.BossTuning(MeleeKind::Rush));
-        }
+        // --- 新フォーマット (version 2): bossAttacks 配列で全攻撃を一括管理 ---
+        if (root.contains("bossAttacks") && root.at("bossAttacks").is_array()) {
+            enemyManager.ClearCustomBossAttacks();
+            for (const json& attackJson : root.at("bossAttacks")) {
+                if (!attackJson.is_object()) continue;
+                const bool isCustom = attackJson.value("custom", false);
+                const std::string name = attackJson.value("name", "");
 
-        if (root.contains("bossAttackHitboxes")) {
-            const json& hitboxes = root.at("bossAttackHitboxes");
-            if (hitboxes.contains("normal")) {
-                ApplyJsonToHitboxTuning(hitboxes.at("normal"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::Normal));
-            }
-            if (hitboxes.contains("jumpSlash")) {
-                ApplyJsonToHitboxTuning(hitboxes.at("jumpSlash"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::Land));
-            }
-            if (hitboxes.contains("rush")) {
-                ApplyJsonToHitboxTuning(hitboxes.at("rush"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::Rush));
-            }
-        }
-
-        enemyManager.ClearCustomBossAttacks();
-        if (root.contains("customBossAttacks") && root.at("customBossAttacks").is_array()) {
-            for (const json& value : root.at("customBossAttacks")) {
-                if (!value.is_object()) {
-                    continue;
+                if (isCustom) {
+                    // カスタム攻撃: 新規追加して値を適用
+                    const size_t idx = enemyManager.AddCustomBossAttack(name);
+                    EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(idx);
+                    if (attackJson.contains("hit"))    ApplyJsonToTuning(attackJson.at("hit"), attack.hit);
+                    if (attackJson.contains("hitbox")) ApplyJsonToHitboxTuning(attackJson.at("hitbox"), attack.hitbox);
+                } else {
+                    // 組み込み攻撃: 名前で一致するものを探して値を適用
+                    for (size_t i = 0; i < enemyManager.BossAttackCount(); ++i) {
+                        EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(i);
+                        if (!attack.custom && attack.name == name) {
+                            if (attackJson.contains("hit"))    ApplyJsonToTuning(attackJson.at("hit"), attack.hit);
+                            if (attackJson.contains("hitbox")) ApplyJsonToHitboxTuning(attackJson.at("hitbox"), attack.hitbox);
+                            break;
+                        }
+                    }
                 }
-                const std::string name = value.value("name", "Custom Attack");
-                const size_t attackIndex = enemyManager.AddCustomBossAttack(name);
-                EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(attackIndex);
-                if (value.contains("hit")) {
-                    ApplyJsonToTuning(value.at("hit"), attack.hit);
+            }
+        }
+        // --- 旧フォーマット (version 1) との後方互換 ---
+        else {
+            const json& bossHits = root.contains("bossHits") ? root.at("bossHits") : root;
+            if (bossHits.contains("normal")) {
+                ApplyJsonToTuning(bossHits.at("normal"), enemyManager.BossTuning(MeleeKind::Normal));
+            }
+            if (bossHits.contains("jumpSlash")) {
+                ApplyJsonToTuning(bossHits.at("jumpSlash"), enemyManager.BossTuning(MeleeKind::Land));
+            }
+            if (bossHits.contains("rush")) {
+                ApplyJsonToTuning(bossHits.at("rush"), enemyManager.BossTuning(MeleeKind::Rush));
+            }
+            if (bossHits.contains("doubleMelee1")) {
+                ApplyJsonToTuning(bossHits.at("doubleMelee1"), enemyManager.BossTuning(MeleeKind::DoubleMelee1));
+            }
+            if (bossHits.contains("doubleMelee2")) {
+                ApplyJsonToTuning(bossHits.at("doubleMelee2"), enemyManager.BossTuning(MeleeKind::DoubleMelee2));
+            }
+
+            if (root.contains("bossAttackHitboxes")) {
+                const json& hitboxes = root.at("bossAttackHitboxes");
+                if (hitboxes.contains("normal")) {
+                    ApplyJsonToHitboxTuning(hitboxes.at("normal"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::Normal));
                 }
-                if (value.contains("hitbox")) {
-                    ApplyJsonToHitboxTuning(value.at("hitbox"), attack.hitbox);
+                if (hitboxes.contains("jumpSlash")) {
+                    ApplyJsonToHitboxTuning(hitboxes.at("jumpSlash"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::Land));
+                }
+                if (hitboxes.contains("rush")) {
+                    ApplyJsonToHitboxTuning(hitboxes.at("rush"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::Rush));
+                }
+                if (hitboxes.contains("doubleMelee1")) {
+                    ApplyJsonToHitboxTuning(hitboxes.at("doubleMelee1"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::DoubleMelee1));
+                }
+                if (hitboxes.contains("doubleMelee2")) {
+                    ApplyJsonToHitboxTuning(hitboxes.at("doubleMelee2"), enemyManager.BossAttackHitboxTuningFor(MeleeKind::DoubleMelee2));
+                }
+            }
+
+            enemyManager.ClearCustomBossAttacks();
+            if (root.contains("customBossAttacks") && root.at("customBossAttacks").is_array()) {
+                for (const json& value : root.at("customBossAttacks")) {
+                    if (!value.is_object()) continue;
+                    const std::string name = value.value("name", "Custom Attack");
+                    const size_t attackIndex = enemyManager.AddCustomBossAttack(name);
+                    EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(attackIndex);
+                    if (value.contains("hit"))    ApplyJsonToTuning(value.at("hit"), attack.hit);
+                    if (value.contains("hitbox")) ApplyJsonToHitboxTuning(value.at("hitbox"), attack.hitbox);
                 }
             }
         }
@@ -275,6 +326,9 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
         if (root.contains("hitStop")) {
             ApplyJsonToHitStop(root.at("hitStop"), enemyManager.HitStop());
         }
+        if (root.contains("grabHold")) {
+            ApplyJsonToGrabHold(root.at("grabHold"), enemyManager.GrabHold());
+        }
         if (root.contains("battle")) {
             ApplyJsonToBattle(root.at("battle"), enemyManager.Battle());
         }
@@ -286,3 +340,4 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
         return false;
     }
 }
+

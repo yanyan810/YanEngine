@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <memory>
 #include <array>
 #include <cstdint>
@@ -20,6 +20,13 @@ class EnemyManager;
 
 
 class Player {
+    enum class LaunchState {
+        None,
+        Launch,
+        FreeFall,
+        Down,
+    };
+
 public:
 
     enum class PlayerModelSet {
@@ -128,9 +135,36 @@ public:
     void SetDamagePercent(float damagePercent);
     float GetDamagePercent() const { return damagePercent_; }
     float GetGravity() const { return gravity_; }
-    void ApplyLaunch(const Vector3& velocity, float hitStunSec);
-    void ApplyBossHit(float damagePercent, float baseKnockback, float knockbackScale, const Vector3& knockbackDir, float hitStunSec);
+    void ApplyLaunch(const Vector3& velocity, float hitStunSec, float actionSpeedRatio = 0.0f);
+    void ApplyBossHit(float damagePercent, float baseKnockback, float knockbackScale, const Vector3& knockbackDir, float hitStunSec, float actionSpeedRatio = 0.0f);
+
+    // 吹っ飛び中のXZ速度減衰率（0=即停止, 1=減衰なし, 例:0.15=疾走感イーズアウト）
+    float GetLaunchXZDrag() const { return launchXZDrag_; }
+    void  SetLaunchXZDrag(float drag) { launchXZDrag_ = std::clamp(drag, 0.0f, 1.0f); }
+    float GetLaunchXZDragHigh() const { return launchXZDragHigh_; }
+    void  SetLaunchXZDragHigh(float drag) { launchXZDragHigh_ = std::clamp(drag, 0.0f, 1.0f); }
+    float GetLaunchXZDragLow() const { return launchXZDragLow_; }
+    void  SetLaunchXZDragLow(float drag) { launchXZDragLow_ = std::clamp(drag, 0.0f, 1.0f); }
+    float GetLaunchDragThreshold() const { return launchDragThreshold_; }
+    void  SetLaunchDragThreshold(float th) { launchDragThreshold_ = std::clamp(th, 0.0f, 1.0f); }
+    bool  GetLaunchDragUseTime() const { return launchDragUseTime_; }
+    void  SetLaunchDragUseTime(bool use) { launchDragUseTime_ = use; }
+    float GetLaunchBounceRestitution() const { return launchBounceRestitution_; }
+    void  SetLaunchBounceRestitution(float rest) { launchBounceRestitution_ = std::clamp(rest, 0.0f, 1.0f); }
+    float GetLaunchBounceFriction() const { return launchBounceFriction_; }
+    void  SetLaunchBounceFriction(float fric) { launchBounceFriction_ = std::clamp(fric, 0.0f, 1.0f); }
+    float GetLaunchBounceMinSpeed() const { return launchBounceMinSpeed_; }
+    void  SetLaunchBounceMinSpeed(float speed) { launchBounceMinSpeed_ = std::max(0.0f, speed); }
+    float GetLaunchKeepSpeedThreshold() const { return launchKeepSpeedThreshold_; }
+    void  SetLaunchKeepSpeedThreshold(float speed) { launchKeepSpeedThreshold_ = std::max(0.0f, speed); }
+    float GetFreeFallGroundBounceSpeed() const { return freeFallGroundBounceSpeed_; }
+    void  SetFreeFallGroundBounceSpeed(float speed) { freeFallGroundBounceSpeed_ = std::max(0.0f, speed); }
+    float GetFreeFallGroundBounceDamping() const { return freeFallGroundBounceDamping_; }
+    void  SetFreeFallGroundBounceDamping(float damping) { freeFallGroundBounceDamping_ = std::clamp(damping, 0.0f, 1.0f); }
     bool IsLaunched() const { return launched_; }
+    bool IsLaunchFastPhase() const {
+        return launched_ && launchState_ == LaunchState::Launch;
+    }
     void SetHP(int hp);
 
     float GetX() const { return pos_.x; }
@@ -140,11 +174,23 @@ public:
 
     void SetSpawnPos(const Vector3& p);
     void SetDropRespawnPos(const Vector3& p);
+    void SetPos(const Vector3& p);
     bool ResolveGroundAABB(const AABB& ground);
     bool ResolveGroundAABB(const std::vector<AABB>& grounds);
     bool ResolveObstaclesAABB(const std::vector<AABB>& obstacles);
 
     bool IsDead() const { return dead_; }
+
+    void SetGrabbed(bool grabbed) {
+        isGrabbed_ = grabbed;
+        if (grabbed) {
+            SetExternalInputBlocked(true);
+            vel_ = { 0.0f, 0.0f, 0.0f };
+        } else {
+            SetExternalInputBlocked(false);
+        }
+    }
+    bool IsGrabbed() const { return isGrabbed_; }
 
     void SetLighting(const LightingParam& p);
 
@@ -190,6 +236,12 @@ private:
     void UpdateModel_();
 
     void UpdateBody_();
+    float GetLaunchSpeed_() const;
+    void ResetLaunchState_(PlayerAction nextAction);
+    void EnterFreeFall_();
+    void UpdateLaunchStateAfterBounce_();
+    bool HandleLaunchGroundContact_();
+    bool HandleFreeFallGroundContact_();
 
 
 private:
@@ -229,6 +281,24 @@ private:
     bool fastFalling_ = false;
     bool launched_ = false;
     float launchedTimer_ = 0.0f;
+    float launchInitialSpeed_ = 0.0f;
+    float launchActionSpeedRatio_ = 0.0f;
+    bool launchControlUnlocked_ = false;
+    float launchXZDrag_ = 0.18f;   // 吹っ飛びXZ速度の減衰率（pow(drag, dt)で毎フレーム乗算）
+    float launchedTotalTime_ = 0.0f;
+    float launchXZDragHigh_ = 0.95f; // 高速時のXZドラッグ (1.0に近いほど減衰しにくい)
+    float launchXZDragLow_ = 0.15f;  // 低速時のXZドラッグ
+    float launchDragThreshold_ = 0.20f; // 切り替えの閾値 (0.0〜1.0)
+    bool launchDragUseTime_ = true;  // 残り時間割合で判定するか (falseなら残り速度割合)
+    float launchBounceRestitution_ = 0.65f; // 跳ね返り反発係数 (0.0〜1.0)
+    float launchBounceFriction_ = 0.90f;    // 跳ね返り時の他軸摩擦係数 (0.0〜1.0)
+    float launchBounceMinSpeed_ = 4.0f;     // 跳ね返りが発生する最低速度
+    LaunchState launchState_ = LaunchState::None;
+    bool freeFallSmallBounceUsed_ = false;
+    bool launchHasBounced_ = false;
+    float launchKeepSpeedThreshold_ = 8.0f;
+    float freeFallGroundBounceSpeed_ = 3.5f;
+    float freeFallGroundBounceDamping_ = 0.35f;
     float fastFallSpeed_ = 28.0f;
 
 
@@ -279,6 +349,7 @@ private:
     bool isMoving = false;
     bool hasDebugCommand_ = false;
     bool externalInputBlocked_ = false;
+    bool isGrabbed_ = false;
     PlayerInputCommand debugCommand_{};
     unsigned int attackSerial_ = 0;
     std::array<std::array<PlayerAttackDefinition, static_cast<size_t>(PlayerAttackVariant::Count)>, static_cast<size_t>(PlayerAttackGroup::Count)> attackDefinitions_{};

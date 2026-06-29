@@ -255,6 +255,10 @@ void GameScene::Update(GameApp& app, float dt) {
             return;
         }
 
+        const bool hitStopActive = hitStopTimer_ > 0.0f;
+        if (hitStopActive) {
+            hitStopTimer_ = std::max(0.0f, hitStopTimer_ - dt);
+        }
 
         if (debugAIEnabled_ && app.DebugAI()) {
             app.DebugAI()->InjectAction();
@@ -269,7 +273,7 @@ void GameScene::Update(GameApp& app, float dt) {
         const unsigned int manualAttackSerialBefore =
             (recordManualAction && player_) ? player_->GetAttackSerial() : 0;
 
-        if (player_) {
+        if (!hitStopActive && player_) {
             player_->SetExternalInputBlocked(blockExternalGameInput);
             player_->Update(dt, *input_, enemyMgr_);
             const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
@@ -288,6 +292,7 @@ void GameScene::Update(GameApp& app, float dt) {
                         BuildPlayerAttackHitMessage(hit, attackType));
                 }
             }
+            hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
         }
 
 
@@ -308,8 +313,21 @@ void GameScene::Update(GameApp& app, float dt) {
         const bool skipPendingSpawn = kDebugDisablePendingSpawn || 
             (app.DebugAI() && app.DebugAI()->IsFirstReplayFrame());
 
-        if (!kDebugDisableEnemies) {
+        if (!hitStopActive && !kDebugDisableEnemies) {
             enemyMgr_.Update(dt, playerPos2D, playerZ, *player_, skipPendingSpawn);
+            hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
+        }
+
+        if (Enemy* boss = enemyMgr_.GetBoss()) {
+            const BossAI::State bossState = boss->GetBossAI().GetState();
+            if (bossState == BossAI::State::Grab_Delay) {
+                if (input_->IsKeyTrigger(DIK_A) || input_->IsKeyTrigger(DIK_D) ||
+                    input_->IsKeyTrigger(DIK_W) || input_->IsKeyTrigger(DIK_S) ||
+                    input_->IsKeyTrigger(DIK_LEFT) || input_->IsKeyTrigger(DIK_RIGHT) ||
+                    input_->IsKeyTrigger(DIK_UP) || input_->IsKeyTrigger(DIK_DOWN)) {
+                    boss->GetBossAIMutable().IncrementGrabEscape();
+                }
+            }
         }
         for (const auto& event : enemyMgr_.ConsumeBossAttackEffectEvents()) {
             if (event.kind == MeleeKind::Land) {
@@ -317,8 +335,9 @@ void GameScene::Update(GameApp& app, float dt) {
             }
         }
 
-        EffectManager::GetInstance()->Update(dt);
-        ParticleManager::GetInstance()->Update(dt, *camera_);
+        const float effectDt = hitStopTimer_ > 0.0f ? 0.0f : dt;
+        EffectManager::GetInstance()->Update(effectDt);
+        ParticleManager::GetInstance()->Update(effectDt, *camera_);
 
         if (bossHpFill_) {
             if (Enemy* boss = enemyMgr_.GetBoss()) {

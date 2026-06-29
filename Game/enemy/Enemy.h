@@ -25,6 +25,9 @@ enum class MeleeKind : uint8_t {
     Rush,
     DoubleMelee1,
     DoubleMelee2,
+    GrabCatch,   // 掴み判定（ヒット → Grab_Delay へ遷移）
+    GrabHit,     // 掴み中の連続攻撃
+    GrabFinish,  // 解放時の強吹っ飛ばし
 };
 
 struct EnemyHitResult {

@@ -87,7 +87,12 @@ private:
     std::unique_ptr<Object3d> ground_;
 
     std::unique_ptr<Object3d> skyDome_;
-    std::unique_ptr<Object3d> knockbackPreviewLine_;
+    std::unique_ptr<Sprite> knockbackPreviewLine_;
+    Vector3 knockbackPreviewLineStart_{};
+    Vector3 knockbackPreviewLineEnd_{};
+    std::vector<Vector3> knockbackPreviewLinePoints_;
+    bool knockbackPreviewLineVisible_ = false;
+    float knockbackPreviewDamagePercent_ = 0.0f;
     std::unique_ptr<Object3d> bossHitboxPreview_;
     std::unique_ptr<Object3d> outLeftPreview_;
     std::unique_ptr<Object3d> outRightPreview_;

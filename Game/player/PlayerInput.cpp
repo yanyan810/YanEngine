@@ -1,4 +1,4 @@
-﻿#include "Player.h"
+#include "Player.h"
 #include "Input.h"
 #include "Object3d.h"
 
@@ -114,6 +114,10 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     crouching_ = false;
     fastFalling_ = false;
     guarding_ = false;
+
+    if (launched_) {
+        ResetLaunchState_(PlayerAction::Attack);
+    }
 
     if (horizontal != 0) {
         facing_ = horizontal;

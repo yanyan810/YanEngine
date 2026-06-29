@@ -32,6 +32,7 @@ public:
         size_t attackIndex = 0;
         Vector3 attackerPos = {};
         int facing = 1;
+        float hitStopSec = -1.0f;
     };
 
     struct BossAttackHitboxTuning {
@@ -49,6 +50,8 @@ public:
         float knockbackScale = 0.08f;
         Vector3 knockbackDir = { 1.0f, 0.35f, 0.0f };
         float hitStunSec = 0.35f;
+        bool useFixedKnockback = false;
+        float actionSpeedRatio = 0.35f;
     };
 
     struct BossAttackDefinition {
@@ -79,6 +82,11 @@ public:
         bool enabled = true;
         float playerAttackSec = 0.08f;
         float bossAttackSec = 0.10f;
+    };
+
+    struct GrabHoldTuning {
+        Vector3 offset = { 0.75f, 0.70f, 0.0f };
+        bool mirrorXByFacing = true;
     };
 
     struct BattleTuning {
@@ -120,6 +128,8 @@ public:
     void QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, float targetX);
     HitStopTuning& HitStop() { return hitStopTuning_; }
     const HitStopTuning& HitStop() const { return hitStopTuning_; }
+    GrabHoldTuning& GrabHold() { return grabHoldTuning_; }
+    const GrabHoldTuning& GrabHold() const { return grabHoldTuning_; }
     BattleTuning& Battle() { return battleTuning_; }
     const BattleTuning& Battle() const { return battleTuning_; }
 
@@ -155,8 +165,10 @@ private:
     std::vector<BossAttackEffectEvent> bossAttackEffectEvents_;
     std::vector<BossAttackDefinition> bossAttacks_;
     HitStopTuning hitStopTuning_{};
+    GrabHoldTuning grabHoldTuning_{};
     BattleTuning battleTuning_{};
     float pendingHitStopSec_ = 0.0f;
+    int grabHitPatternIndex_ = 0;
 
     std::vector<Enemy> enemies_;
 
