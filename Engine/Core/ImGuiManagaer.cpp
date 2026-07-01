@@ -24,6 +24,8 @@ int gParticleTestBlenderHierarchySelected = -1;
 bool gParticleTestBlenderHierarchySelectionChanged = false;
 bool gParticleTestAnimationCameraPreviewVisible = false;
 bool gParticleTestAnimationCameraPreviewSwapped = false;
+bool gTestSceneAttackTuningSwitcherVisible = false;
+int gTestSceneAttackTuningTarget = 0;
 #endif
 
 
@@ -183,6 +185,7 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGui::DockBuilderDockWindow("Boss Knockback Test", leftNode);
     ImGui::DockBuilderDockWindow("Inspector", rightNode);
     ImGui::DockBuilderDockWindow("Boss Attack Tuning", rightNode);
+    ImGui::DockBuilderDockWindow("Attack Tuning", rightNode);
     ImGui::DockBuilderDockWindow("Scene", mainNode);
     ImGui::DockBuilderDockWindow("Console", bottomNode);
 
@@ -399,6 +402,14 @@ void ImGuiManagaer::DrawEditorPanels_()
         ImGui::RadioButton("Particle Mode", &gParticleTestEditorMode, 1);
         ImGui::SameLine();
         ImGui::RadioButton("PlayerAttack Mode", &gParticleTestEditorMode, 2);
+        ImGui::Separator();
+    }
+    if (gTestSceneAttackTuningSwitcherVisible) {
+        ImGui::TextUnformatted("Attack Tuning");
+        ImGui::SameLine();
+        ImGui::RadioButton("Boss", &gTestSceneAttackTuningTarget, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Player", &gTestSceneAttackTuningTarget, 1);
         ImGui::Separator();
     }
     if (hasSceneTexture_ && srvManager_) {

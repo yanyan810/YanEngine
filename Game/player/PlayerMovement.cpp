@@ -249,6 +249,11 @@ void Player::ApplyLaunch(const Vector3& velocity, float hitStunSec, float action
     launchControlUnlocked_ = false;
     action_ = PlayerAction::Launched;
     attackType_ = PlayerAttackType::None;
+    ChangeIAttackState_(PlayerIAttackState::None);
+    iSpecialChargeSec_ = 0.0f;
+    iCounterSuccess_ = false;
+    nextSideSpecialLockOn_ = false;
+    sideSpecialLockOnActive_ = false;
     guarding_ = false;
     crouching_ = false;
     fastFalling_ = false;
@@ -299,6 +304,23 @@ void Player::SetSpawnPos(const Vector3& p) {
     launchInitialSpeed_ = 0.0f;
     launchActionSpeedRatio_ = 0.0f;
     launchControlUnlocked_ = false;
+    cancelGauge_ = kMaxCancelGauge_;
+    hasSpecialCancelRight_ = false;
+    hasSpecialChainCancelRight_ = false;
+    specialChainCancelEligible_ = false;
+    specialHitDuringAction_ = false;
+    specialCancelUsedThisAction_ = false;
+    specialCancelDebugFlashSec_ = 0.0f;
+    currentAttackHit_ = false;
+    sideSpecialHitBounceUsed_ = false;
+    nextSideSpecialLockOn_ = false;
+    sideSpecialLockOnActive_ = false;
+    uComboResetTimer_ = 0.0f;
+    uComboBufferTimer_ = 0.0f;
+    uComboDebugFlashSec_ = 0.0f;
+    iSpecialChargeSec_ = 0.0f;
+    iCounterSuccess_ = false;
+    ChangeIAttackState_(PlayerIAttackState::None);
 
     UpdateBody_();
     UpdateModel_();
@@ -321,6 +343,22 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     moveLockSec_ = 0.0f;
     action_ = PlayerAction::Jump;
     attackType_ = PlayerAttackType::None;
+    hasSpecialCancelRight_ = false;
+    hasSpecialChainCancelRight_ = false;
+    specialChainCancelEligible_ = false;
+    specialHitDuringAction_ = false;
+    specialCancelUsedThisAction_ = false;
+    specialCancelDebugFlashSec_ = 0.0f;
+    currentAttackHit_ = false;
+    sideSpecialHitBounceUsed_ = false;
+    nextSideSpecialLockOn_ = false;
+    sideSpecialLockOnActive_ = false;
+    uComboResetTimer_ = 0.0f;
+    uComboBufferTimer_ = 0.0f;
+    uComboDebugFlashSec_ = 0.0f;
+    iSpecialChargeSec_ = 0.0f;
+    iCounterSuccess_ = false;
+    ChangeIAttackState_(PlayerIAttackState::None);
 
     UpdateBody_();
     UpdateModel_();
@@ -538,14 +576,69 @@ void Player::Draw() {
     if (model_) model_->Draw();
 }
 
+bool Player::GetAttackDebugVisualBox(Vector3& outCenter, Vector3& outHalfSize, bool& outIsActive) const {
+    outIsActive = GetAttackDebugHitBox_(outCenter, outHalfSize);
+    if (outIsActive) {
+        return true;
+    }
+
+    if (action_ != PlayerAction::Attack || attackType_ == PlayerAttackType::None) {
+        return false;
+    }
+
+    switch (attackType_) {
+    case PlayerAttackType::Weak:
+    case PlayerAttackType::Tilt:
+    case PlayerAttackType::Smash:
+    {
+        const PlayerAttackDefinition& attack = AttackDefinition(activeAttackGroup_, activeAttackVariant_);
+        const float stage = static_cast<float>(lastUComboStage_);
+        outHalfSize = {
+            attack.halfSize.x + 0.12f * stage,
+            attack.halfSize.y + 0.05f * stage,
+            attack.halfSize.z
+        };
+        outCenter = {
+            pos_.x + (attack.offset.x + 0.10f * stage) * static_cast<float>(facing_),
+            pos_.y + attack.offset.y,
+            pos_.z + attack.offset.z
+        };
+        return true;
+    }
+    case PlayerAttackType::NeutralSpecial:
+        outHalfSize = { 0.75f, 0.85f, 0.55f };
+        outCenter = { pos_.x + 1.00f * static_cast<float>(facing_), pos_.y + outHalfSize.y, pos_.z };
+        return true;
+    case PlayerAttackType::SideSpecial:
+        outHalfSize = { 1.25f, 0.85f, 0.65f };
+        outCenter = { pos_.x + 1.55f * static_cast<float>(facing_), pos_.y + outHalfSize.y, pos_.z };
+        return true;
+    case PlayerAttackType::UpSpecial:
+        outHalfSize = { 0.85f, 1.10f, 0.65f };
+        outCenter = { pos_.x + 0.25f * static_cast<float>(facing_), pos_.y + 1.20f, pos_.z };
+        return true;
+    case PlayerAttackType::DownSpecial:
+        outHalfSize = { 1.10f, 0.95f, 0.70f };
+        outCenter = { pos_.x + 0.75f * static_cast<float>(facing_), pos_.y + 0.95f, pos_.z };
+        return true;
+    case PlayerAttackType::None:
+    default:
+        return false;
+    }
+}
+
 void Player::DrawDebugHitBoxes(EnemyManager& enemyMgr) {
     (void)enemyMgr;
     if (!debugAtkCube_) return;
 
     Vector3 center{};
     Vector3 halfSize{};
-    if (!GetAttackDebugHitBox_(center, halfSize)) return;
+    bool isActiveHitBox = false;
+    if (!GetAttackDebugVisualBox(center, halfSize, isActiveHitBox)) return;
 
+    debugAtkCube_->SetMaterialColor(isActiveHitBox
+        ? Vector4{ 0.1f, 1.0f, 0.2f, 1.0f }
+        : Vector4{ 1.0f, 0.85f, 0.1f, 0.85f });
     debugAtkCube_->SetTranslate(center);
     debugAtkCube_->SetScale(halfSize);
     debugAtkCube_->Update(0.0f);

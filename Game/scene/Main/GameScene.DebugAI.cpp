@@ -212,6 +212,14 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::SideSpecial;
         command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
+    } else if (action.name == "AttackUpSpecial") {
+        command.action = Player::PlayerAction::Attack;
+        command.attackType = Player::PlayerAttackType::UpSpecial;
+        command.depth = 1;
+    } else if (action.name == "AttackDownSpecial") {
+        command.action = Player::PlayerAction::Attack;
+        command.attackType = Player::PlayerAttackType::DownSpecial;
+        command.down = true;
     } else if (action.name == "Guard") {
         command.action = Player::PlayerAction::Guard;
         command.guard = true;
@@ -233,7 +241,9 @@ void GameScene::FinalizeRecordedDebugAction_(DebugAction& action, unsigned int a
         action.name == "AttackTilt" ||
         action.name == "AttackSmash" ||
         action.name == "AttackNeutralSpecial" ||
-        action.name == "AttackSideSpecial";
+        action.name == "AttackSideSpecial" ||
+        action.name == "AttackUpSpecial" ||
+        action.name == "AttackDownSpecial";
     if (!attackAction) {
         return;
     }
@@ -267,6 +277,14 @@ void GameScene::FinalizeRecordedDebugAction_(DebugAction& action, unsigned int a
     case Player::PlayerAttackType::SideSpecial:
         action.name = "AttackSideSpecial";
         action.intParam = player_->GetFacing();
+        break;
+    case Player::PlayerAttackType::UpSpecial:
+        action.name = "AttackUpSpecial";
+        action.intParam = 0;
+        break;
+    case Player::PlayerAttackType::DownSpecial:
+        action.name = "AttackDownSpecial";
+        action.intParam = 0;
         break;
     case Player::PlayerAttackType::None:
     default:

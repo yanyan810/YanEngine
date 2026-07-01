@@ -38,6 +38,10 @@ const char* PlayerAttackTypeLabel(Player::PlayerAttackType type) {
         return "AttackNeutralSpecial";
     case Player::PlayerAttackType::SideSpecial:
         return "AttackSideSpecial";
+    case Player::PlayerAttackType::UpSpecial:
+        return "AttackUpSpecial";
+    case Player::PlayerAttackType::DownSpecial:
+        return "AttackDownSpecial";
     case Player::PlayerAttackType::None:
     default:
         return "None";
@@ -277,6 +281,9 @@ void GameScene::Update(GameApp& app, float dt) {
             player_->SetExternalInputBlocked(blockExternalGameInput);
             player_->Update(dt, *input_, enemyMgr_);
             const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
+            if (!playerAttackHits.empty()) {
+                player_->NotifyAttackHit();
+            }
             for (const auto& hit : playerAttackHits) {
                 Vector3 effectPosition = hit.hitPosition;
                 effectPosition.y += 0.15f;

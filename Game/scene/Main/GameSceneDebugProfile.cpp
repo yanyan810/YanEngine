@@ -26,6 +26,8 @@ std::vector<DebugAction> BuildGameSceneDebugActions(GameSceneDebugPhase phase) {
         { "AttackSmash" },
         { "AttackNeutralSpecial" },
         { "AttackSideSpecial" },
+        { "AttackUpSpecial" },
+        { "AttackDownSpecial" },
         { "Guard" },
         { "Wait" },
     };

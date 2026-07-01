@@ -31,7 +31,10 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     const bool left = input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A);
     const bool right = input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D);
     const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
-    const bool up = input.IsKeyPressed(DIK_UP);
+    const bool specialHeld = input.IsKeyPressed(DIK_I);
+    const bool specialReleased = input.IsKeyReleased(DIK_I);
+    const bool specialTriggered = input.IsKeyTrigger(DIK_I);
+    const bool up = input.IsKeyPressed(DIK_UP) || (specialHeld && input.IsKeyPressed(DIK_W));
 
     if (left != right) {
         command.horizontal = right ? +1 : -1;
@@ -40,11 +43,14 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     if (up != down) {
         command.depth = up ? +1 : -1;
     }
-    command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE) || input.IsKeyTrigger(DIK_W);
+    command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE) || (!specialHeld && input.IsKeyTrigger(DIK_W));
     command.guard = input.IsKeyPressed(DIK_H);
+    command.specialHeld = specialHeld;
+    command.specialReleased = specialReleased;
+    latestSpecialHeld_ = command.specialHeld;
+    latestSpecialReleased_ = command.specialReleased;
 
     const bool weakTriggered = input.IsKeyTrigger(DIK_U);
-    const bool specialTriggered = input.IsKeyTrigger(DIK_I);
 
     if (command.guard) {
         command.action = PlayerAction::Guard;
@@ -52,41 +58,12 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     }
 
     if (weakTriggered) {
-        command.action = PlayerAction::Attack;
-
-        const bool smashWindow =
-            command.horizontal != 0 &&
-            recentHorizontalFrames_ > 0 &&
-            recentHorizontalDir_ == command.horizontal;
-        if (command.horizontal != 0) {
-            command.attackVariant = PlayerAttackVariant::Side;
-        } else if (command.depth > 0) {
-            command.attackVariant = PlayerAttackVariant::Up;
-        } else {
-            command.attackVariant = PlayerAttackVariant::Neutral;
-        }
-
-        if (!onGround_) {
-            command.attackGroup = PlayerAttackGroup::Air;
-            command.attackType = PlayerAttackType::Weak;
-        } else if (smashWindow) {
-            command.attackGroup = PlayerAttackGroup::Smash;
-            command.attackType = PlayerAttackType::Smash;
-        } else if (command.horizontal != 0) {
-            command.attackGroup = PlayerAttackGroup::Ground;
-            command.attackType = PlayerAttackType::Tilt;
-        } else {
-            command.attackGroup = PlayerAttackGroup::Ground;
-            command.attackType = PlayerAttackType::Weak;
-        }
+        BuildUAttackCommand_(command);
         return command;
     }
 
     if (specialTriggered) {
-        command.action = PlayerAction::Attack;
-        command.attackType = (command.horizontal != 0)
-            ? PlayerAttackType::SideSpecial
-            : PlayerAttackType::NeutralSpecial;
+        BuildIAttackCommand_(command);
         return command;
     }
 
@@ -104,110 +81,6 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     return command;
 }
 
-void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAttackGroup group, PlayerAttackVariant variant) {
-    action_ = PlayerAction::Attack;
-    attackType_ = type;
-    activeAttackGroup_ = group;
-    activeAttackVariant_ = variant;
-    attackElapsedSec_ = 0.0f;
-    ++attackSerial_;
-    crouching_ = false;
-    fastFalling_ = false;
-    guarding_ = false;
-
-    if (launched_) {
-        ResetLaunchState_(PlayerAction::Attack);
-    }
-
-    if (horizontal != 0) {
-        facing_ = horizontal;
-    }
-
-    if (type == PlayerAttackType::NeutralSpecial) {
-        actionTimer_ = 0.45f;
-    } else if (type == PlayerAttackType::SideSpecial) {
-        actionTimer_ = 0.50f;
-    } else if (type == PlayerAttackType::None) {
-        actionTimer_ = 0.0f;
-    } else {
-        actionTimer_ = AttackDefinition(group, variant).actionSec;
-    }
-
-    LockMove(actionTimer_);
-}
-
-bool Player::GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const {
-    if (action_ != PlayerAction::Attack || attackType_ == PlayerAttackType::None) {
-        return false;
-    }
-
-    if (attackType_ == PlayerAttackType::NeutralSpecial) {
-        outHalfSize = { 0.75f, 0.85f, 0.55f };
-        outCenter = {
-            pos_.x + 1.00f * static_cast<float>(facing_),
-            pos_.y + outHalfSize.y,
-            pos_.z
-        };
-        return true;
-    }
-    if (attackType_ == PlayerAttackType::SideSpecial) {
-        outHalfSize = { 1.25f, 0.85f, 0.65f };
-        outCenter = {
-            pos_.x + 1.55f * static_cast<float>(facing_),
-            pos_.y + outHalfSize.y,
-            pos_.z
-        };
-        return true;
-    }
-
-    const PlayerAttackDefinition& attack = AttackDefinition(activeAttackGroup_, activeAttackVariant_);
-    if (attackElapsedSec_ < attack.startDelaySec ||
-        attackElapsedSec_ > attack.startDelaySec + attack.activeSec) {
-        return false;
-    }
-
-    outHalfSize = attack.halfSize;
-    outCenter = {
-        pos_.x + attack.offset.x * static_cast<float>(facing_),
-        pos_.y + attack.offset.y,
-        pos_.z + attack.offset.z
-    };
-    return true;
-}
-
-bool Player::GetAttackHitBox(AABB& outHitBox) const {
-    Vector3 center{};
-    Vector3 halfSize{};
-    if (!GetAttackDebugHitBox_(center, halfSize)) {
-        return false;
-    }
-
-    outHitBox.min = {
-        center.x - halfSize.x,
-        center.y - halfSize.y,
-        center.z - halfSize.z,
-    };
-    outHitBox.max = {
-        center.x + halfSize.x,
-        center.y + halfSize.y,
-        center.z + halfSize.z,
-    };
-    return true;
-}
-
-int Player::GetAttackDamage() const {
-    if (attackType_ == PlayerAttackType::NeutralSpecial) {
-        return 14;
-    }
-    if (attackType_ == PlayerAttackType::SideSpecial) {
-        return 18;
-    }
-    if (attackType_ == PlayerAttackType::None) {
-        return 0;
-    }
-    return AttackDefinition(activeAttackGroup_, activeAttackVariant_).damage;
-}
-
 void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
     guarding_ = command.action == PlayerAction::Guard;
     crouching_ = command.action == PlayerAction::Crouch;
@@ -219,8 +92,14 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
 
     switch (command.action) {
     case PlayerAction::Attack:
-        if (actionTimer_ <= 0.0f) {
+        if (CanStartAttackCommand_(command)) {
             StartAttackAction_(command.attackType, command.horizontal, command.attackGroup, command.attackVariant);
+        } else if (IsUAttackType_(command.attackType) &&
+            action_ == PlayerAction::Attack &&
+            IsUAttackType_(attackType_)) {
+            constexpr float kUComboBufferSec = 0.18f;
+            bufferedUComboCommand_ = command;
+            uComboBufferTimer_ = kUComboBufferSec;
         }
         break;
 
@@ -274,6 +153,20 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
 }
 
 void Player::UpdateActionTimer_(float dt) {
+    if (uComboResetTimer_ > 0.0f && !(action_ == PlayerAction::Attack && IsUAttackType_(attackType_))) {
+        const float previousResetTimer = uComboResetTimer_;
+        uComboResetTimer_ = std::max(0.0f, uComboResetTimer_ - dt);
+        if (previousResetTimer > 0.0f && uComboResetTimer_ <= 0.0f) {
+            uComboStage_ = 0;
+            lastUComboStage_ = 0;
+            uComboBufferTimer_ = 0.0f;
+        }
+    }
+    if (uComboBufferTimer_ > 0.0f) {
+        uComboBufferTimer_ = std::max(0.0f, uComboBufferTimer_ - dt);
+    }
+    uComboDebugFlashSec_ = std::max(0.0f, uComboDebugFlashSec_ - dt);
+
     if (actionTimer_ <= 0.0f) return;
 
     if (action_ == PlayerAction::Attack) {
@@ -281,10 +174,33 @@ void Player::UpdateActionTimer_(float dt) {
     }
 
     actionTimer_ -= dt;
+    if (uComboBufferTimer_ > 0.0f && CanStartAttackCommand_(bufferedUComboCommand_)) {
+        StartAttackAction_(
+            bufferedUComboCommand_.attackType,
+            bufferedUComboCommand_.horizontal,
+            bufferedUComboCommand_.attackGroup,
+            bufferedUComboCommand_.attackVariant);
+        return;
+    }
     if (actionTimer_ <= 0.0f) {
+        const PlayerAttackType finishedType = attackType_;
         actionTimer_ = 0.0f;
         attackType_ = PlayerAttackType::None;
         attackElapsedSec_ = 0.0f;
+        currentAttackHit_ = false;
+        specialHitDuringAction_ = false;
+        specialCancelUsedThisAction_ = false;
+        hasSpecialChainCancelRight_ = false;
+        specialChainCancelEligible_ = false;
+        nextSideSpecialLockOn_ = false;
+        sideSpecialLockOnActive_ = false;
+        iSpecialChargeSec_ = 0.0f;
+        iCounterSuccess_ = false;
+        ChangeIAttackState_(PlayerIAttackState::None);
+        if (IsUAttackType_(finishedType)) {
+            constexpr float kUComboResetSec = 0.28f;
+            uComboResetTimer_ = kUComboResetSec;
+        }
         if (action_ == PlayerAction::Attack) {
             action_ = isMoving ? PlayerAction::Move : PlayerAction::Idle;
         }
@@ -309,6 +225,8 @@ void Player::PlayActionAnimation_(const PlayerInputCommand& command) {
             break;
         case PlayerAttackType::NeutralSpecial:
         case PlayerAttackType::SideSpecial:
+        case PlayerAttackType::UpSpecial:
+        case PlayerAttackType::DownSpecial:
             playIfChanged("Attak_O", false);
             break;
         case PlayerAttackType::None:
