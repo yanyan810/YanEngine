@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 static const char* kHumanWalk_Set[] = {
     "human/walk.gltf",
@@ -61,23 +62,8 @@ void Player::ChangeModelSet_(Player::PlayerModelSet set) {
 void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam) {
     cam_ = cam;
 
-    attackDefinitions_ = { {
-        { {
-            { "Ground Neutral U", { 0.9f, 0.70f, 0.0f }, { 0.55f, 0.70f, 0.45f }, 0.03f, 0.12f, 0.28f, 8 },
-            { "Ground Side U", { 1.15f, 0.75f, 0.0f }, { 0.80f, 0.80f, 0.50f }, 0.04f, 0.13f, 0.38f, 12 },
-            { "Ground Up U", { 0.25f, 1.45f, 0.0f }, { 0.70f, 1.05f, 0.50f }, 0.04f, 0.14f, 0.36f, 11 },
-        } },
-        { {
-            { "Smash Neutral U", { 1.25f, 0.85f, 0.0f }, { 0.95f, 0.90f, 0.55f }, 0.08f, 0.12f, 0.48f, 16 },
-            { "Smash Side U", { 1.45f, 0.85f, 0.0f }, { 1.15f, 0.95f, 0.60f }, 0.10f, 0.14f, 0.55f, 20 },
-            { "Smash Up U", { 0.35f, 1.65f, 0.0f }, { 0.90f, 1.20f, 0.60f }, 0.09f, 0.13f, 0.52f, 18 },
-        } },
-        { {
-            { "Air Neutral U", { 0.85f, 0.75f, 0.0f }, { 0.70f, 0.70f, 0.50f }, 0.02f, 0.16f, 0.34f, 9 },
-            { "Air Side U", { 1.10f, 0.70f, 0.0f }, { 0.85f, 0.75f, 0.55f }, 0.04f, 0.15f, 0.40f, 12 },
-            { "Air Up U", { 0.20f, 1.35f, 0.0f }, { 0.80f, 1.00f, 0.55f }, 0.03f, 0.16f, 0.38f, 11 },
-        } },
-    } };
+    InitializeUAttackDefinitions_();
+    InitializeIAttackDefinitions_();
 
     model_ = std::make_unique<Object3d>();
     model_->Initialize(objCommon, dx);
@@ -154,8 +140,6 @@ bool Player::EmitParticleFromBone(
 }
 
 void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
-    (void)enemyMgr;
-
     isMoving = false;
     UpdateActionTimer_(dt);
 
@@ -179,11 +163,15 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         if (moveLockSec_ < 0.0f) moveLockSec_ = 0.0f;
     }
 
+    const bool preserveSideSpecialBounce =
+        sideSpecialHitBounceUsed_ &&
+        !onGround_;
     const bool inputBlockedByLaunch = launched_ && !launchControlUnlocked_;
-    const bool useDebugCommand = hasDebugCommand_ && !inputBlockedByLaunch;
+    const bool inputBlockedBySideSpecialBounce = preserveSideSpecialBounce;
+    const bool useDebugCommand = hasDebugCommand_ && !inputBlockedByLaunch && !inputBlockedBySideSpecialBounce;
     PlayerInputCommand command = useDebugCommand
         ? debugCommand_
-        : ((externalInputBlocked_ || inputBlockedByLaunch) ? PlayerInputCommand{} : ResolveInput_(input));
+        : ((externalInputBlocked_ || inputBlockedByLaunch || inputBlockedBySideSpecialBounce) ? PlayerInputCommand{} : ResolveInput_(input));
     if (launched_ && !launchControlUnlocked_) {
         command.action = PlayerAction::Launched;
     }
@@ -221,25 +209,46 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         vel_.z = std::clamp(vel_.z, -maxDepthSpeed, maxDepthSpeed);
         isMoving = command.horizontal != 0 || command.depth != 0;
     }
-    else if (!inputBlockedByLaunch && !IsMoveLocked() && command.action != PlayerAction::Guard && command.action != PlayerAction::Crouch) {
+    else if (!preserveSideSpecialBounce &&
+        !inputBlockedByLaunch &&
+        !IsMoveLocked() &&
+        command.action != PlayerAction::Guard &&
+        command.action != PlayerAction::Crouch) {
         if (useDebugCommand) {
             UpdateMove_(dt, command);
         } else {
             UpdateMove_(dt, input);
         }
     }
-    else if (!launched_) {
+    else if (!launched_ && !preserveSideSpecialBounce) {
         vel_.x = 0.0f;
         vel_.z = 0.0f;
     }
 
+    PrepareSpecialCommandTarget_(command, enemyMgr);
     ApplyActionCommand_(command);
     if (command.down && !launched_) {
         vel_.z = 0.0f;
     }
+    specialCancelDebugFlashSec_ = std::max(0.0f, specialCancelDebugFlashSec_ - dt);
+    UpdateIAttack_(dt);
     PlayActionAnimation_(command);
 
+    const bool wasOnGround = onGround_;
     ApplyPhysics_(dt);
+    if (!wasOnGround && onGround_) {
+        cancelGauge_ = kMaxCancelGauge_;
+        hasSpecialCancelRight_ = false;
+        hasSpecialChainCancelRight_ = false;
+        specialChainCancelEligible_ = false;
+        specialCancelUsedThisAction_ = false;
+        sideSpecialHitBounceUsed_ = false;
+        nextSideSpecialLockOn_ = false;
+        sideSpecialLockOnActive_ = false;
+        uComboResetTimer_ = 0.0f;
+        uComboBufferTimer_ = 0.0f;
+        uComboDebugFlashSec_ = 0.0f;
+    }
 
     UpdateBody_();
 
@@ -288,40 +297,3 @@ void Player::QueueDebugCommand(const PlayerInputCommand& command) {
     debugCommand_ = command;
     hasDebugCommand_ = true;
 }
-
-Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) {
-    return attackDefinitions_[static_cast<size_t>(group)][static_cast<size_t>(variant)];
-}
-
-const Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) const {
-    return attackDefinitions_[static_cast<size_t>(group)][static_cast<size_t>(variant)];
-}
-
-const char* Player::AttackGroupName(PlayerAttackGroup group) {
-    switch (group) {
-    case PlayerAttackGroup::Ground:
-        return "Ground U";
-    case PlayerAttackGroup::Smash:
-        return "Smash U";
-    case PlayerAttackGroup::Air:
-        return "Air U";
-    default:
-        return "Unknown";
-    }
-}
-
-const char* Player::AttackVariantName(PlayerAttackVariant variant) {
-    switch (variant) {
-    case PlayerAttackVariant::Neutral:
-        return "Neutral";
-    case PlayerAttackVariant::Side:
-        return "Side";
-    case PlayerAttackVariant::Up:
-        return "Up";
-    default:
-        return "Unknown";
-    }
-}
-
-
-

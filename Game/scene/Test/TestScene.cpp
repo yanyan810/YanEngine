@@ -20,11 +20,14 @@
 #include <cstdio>
 #include <filesystem>
 #include <cctype>
+#include <limits>
 
 #ifdef USE_IMGUI
 extern ImVec2 gSceneImageMin;
 extern ImVec2 gSceneImageMax;
 extern bool gHasSceneImageRect;
+extern bool gTestSceneAttackTuningSwitcherVisible;
+extern int gTestSceneAttackTuningTarget;
 #endif
 
 namespace {
@@ -302,6 +305,9 @@ bool FitMeshAABBsToObject(Object3d& object, std::vector<TestScene::MeshCollision
 } // namespace
 
 void TestScene::OnEnter(GameApp& app) {
+#ifdef USE_IMGUI
+    gTestSceneAttackTuningSwitcherVisible = true;
+#endif
   //  TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
 
     input_ = app.GetInput();
@@ -490,6 +496,9 @@ void TestScene::OnEnter(GameApp& app) {
 }
 
 void TestScene::OnExit(GameApp& /*app*/) {
+#ifdef USE_IMGUI
+    gTestSceneAttackTuningSwitcherVisible = false;
+#endif
     EffectManager::GetInstance()->Finalize();
     player_.reset();
     camera_.reset();
@@ -537,7 +546,10 @@ void TestScene::Update(GameApp& app, float dt) {
 
     if (!hitStopActive && player_) {
         player_->Update(dt, *input_, enemyMgr_);
-        enemyMgr_.ApplyPlayerAttack(*player_);
+        const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
+        if (!playerAttackHits.empty()) {
+            player_->NotifyAttackHit();
+        }
         hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
     }
 
@@ -826,11 +838,11 @@ void TestScene::DrawRender(GameApp& app) {
         }
     }
 
-#ifdef _DEBUG
-    player_->DrawDebugHitBoxes(enemyMgr_);
-#endif
-
     enemyMgr_.Draw();
+
+#ifdef _DEBUG
+    if (player_) player_->DrawDebugHitBoxes(enemyMgr_);
+#endif
 
     // 3Dエフェクトオブジェクトの描画
     EffectManager::GetInstance()->Draw();
@@ -871,6 +883,9 @@ void TestScene::Draw(GameApp& app) {
 
 void TestScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI
+    gTestSceneAttackTuningSwitcherVisible = true;
+    gTestSceneAttackTuningTarget = std::clamp(gTestSceneAttackTuningTarget, 0, 1);
+
     if (drawKnockbackPreview_ && knockbackPreviewLineVisible_ && camera_ && gHasSceneImageRect && knockbackPreviewLinePoints_.size() >= 2) {
         const float sceneW = std::max(1.0f, gSceneImageMax.x - gSceneImageMin.x);
         const float sceneH = std::max(1.0f, gSceneImageMax.y - gSceneImageMin.y);
@@ -904,6 +919,130 @@ void TestScene::DrawImGui(GameApp& app) {
                 IM_COL32(255, 38, 13, 255),
                 thickness);
         }
+        drawList->PopClipRect();
+    }
+
+    if (player_ && camera_ && gHasSceneImageRect) {
+        Vector3 center{};
+        Vector3 halfSize{};
+        bool activeHitBox = false;
+        if (player_->GetAttackDebugVisualBox(center, halfSize, activeHitBox)) {
+            const float sceneW = std::max(1.0f, gSceneImageMax.x - gSceneImageMin.x);
+            const float sceneH = std::max(1.0f, gSceneImageMax.y - gSceneImageMin.y);
+            const Vector3 corners[] = {
+                { center.x - halfSize.x, center.y - halfSize.y, center.z - halfSize.z },
+                { center.x + halfSize.x, center.y - halfSize.y, center.z - halfSize.z },
+                { center.x - halfSize.x, center.y + halfSize.y, center.z - halfSize.z },
+                { center.x + halfSize.x, center.y + halfSize.y, center.z - halfSize.z },
+                { center.x - halfSize.x, center.y - halfSize.y, center.z + halfSize.z },
+                { center.x + halfSize.x, center.y - halfSize.y, center.z + halfSize.z },
+                { center.x - halfSize.x, center.y + halfSize.y, center.z + halfSize.z },
+                { center.x + halfSize.x, center.y + halfSize.y, center.z + halfSize.z },
+            };
+            ImVec2 minPos{
+                std::numeric_limits<float>::max(),
+                std::numeric_limits<float>::max()
+            };
+            ImVec2 maxPos{
+                std::numeric_limits<float>::lowest(),
+                std::numeric_limits<float>::lowest()
+            };
+            bool hasProjectedCorner = false;
+            for (const Vector3& corner : corners) {
+                Vector2 screen{};
+                if (!ProjectWorldToRect(*camera_, corner, gSceneImageMin.x, gSceneImageMin.y, sceneW, sceneH, screen)) {
+                    continue;
+                }
+                minPos.x = std::min(minPos.x, screen.x);
+                minPos.y = std::min(minPos.y, screen.y);
+                maxPos.x = std::max(maxPos.x, screen.x);
+                maxPos.y = std::max(maxPos.y, screen.y);
+                hasProjectedCorner = true;
+            }
+            if (hasProjectedCorner) {
+                ImDrawList* drawList = ImGui::GetForegroundDrawList();
+                drawList->PushClipRect(gSceneImageMin, gSceneImageMax, true);
+                const ImU32 color = activeHitBox
+                    ? IM_COL32(30, 255, 70, 255)
+                    : IM_COL32(255, 220, 30, 255);
+                drawList->AddRect(minPos, maxPos, color, 0.0f, 0, 4.0f);
+                drawList->AddText(
+                    ImVec2(minPos.x, std::max(gSceneImageMin.y, minPos.y - 18.0f)),
+                    color,
+                    activeHitBox ? "Player Hitbox ACTIVE" : "Player Hitbox Preview");
+                drawList->PopClipRect();
+            }
+        }
+    }
+
+    if (player_ && gHasSceneImageRect) {
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
+        drawList->PushClipRect(gSceneImageMin, gSceneImageMax, true);
+
+        const ImVec2 panelPos{ gSceneImageMin.x + 14.0f, gSceneImageMin.y + 14.0f };
+        const ImVec2 panelSize{ 285.0f, 158.0f };
+        const bool canCancel = player_->CanSpecialCancelNow();
+        const bool cancelFlash = player_->GetSpecialCancelDebugFlashSec() > 0.0f;
+        const ImU32 panelColor = cancelFlash
+            ? IM_COL32(20, 110, 55, 230)
+            : IM_COL32(10, 10, 10, 185);
+        const ImU32 accentColor = canCancel
+            ? IM_COL32(40, 255, 90, 255)
+            : IM_COL32(255, 210, 50, 255);
+
+        drawList->AddRectFilled(panelPos, ImVec2(panelPos.x + panelSize.x, panelPos.y + panelSize.y), panelColor, 6.0f);
+        drawList->AddRect(panelPos, ImVec2(panelPos.x + panelSize.x, panelPos.y + panelSize.y), accentColor, 6.0f, 0, 2.0f);
+        drawList->AddText(ImVec2(panelPos.x + 10.0f, panelPos.y + 8.0f), IM_COL32(255, 255, 255, 255), "Special Cancel Debug");
+
+        const int gauge = player_->GetCancelGauge();
+        const int maxGauge = player_->GetMaxCancelGauge();
+        const ImVec2 gaugeStart{ panelPos.x + 10.0f, panelPos.y + 34.0f };
+        for (int i = 0; i < maxGauge; ++i) {
+            const float x = gaugeStart.x + i * 34.0f;
+            const ImU32 fill = i < gauge ? IM_COL32(80, 180, 255, 255) : IM_COL32(60, 60, 60, 255);
+            drawList->AddRectFilled(ImVec2(x, gaugeStart.y), ImVec2(x + 26.0f, gaugeStart.y + 18.0f), fill, 3.0f);
+            drawList->AddRect(ImVec2(x, gaugeStart.y), ImVec2(x + 26.0f, gaugeStart.y + 18.0f), IM_COL32(255, 255, 255, 220), 3.0f);
+        }
+
+        char line[128]{};
+        std::snprintf(line, sizeof(line), "Right: %s Chain: %s",
+            player_->HasSpecialCancelRight() ? "YES" : "NO",
+            player_->HasSpecialChainCancelRight() ? "YES" : "NO");
+        drawList->AddText(ImVec2(panelPos.x + 10.0f, panelPos.y + 60.0f), accentColor, line);
+
+        std::snprintf(line, sizeof(line), "Ready: %s  Used: %s",
+            canCancel ? "YES" : "NO",
+            player_->DidUseSpecialCancelThisAction() ? "YES" : "NO");
+        drawList->AddText(ImVec2(panelPos.x + 10.0f, panelPos.y + 80.0f), IM_COL32(230, 230, 230, 255), line);
+
+        std::snprintf(line, sizeof(line), "SpecialHit: %s",
+            player_->HasSpecialHitDuringAction() ? "YES" : "NO");
+        drawList->AddText(ImVec2(panelPos.x + 145.0f, panelPos.y + 80.0f), IM_COL32(230, 230, 230, 255), line);
+
+        if (cancelFlash) {
+            drawList->AddText(ImVec2(panelPos.x + 165.0f, panelPos.y + 32.0f), IM_COL32(80, 255, 120, 255), "CANCEL!");
+        }
+
+        const bool uComboFlash = player_->GetUComboDebugFlashSec() > 0.0f;
+        std::snprintf(line, sizeof(line), "U Combo: %d / 3  Accept: %s",
+            player_->GetUComboStageDisplay(),
+            player_->IsUComboAccepting() ? "YES" : "NO");
+        drawList->AddText(
+            ImVec2(panelPos.x + 10.0f, panelPos.y + 104.0f),
+            player_->IsUComboAccepting() ? IM_COL32(80, 255, 120, 255) : IM_COL32(230, 230, 230, 255),
+            line);
+
+        std::snprintf(line, sizeof(line), "Buffer: %s  Reset: %.2f",
+            player_->GetUComboBufferTimer() > 0.0f ? "ON" : "OFF",
+            player_->GetUComboResetTimer());
+        drawList->AddText(
+            ImVec2(panelPos.x + 10.0f, panelPos.y + 124.0f),
+            player_->GetUComboBufferTimer() > 0.0f ? IM_COL32(255, 220, 30, 255) : IM_COL32(190, 190, 190, 255),
+            line);
+        if (uComboFlash) {
+            drawList->AddText(ImVec2(panelPos.x + 188.0f, panelPos.y + 104.0f), IM_COL32(255, 240, 70, 255), "NEXT U!");
+        }
+
         drawList->PopClipRect();
     }
 
@@ -1292,8 +1431,9 @@ void TestScene::DrawImGui(GameApp& app) {
 
     ImGui::End();
 
-    ImGui::Begin("Boss Attack Tuning");
+    ImGui::Begin("Attack Tuning");
 
+    if (gTestSceneAttackTuningTarget == 0) {
     if (ImGui::CollapsingHeader("Knockback Preview Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         std::vector<const char*> attackLabels = makeAttackLabels();
         const char* lineModeLabels[] = { "Actual Distance", "Launch Velocity" };
@@ -1411,7 +1551,14 @@ void TestScene::DrawImGui(GameApp& app) {
         }
     }
 
-    if (player_ && ImGui::CollapsingHeader("Player U Attacks", ImGuiTreeNodeFlags_DefaultOpen)) {
+    } else {
+    if (!player_) {
+        ImGui::TextUnformatted("Player is not available.");
+    } else {
+        ImGui::Text("Cancel Gauge: %d / %d", player_->GetCancelGauge(), player_->GetMaxCancelGauge());
+        ImGui::Text("Special Cancel Right: %s", player_->HasSpecialCancelRight() ? "true" : "false");
+        ImGui::Separator();
+    if (ImGui::CollapsingHeader("Player U Attacks", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto drawPlayerAttack = [](const char* label, Player::PlayerAttackDefinition& attack) {
             ImGui::PushID(label);
             if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1444,6 +1591,8 @@ void TestScene::DrawImGui(GameApp& app) {
             }
             ImGui::TreePop();
         }
+    }
+    }
     }
 
     ImGui::End();

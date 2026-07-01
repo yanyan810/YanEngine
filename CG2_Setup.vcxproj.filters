@@ -233,6 +233,15 @@
     <ClCompile Include="Game\player\Player.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttack.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttackI.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttackU.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
     <ClCompile Include="Game\player\PlayerInput.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
@@ -479,6 +488,9 @@
     </ClInclude>
     <!-- Game\Player -->
     <ClInclude Include="Game\player\Player.h">
+      <Filter>Game\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\player\PlayerAttackI.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
     <!-- Game\Enemy -->

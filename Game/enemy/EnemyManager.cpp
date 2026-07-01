@@ -502,6 +502,14 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 
 	for (auto& h : meleeHitboxes_) {
 		if (Intersect3(h.box, playerBody3)) {
+			if (h.fromBoss && player.IsCounterActive()) {
+				player.NotifyCounterSuccess();
+				h.life = 0.0f;
+				if (hitStopTuning_.enabled) {
+					pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.playerAttackSec);
+				}
+				continue;
+			}
 			player.TriggerHitFlash(0.25f);
 			if (h.fromBoss) {
 				BossHitTuning tuning = BossAttackAt(h.attackIndex).hit;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <memory>
 #include <array>
 #include <cstdint>
@@ -10,6 +10,7 @@
 #include "Model.h"
 #include "ModelManager.h"
 #include "LightingParam.h"
+#include "PlayerAttackI.h"
 
 class Object3d;
 class Object3dCommon;
@@ -57,6 +58,8 @@ public:
         Smash,
         NeutralSpecial,
         SideSpecial,
+        UpSpecial,
+        DownSpecial,
     };
 
     enum class PlayerAttackGroup : uint8_t {
@@ -93,6 +96,8 @@ public:
         bool down = false;
         bool jumpTriggered = false;
         bool guard = false;
+        bool specialHeld = false;
+        bool specialReleased = false;
     };
 
 
@@ -104,9 +109,26 @@ public:
     void SetExternalInputBlocked(bool blocked) { externalInputBlocked_ = blocked; }
     void Draw();
     void DrawDebugHitBoxes(EnemyManager& enemyMgr);
+    bool GetAttackDebugVisualBox(Vector3& outCenter, Vector3& outHalfSize, bool& outIsActive) const;
     bool GetAttackHitBox(AABB& outHitBox) const;
     int GetAttackDamage() const;
     unsigned int GetAttackSerial() const { return attackSerial_; }
+    int GetCancelGauge() const { return cancelGauge_; }
+    int GetMaxCancelGauge() const { return kMaxCancelGauge_; }
+    bool HasSpecialCancelRight() const { return hasSpecialCancelRight_; }
+    bool HasSpecialChainCancelRight() const { return hasSpecialChainCancelRight_; }
+    bool CanSpecialCancelNow() const;
+    bool HasSpecialHitDuringAction() const { return specialHitDuringAction_; }
+    bool DidUseSpecialCancelThisAction() const { return specialCancelUsedThisAction_; }
+    float GetSpecialCancelDebugFlashSec() const { return specialCancelDebugFlashSec_; }
+    int GetUComboStageDisplay() const { return lastUComboStage_ + 1; }
+    bool IsUComboAccepting() const { return IsUComboAccepting_(); }
+    float GetUComboResetTimer() const { return uComboResetTimer_; }
+    float GetUComboBufferTimer() const { return uComboBufferTimer_; }
+    float GetUComboDebugFlashSec() const { return uComboDebugFlashSec_; }
+    void NotifyAttackHit();
+    bool IsCounterActive() const;
+    void NotifyCounterSuccess();
 
 
     void LockMove(float sec) { if (sec > moveLockSec_) moveLockSec_ = sec; }
@@ -228,7 +250,24 @@ private:
     void StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAttackGroup group, PlayerAttackVariant variant);
     void UpdateActionTimer_(float dt);
     void PlayActionAnimation_(const PlayerInputCommand& command);
+    bool CanStartAttackCommand_(const PlayerInputCommand& command) const;
+    bool IsUAttackType_(PlayerAttackType type) const;
+    bool IsIAttackType_(PlayerAttackType type) const;
+    bool IsUComboAccepting_() const;
     bool GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
+    void PrepareSpecialCommandTarget_(const PlayerInputCommand& command, const EnemyManager& enemyMgr);
+    bool BuildUAttackCommand_(PlayerInputCommand& command) const;
+    bool BuildIAttackCommand_(PlayerInputCommand& command) const;
+    void InitializeUAttackDefinitions_();
+    void InitializeIAttackDefinitions_();
+    float GetAttackActionSec_(PlayerAttackType type, PlayerAttackGroup group, PlayerAttackVariant variant) const;
+    bool GetUAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
+    bool GetIAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
+    int GetUAttackDamage_() const;
+    int GetIAttackDamage_() const;
+    void StartIAttack_(PlayerAttackType type);
+    void UpdateIAttack_(float dt);
+    void ChangeIAttackState_(PlayerIAttackState state);
 
     void UpdateMove_(float dt, const Input& input);
     void UpdateMove_(float dt, const PlayerInputCommand& command);
@@ -276,6 +315,33 @@ private:
     PlayerAttackVariant activeAttackVariant_ = PlayerAttackVariant::Neutral;
     float actionTimer_ = 0.0f;
     float attackElapsedSec_ = 0.0f;
+    static constexpr int kMaxCancelGauge_ = 3;
+    int cancelGauge_ = kMaxCancelGauge_;
+    bool hasSpecialCancelRight_ = false;
+    bool hasSpecialChainCancelRight_ = false;
+    bool specialChainCancelEligible_ = false;
+    bool specialHitDuringAction_ = false;
+    bool specialCancelUsedThisAction_ = false;
+    float specialCancelDebugFlashSec_ = 0.0f;
+    bool currentAttackHit_ = false;
+    bool sideSpecialHitBounceUsed_ = false;
+    bool nextSideSpecialLockOn_ = false;
+    bool sideSpecialLockOnActive_ = false;
+    Vector3 sideSpecialLockOnTarget_{};
+    Vector3 sideSpecialLockOnDirection_{ 1.0f, 0.0f, 0.0f };
+    int uComboStage_ = 0;
+    int lastUComboStage_ = 0;
+    float uComboResetTimer_ = 0.0f;
+    float uComboBufferTimer_ = 0.0f;
+    float uComboDebugFlashSec_ = 0.0f;
+    PlayerInputCommand bufferedUComboCommand_{};
+    bool latestSpecialHeld_ = false;
+    bool latestSpecialReleased_ = false;
+    float iSpecialChargeSec_ = 0.0f;
+    bool iCounterSuccess_ = false;
+    PlayerIAttackState iAttackState_ = PlayerIAttackState::None;
+    float iAttackStateTime_ = 0.0f;
+    bool iAttackHitActive_ = false;
     bool guarding_ = false;
     bool crouching_ = false;
     bool fastFalling_ = false;
@@ -363,5 +429,6 @@ private:
     float titleDemoTimer_ = 0.0f;
     bool  titleDemoNextIsI_ = true;
 
+    friend class PlayerIAttack;
 
 };
