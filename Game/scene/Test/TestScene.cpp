@@ -542,6 +542,9 @@ void TestScene::Update(GameApp& app, float dt) {
     const bool hitStopActive = hitStopTimer_ > 0.0f;
     if (hitStopActive) {
         hitStopTimer_ = std::max(0.0f, hitStopTimer_ - dt);
+        if (player_ && player_->GetCurrentAction() == Player::PlayerAction::Attack) {
+            player_->Update(0.0f, *input_, enemyMgr_);
+        }
     }
 
     if (!hitStopActive && player_) {
@@ -1019,6 +1022,13 @@ void TestScene::DrawImGui(GameApp& app) {
             player_->HasSpecialHitDuringAction() ? "YES" : "NO");
         drawList->AddText(ImVec2(panelPos.x + 145.0f, panelPos.y + 80.0f), IM_COL32(230, 230, 230, 255), line);
 
+        std::snprintf(line, sizeof(line), "CancelLv: %d  FX:%d Cam:%d SE:%d",
+            player_->GetSpecialCancelCount(),
+            player_->GetSpecialCancelEffectLevel(),
+            player_->GetSpecialCancelCameraLevel(),
+            player_->GetSpecialCancelSoundLevel());
+        drawList->AddText(ImVec2(panelPos.x + 10.0f, panelPos.y + 104.0f), IM_COL32(230, 230, 230, 255), line);
+
         if (cancelFlash) {
             drawList->AddText(ImVec2(panelPos.x + 165.0f, panelPos.y + 32.0f), IM_COL32(80, 255, 120, 255), "CANCEL!");
         }
@@ -1028,7 +1038,7 @@ void TestScene::DrawImGui(GameApp& app) {
             player_->GetUComboStageDisplay(),
             player_->IsUComboAccepting() ? "YES" : "NO");
         drawList->AddText(
-            ImVec2(panelPos.x + 10.0f, panelPos.y + 104.0f),
+            ImVec2(panelPos.x + 10.0f, panelPos.y + 128.0f),
             player_->IsUComboAccepting() ? IM_COL32(80, 255, 120, 255) : IM_COL32(230, 230, 230, 255),
             line);
 
@@ -1243,6 +1253,7 @@ void TestScene::DrawImGui(GameApp& app) {
         EnemyManager::HitStopTuning& hitStop = enemyMgr_.HitStop();
         ImGui::Checkbox("Enable HitStop", &hitStop.enabled);
         ImGui::DragFloat("Player Attack Sec", &hitStop.playerAttackSec, 0.005f, 0.0f, 1.0f, "%.3f");
+        ImGui::DragFloat("Special Player Attack Sec", &hitStop.specialPlayerAttackSec, 0.005f, 0.0f, 1.0f, "%.3f");
         ImGui::DragFloat("Boss Attack Sec", &hitStop.bossAttackSec, 0.005f, 0.0f, 1.0f, "%.3f");
         ImGui::Text("Current Timer: %.3f", hitStopTimer_);
     }

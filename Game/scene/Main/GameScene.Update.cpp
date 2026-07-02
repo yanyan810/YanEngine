@@ -262,6 +262,10 @@ void GameScene::Update(GameApp& app, float dt) {
         const bool hitStopActive = hitStopTimer_ > 0.0f;
         if (hitStopActive) {
             hitStopTimer_ = std::max(0.0f, hitStopTimer_ - dt);
+            if (player_ && player_->GetCurrentAction() == Player::PlayerAction::Attack) {
+                player_->SetExternalInputBlocked(blockExternalGameInput);
+                player_->Update(0.0f, *input_, enemyMgr_);
+            }
         }
 
         if (debugAIEnabled_ && app.DebugAI()) {

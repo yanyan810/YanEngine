@@ -77,6 +77,7 @@ json ToJson(const EnemyManager::HitStopTuning& tuning) {
     return {
         { "enabled", tuning.enabled },
         { "playerAttackSec", tuning.playerAttackSec },
+        { "specialPlayerAttackSec", tuning.specialPlayerAttackSec },
         { "bossAttackSec", tuning.bossAttackSec },
     };
 }
@@ -148,6 +149,7 @@ void ApplyJsonToHitStop(const json& value, EnemyManager::HitStopTuning& tuning) 
     }
     tuning.enabled = value.value("enabled", tuning.enabled);
     tuning.playerAttackSec = value.value("playerAttackSec", tuning.playerAttackSec);
+    tuning.specialPlayerAttackSec = value.value("specialPlayerAttackSec", tuning.specialPlayerAttackSec);
     tuning.bossAttackSec = value.value("bossAttackSec", tuning.bossAttackSec);
 }
 
