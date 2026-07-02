@@ -73,6 +73,18 @@ bool TryParseDebugEnemyType(const std::string& typeName, EnemyType& outType) {
 	return false;
 }
 
+bool IsPlayerSpecialAttack(Player::PlayerAttackType type) {
+	switch (type) {
+	case Player::PlayerAttackType::NeutralSpecial:
+	case Player::PlayerAttackType::SideSpecial:
+	case Player::PlayerAttackType::UpSpecial:
+	case Player::PlayerAttackType::DownSpecial:
+		return true;
+	default:
+		return false;
+	}
+}
+
 const char* BossStateName(BossAI::State state) {
 	switch (state) {
 	case BossAI::State::Wander:
@@ -416,7 +428,10 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		event.hitPosition = OverlapCenter(attackBox, enemyBodyBox);
 		hitEvents.push_back(event);
 		if (hitStopTuning_.enabled) {
-			pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopTuning_.playerAttackSec);
+			const float hitStopSec = IsPlayerSpecialAttack(player.GetCurrentAttackType())
+				? hitStopTuning_.specialPlayerAttackSec * player.GetCurrentSpecialHitStopRate()
+				: hitStopTuning_.playerAttackSec;
+			pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopSec);
 		}
 	}
 

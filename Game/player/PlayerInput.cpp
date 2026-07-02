@@ -33,7 +33,14 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
     const bool specialHeld = input.IsKeyPressed(DIK_I);
     const bool specialReleased = input.IsKeyReleased(DIK_I);
-    const bool specialTriggered = input.IsKeyTrigger(DIK_I);
+    const bool finalUComboCancelRoute =
+        action_ == PlayerAction::Attack &&
+        IsUAttackType_(attackType_) &&
+        lastUComboStage_ >= 2;
+    const bool finalUComboSpecialHeld =
+        specialHeld &&
+        finalUComboCancelRoute;
+    const bool specialTriggered = input.IsKeyTrigger(DIK_I) || finalUComboSpecialHeld;
     const bool up = input.IsKeyPressed(DIK_UP) || (specialHeld && input.IsKeyPressed(DIK_W));
 
     if (left != right) {
@@ -43,7 +50,9 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     if (up != down) {
         command.depth = up ? +1 : -1;
     }
-    command.jumpTriggered = input.IsKeyTrigger(DIK_SPACE) || (!specialHeld && input.IsKeyTrigger(DIK_W));
+    command.jumpTriggered =
+        !finalUComboCancelRoute &&
+        (input.IsKeyTrigger(DIK_SPACE) || (!specialHeld && input.IsKeyTrigger(DIK_W)));
     command.guard = input.IsKeyPressed(DIK_H);
     command.specialHeld = specialHeld;
     command.specialReleased = specialReleased;
@@ -101,6 +110,13 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
             constexpr float kUComboBufferSec = 0.18f;
             bufferedUComboCommand_ = command;
             uComboBufferTimer_ = kUComboBufferSec;
+        } else if (IsIAttackType_(command.attackType) &&
+            action_ == PlayerAction::Attack &&
+            (IsIAttackType_(attackType_) || (IsUAttackType_(attackType_) && lastUComboStage_ >= 2)) &&
+            actionTimer_ > 0.0f) {
+            constexpr float kSpecialCancelBufferSec = 0.35f;
+            bufferedSpecialCancelCommand_ = command;
+            specialCancelBufferTimer_ = kSpecialCancelBufferSec;
         }
         break;
 
@@ -166,6 +182,9 @@ void Player::UpdateActionTimer_(float dt) {
     if (uComboBufferTimer_ > 0.0f) {
         uComboBufferTimer_ = std::max(0.0f, uComboBufferTimer_ - dt);
     }
+    if (specialCancelBufferTimer_ > 0.0f) {
+        specialCancelBufferTimer_ = std::max(0.0f, specialCancelBufferTimer_ - dt);
+    }
     uComboDebugFlashSec_ = std::max(0.0f, uComboDebugFlashSec_ - dt);
 
     if (actionTimer_ <= 0.0f) return;
@@ -183,27 +202,55 @@ void Player::UpdateActionTimer_(float dt) {
             bufferedUComboCommand_.attackVariant);
         return;
     }
+    if (specialCancelBufferTimer_ > 0.0f && CanStartAttackCommand_(bufferedSpecialCancelCommand_)) {
+        StartAttackAction_(
+            bufferedSpecialCancelCommand_.attackType,
+            bufferedSpecialCancelCommand_.horizontal,
+            bufferedSpecialCancelCommand_.attackGroup,
+            bufferedSpecialCancelCommand_.attackVariant);
+        return;
+    }
     if (actionTimer_ <= 0.0f) {
         const PlayerAttackType finishedType = attackType_;
+        const bool shouldApplyPendingLandingRecovery =
+            suppressLandingRecoveryUntilAttackEnd_ &&
+            (landingRecoveryPending_ || onGround_);
         actionTimer_ = 0.0f;
         attackType_ = PlayerAttackType::None;
         attackElapsedSec_ = 0.0f;
         currentAttackHit_ = false;
         specialHitDuringAction_ = false;
         specialCancelUsedThisAction_ = false;
+        specialCancelCount_ = 0;
+        specialCancelEffectLevel_ = 0;
+        specialCancelCameraLevel_ = 0;
+        specialCancelSoundLevel_ = 0;
+        specialCancelBufferTimer_ = 0.0f;
         hasSpecialChainCancelRight_ = false;
         specialChainCancelEligible_ = false;
         nextSideSpecialLockOn_ = false;
         sideSpecialLockOnActive_ = false;
+        suppressLandingRecoveryUntilAttackEnd_ = false;
+        landingRecoveryPending_ = false;
         iSpecialChargeSec_ = 0.0f;
         iCounterSuccess_ = false;
         ChangeIAttackState_(PlayerIAttackState::None);
         if (IsUAttackType_(finishedType)) {
             constexpr float kUComboResetSec = 0.28f;
-            uComboResetTimer_ = kUComboResetSec;
+            if (lastUComboStage_ < 2) {
+                uComboResetTimer_ = kUComboResetSec;
+            } else {
+                uComboResetTimer_ = 0.0f;
+                uComboBufferTimer_ = 0.0f;
+                uComboStage_ = 0;
+                lastUComboStage_ = 0;
+            }
         }
         if (action_ == PlayerAction::Attack) {
             action_ = isMoving ? PlayerAction::Move : PlayerAction::Idle;
+        }
+        if (shouldApplyPendingLandingRecovery) {
+            ApplyLandingRecovery_();
         }
     }
 }

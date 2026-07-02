@@ -58,6 +58,26 @@ void Player::ChangeModelSet_(Player::PlayerModelSet set) {
     model_->PlayAnimation("", true);
 }
 
+void Player::ApplyLandingRecovery_() {
+    cancelGauge_ = kMaxCancelGauge_;
+    specialCancelCount_ = 0;
+    specialCancelEffectLevel_ = 0;
+    specialCancelCameraLevel_ = 0;
+    specialCancelSoundLevel_ = 0;
+    hasSpecialCancelRight_ = false;
+    hasSpecialChainCancelRight_ = false;
+    specialChainCancelEligible_ = false;
+    specialCancelUsedThisAction_ = false;
+    sideSpecialHitBounceUsed_ = false;
+    nextSideSpecialLockOn_ = false;
+    sideSpecialLockOnActive_ = false;
+    uComboResetTimer_ = 0.0f;
+    uComboBufferTimer_ = 0.0f;
+    uComboDebugFlashSec_ = 0.0f;
+    specialCancelBufferTimer_ = 0.0f;
+    landingRecoveryPending_ = false;
+}
+
 
 void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam) {
     cam_ = cam;
@@ -237,17 +257,11 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     const bool wasOnGround = onGround_;
     ApplyPhysics_(dt);
     if (!wasOnGround && onGround_) {
-        cancelGauge_ = kMaxCancelGauge_;
-        hasSpecialCancelRight_ = false;
-        hasSpecialChainCancelRight_ = false;
-        specialChainCancelEligible_ = false;
-        specialCancelUsedThisAction_ = false;
-        sideSpecialHitBounceUsed_ = false;
-        nextSideSpecialLockOn_ = false;
-        sideSpecialLockOnActive_ = false;
-        uComboResetTimer_ = 0.0f;
-        uComboBufferTimer_ = 0.0f;
-        uComboDebugFlashSec_ = 0.0f;
+        if (suppressLandingRecoveryUntilAttackEnd_ && action_ == PlayerAction::Attack) {
+            landingRecoveryPending_ = true;
+        } else {
+            ApplyLandingRecovery_();
+        }
     }
 
     UpdateBody_();

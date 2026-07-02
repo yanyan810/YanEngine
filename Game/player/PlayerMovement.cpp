@@ -249,6 +249,10 @@ void Player::ApplyLaunch(const Vector3& velocity, float hitStunSec, float action
     launchControlUnlocked_ = false;
     action_ = PlayerAction::Launched;
     attackType_ = PlayerAttackType::None;
+    specialCancelCount_ = 0;
+    specialCancelEffectLevel_ = 0;
+    specialCancelCameraLevel_ = 0;
+    specialCancelSoundLevel_ = 0;
     ChangeIAttackState_(PlayerIAttackState::None);
     iSpecialChargeSec_ = 0.0f;
     iCounterSuccess_ = false;
@@ -310,6 +314,12 @@ void Player::SetSpawnPos(const Vector3& p) {
     specialChainCancelEligible_ = false;
     specialHitDuringAction_ = false;
     specialCancelUsedThisAction_ = false;
+    specialCancelCount_ = 0;
+    specialCancelEffectLevel_ = 0;
+    specialCancelCameraLevel_ = 0;
+    specialCancelSoundLevel_ = 0;
+    suppressLandingRecoveryUntilAttackEnd_ = false;
+    landingRecoveryPending_ = false;
     specialCancelDebugFlashSec_ = 0.0f;
     currentAttackHit_ = false;
     sideSpecialHitBounceUsed_ = false;
@@ -318,6 +328,7 @@ void Player::SetSpawnPos(const Vector3& p) {
     uComboResetTimer_ = 0.0f;
     uComboBufferTimer_ = 0.0f;
     uComboDebugFlashSec_ = 0.0f;
+    specialCancelBufferTimer_ = 0.0f;
     iSpecialChargeSec_ = 0.0f;
     iCounterSuccess_ = false;
     ChangeIAttackState_(PlayerIAttackState::None);
@@ -348,6 +359,12 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     specialChainCancelEligible_ = false;
     specialHitDuringAction_ = false;
     specialCancelUsedThisAction_ = false;
+    specialCancelCount_ = 0;
+    specialCancelEffectLevel_ = 0;
+    specialCancelCameraLevel_ = 0;
+    specialCancelSoundLevel_ = 0;
+    suppressLandingRecoveryUntilAttackEnd_ = false;
+    landingRecoveryPending_ = false;
     specialCancelDebugFlashSec_ = 0.0f;
     currentAttackHit_ = false;
     sideSpecialHitBounceUsed_ = false;
@@ -356,6 +373,7 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     uComboResetTimer_ = 0.0f;
     uComboBufferTimer_ = 0.0f;
     uComboDebugFlashSec_ = 0.0f;
+    specialCancelBufferTimer_ = 0.0f;
     iSpecialChargeSec_ = 0.0f;
     iCounterSuccess_ = false;
     ChangeIAttackState_(PlayerIAttackState::None);

@@ -81,6 +81,7 @@ public:
     struct HitStopTuning {
         bool enabled = true;
         float playerAttackSec = 0.08f;
+        float specialPlayerAttackSec = 0.14f;
         float bossAttackSec = 0.10f;
     };
 

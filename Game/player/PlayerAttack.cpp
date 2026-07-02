@@ -10,6 +10,13 @@ namespace {
 constexpr float kSideSpecialHitBounceSpeedX = 7.5f;
 constexpr float kSideSpecialHitBounceSpeedY = 11.0f;
 constexpr float kMinLockOnDirectionLength = 0.001f;
+
+// U combo recovery tuning. Index 0/1/2 means combo stage 1/2/3.
+constexpr float kUComboAdditionalRecoverySecByStage[3] = {
+    0.00f,
+    0.08f,
+    0.35f,
+};
 }
 
 Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) {
@@ -47,24 +54,42 @@ const char* Player::AttackVariantName(PlayerAttackVariant variant) {
 }
 
 void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAttackGroup group, PlayerAttackVariant variant) {
+    const bool wasUAttackInProgress = action_ == PlayerAction::Attack && IsUAttackType_(attackType_);
+    const bool canContinueUCombo =
+        uComboStage_ < 2 &&
+        (uComboResetTimer_ > 0.0f || wasUAttackInProgress);
+    const bool finalUComboRecoveryCancel = IsFinalUComboRecoveryCancelable_();
+    const bool specialRecoveryCancel = IsSpecialRecoveryCancelable_();
+
     const bool hasSpecialCancelResource =
         IsIAttackType_(type) &&
-        (hasSpecialCancelRight_ || hasSpecialChainCancelRight_) &&
+        (hasSpecialCancelRight_ || hasSpecialChainCancelRight_ || finalUComboRecoveryCancel || specialRecoveryCancel) &&
         cancelGauge_ > 0 &&
-        !specialCancelUsedThisAction_;
+        (!specialCancelUsedThisAction_ || specialRecoveryCancel);
     const bool wasCancelableSpecial =
         hasSpecialCancelResource &&
         ((action_ == PlayerAction::Attack && actionTimer_ > 0.0f) || !onGround_);
 
     if (wasCancelableSpecial) {
         --cancelGauge_;
+        specialCancelCount_ = std::min(kMaxSpecialCancelCount_, specialCancelCount_ + 1);
         hasSpecialCancelRight_ = false;
         hasSpecialChainCancelRight_ = false;
         specialChainCancelEligible_ = true;
         specialCancelUsedThisAction_ = true;
+        suppressLandingRecoveryUntilAttackEnd_ = true;
+        landingRecoveryPending_ = false;
         specialCancelDebugFlashSec_ = 0.45f;
     } else {
+        if (IsIAttackType_(type)) {
+            specialCancelCount_ = 0;
+            specialCancelEffectLevel_ = 0;
+            specialCancelCameraLevel_ = 0;
+            specialCancelSoundLevel_ = 0;
+        }
         specialCancelUsedThisAction_ = false;
+        suppressLandingRecoveryUntilAttackEnd_ = false;
+        landingRecoveryPending_ = false;
         hasSpecialChainCancelRight_ = false;
         specialChainCancelEligible_ = false;
         if (IsIAttackType_(type) && hasSpecialCancelRight_) {
@@ -87,7 +112,7 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     if (sideSpecialLockOnActive_) {
         Vector3 toTarget = {
             sideSpecialLockOnTarget_.x - pos_.x,
-            sideSpecialLockOnTarget_.y - pos_.y,
+            0.0f,
             sideSpecialLockOnTarget_.z - pos_.z
         };
         const float length = std::sqrt(
@@ -122,19 +147,17 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     }
 
     if (IsUAttackType_(type)) {
-        const bool continueCombo =
-            uComboResetTimer_ > 0.0f ||
-            (action_ == PlayerAction::Attack && IsUAttackType_(attackType_));
-        uComboStage_ = continueCombo ? ((uComboStage_ + 1) % 3) : 0;
+        uComboStage_ = canContinueUCombo ? (uComboStage_ + 1) : 0;
         lastUComboStage_ = uComboStage_;
         uComboResetTimer_ = 0.0f;
         uComboBufferTimer_ = 0.0f;
-        if (continueCombo) {
+        if (canContinueUCombo) {
             uComboDebugFlashSec_ = 0.35f;
         }
     } else {
         uComboResetTimer_ = 0.0f;
         uComboBufferTimer_ = 0.0f;
+        specialCancelBufferTimer_ = 0.0f;
         uComboStage_ = 0;
         lastUComboStage_ = 0;
     }
@@ -142,6 +165,9 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     StartIAttack_(type);
 
     actionTimer_ = GetAttackActionSec_(type, group, variant);
+    if (IsUAttackType_(type)) {
+        actionTimer_ += kUComboAdditionalRecoverySecByStage[lastUComboStage_];
+    }
     LockMove(actionTimer_);
 }
 
@@ -243,11 +269,43 @@ bool Player::IsUComboAccepting_() const {
     if (lastUComboStage_ >= 2) {
         return false;
     }
-    constexpr float kUComboAcceptStartSec = 0.08f;
     constexpr float kUComboAcceptEndPadSec = 0.02f;
+    const PlayerAttackDefinition& attack = AttackDefinition(activeAttackGroup_, activeAttackVariant_);
+    const float comboAcceptStartSec = attack.startDelaySec + attack.activeSec;
 
-    return attackElapsedSec_ >= kUComboAcceptStartSec &&
+    return attackElapsedSec_ >= comboAcceptStartSec &&
         actionTimer_ > kUComboAcceptEndPadSec;
+}
+
+bool Player::IsFinalUComboRecoveryCancelable_() const {
+    if (action_ != PlayerAction::Attack ||
+        !IsUAttackType_(attackType_) ||
+        lastUComboStage_ < 2 ||
+        actionTimer_ <= 0.0f) {
+        return false;
+    }
+
+    const PlayerAttackDefinition& attack = AttackDefinition(activeAttackGroup_, activeAttackVariant_);
+    const float recoveryStartSec = attack.startDelaySec + attack.activeSec;
+    return attackElapsedSec_ >= recoveryStartSec;
+}
+
+bool Player::IsSpecialRecoveryCancelable_() const {
+    if (action_ != PlayerAction::Attack ||
+        !IsIAttackType_(attackType_) ||
+        actionTimer_ <= 0.0f) {
+        return false;
+    }
+
+    switch (iAttackState_) {
+    case PlayerIAttackState::NeutralFinish_Recover:
+    case PlayerIAttackState::SideSlide_Recover:
+    case PlayerIAttackState::UpRise_Recover:
+    case PlayerIAttackState::DownCounter_Recover:
+        return true;
+    default:
+        return false;
+    }
 }
 
 bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {
@@ -271,20 +329,20 @@ bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {
         return false;
     }
     if (IsIAttackType_(attackType_)) {
-        return hasSpecialChainCancelRight_ &&
+        return (hasSpecialChainCancelRight_ || IsSpecialRecoveryCancelable_()) &&
             cancelGauge_ > 0 &&
-            !specialCancelUsedThisAction_;
+            (!specialCancelUsedThisAction_ || IsSpecialRecoveryCancelable_());
     }
-    return hasSpecialCancelRight_ &&
+    return (hasSpecialCancelRight_ || IsFinalUComboRecoveryCancelable_()) &&
         cancelGauge_ > 0 &&
         !specialCancelUsedThisAction_;
 }
 
 bool Player::CanSpecialCancelNow() const {
     return ((action_ == PlayerAction::Attack && actionTimer_ > 0.0f) || !onGround_) &&
-        (hasSpecialCancelRight_ || hasSpecialChainCancelRight_) &&
+        (hasSpecialCancelRight_ || hasSpecialChainCancelRight_ || IsFinalUComboRecoveryCancelable_() || IsSpecialRecoveryCancelable_()) &&
         cancelGauge_ > 0 &&
-        !specialCancelUsedThisAction_;
+        (!specialCancelUsedThisAction_ || IsSpecialRecoveryCancelable_());
 }
 
 void Player::NotifyAttackHit() {

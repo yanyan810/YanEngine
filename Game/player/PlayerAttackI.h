@@ -45,9 +45,9 @@ public:
     static bool GetUpSpecialHitBox(const Player& player, Vector3& outCenter, Vector3& outHalfSize);
     static bool GetDownSpecialHitBox(const Player& player, Vector3& outCenter, Vector3& outHalfSize);
 
-    static int GetNeutralSpecialDamage();
+    static int GetNeutralSpecialDamage(const Player& player);
     static int GetSideSpecialDamage(const Player& player);
-    static int GetUpSpecialDamage();
+    static int GetUpSpecialDamage(const Player& player);
     static int GetDownSpecialDamage(const Player& player);
 
     static void ChangeState(Player& player, PlayerIAttackState state);

@@ -121,6 +121,11 @@ public:
     bool HasSpecialHitDuringAction() const { return specialHitDuringAction_; }
     bool DidUseSpecialCancelThisAction() const { return specialCancelUsedThisAction_; }
     float GetSpecialCancelDebugFlashSec() const { return specialCancelDebugFlashSec_; }
+    int GetSpecialCancelCount() const { return specialCancelCount_; }
+    int GetSpecialCancelEffectLevel() const { return specialCancelEffectLevel_; }
+    int GetSpecialCancelCameraLevel() const { return specialCancelCameraLevel_; }
+    int GetSpecialCancelSoundLevel() const { return specialCancelSoundLevel_; }
+    float GetCurrentSpecialHitStopRate() const;
     int GetUComboStageDisplay() const { return lastUComboStage_ + 1; }
     bool IsUComboAccepting() const { return IsUComboAccepting_(); }
     float GetUComboResetTimer() const { return uComboResetTimer_; }
@@ -254,6 +259,9 @@ private:
     bool IsUAttackType_(PlayerAttackType type) const;
     bool IsIAttackType_(PlayerAttackType type) const;
     bool IsUComboAccepting_() const;
+    bool IsFinalUComboRecoveryCancelable_() const;
+    bool IsSpecialRecoveryCancelable_() const;
+    void ApplyLandingRecovery_();
     bool GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const;
     void PrepareSpecialCommandTarget_(const PlayerInputCommand& command, const EnemyManager& enemyMgr);
     bool BuildUAttackCommand_(PlayerInputCommand& command) const;
@@ -316,12 +324,19 @@ private:
     float actionTimer_ = 0.0f;
     float attackElapsedSec_ = 0.0f;
     static constexpr int kMaxCancelGauge_ = 3;
+    static constexpr int kMaxSpecialCancelCount_ = 3;
     int cancelGauge_ = kMaxCancelGauge_;
+    int specialCancelCount_ = 0;
+    int specialCancelEffectLevel_ = 0;
+    int specialCancelCameraLevel_ = 0;
+    int specialCancelSoundLevel_ = 0;
     bool hasSpecialCancelRight_ = false;
     bool hasSpecialChainCancelRight_ = false;
     bool specialChainCancelEligible_ = false;
     bool specialHitDuringAction_ = false;
     bool specialCancelUsedThisAction_ = false;
+    bool suppressLandingRecoveryUntilAttackEnd_ = false;
+    bool landingRecoveryPending_ = false;
     float specialCancelDebugFlashSec_ = 0.0f;
     bool currentAttackHit_ = false;
     bool sideSpecialHitBounceUsed_ = false;
@@ -335,6 +350,8 @@ private:
     float uComboBufferTimer_ = 0.0f;
     float uComboDebugFlashSec_ = 0.0f;
     PlayerInputCommand bufferedUComboCommand_{};
+    PlayerInputCommand bufferedSpecialCancelCommand_{};
+    float specialCancelBufferTimer_ = 0.0f;
     bool latestSpecialHeld_ = false;
     bool latestSpecialReleased_ = false;
     float iSpecialChargeSec_ = 0.0f;
