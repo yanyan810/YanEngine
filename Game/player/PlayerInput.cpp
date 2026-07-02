@@ -96,7 +96,8 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
             StartAttackAction_(command.attackType, command.horizontal, command.attackGroup, command.attackVariant);
         } else if (IsUAttackType_(command.attackType) &&
             action_ == PlayerAction::Attack &&
-            IsUAttackType_(attackType_)) {
+            IsUAttackType_(attackType_) &&
+            lastUComboStage_ < 2) {
             constexpr float kUComboBufferSec = 0.18f;
             bufferedUComboCommand_ = command;
             uComboBufferTimer_ = kUComboBufferSec;

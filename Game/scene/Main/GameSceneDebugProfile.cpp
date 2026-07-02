@@ -19,6 +19,8 @@ const char* ToDebugPhaseName(GameSceneDebugPhase phase) {
 std::vector<DebugAction> BuildGameSceneDebugActions(GameSceneDebugPhase phase) {
     std::vector<DebugAction> actions = {
         { "Move" },
+        { "Retreat" },
+        { "DodgeAway" },
         { "Down" },
         { "Jump" },
         { "AttackWeak" },

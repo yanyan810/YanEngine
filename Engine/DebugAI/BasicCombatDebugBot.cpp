@@ -22,6 +22,19 @@ bool IsCombatEntity(const DebugEntityState& entity) {
         (entity.category == "Enemy" || entity.category == "Boss" || entity.type == "Boss");
 }
 
+bool IsEnemyAttackEntity(const DebugEntityState& entity) {
+    return entity.alive &&
+        (entity.category == "EnemyAttack" || entity.category == "EnemyBullet" || entity.category == "Bullet");
+}
+
+bool IsIncomingAttackEntity(const DebugEntityState& entity) {
+    return entity.alive &&
+        (entity.threatHint == "IncomingAttack" ||
+            entity.category == "EnemyAttack" ||
+            entity.category == "EnemyBullet" ||
+            entity.category == "Bullet");
+}
+
 }
 
 bool BasicCombatDebugBot::ChooseAction(const DebugGameState& state, DebugAction& outAction) {
@@ -91,6 +104,29 @@ bool BasicCombatDebugBot::TryChooseWallEscape_(const DebugGameState& state, Debu
 }
 
 bool BasicCombatDebugBot::TryChooseEnemyAction_(const DebugGameState& state, DebugAction& outAction) const {
+    for (const DebugEntityState& entity : state.entities) {
+        if (!IsIncomingAttackEntity(entity)) {
+            continue;
+        }
+
+        const bool isAttackHitbox = IsEnemyAttackEntity(entity);
+        const float threatDistanceSq = isAttackHitbox ? 25.0f : 36.0f;
+        if (DistanceSq2D(state.playerPosition, entity.position) <= threatDistanceSq) {
+            if (HasAction_(state, "DodgeAway")) {
+                outAction = { "DodgeAway" };
+                outAction.targetId = entity.id;
+                outAction.holdFrames = 14;
+                return true;
+            }
+            if (HasAction_(state, "Retreat")) {
+                outAction = { "Retreat" };
+                outAction.targetId = entity.id;
+                outAction.holdFrames = 12;
+                return true;
+            }
+        }
+    }
+
     const DebugEntityState* nearest = nullptr;
     float nearestDistanceSq = std::numeric_limits<float>::max();
 
@@ -114,6 +150,23 @@ bool BasicCombatDebugBot::TryChooseEnemyAction_(const DebugGameState& state, Deb
     const float dz = nearest->position.z - state.playerPosition.z;
     constexpr float kAttackRangeX = 2.4f;
     constexpr float kAttackRangeZ = 2.8f;
+    constexpr float kTooCloseRangeX = 1.4f;
+    constexpr float kTooCloseRangeZ = 1.6f;
+
+    if (Abs(dx) <= kTooCloseRangeX && Abs(dz) <= kTooCloseRangeZ) {
+        if (HasAction_(state, "DodgeAway")) {
+            outAction = { "DodgeAway" };
+            outAction.targetId = nearest->id;
+            outAction.holdFrames = 14;
+            return true;
+        }
+        if (HasAction_(state, "Retreat")) {
+            outAction = { "Retreat" };
+            outAction.targetId = nearest->id;
+            outAction.holdFrames = 12;
+            return true;
+        }
+    }
 
     if (Abs(dx) <= kAttackRangeX && Abs(dz) <= kAttackRangeZ) {
         if (HasAction_(state, "AttackWeak")) {

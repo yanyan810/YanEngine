@@ -24,6 +24,8 @@ struct DebugEntityState {
     std::string id;
     std::string category;
     std::string type;
+    std::string aiStateName;
+    std::string threatHint;
     int hp = 0;
     int damage = 0;
     Vector3 position = {};

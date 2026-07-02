@@ -30,6 +30,8 @@ json ToJson(const DebugEntityState& entity) {
         { "id", entity.id },
         { "category", entity.category },
         { "type", entity.type },
+        { "aiStateName", entity.aiStateName },
+        { "threatHint", entity.threatHint },
         { "hp", entity.hp },
         { "damage", entity.damage },
         { "position", ToJson(entity.position) },
@@ -69,10 +71,20 @@ json ToStateJson(const DebugGameState& state, bool includeDetailedEntities) {
                 { "id", entity.id },
                 { "category", entity.category },
                 { "type", entity.type },
+                { "aiStateName", entity.aiStateName },
+                { "threatHint", entity.threatHint },
                 { "hp", entity.hp },
+                { "damage", entity.damage },
                 { "position", ToJson(entity.position) },
+                { "velocity", ToJson(entity.velocity) },
                 { "alive", entity.alive },
                 { "pending", entity.pending },
+                { "delay", entity.delay },
+                { "life", entity.life },
+                { "aiState1", entity.aiState1 },
+                { "aiState2", entity.aiState2 },
+                { "aiFloat1", entity.aiFloat1 },
+                { "aiFloat2", entity.aiFloat2 },
             });
         }
     }
@@ -156,7 +168,11 @@ std::string ToJsonString(const DebugGameState& state) {
 std::string ToAiStateJsonString(const DebugGameState& state, const std::string& goal) {
     json result = ToStateJson(state, false);
     if (!goal.empty()) {
-        result["goal"] = goal;
+        try {
+            result["goal"] = json::parse(goal);
+        } catch (...) {
+            result["goal"] = goal;
+        }
     }
     return result.dump();
 }

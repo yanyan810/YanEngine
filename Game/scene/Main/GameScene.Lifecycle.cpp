@@ -16,12 +16,14 @@
 #include "SrvManager.h"
 #include "WinApp.h"
 #include "Matrix4x4.h"
+#include "scene/Test/TestSceneBossTuning.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <ctime>
 #include <d3d12.h>
+#include <string>
 
 GameScene::~GameScene() = default;
 
@@ -75,6 +77,15 @@ void GameScene::OnEnter(GameApp& app) {
 
     //enemy
     enemyMgr_.Initialize(app.ObjCom(), app.Dx(), camera_.get());
+
+    {
+        std::string tuningStatus;
+        if (TestSceneBossTuning::Load("resources/tuning/boss_hit_tuning.json", enemyMgr_, *player_, tuningStatus)) {
+            OutputDebugStringA(("[GameScene] " + tuningStatus + "\n").c_str());
+        } else {
+            OutputDebugStringA(("[GameScene] Boss tuning not applied: " + tuningStatus + "\n").c_str());
+        }
+    }
 
     enemyMgr_.Spawn(EnemyType::Boss, Vector3{ 0.0f, 0.0f, 5.0f });
 
