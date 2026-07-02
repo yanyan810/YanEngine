@@ -61,7 +61,7 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
         hasSpecialCancelRight_ = false;
         hasSpecialChainCancelRight_ = false;
         specialChainCancelEligible_ = true;
-        specialCancelUsedThisAction_ = false;
+        specialCancelUsedThisAction_ = true;
         specialCancelDebugFlashSec_ = 0.45f;
     } else {
         specialCancelUsedThisAction_ = false;
@@ -240,15 +240,14 @@ bool Player::IsUComboAccepting_() const {
     if (action_ != PlayerAction::Attack || !IsUAttackType_(attackType_)) {
         return false;
     }
+    if (lastUComboStage_ >= 2) {
+        return false;
+    }
     constexpr float kUComboAcceptStartSec = 0.08f;
     constexpr float kUComboAcceptEndPadSec = 0.02f;
-    constexpr float kUComboThirdAcceptEndPadSec = -0.23f;
-
-    const float endPadSec =
-        lastUComboStage_ == 2 ? kUComboThirdAcceptEndPadSec : kUComboAcceptEndPadSec;
 
     return attackElapsedSec_ >= kUComboAcceptStartSec &&
-        actionTimer_ > endPadSec;
+        actionTimer_ > kUComboAcceptEndPadSec;
 }
 
 bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {

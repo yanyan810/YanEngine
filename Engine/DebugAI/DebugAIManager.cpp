@@ -27,6 +27,24 @@ std::string BuildStateDiffMessage(const DebugGameState& before, const DebugGameS
     return message.str();
 }
 
+void NormalizeChosenAction(DebugAction& action) {
+    if (action.name == "DodgeAway") {
+        action.holdFrames = std::max(action.holdFrames, 14u);
+    } else if (action.name == "Retreat") {
+        action.holdFrames = std::max(action.holdFrames, 12u);
+    } else if (
+        action.name == "AttackWeak" ||
+        action.name == "AttackTilt" ||
+        action.name == "AttackSmash" ||
+        action.name == "AttackNeutralSpecial" ||
+        action.name == "AttackSideSpecial" ||
+        action.name == "AttackUpSpecial" ||
+        action.name == "AttackDownSpecial" ||
+        action.name == "AttackSpecial") {
+        action.holdFrames = 1;
+    }
+}
+
 std::string BuildRestoreMessage(const DebugGameState& expected, const DebugGameState& actual, const std::vector<DebugSpawnOverride>& overrides) {
     std::ostringstream message;
     message
@@ -361,6 +379,7 @@ void DebugAIManager::InjectAction() {
     DebugGameState beforeState = adapter_->CaptureDebugState();
     DebugAction chosenAction;
     if (bot_ != nullptr && bot_->ChooseAction(beforeState, chosenAction)) {
+        NormalizeChosenAction(chosenAction);
         pendingBeforeState_ = beforeState;
         pendingAction_ = chosenAction;
         hasPendingAction_ = true;

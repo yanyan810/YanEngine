@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdlib>
+#include <fstream>
 #include <future>
 #include <sstream>
 #include <vector>
@@ -19,17 +20,49 @@ namespace {
 using json = nlohmann::json;
 
 std::string GetEnvironmentString(const char* name) {
-    const DWORD size = GetEnvironmentVariableA(name, nullptr, 0);
+    const int nameSize = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
+    if (nameSize <= 0) {
+        return {};
+    }
+
+    std::wstring wideName(nameSize, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wideName.data(), nameSize);
+
+    const DWORD size = GetEnvironmentVariableW(wideName.c_str(), nullptr, 0);
     if (size == 0) {
         return {};
     }
 
-    std::string value(size, '\0');
-    const DWORD written = GetEnvironmentVariableA(name, value.data(), size);
+    std::wstring wideValue(size, L'\0');
+    const DWORD written = GetEnvironmentVariableW(wideName.c_str(), wideValue.data(), size);
     if (written == 0) {
         return {};
     }
-    value.resize(written);
+    wideValue.resize(written);
+
+    const int utf8Size = WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        wideValue.c_str(),
+        static_cast<int>(wideValue.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+    if (utf8Size <= 0) {
+        return {};
+    }
+
+    std::string value(utf8Size, '\0');
+    WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        wideValue.c_str(),
+        static_cast<int>(wideValue.size()),
+        value.data(),
+        utf8Size,
+        nullptr,
+        nullptr);
     return value;
 }
 
@@ -42,6 +75,21 @@ unsigned long long GetEnvironmentUInt64(const char* name, unsigned long long fal
     char* end = nullptr;
     const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
     return (end != value.c_str()) ? parsed : fallbackValue;
+}
+
+std::string ReadTextFile(const std::string& path) {
+    if (path.empty()) {
+        return {};
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return {};
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
 }
 
 std::wstring ToWideString(const std::string& text) {
@@ -85,7 +133,15 @@ bool OpenAIDebugActionProvider::ConfigureFromEnvironment() {
     if (const std::string model = GetEnvironmentString("DEBUGAI_OPENAI_MODEL"); !model.empty()) {
         model_ = model;
     }
-    if (const std::string goal = GetEnvironmentString("DEBUGAI_OPENAI_GOAL"); !goal.empty()) {
+    if (const std::string goalJson = GetEnvironmentString("DEBUGAI_OPENAI_GOAL_JSON"); !goalJson.empty()) {
+        goal_ = goalJson;
+    } else if (const std::string goalJsonFile = GetEnvironmentString("DEBUGAI_OPENAI_GOAL_JSON_FILE"); !goalJsonFile.empty()) {
+        if (const std::string goalJson = ReadTextFile(goalJsonFile); !goalJson.empty()) {
+            goal_ = goalJson;
+        }
+    } else if (const std::string goalJson = ReadTextFile("resources/debug_ai/openai_goal.json"); !goalJson.empty()) {
+        goal_ = goalJson;
+    } else if (const std::string goal = GetEnvironmentString("DEBUGAI_OPENAI_GOAL"); !goal.empty()) {
         goal_ = goal;
     }
     requestIntervalFrames_ = GetEnvironmentUInt64("DEBUGAI_OPENAI_INTERVAL_FRAMES", requestIntervalFrames_);
@@ -201,6 +257,10 @@ std::string OpenAIDebugActionProvider::BuildRequestBody_(const DebugGameState& s
         << "You are controlling a game through semantic debug actions.\n"
         << "Choose exactly one action from availableActions.\n"
         << "Do not invent action names. Prefer varied exploration and progress.\n"
+        << "Follow the goal field; it may be plain text or structured JSON instructions.\n"
+        << "Action guide: Move uses intParam -1/0/1 for left/right and floatParam -1/0/1 for depth.\n"
+        << "Use Retreat to move away from the nearest enemy. Use DodgeAway to jump away from the nearest enemy.\n"
+        << "If an entity near the player has threatHint IncomingAttack or category EnemyAttack, prefer DodgeAway or Retreat before attacking.\n"
         << "Use targetId only when it appears in entities. Otherwise use an empty string.\n"
         << "Current state JSON:\n"
         << DebugJson::ToAiStateJsonString(state, goal_);

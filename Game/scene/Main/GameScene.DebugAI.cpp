@@ -6,8 +6,10 @@
 #include "GameSceneDebugProfile.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <dinput.h>
+#include <limits>
 #include <string>
 
 GameSceneDebugAdapter::GameSceneDebugAdapter(GameScene& scene)
@@ -178,11 +180,47 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     }
 
     Player::PlayerInputCommand command{};
+    const bool playerIsAttacking =
+        player_->GetCurrentAction() == Player::PlayerAction::Attack &&
+        player_->GetCurrentAttackType() != Player::PlayerAttackType::None;
 
     if (action.name == "Move") {
         command.action = Player::PlayerAction::Move;
         command.horizontal = action.intParam;
         command.depth = static_cast<int>(action.floatParam);
+    } else if (action.name == "Retreat" || action.name == "DodgeAway") {
+        const Vector3 playerPos = player_->GetPos3D();
+        const Enemy* nearestEnemy = nullptr;
+        float nearestDistanceSq = std::numeric_limits<float>::max();
+        for (const Enemy& enemy : enemyMgr_.GetEnemies()) {
+            if (!enemy.IsAlive()) {
+                continue;
+            }
+
+            const Vector3 enemyPos = enemy.GetPos3D();
+            const float dx = playerPos.x - enemyPos.x;
+            const float dz = playerPos.z - enemyPos.z;
+            const float distanceSq = dx * dx + dz * dz;
+            if (distanceSq < nearestDistanceSq) {
+                nearestDistanceSq = distanceSq;
+                nearestEnemy = &enemy;
+            }
+        }
+
+        command.action = action.name == "DodgeAway"
+            ? Player::PlayerAction::Jump
+            : Player::PlayerAction::Move;
+        if (nearestEnemy != nullptr) {
+            const Vector3 enemyPos = nearestEnemy->GetPos3D();
+            const float dx = playerPos.x - enemyPos.x;
+            const float dz = playerPos.z - enemyPos.z;
+            command.horizontal = std::abs(dx) > 0.1f ? (dx > 0.0f ? +1 : -1) : -player_->GetFacing();
+            command.depth = std::abs(dz) > 0.1f ? (dz > 0.0f ? +1 : -1) : 0;
+        } else {
+            command.horizontal = -player_->GetFacing();
+            command.depth = 0;
+        }
+        command.jumpTriggered = action.name == "DodgeAway";
     } else if (action.name == "Down" || action.name == "MoveBack") {
         command.action = player_->IsOnGround()
             ? Player::PlayerAction::Crouch
@@ -193,30 +231,51 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
         command.jumpTriggered = true;
         command.horizontal = std::clamp(action.intParam, -1, 1);
     } else if (action.name == "AttackWeak") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::Weak;
         command.horizontal = std::clamp(action.intParam, -1, 1);
     } else if (action.name == "AttackTilt") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::Tilt;
         command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
     } else if (action.name == "AttackSmash") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::Smash;
         command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
     } else if (action.name == "AttackNeutralSpecial") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::NeutralSpecial;
         command.horizontal = 0;
     } else if (action.name == "AttackSideSpecial" || action.name == "AttackSpecial") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::SideSpecial;
         command.horizontal = action.intParam != 0 ? std::clamp(action.intParam, -1, 1) : player_->GetFacing();
     } else if (action.name == "AttackUpSpecial") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::UpSpecial;
         command.depth = 1;
     } else if (action.name == "AttackDownSpecial") {
+        if (playerIsAttacking) {
+            return;
+        }
         command.action = Player::PlayerAction::Attack;
         command.attackType = Player::PlayerAttackType::DownSpecial;
         command.down = true;

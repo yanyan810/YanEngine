@@ -72,6 +72,85 @@ bool TryParseDebugEnemyType(const std::string& typeName, EnemyType& outType) {
 	}
 	return false;
 }
+
+const char* BossStateName(BossAI::State state) {
+	switch (state) {
+	case BossAI::State::Wander:
+		return "Wander";
+	case BossAI::State::Drop_Windup:
+		return "Drop_Windup";
+	case BossAI::State::Drop_Fall:
+		return "Drop_Fall";
+	case BossAI::State::Drop_Land:
+		return "Drop_Land";
+	case BossAI::State::Melee_Dash:
+		return "Melee_Dash";
+	case BossAI::State::Melee_Attack:
+		return "Melee_Attack";
+	case BossAI::State::Melee_Recover:
+		return "Melee_Recover";
+	case BossAI::State::Rush_ToRight:
+		return "Rush_ToRight";
+	case BossAI::State::Rush_Charge:
+		return "Rush_Charge";
+	case BossAI::State::Rush_ExitLeft:
+		return "Rush_ExitLeft";
+	case BossAI::State::Rush_Return:
+		return "Rush_Return";
+	case BossAI::State::Double_Melee_Dash:
+		return "Double_Melee_Dash";
+	case BossAI::State::Double_Melee_Attack_1:
+		return "Double_Melee_Attack_1";
+	case BossAI::State::Double_Melee_Rock:
+		return "Double_Melee_Rock";
+	case BossAI::State::Double_Melee_Attack_2:
+		return "Double_Melee_Attack_2";
+	case BossAI::State::Double_Melee_Finish:
+		return "Double_Melee_Finish";
+	case BossAI::State::Grab_WindUp:
+		return "Grab_WindUp";
+	case BossAI::State::Grab_Catch:
+		return "Grab_Catch";
+	case BossAI::State::Grab_Delay:
+		return "Grab_Delay";
+	case BossAI::State::Grab_Attack:
+		return "Grab_Attack";
+	case BossAI::State::Grab_Finish:
+		return "Grab_Finish";
+	case BossAI::State::Super50:
+		return "Super50";
+	case BossAI::State::Super25:
+		return "Super25";
+	default:
+		return "Unknown";
+	}
+}
+
+bool IsBossIncomingAttack(BossAI::State state) {
+	switch (state) {
+	case BossAI::State::Drop_Windup:
+	case BossAI::State::Drop_Fall:
+	case BossAI::State::Drop_Land:
+	case BossAI::State::Melee_Dash:
+	case BossAI::State::Melee_Attack:
+	case BossAI::State::Rush_Charge:
+	case BossAI::State::Rush_ExitLeft:
+	case BossAI::State::Double_Melee_Dash:
+	case BossAI::State::Double_Melee_Attack_1:
+	case BossAI::State::Double_Melee_Rock:
+	case BossAI::State::Double_Melee_Attack_2:
+	case BossAI::State::Double_Melee_Finish:
+	case BossAI::State::Grab_WindUp:
+	case BossAI::State::Grab_Catch:
+	case BossAI::State::Grab_Attack:
+	case BossAI::State::Grab_Finish:
+	case BossAI::State::Super50:
+	case BossAI::State::Super25:
+		return true;
+	default:
+		return false;
+	}
+}
 }
 
 float EnemyManager::RandRange_(float a, float b) {
@@ -360,6 +439,10 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		state.velocity = enemy.GetVel();
 		if (enemy.IsBoss()) {
 			BossAI::BossDebugState bossState = enemy.GetBossAI().GetDebugState();
+			state.aiStateName = BossStateName(bossState.st);
+			if (IsBossIncomingAttack(bossState.st)) {
+				state.threatHint = "IncomingAttack";
+			}
 			state.aiState1 = static_cast<int>(bossState.st);
 			state.aiState2 = static_cast<int>(bossState.phase);
 			state.aiFloat1 = bossState.t;
@@ -407,6 +490,38 @@ void EnemyManager::AppendDebugEntities(std::vector<DebugEntityState>& outEntitie
 		state.position = drop.pos;
 		state.alive = true;
 		state.pending = false;
+		outEntities.push_back(state);
+	}
+
+	int pendingHitboxIndex = 0;
+	for (const MeleeHitbox& hitbox : pendingMeleeHitboxes_) {
+		DebugEntityState state;
+		state.id = "pending_enemy_attack_" + std::to_string(pendingHitboxIndex++);
+		state.category = "EnemyAttack";
+		state.type = hitbox.fromBoss ? "BossMeleePending" : "EnemyMeleePending";
+		state.aiStateName = "PendingMeleeHitbox";
+		state.threatHint = "IncomingAttack";
+		state.damage = hitbox.damage;
+		state.position = { hitbox.box.x, hitbox.box.y, hitbox.box.z };
+		state.alive = true;
+		state.pending = true;
+		state.delay = hitbox.life;
+		outEntities.push_back(state);
+	}
+
+	int activeHitboxIndex = 0;
+	for (const MeleeHitbox& hitbox : meleeHitboxes_) {
+		DebugEntityState state;
+		state.id = "enemy_attack_" + std::to_string(activeHitboxIndex++);
+		state.category = "EnemyAttack";
+		state.type = hitbox.fromBoss ? "BossMeleeActive" : "EnemyMeleeActive";
+		state.aiStateName = "ActiveMeleeHitbox";
+		state.threatHint = "IncomingAttack";
+		state.damage = hitbox.damage;
+		state.position = { hitbox.box.x, hitbox.box.y, hitbox.box.z };
+		state.alive = true;
+		state.pending = false;
+		state.life = hitbox.life;
 		outEntities.push_back(state);
 	}
 

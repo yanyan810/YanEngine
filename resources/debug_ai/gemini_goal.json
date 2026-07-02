@@ -1,0 +1,23 @@
+{
+  "objective": "敵を倒してステージを進める",
+  "style": "バグ取り重視",
+  "preferActions": [
+    "Move",
+    "Retreat",
+    "DodgeAway",
+    "Jump",
+    "AttackWeak",
+    "AttackSideSpecial"
+  ],
+  "avoidActions": [
+    "Wait"
+  ],
+ "rules": [
+  "攻撃よりも敵の攻撃を避けることを優先する",
+  "同じ行動を連続しすぎない",
+  "敵の近くではDodgeAwayかRetreatを試す",
+  "ステージ端や壁に引っかかったらMoveで離れる",
+  "バグを見つけるために色々な行動を試す"
+],
+  "notes": "availableActionsにある行動だけを選んでください"
+}

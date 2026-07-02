@@ -1,0 +1,24 @@
+{
+  "objective": "敵を倒してステージを進める",
+  "style": "近距離重視",
+  "preferActions": [
+    "Move",
+    "Retreat",
+    "DodgeAway",
+    "Jump",
+    "AttackWeak",
+    "AttackSideSpecial"
+  ],
+  "avoidActions": [
+    "Wait"
+  ],
+  "rules": [
+    "敵が遠いときはMoveで近づく",
+    "敵に近いときはAttackWeakを優先する",
+    "entitiesにthreatHintがIncomingAttackのものが近くにあるときは攻撃よりDodgeAwayかRetreatを優先する",
+    "敵の攻撃が来る場合はDodgeAwayかRetreatで避ける",
+    "敵との距離が近すぎる場合はDodgeAwayを優先する",
+    "ジャンプ攻撃を時々混ぜる"
+  ],
+  "notes": "availableActionsにある行動だけを選んでください"
+}
