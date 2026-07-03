@@ -49,6 +49,7 @@ static const char* GetPlayerModelPath(Player::PlayerModelSet set) {
     }
 }
 
+// ===== モデルの変更・切替 =====
 void Player::ChangeModelSet_(Player::PlayerModelSet set) {
     if (currentModelSet_ == set) return;
 
@@ -58,12 +59,16 @@ void Player::ChangeModelSet_(Player::PlayerModelSet set) {
     model_->PlayAnimation("", true);
 }
 
+// ===== 着地時のキャンセル情報やコンボデータ等のリセット =====
 void Player::ApplyLandingRecovery_() {
+    // 着地でコンボを区切るため、ゲージ・キャンセル権・強化Lvをまとめて初期化する。
     cancelGauge_ = kMaxCancelGauge_;
     specialCancelCount_ = 0;
     specialCancelEffectLevel_ = 0;
     specialCancelCameraLevel_ = 0;
     specialCancelSoundLevel_ = 0;
+    iSpecialVariant_ = PlayerISpecialVariant::Lv0;
+    iSpecialPulseIndex_ = 0;
     hasSpecialCancelRight_ = false;
     hasSpecialChainCancelRight_ = false;
     specialChainCancelEligible_ = false;
@@ -79,6 +84,7 @@ void Player::ApplyLandingRecovery_() {
 }
 
 
+// ===== プレイヤーの初期化処理 (モデル・デバッグ表示・影の生成) =====
 void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam) {
     cam_ = cam;
 
@@ -133,11 +139,13 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
 }
 
 
+// ===== カメラの設定 =====
 void Player::SetCamera(Camera* cam) {
     cam_ = cam;
     if (model_) model_->SetCamera(cam_);
 }
 
+// ===== ボーン情報（ジョイント位置）の取得 =====
 bool Player::TryGetBoneWorldPosition(const std::string& jointName, Vector3& out, const Vector3& localOffset) const {
     if (!model_) {
         return false;
@@ -145,6 +153,7 @@ bool Player::TryGetBoneWorldPosition(const std::string& jointName, Vector3& out,
     return model_->GetJointWorldPosition(jointName, out, localOffset);
 }
 
+// ===== 指定したジョイント位置からパーティクルを放出 =====
 bool Player::EmitParticleFromBone(
     const std::string& groupName,
     const std::string& jointName,
@@ -159,6 +168,7 @@ bool Player::EmitParticleFromBone(
     return true;
 }
 
+// ===== メイン更新処理 (Update) =====
 void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     isMoving = false;
     UpdateActionTimer_(dt);
@@ -307,6 +317,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
 }
 
+// ===== デバッグ用コマンドのキューイング =====
 void Player::QueueDebugCommand(const PlayerInputCommand& command) {
     debugCommand_ = command;
     hasDebugCommand_ = true;

@@ -239,6 +239,18 @@
     <ClCompile Include="Game\player\PlayerAttackI.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttackIDown.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttackINeutral.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttackISide.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\player\PlayerAttackIUp.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
     <ClCompile Include="Game\player\PlayerAttackU.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
@@ -491,6 +503,9 @@
       <Filter>Game\Player</Filter>
     </ClInclude>
     <ClInclude Include="Game\player\PlayerAttackI.h">
+      <Filter>Game\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\player\PlayerAttackIInternal.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
     <!-- Game\Enemy -->

@@ -58,6 +58,46 @@ struct PlayerAttackHitboxKeyframe {
     bool active = true;
 };
 
+struct PlayerSpecialHitboxKeyframe {
+    float time = 0.0f;
+    float duration = 0.08f;
+    Vector3 offset{ 1.0f, 1.0f, 0.0f };
+    Vector3 halfSize{ 0.6f, 0.8f, 0.5f };
+    int damage = 12;
+    bool active = true;
+    bool multiHit = false;
+};
+
+struct PlayerSpecialMotionKeyframe {
+    float time = 0.0f;
+    float duration = 0.10f;
+    Vector3 velocity{ 0.0f, 0.0f, 0.0f };
+    bool lockVelocity = false;
+};
+
+struct PlayerSpecialAnimationKeyframe {
+    float time = 0.0f;
+    std::string animationName = "Attak_O";
+    float blendSec = 0.10f;
+    bool loop = false;
+};
+
+struct PlayerSpecialEventKeyframe {
+    float time = 0.0f;
+    float duration = 0.08f;
+    int type = 0;
+    float value = 1.0f;
+};
+
+struct PlayerSpecialTimeline {
+    std::string name = "SideSpecial";
+    float totalSec = 0.45f;
+    std::vector<PlayerSpecialHitboxKeyframe> hitboxes;
+    std::vector<PlayerSpecialMotionKeyframe> motions;
+    std::vector<PlayerSpecialAnimationKeyframe> animations;
+    std::vector<PlayerSpecialEventKeyframe> events;
+};
+
 struct EditorObject {
     int id = 0;
     std::string name;

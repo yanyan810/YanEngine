@@ -162,6 +162,55 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         });
     }
 
+    root["playerAttackEditor"]["sideSpecialTimelines"] = json::array();
+    for (int level = 0; level < static_cast<int>(sideSpecialTimelines_.size()); ++level) {
+        const PlayerSpecialTimeline& timeline = sideSpecialTimelines_[level];
+        json jTimeline;
+        jTimeline["level"] = level;
+        jTimeline["name"] = timeline.name;
+        jTimeline["totalSec"] = timeline.totalSec;
+        jTimeline["hitboxes"] = json::array();
+        for (const PlayerSpecialHitboxKeyframe& key : timeline.hitboxes) {
+            jTimeline["hitboxes"].push_back({
+                { "time", key.time },
+                { "duration", key.duration },
+                { "offset", { key.offset.x, key.offset.y, key.offset.z } },
+                { "halfSize", { key.halfSize.x, key.halfSize.y, key.halfSize.z } },
+                { "damage", key.damage },
+                { "active", key.active },
+                { "multiHit", key.multiHit }
+            });
+        }
+        jTimeline["motions"] = json::array();
+        for (const PlayerSpecialMotionKeyframe& key : timeline.motions) {
+            jTimeline["motions"].push_back({
+                { "time", key.time },
+                { "duration", key.duration },
+                { "velocity", { key.velocity.x, key.velocity.y, key.velocity.z } },
+                { "lockVelocity", key.lockVelocity }
+            });
+        }
+        jTimeline["animations"] = json::array();
+        for (const PlayerSpecialAnimationKeyframe& key : timeline.animations) {
+            jTimeline["animations"].push_back({
+                { "time", key.time },
+                { "animationName", key.animationName },
+                { "blendSec", key.blendSec },
+                { "loop", key.loop }
+            });
+        }
+        jTimeline["events"] = json::array();
+        for (const PlayerSpecialEventKeyframe& key : timeline.events) {
+            jTimeline["events"].push_back({
+                { "time", key.time },
+                { "duration", key.duration },
+                { "type", key.type },
+                { "value", key.value }
+            });
+        }
+        root["playerAttackEditor"]["sideSpecialTimelines"].push_back(std::move(jTimeline));
+    }
+
     std::filesystem::path outputPath(path);
     if (outputPath.has_parent_path()) {
         std::filesystem::create_directories(outputPath.parent_path());
@@ -319,6 +368,8 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
     playerAttackObjectIndex_ = -1;
     playerAttackHitboxKeyframes_.clear();
     currentPlayerAttackHitbox_ = {};
+    sideSpecialTimelines_ = {};
+    EnsurePlayerSpecialTimelineDefaults_();
     if (root.contains("playerAttackEditor") && root.at("playerAttackEditor").is_object()) {
         const json& attackEditor = root.at("playerAttackEditor");
         playerAttackEditorEnabled_ = attackEditor.value("enabled", false);
@@ -345,6 +396,55 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
             playerAttackHitboxKeyframes_.push_back(key);
         }
         SortPlayerAttackHitboxKeyframes_();
+
+        if (attackEditor.contains("sideSpecialTimelines") && attackEditor.at("sideSpecialTimelines").is_array()) {
+            for (const auto& timelineSource : attackEditor.at("sideSpecialTimelines")) {
+                const int level = std::clamp(timelineSource.value("level", 0), 0, static_cast<int>(sideSpecialTimelines_.size()) - 1);
+                PlayerSpecialTimeline timeline;
+                timeline.name = timelineSource.value("name", std::string("SideSpecial Lv") + std::to_string(level));
+                timeline.totalSec = timelineSource.value("totalSec", 0.45f);
+                for (const auto& keySource : timelineSource.value("hitboxes", json::array())) {
+                    PlayerSpecialHitboxKeyframe key;
+                    key.time = keySource.value("time", 0.0f);
+                    key.duration = keySource.value("duration", 0.08f);
+                    auto o = keySource.value("offset", json::array({ 1.0f, 1.0f, 0.0f }));
+                    auto h = keySource.value("halfSize", json::array({ 0.6f, 0.8f, 0.5f }));
+                    key.offset = { o[0], o[1], o[2] };
+                    key.halfSize = { h[0], h[1], h[2] };
+                    key.damage = keySource.value("damage", 12);
+                    key.active = keySource.value("active", true);
+                    key.multiHit = keySource.value("multiHit", false);
+                    timeline.hitboxes.push_back(key);
+                }
+                for (const auto& keySource : timelineSource.value("motions", json::array())) {
+                    PlayerSpecialMotionKeyframe key;
+                    key.time = keySource.value("time", 0.0f);
+                    key.duration = keySource.value("duration", 0.10f);
+                    auto v = keySource.value("velocity", json::array({ 0.0f, 0.0f, 0.0f }));
+                    key.velocity = { v[0], v[1], v[2] };
+                    key.lockVelocity = keySource.value("lockVelocity", false);
+                    timeline.motions.push_back(key);
+                }
+                for (const auto& keySource : timelineSource.value("animations", json::array())) {
+                    PlayerSpecialAnimationKeyframe key;
+                    key.time = keySource.value("time", 0.0f);
+                    key.animationName = keySource.value("animationName", std::string("Attak_O"));
+                    key.blendSec = keySource.value("blendSec", 0.10f);
+                    key.loop = keySource.value("loop", false);
+                    timeline.animations.push_back(key);
+                }
+                for (const auto& keySource : timelineSource.value("events", json::array())) {
+                    PlayerSpecialEventKeyframe key;
+                    key.time = keySource.value("time", 0.0f);
+                    key.duration = keySource.value("duration", 0.08f);
+                    key.type = keySource.value("type", 0);
+                    key.value = keySource.value("value", 1.0f);
+                    timeline.events.push_back(key);
+                }
+                sideSpecialTimelines_[level] = std::move(timeline);
+            }
+            EnsurePlayerSpecialTimelineDefaults_();
+        }
     }
 
     if (!snapshot.objects.empty()) {

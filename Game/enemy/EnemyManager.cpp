@@ -602,6 +602,8 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 }
 
 void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn) {
+	ApplySideSpecialLv3BossFreeze(player);
+
 	for (auto& e : enemies_) {
 		e.Update(dt, playerXY, playerZ);
 		e.SetLighting(light_);
@@ -869,6 +871,26 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 		}
 	} else {
 		player.SetGrabbed(false);
+	}
+}
+
+void EnemyManager::ApplySideSpecialLv3BossFreeze(const Player& player) {
+	Enemy* boss = GetBoss();
+	if (!boss) {
+		sideSpecialLv3BossFreezeActive_ = false;
+		return;
+	}
+
+	const bool shouldFreeze = player.IsSideSpecialLv3AttackActive();
+	if (shouldFreeze) {
+		boss->SetFrozen(true);
+		sideSpecialLv3BossFreezeActive_ = true;
+		return;
+	}
+
+	if (sideSpecialLv3BossFreezeActive_) {
+		boss->SetFrozen(false);
+		sideSpecialLv3BossFreezeActive_ = false;
 	}
 }
 

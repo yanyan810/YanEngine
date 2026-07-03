@@ -1,4 +1,4 @@
-﻿#include "Player.h"
+#include "Player.h"
 #include "Object3d.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -9,6 +9,7 @@
 #include <format>
 #include <numbers>
 
+// ===== プレイヤーモデルへのライティング設定 =====
 void Player::SetLighting(const LightingParam& p)
 {
     light_ = p;
@@ -42,6 +43,7 @@ void Player::SetLighting(const LightingParam& p)
 }
 
 
+// ===== タイトル画面アタックデモの制御 =====
 void Player::ResetTitleAttackDemo()
 {
     titleDemoTimer_ = 0.0f;

@@ -719,6 +719,11 @@ void ParticleTestScene::HandleEffectEditorShortcuts_(GameApp& app)
 void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
 {
 #ifdef USE_IMGUI
+    if (gParticleTestEditorModeSwitcherVisible && gParticleTestEditorMode == 2) {
+        DrawPlayerAttackInspectorImGui_(app);
+        return;
+    }
+
     ImGui::Begin("Inspector");
 
     ImGui::TextUnformatted("Model Source");
@@ -1386,12 +1391,13 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
     changed |= ImGui::DragFloat3("Offset", &currentPlayerAttackHitbox_.offset.x, 0.05f, -20.0f, 20.0f);
     changed |= ImGui::DragFloat3("Half Size", &currentPlayerAttackHitbox_.halfSize.x, 0.05f, 0.01f, 20.0f);
     if (changed && playerAttackHitboxCube_) {
+        previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
         Vector3 playerBase{};
         if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
             playerBase = editorObjects_[playerAttackObjectIndex_].position;
         }
-        playerAttackHitboxCube_->SetTranslate(playerBase + currentPlayerAttackHitbox_.offset);
-        playerAttackHitboxCube_->SetScale(currentPlayerAttackHitbox_.halfSize);
+        playerAttackHitboxCube_->SetTranslate(playerBase + previewPlayerAttackHitbox_.offset);
+        playerAttackHitboxCube_->SetScale(previewPlayerAttackHitbox_.halfSize);
     }
 
     if (ImGui::Button("Add / Replace HitBox Keyframe")) {
@@ -1433,6 +1439,7 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
             ImGui::TableSetColumnIndex(4);
             if (ImGui::Button("Set")) {
                 currentPlayerAttackHitbox_ = key;
+                previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
                 timelineTime_ = key.time;
                 RequestTimelineRebuild_(timelineTime_);
             }
@@ -1444,6 +1451,255 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
     ImGui::SeparatorText("Bone Pose");
     ImGui::TextDisabled("Use Inspector > Bone Controls and the viewport bone handles for the selected Player object.");
 
+    ImGui::SeparatorText("Side I Level Timeline");
+    EnsurePlayerSpecialTimelineDefaults_();
+    const char* levelLabels[] = { "Lv0", "Lv1", "Lv2", "Lv3" };
+    if (ImGui::Combo("Side I Lv", &selectedSideSpecialLevel_, levelLabels, IM_ARRAYSIZE(levelLabels))) {
+        EvaluatePlayerSpecialTimeline_();
+    }
+
+    PlayerSpecialTimeline& specialTimeline = CurrentPlayerSpecialTimeline_();
+    ImGui::Text("Timeline Name: %s", specialTimeline.name.c_str());
+    if (ImGui::DragFloat("Special Total Sec", &specialTimeline.totalSec, 0.01f, 0.05f, 5.0f, "%.2f")) {
+        timelineDuration_ = std::max(timelineDuration_, specialTimeline.totalSec);
+        EvaluatePlayerSpecialTimeline_();
+    }
+    if (ImGui::Button("Use Special Duration")) {
+        timelineDuration_ = specialTimeline.totalSec;
+        RequestTimelineRebuild_(std::min(timelineTime_, timelineDuration_));
+    }
+
+    ImGui::SeparatorText("Special HitBox Key");
+    bool specialHitboxChanged = false;
+    specialHitboxChanged |= ImGui::DragFloat("Hit Time", &currentSpecialHitbox_.time, 0.01f, 0.0f, specialTimeline.totalSec, "%.2f");
+    specialHitboxChanged |= ImGui::DragFloat("Hit Duration", &currentSpecialHitbox_.duration, 0.01f, 0.01f, 2.0f, "%.2f");
+    specialHitboxChanged |= ImGui::Checkbox("Hit Active", &currentSpecialHitbox_.active);
+    specialHitboxChanged |= ImGui::Checkbox("Multi Hit", &currentSpecialHitbox_.multiHit);
+    specialHitboxChanged |= ImGui::DragInt("Damage", &currentSpecialHitbox_.damage, 1, 0, 999);
+    specialHitboxChanged |= ImGui::DragFloat3("Special Offset", &currentSpecialHitbox_.offset.x, 0.05f, -20.0f, 20.0f);
+    specialHitboxChanged |= ImGui::DragFloat3("Special Half Size", &currentSpecialHitbox_.halfSize.x, 0.05f, 0.01f, 20.0f);
+    if (specialHitboxChanged) {
+        previewPlayerAttackHitbox_.time = currentSpecialHitbox_.time;
+        previewPlayerAttackHitbox_.offset = currentSpecialHitbox_.offset;
+        previewPlayerAttackHitbox_.halfSize = currentSpecialHitbox_.halfSize;
+        previewPlayerAttackHitbox_.active = currentSpecialHitbox_.active;
+    }
+    if (ImGui::Button("Add / Replace Special HitBox")) {
+        bool replaced = false;
+        for (auto& key : specialTimeline.hitboxes) {
+            if (std::abs(key.time - currentSpecialHitbox_.time) < 0.001f) {
+                key = currentSpecialHitbox_;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            specialTimeline.hitboxes.push_back(currentSpecialHitbox_);
+        }
+        SortCurrentPlayerSpecialTimeline_();
+        EvaluatePlayerSpecialTimeline_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete Near Special HitBox")) {
+        auto& keys = specialTimeline.hitboxes;
+        auto it = std::min_element(keys.begin(), keys.end(), [this](const PlayerSpecialHitboxKeyframe& a, const PlayerSpecialHitboxKeyframe& b) {
+            return std::abs(a.time - timelineTime_) < std::abs(b.time - timelineTime_);
+        });
+        if (it != keys.end() && std::abs(it->time - timelineTime_) <= 0.05f) {
+            keys.erase(it);
+        }
+        EvaluatePlayerSpecialTimeline_();
+    }
+
+    if (ImGui::BeginTable("SideSpecialHitboxKeys", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("Dur", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableSetupColumn("Act", ImGuiTableColumnFlags_WidthFixed, 38.0f);
+        ImGui::TableSetupColumn("Multi", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+        ImGui::TableSetupColumn("Dmg", ImGuiTableColumnFlags_WidthFixed, 48.0f);
+        ImGui::TableSetupColumn("Offset / Half");
+        ImGui::TableSetupColumn("Use", ImGuiTableColumnFlags_WidthFixed, 42.0f);
+        ImGui::TableHeadersRow();
+        for (int i = 0; i < static_cast<int>(specialTimeline.hitboxes.size()); ++i) {
+            auto& key = specialTimeline.hitboxes[i];
+            ImGui::PushID(("special_hit_" + std::to_string(i)).c_str());
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::SetNextItemWidth(54.0f);
+            if (ImGui::DragFloat("##time", &key.time, 0.01f, 0.0f, specialTimeline.totalSec, "%.2f")) {
+                SortCurrentPlayerSpecialTimeline_();
+                EvaluatePlayerSpecialTimeline_();
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(50.0f);
+            ImGui::DragFloat("##dur", &key.duration, 0.01f, 0.01f, 2.0f, "%.2f");
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Checkbox("##active", &key.active);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Checkbox("##multi", &key.multiHit);
+            ImGui::TableSetColumnIndex(4);
+            ImGui::SetNextItemWidth(44.0f);
+            ImGui::DragInt("##damage", &key.damage, 1, 0, 999);
+            ImGui::TableSetColumnIndex(5);
+            ImGui::Text("O %.2f %.2f %.2f / H %.2f %.2f %.2f", key.offset.x, key.offset.y, key.offset.z, key.halfSize.x, key.halfSize.y, key.halfSize.z);
+            ImGui::TableSetColumnIndex(6);
+            if (ImGui::Button("Set")) {
+                currentSpecialHitbox_ = key;
+                timelineTime_ = key.time;
+                RequestTimelineRebuild_(timelineTime_);
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Motion Keys");
+    ImGui::DragFloat("Motion Time", &currentSpecialMotion_.time, 0.01f, 0.0f, specialTimeline.totalSec, "%.2f");
+    ImGui::DragFloat("Motion Duration", &currentSpecialMotion_.duration, 0.01f, 0.01f, 2.0f, "%.2f");
+    ImGui::DragFloat3("Velocity", &currentSpecialMotion_.velocity.x, 0.05f, -100.0f, 100.0f);
+    ImGui::Checkbox("Lock Velocity", &currentSpecialMotion_.lockVelocity);
+    if (ImGui::Button("Add Motion Key")) {
+        specialTimeline.motions.push_back(currentSpecialMotion_);
+        SortCurrentPlayerSpecialTimeline_();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete Near Motion")) {
+        auto& keys = specialTimeline.motions;
+        auto it = std::min_element(keys.begin(), keys.end(), [this](const PlayerSpecialMotionKeyframe& a, const PlayerSpecialMotionKeyframe& b) {
+            return std::abs(a.time - timelineTime_) < std::abs(b.time - timelineTime_);
+        });
+        if (it != keys.end() && std::abs(it->time - timelineTime_) <= 0.05f) {
+            keys.erase(it);
+        }
+    }
+
+    if (ImGui::BeginTable("SideSpecialMotionKeys", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("Dur", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableSetupColumn("Velocity");
+        ImGui::TableSetupColumn("Lock", ImGuiTableColumnFlags_WidthFixed, 42.0f);
+        ImGui::TableSetupColumn("Use", ImGuiTableColumnFlags_WidthFixed, 42.0f);
+        ImGui::TableHeadersRow();
+        for (int i = 0; i < static_cast<int>(specialTimeline.motions.size()); ++i) {
+            auto& key = specialTimeline.motions[i];
+            ImGui::PushID(("special_motion_" + std::to_string(i)).c_str());
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%.2f", key.time);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%.2f", key.duration);
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%.2f %.2f %.2f", key.velocity.x, key.velocity.y, key.velocity.z);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::TextUnformatted(key.lockVelocity ? "Yes" : "No");
+            ImGui::TableSetColumnIndex(4);
+            if (ImGui::Button("Set")) {
+                currentSpecialMotion_ = key;
+                timelineTime_ = key.time;
+                RequestTimelineRebuild_(timelineTime_);
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
+#endif
+}
+
+void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
+{
+#ifdef USE_IMGUI
+    ImGui::Begin("Inspector");
+
+    ImGui::TextUnformatted("PlayerAttack Inspector");
+    if (ImGui::Button("Create / Focus PlayerAttack Editor")) {
+        EnsurePlayerAttackEditor_(app);
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Draw HitBox", &drawPlayerAttackHitbox_);
+
+    ImGui::InputText("Editor JSON", effectJsonPath_, sizeof(effectJsonPath_));
+    if (ImGui::Button("Save PlayerAttack JSON")) {
+        SaveEffectJson_(effectJsonPath_);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load PlayerAttack JSON")) {
+        PushUndoSnapshot_();
+        LoadEffectJson_(app, effectJsonPath_);
+    }
+
+    if (!playerAttackEditorEnabled_) {
+        ImGui::Separator();
+        ImGui::TextDisabled("Create the PlayerAttack editor first.");
+        ImGui::End();
+        return;
+    }
+
+    ImGui::SeparatorText("Player Object");
+    if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
+        EditorObject& player = editorObjects_[playerAttackObjectIndex_];
+        if (ImGui::Selectable(player.name.c_str(), selectedEditorObject_ == playerAttackObjectIndex_)) {
+            selectedEditorObject_ = playerAttackObjectIndex_;
+            selectedParticleNode_ = -1;
+        }
+        ImGui::Text("Model: %s", player.modelPath.c_str());
+
+        bool changed = false;
+        changed |= ImGui::DragFloat3("Position", &player.position.x, 0.05f);
+        changed |= ImGui::DragFloat3("Rotation", &player.rotation.x, 0.01f);
+        changed |= ImGui::DragFloat3("Scale", &player.scale.x, 0.05f, 0.01f, 100.0f);
+        if (changed) {
+            ApplyEditorObjectTransform_(player);
+        }
+
+        DrawGizmoControls_(player);
+        DrawBoneControls_(player);
+    } else {
+        ImGui::TextDisabled("PlayerAttack player object is not available.");
+    }
+
+    ImGui::SeparatorText("Side I Level");
+    EnsurePlayerSpecialTimelineDefaults_();
+    const char* levelLabels[] = { "Lv0", "Lv1", "Lv2", "Lv3" };
+    if (ImGui::Combo("Side I Lv", &selectedSideSpecialLevel_, levelLabels, IM_ARRAYSIZE(levelLabels))) {
+        EvaluatePlayerSpecialTimeline_();
+    }
+
+    PlayerSpecialTimeline& specialTimeline = CurrentPlayerSpecialTimeline_();
+    ImGui::Text("Timeline: %s", specialTimeline.name.c_str());
+    if (ImGui::DragFloat("Total Sec", &specialTimeline.totalSec, 0.01f, 0.05f, 5.0f, "%.2f")) {
+        timelineDuration_ = std::max(timelineDuration_, specialTimeline.totalSec);
+        EvaluatePlayerSpecialTimeline_();
+    }
+    if (ImGui::Button("Use Special Duration")) {
+        timelineDuration_ = specialTimeline.totalSec;
+        RequestTimelineRebuild_(std::min(timelineTime_, timelineDuration_));
+    }
+
+    ImGui::SeparatorText("Current Special HitBox");
+    bool hitboxChanged = false;
+    hitboxChanged |= ImGui::DragFloat("Hit Time", &currentSpecialHitbox_.time, 0.01f, 0.0f, specialTimeline.totalSec, "%.2f");
+    hitboxChanged |= ImGui::DragFloat("Hit Duration", &currentSpecialHitbox_.duration, 0.01f, 0.01f, 2.0f, "%.2f");
+    hitboxChanged |= ImGui::Checkbox("Hit Active", &currentSpecialHitbox_.active);
+    hitboxChanged |= ImGui::DragInt("Damage", &currentSpecialHitbox_.damage, 1, 0, 999);
+    hitboxChanged |= ImGui::DragFloat3("Offset", &currentSpecialHitbox_.offset.x, 0.05f, -20.0f, 20.0f);
+    hitboxChanged |= ImGui::DragFloat3("Half Size", &currentSpecialHitbox_.halfSize.x, 0.05f, 0.01f, 20.0f);
+    if (hitboxChanged) {
+        previewPlayerAttackHitbox_.time = currentSpecialHitbox_.time;
+        previewPlayerAttackHitbox_.offset = currentSpecialHitbox_.offset;
+        previewPlayerAttackHitbox_.halfSize = currentSpecialHitbox_.halfSize;
+        previewPlayerAttackHitbox_.active = currentSpecialHitbox_.active;
+        EvaluatePlayerSpecialTimeline_();
+    }
+
+    ImGui::SeparatorText("Current Motion");
+    ImGui::DragFloat("Motion Time", &currentSpecialMotion_.time, 0.01f, 0.0f, specialTimeline.totalSec, "%.2f");
+    ImGui::DragFloat("Motion Duration", &currentSpecialMotion_.duration, 0.01f, 0.01f, 2.0f, "%.2f");
+    ImGui::DragFloat3("Velocity", &currentSpecialMotion_.velocity.x, 0.05f, -100.0f, 100.0f);
+    ImGui::Checkbox("Lock Velocity", &currentSpecialMotion_.lockVelocity);
+
+    DrawEditorCameraControls_();
     ImGui::End();
 #endif
 }

@@ -255,6 +255,10 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Game\player\Player.cpp" />
     <ClCompile Include="Game\player\PlayerAttack.cpp" />
     <ClCompile Include="Game\player\PlayerAttackI.cpp" />
+    <ClCompile Include="Game\player\PlayerAttackIDown.cpp" />
+    <ClCompile Include="Game\player\PlayerAttackINeutral.cpp" />
+    <ClCompile Include="Game\player\PlayerAttackISide.cpp" />
+    <ClCompile Include="Game\player\PlayerAttackIUp.cpp" />
     <ClCompile Include="Game\player\PlayerAttackU.cpp" />
     <ClCompile Include="Game\player\PlayerInput.cpp" />
     <ClCompile Include="Game\player\PlayerMovement.cpp" />
@@ -541,6 +545,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Game\scene\Flow\TitleScene.h" />
     <ClInclude Include="Game\player\Player.h" />
     <ClInclude Include="Game\player\PlayerAttackI.h" />
+    <ClInclude Include="Game\player\PlayerAttackIInternal.h" />
     <ClInclude Include="Game\scene\Test\TestScene.h" />
     <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h" />
     <ClInclude Include="Game\scene\Test\TestSceneKnockbackPreview.h" />

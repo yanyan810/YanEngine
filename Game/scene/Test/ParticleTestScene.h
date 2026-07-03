@@ -6,6 +6,7 @@
 #include "Vector3.h"
 
 #include <deque>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,6 +36,11 @@ private:
     using EffectKeyframe = ParticleTestEditor::EffectKeyframe;
     using CameraKeyframe = ParticleTestEditor::CameraKeyframe;
     using PlayerAttackHitboxKeyframe = ParticleTestEditor::PlayerAttackHitboxKeyframe;
+    using PlayerSpecialHitboxKeyframe = ParticleTestEditor::PlayerSpecialHitboxKeyframe;
+    using PlayerSpecialMotionKeyframe = ParticleTestEditor::PlayerSpecialMotionKeyframe;
+    using PlayerSpecialAnimationKeyframe = ParticleTestEditor::PlayerSpecialAnimationKeyframe;
+    using PlayerSpecialEventKeyframe = ParticleTestEditor::PlayerSpecialEventKeyframe;
+    using PlayerSpecialTimeline = ParticleTestEditor::PlayerSpecialTimeline;
     using EditorBonePose = ParticleTestEditor::EditorBonePose;
     using EditorObject = ParticleTestEditor::EditorObject;
     using EditorObjectSnapshot = ParticleTestEditor::EditorObjectSnapshot;
@@ -77,6 +83,11 @@ private:
     void DeleteNearestPlayerAttackHitboxKeyframe_();
     void SortPlayerAttackHitboxKeyframes_();
     void EvaluatePlayerAttackHitbox_();
+    void EnsurePlayerSpecialTimelineDefaults_();
+    PlayerSpecialTimeline& CurrentPlayerSpecialTimeline_();
+    const PlayerSpecialTimeline& CurrentPlayerSpecialTimeline_() const;
+    void SortCurrentPlayerSpecialTimeline_();
+    void EvaluatePlayerSpecialTimeline_();
     EditorSnapshot CaptureEditorSnapshot_() const;
     void RestoreEditorSnapshot_(GameApp& app, const EditorSnapshot& snapshot);
     void PushUndoSnapshot_(const EditorSnapshot& snapshot);
@@ -90,6 +101,7 @@ private:
     bool OpenTextureFileDialog_(std::string& outTexturePath);
     void HandleEffectEditorShortcuts_(GameApp& app);
     void DrawEffectInspectorImGui_(GameApp& app);
+    void DrawPlayerAttackInspectorImGui_(GameApp& app);
     void DrawAnimationCameraControls_();
     void DrawGizmoControls_(EditorObject& item);
     void DrawBoneControls_(EditorObject& item);
@@ -128,9 +140,16 @@ private:
     std::vector<CameraKeyframe> cameraKeyframes_;
     std::vector<PlayerAttackHitboxKeyframe> playerAttackHitboxKeyframes_;
     PlayerAttackHitboxKeyframe currentPlayerAttackHitbox_{};
+    PlayerAttackHitboxKeyframe previewPlayerAttackHitbox_{};
+    std::array<PlayerSpecialTimeline, 4> sideSpecialTimelines_{};
+    PlayerSpecialHitboxKeyframe currentSpecialHitbox_{};
+    PlayerSpecialMotionKeyframe currentSpecialMotion_{};
+    PlayerSpecialAnimationKeyframe currentSpecialAnimation_{};
+    PlayerSpecialEventKeyframe currentSpecialEvent_{};
     bool playerAttackEditorEnabled_ = false;
     bool drawPlayerAttackHitbox_ = true;
     int playerAttackObjectIndex_ = -1;
+    int selectedSideSpecialLevel_ = 2;
     EditorMode editorMode_ = EditorMode::Blender;
     GizmoMode gizmoMode_ = GizmoMode::Translate;
     Vector3 editorCameraPosition_{ 0.0f, 3.0f, -20.0f };

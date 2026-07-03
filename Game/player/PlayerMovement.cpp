@@ -11,6 +11,7 @@
 #include <format>
 #include <numbers>
 
+// ===== 移動制御 (UpdateMove) =====
 void Player::UpdateMove_(float /*dt*/, const Input& input) {
     float mx = 0.0f;
     if (input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A))  mx -= 1.0f, isMoving = true;
@@ -46,6 +47,7 @@ void Player::UpdateMove_(float /*dt*/, const PlayerInputCommand& command) {
     isMoving = std::abs(mx) > 0.1f || std::abs(mz) > 0.1f;
 }
 
+// ===== 吹っ飛び（Launch）の物理状態管理 =====
 float Player::GetLaunchSpeed_() const {
     return std::sqrt(vel_.x * vel_.x + vel_.y * vel_.y + vel_.z * vel_.z);
 }
@@ -124,6 +126,7 @@ bool Player::HandleLaunchGroundContact_() {
     return HandleFreeFallGroundContact_();
 }
 
+// ===== 物理演算と座標更新 =====
 void Player::ApplyPhysics_(float dt) {
     if (isGrabbed_) {
         vel_ = { 0.0f, 0.0f, 0.0f };
@@ -218,6 +221,7 @@ void Player::ApplyPhysics_(float dt) {
 
 }
 
+// ===== ダメージ・HP・吹っ飛びの適用 =====
 void Player::Damage(int d) {
     if (dead_) return;
     hp_ -= d;
@@ -253,6 +257,8 @@ void Player::ApplyLaunch(const Vector3& velocity, float hitStunSec, float action
     specialCancelEffectLevel_ = 0;
     specialCancelCameraLevel_ = 0;
     specialCancelSoundLevel_ = 0;
+    iSpecialVariant_ = PlayerISpecialVariant::Lv0;
+    iSpecialPulseIndex_ = 0;
     ChangeIAttackState_(PlayerIAttackState::None);
     iSpecialChargeSec_ = 0.0f;
     iCounterSuccess_ = false;
@@ -294,6 +300,7 @@ void Player::SetPos(const Vector3& p) {
     UpdateModel_();
 }
 
+// ===== 座標設定・スポーン処理 =====
 void Player::SetSpawnPos(const Vector3& p) {
     pos_ = p;
     vel_ = { 0.0f, 0.0f, 0.0f };
@@ -318,6 +325,8 @@ void Player::SetSpawnPos(const Vector3& p) {
     specialCancelEffectLevel_ = 0;
     specialCancelCameraLevel_ = 0;
     specialCancelSoundLevel_ = 0;
+    iSpecialVariant_ = PlayerISpecialVariant::Lv0;
+    iSpecialPulseIndex_ = 0;
     suppressLandingRecoveryUntilAttackEnd_ = false;
     landingRecoveryPending_ = false;
     specialCancelDebugFlashSec_ = 0.0f;
@@ -363,6 +372,8 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     specialCancelEffectLevel_ = 0;
     specialCancelCameraLevel_ = 0;
     specialCancelSoundLevel_ = 0;
+    iSpecialVariant_ = PlayerISpecialVariant::Lv0;
+    iSpecialPulseIndex_ = 0;
     suppressLandingRecoveryUntilAttackEnd_ = false;
     landingRecoveryPending_ = false;
     specialCancelDebugFlashSec_ = 0.0f;
@@ -382,6 +393,7 @@ void Player::SetDropRespawnPos(const Vector3& p) {
     UpdateModel_();
 }
 
+// ===== 地形・障害物の衝突判定と解決 (AABB) =====
 bool Player::ResolveGroundAABB(const AABB& ground) {
     UpdateBody_();
 
@@ -577,6 +589,7 @@ bool Player::ResolveObstaclesAABB(const std::vector<AABB>& obstacles) {
     return resolved;
 }
 
+// ===== モデル表示・描画・デバッグ描画 =====
 void Player::UpdateModel_() {
     if (!model_) return;
 
@@ -664,6 +677,7 @@ void Player::DrawDebugHitBoxes(EnemyManager& enemyMgr) {
 }
 
 
+// ===== プレイヤー当たり判定（本体AABB）の更新 =====
 void Player::UpdateBody_() {
     const float hx = 0.4f;
     const float hy = 0.9f;

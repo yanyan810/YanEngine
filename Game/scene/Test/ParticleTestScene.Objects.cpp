@@ -63,11 +63,39 @@ void ParticleTestScene::AddEditorObject_(GameApp& app, const std::string& modelP
 
 void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
 {
+    EnsurePlayerSpecialTimelineDefaults_();
+
+    for (int i = static_cast<int>(editorObjects_.size()) - 1; i >= 0; --i) {
+        const EditorObject& item = editorObjects_[i];
+        const bool defaultBlenderCube =
+            item.name.rfind("EffectObject_", 0) == 0 &&
+            item.modelPath == "cube/cube.obj" &&
+            item.geometryType < 0 &&
+            item.keyframes.empty() &&
+            !item.attachToBone;
+        if (!defaultBlenderCube) {
+            continue;
+        }
+
+        editorObjects_.erase(editorObjects_.begin() + i);
+        if (playerAttackObjectIndex_ == i) {
+            playerAttackObjectIndex_ = -1;
+        } else if (playerAttackObjectIndex_ > i) {
+            --playerAttackObjectIndex_;
+        }
+        if (selectedEditorObject_ == i) {
+            selectedEditorObject_ = -1;
+        } else if (selectedEditorObject_ > i) {
+            --selectedEditorObject_;
+        }
+    }
+
     if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
         EditorObject& player = editorObjects_[playerAttackObjectIndex_];
         if (player.name == "PlayerAttack_Player" && player.modelPath == "Player/player.gltf") {
             playerAttackEditorEnabled_ = true;
             selectedEditorObject_ = playerAttackObjectIndex_;
+            EvaluatePlayerSpecialTimeline_();
             return;
         }
         playerAttackObjectIndex_ = -1;
@@ -100,6 +128,7 @@ void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
         SyncEditorObjectBones_(editorObjects_[playerAttackObjectIndex_]);
         playerAttackEditorEnabled_ = true;
         EvaluatePlayerAttackHitbox_();
+        EvaluatePlayerSpecialTimeline_();
         return;
     }
 
@@ -123,6 +152,7 @@ void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
             { 0.6f, 0.8f, 0.5f },
             true
         };
+        previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
         playerAttackHitboxKeyframes_.push_back(currentPlayerAttackHitbox_);
         playerAttackHitboxKeyframes_.push_back({
             0.18f,
@@ -135,6 +165,7 @@ void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
 
     playerAttackEditorEnabled_ = true;
     EvaluatePlayerAttackHitbox_();
+    EvaluatePlayerSpecialTimeline_();
 }
 
 void ParticleTestScene::AddGeometryObject_(GameApp& app, int geometryType)

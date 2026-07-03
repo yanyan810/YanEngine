@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <dinput.h>
 
+// ===== スマッシュ入力受付ウィンドウの更新 =====
 void Player::UpdateSmashInputWindow_(const Input& input) {
     const bool leftTrigger = input.IsKeyTrigger(DIK_LEFT) || input.IsKeyTrigger(DIK_A);
     const bool rightTrigger = input.IsKeyTrigger(DIK_RIGHT) || input.IsKeyTrigger(DIK_D);
@@ -23,6 +24,7 @@ void Player::UpdateSmashInputWindow_(const Input& input) {
     }
 }
 
+// ===== 入力デバイスの状態からプレイヤーのコマンドを解決 =====
 Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     UpdateSmashInputWindow_(input);
 
@@ -33,6 +35,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
     const bool specialHeld = input.IsKeyPressed(DIK_I);
     const bool specialReleased = input.IsKeyReleased(DIK_I);
+    // Uターゲットコンボ3段目中は、Iを押しっぱなしでもキャンセル入力として扱う。
     const bool finalUComboCancelRoute =
         action_ == PlayerAction::Attack &&
         IsUAttackType_(attackType_) &&
@@ -50,6 +53,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     if (up != down) {
         command.depth = up ? +1 : -1;
     }
+    // U3キャンセル中の W+I は上必殺技入力を優先し、ジャンプ暴発を防ぐ。
     command.jumpTriggered =
         !finalUComboCancelRoute &&
         (input.IsKeyTrigger(DIK_SPACE) || (!specialHeld && input.IsKeyTrigger(DIK_W)));
@@ -90,6 +94,7 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     return command;
 }
 
+// ===== コマンドに基づいてアクションの切り替え・設定 =====
 void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
     guarding_ = command.action == PlayerAction::Guard;
     crouching_ = command.action == PlayerAction::Crouch;
@@ -114,6 +119,7 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
             action_ == PlayerAction::Attack &&
             (IsIAttackType_(attackType_) || (IsUAttackType_(attackType_) && lastUComboStage_ >= 2)) &&
             actionTimer_ > 0.0f) {
+            // 必殺技キャンセルは受付開始前に押しても拾えるよう短く先行入力する。
             constexpr float kSpecialCancelBufferSec = 0.35f;
             bufferedSpecialCancelCommand_ = command;
             specialCancelBufferTimer_ = kSpecialCancelBufferSec;
@@ -169,6 +175,7 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
     }
 }
 
+// ===== アクションタイマー、およびコンボ・キャンセル先行入力バッファの更新 =====
 void Player::UpdateActionTimer_(float dt) {
     if (uComboResetTimer_ > 0.0f && !(action_ == PlayerAction::Attack && IsUAttackType_(attackType_))) {
         const float previousResetTimer = uComboResetTimer_;
@@ -225,6 +232,8 @@ void Player::UpdateActionTimer_(float dt) {
         specialCancelEffectLevel_ = 0;
         specialCancelCameraLevel_ = 0;
         specialCancelSoundLevel_ = 0;
+        iSpecialVariant_ = PlayerISpecialVariant::Lv0;
+        iSpecialPulseIndex_ = 0;
         specialCancelBufferTimer_ = 0.0f;
         hasSpecialChainCancelRight_ = false;
         specialChainCancelEligible_ = false;
@@ -255,6 +264,7 @@ void Player::UpdateActionTimer_(float dt) {
     }
 }
 
+// ===== アクションに応じたアニメーションの再生制御 =====
 void Player::PlayActionAnimation_(const PlayerInputCommand& command) {
     if (!model_) return;
 

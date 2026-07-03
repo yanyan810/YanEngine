@@ -1,5 +1,6 @@
 #include "Player.h"
 
+// ===== 通常攻撃（UAttack：弱・強・スマッシュ・空中）の物理・判定定義の初期化 =====
 void Player::InitializeUAttackDefinitions_() {
     attackDefinitions_ = { {
         { {
@@ -20,6 +21,7 @@ void Player::InitializeUAttackDefinitions_() {
     } };
 }
 
+// ===== 通常攻撃（UAttack）の入力に応じたコマンド構築 =====
 bool Player::BuildUAttackCommand_(PlayerInputCommand& command) const {
     command.action = PlayerAction::Attack;
 
@@ -52,6 +54,7 @@ bool Player::BuildUAttackCommand_(PlayerInputCommand& command) const {
     return true;
 }
 
+// ===== 通常攻撃（UAttack）のヒットボックス座標・サイズ計算 =====
 bool Player::GetUAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const {
     const PlayerAttackDefinition& attack = AttackDefinition(activeAttackGroup_, activeAttackVariant_);
     if (attackElapsedSec_ < attack.startDelaySec ||
@@ -73,6 +76,7 @@ bool Player::GetUAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) co
     return true;
 }
 
+// ===== 通常攻撃（UAttack）のダメージ量計算 (コンボ段数補正込み) =====
 int Player::GetUAttackDamage_() const {
     return AttackDefinition(activeAttackGroup_, activeAttackVariant_).damage + lastUComboStage_ * 3;
 }
