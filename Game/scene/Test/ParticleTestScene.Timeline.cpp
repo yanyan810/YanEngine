@@ -111,16 +111,19 @@ void ParticleTestScene::SortPlayerAttackHitboxKeyframes_()
 void ParticleTestScene::EvaluatePlayerAttackHitbox_()
 {
     if (playerAttackHitboxKeyframes_.empty()) {
+        previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
         return;
     }
 
     SortPlayerAttackHitboxKeyframes_();
     if (timelineTime_ <= playerAttackHitboxKeyframes_.front().time) {
         currentPlayerAttackHitbox_ = playerAttackHitboxKeyframes_.front();
+        previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
         return;
     }
     if (timelineTime_ >= playerAttackHitboxKeyframes_.back().time) {
         currentPlayerAttackHitbox_ = playerAttackHitboxKeyframes_.back();
+        previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
         return;
     }
 
@@ -134,8 +137,121 @@ void ParticleTestScene::EvaluatePlayerAttackHitbox_()
             currentPlayerAttackHitbox_.offset = LerpVector3(a.offset, b.offset, t);
             currentPlayerAttackHitbox_.halfSize = LerpVector3(a.halfSize, b.halfSize, t);
             currentPlayerAttackHitbox_.active = a.active;
+            previewPlayerAttackHitbox_ = currentPlayerAttackHitbox_;
             return;
         }
+    }
+}
+
+void ParticleTestScene::EnsurePlayerSpecialTimelineDefaults_()
+{
+    const char* names[] = {
+        "SideSpecial Lv0",
+        "SideSpecial Lv1",
+        "SideSpecial Lv2",
+        "SideSpecial Lv3",
+    };
+
+    for (int level = 0; level < static_cast<int>(sideSpecialTimelines_.size()); ++level) {
+        PlayerSpecialTimeline& timeline = sideSpecialTimelines_[level];
+        if (timeline.name.empty() || timeline.name == "SideSpecial") {
+            timeline.name = names[level];
+        }
+        if (timeline.totalSec <= 0.0f) {
+            timeline.totalSec = 0.45f;
+        }
+        if (!timeline.hitboxes.empty() || !timeline.motions.empty() || !timeline.animations.empty() || !timeline.events.empty()) {
+            continue;
+        }
+
+        timeline.totalSec = level >= 2 ? 0.48f : 0.36f;
+        timeline.animations.push_back({ 0.0f, "Attak_O", 0.10f, false });
+        timeline.motions.push_back({
+            0.0f,
+            level == 3 ? 0.10f : 0.08f,
+            level == 3 ? Vector3{ -12.0f, 8.0f, 0.0f } : Vector3{ 0.0f, 0.0f, 0.0f },
+            false
+        });
+        timeline.motions.push_back({
+            level == 3 ? 0.10f : 0.08f,
+            level >= 2 ? 0.24f : 0.18f,
+            Vector3{ 28.0f + 4.0f * static_cast<float>(level), level == 1 ? 4.0f : 2.0f, 0.0f },
+            false
+        });
+        timeline.hitboxes.push_back({
+            level == 3 ? 0.12f : 0.08f,
+            level >= 2 ? 0.24f : 0.14f,
+            Vector3{ 1.35f, 1.0f, 0.0f },
+            Vector3{ 0.85f + 0.12f * static_cast<float>(level), 0.85f, 0.55f },
+            18 + level * 4,
+            true,
+            level >= 2
+        });
+        if (level == 3) {
+            timeline.events.push_back({ 0.12f, 0.24f, 0, 1.0f });
+        }
+    }
+}
+
+ParticleTestScene::PlayerSpecialTimeline& ParticleTestScene::CurrentPlayerSpecialTimeline_()
+{
+    selectedSideSpecialLevel_ = std::clamp(selectedSideSpecialLevel_, 0, static_cast<int>(sideSpecialTimelines_.size()) - 1);
+    return sideSpecialTimelines_[selectedSideSpecialLevel_];
+}
+
+const ParticleTestScene::PlayerSpecialTimeline& ParticleTestScene::CurrentPlayerSpecialTimeline_() const
+{
+    const int level = std::clamp(selectedSideSpecialLevel_, 0, static_cast<int>(sideSpecialTimelines_.size()) - 1);
+    return sideSpecialTimelines_[level];
+}
+
+void ParticleTestScene::SortCurrentPlayerSpecialTimeline_()
+{
+    PlayerSpecialTimeline& timeline = CurrentPlayerSpecialTimeline_();
+    std::sort(timeline.hitboxes.begin(), timeline.hitboxes.end(), [](const PlayerSpecialHitboxKeyframe& a, const PlayerSpecialHitboxKeyframe& b) {
+        return a.time < b.time;
+    });
+    std::sort(timeline.motions.begin(), timeline.motions.end(), [](const PlayerSpecialMotionKeyframe& a, const PlayerSpecialMotionKeyframe& b) {
+        return a.time < b.time;
+    });
+    std::sort(timeline.animations.begin(), timeline.animations.end(), [](const PlayerSpecialAnimationKeyframe& a, const PlayerSpecialAnimationKeyframe& b) {
+        return a.time < b.time;
+    });
+    std::sort(timeline.events.begin(), timeline.events.end(), [](const PlayerSpecialEventKeyframe& a, const PlayerSpecialEventKeyframe& b) {
+        return a.time < b.time;
+    });
+}
+
+void ParticleTestScene::EvaluatePlayerSpecialTimeline_()
+{
+    EnsurePlayerSpecialTimelineDefaults_();
+    SortCurrentPlayerSpecialTimeline_();
+
+    const PlayerSpecialTimeline& timeline = CurrentPlayerSpecialTimeline_();
+    previewPlayerAttackHitbox_.time = timelineTime_;
+    previewPlayerAttackHitbox_.active = false;
+    for (const PlayerSpecialHitboxKeyframe& key : timeline.hitboxes) {
+        const bool inRange = timelineTime_ >= key.time && timelineTime_ <= key.time + key.duration;
+        if (!inRange) {
+            continue;
+        }
+        currentSpecialHitbox_ = key;
+        previewPlayerAttackHitbox_.offset = key.offset;
+        previewPlayerAttackHitbox_.halfSize = key.halfSize;
+        previewPlayerAttackHitbox_.active = key.active;
+        return;
+    }
+
+    if (!timeline.hitboxes.empty()) {
+        const PlayerSpecialHitboxKeyframe* nearest = &timeline.hitboxes.front();
+        for (const PlayerSpecialHitboxKeyframe& key : timeline.hitboxes) {
+            if (std::abs(key.time - timelineTime_) < std::abs(nearest->time - timelineTime_)) {
+                nearest = &key;
+            }
+        }
+        currentSpecialHitbox_ = *nearest;
+        previewPlayerAttackHitbox_.offset = nearest->offset;
+        previewPlayerAttackHitbox_.halfSize = nearest->halfSize;
     }
 }
 
@@ -198,6 +314,9 @@ void ParticleTestScene::DeleteNearestKeyframeFromSelected_()
 void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
 {
     EvaluatePlayerAttackHitbox_();
+    if (playerAttackEditorEnabled_) {
+        EvaluatePlayerSpecialTimeline_();
+    }
 
     if (!cameraKeyframes_.empty()) {
         SortCameraKeyframes_();

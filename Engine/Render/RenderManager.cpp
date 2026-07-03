@@ -60,7 +60,7 @@ void RenderManager::Initialize(DirectXCommon* dx, SrvManager* srv)
     objectPostLayer_ = std::make_unique<OffscreenPass>();
     objectPostBuffer_ = std::make_unique<OffscreenPass>();
 
-    Vector4 clearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
+    Vector4 clearColor = { 0.08f, 0.085f, 0.09f, 1.0f };
     offscreen_->Initialize(
         dx_,
         srv_,

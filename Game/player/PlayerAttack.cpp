@@ -19,6 +19,7 @@ constexpr float kUComboAdditionalRecoverySecByStage[3] = {
 };
 }
 
+// ===== 攻撃パラメータ定義の取得 =====
 Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) {
     return attackDefinitions_[static_cast<size_t>(group)][static_cast<size_t>(variant)];
 }
@@ -27,6 +28,7 @@ const Player::PlayerAttackDefinition& Player::AttackDefinition(PlayerAttackGroup
     return attackDefinitions_[static_cast<size_t>(group)][static_cast<size_t>(variant)];
 }
 
+// ===== 攻撃グループ名・派生名の取得 =====
 const char* Player::AttackGroupName(PlayerAttackGroup group) {
     switch (group) {
     case PlayerAttackGroup::Ground:
@@ -53,6 +55,7 @@ const char* Player::AttackVariantName(PlayerAttackVariant variant) {
     }
 }
 
+// ===== 攻撃アクションの開始処理 =====
 void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAttackGroup group, PlayerAttackVariant variant) {
     const bool wasUAttackInProgress = action_ == PlayerAction::Attack && IsUAttackType_(attackType_);
     const bool canContinueUCombo =
@@ -72,16 +75,19 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
 
     if (wasCancelableSpecial) {
         --cancelGauge_;
+        // キャンセルで必殺技へ繋いだ回数をLvとして扱う。通常発動はLv0のまま。
         specialCancelCount_ = std::min(kMaxSpecialCancelCount_, specialCancelCount_ + 1);
         hasSpecialCancelRight_ = false;
         hasSpecialChainCancelRight_ = false;
         specialChainCancelEligible_ = true;
         specialCancelUsedThisAction_ = true;
+        // 地面すれすれでキャンセルしても、必殺技が終わるまで着地回復を待たせる。
         suppressLandingRecoveryUntilAttackEnd_ = true;
         landingRecoveryPending_ = false;
         specialCancelDebugFlashSec_ = 0.45f;
     } else {
         if (IsIAttackType_(type)) {
+            // キャンセルではない必殺技は通常版として扱い、演出Lvも初期化する。
             specialCancelCount_ = 0;
             specialCancelEffectLevel_ = 0;
             specialCancelCameraLevel_ = 0;
@@ -171,6 +177,7 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     LockMove(actionTimer_);
 }
 
+// ===== 攻撃ヒットボックス・ダメージ情報の取得 =====
 bool Player::GetAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const {
     if (action_ != PlayerAction::Attack || attackType_ == PlayerAttackType::None) {
         return false;
@@ -249,6 +256,7 @@ float Player::GetAttackActionSec_(PlayerAttackType type, PlayerAttackGroup group
     }
 }
 
+// ===== 攻撃種類のクエリ（通常・必殺技） =====
 bool Player::IsUAttackType_(PlayerAttackType type) const {
     return type == PlayerAttackType::Weak ||
         type == PlayerAttackType::Tilt ||
@@ -262,6 +270,7 @@ bool Player::IsIAttackType_(PlayerAttackType type) const {
         type == PlayerAttackType::DownSpecial;
 }
 
+// ===== キャンセル可能条件・コンボ判定 =====
 bool Player::IsUComboAccepting_() const {
     if (action_ != PlayerAction::Attack || !IsUAttackType_(attackType_)) {
         return false;
@@ -308,6 +317,7 @@ bool Player::IsSpecialRecoveryCancelable_() const {
     }
 }
 
+// ===== 攻撃コマンド開始可否・スペシャルキャンセル判定 =====
 bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {
     if (command.action != PlayerAction::Attack) {
         return false;
@@ -345,6 +355,7 @@ bool Player::CanSpecialCancelNow() const {
         (!specialCancelUsedThisAction_ || IsSpecialRecoveryCancelable_());
 }
 
+// ===== 攻撃ヒット時のコールバック処理 =====
 void Player::NotifyAttackHit() {
     currentAttackHit_ = true;
     if (IsUAttackType_(attackType_)) {
@@ -357,8 +368,16 @@ void Player::NotifyAttackHit() {
         }
         if (attackType_ == PlayerAttackType::SideSpecial &&
             iAttackState_ == PlayerIAttackState::SideSlide_Move &&
-            !sideSpecialLockOnActive_ &&
             !sideSpecialHitBounceUsed_) {
+            if (iSpecialVariant_ == PlayerISpecialVariant::Lv2 ||
+                iSpecialVariant_ == PlayerISpecialVariant::Lv3) {
+                sideSpecialHitBounceUsed_ = true;
+                vel_ = { 0.0f, 0.0f, 0.0f };
+                return;
+            }
+            if (sideSpecialLockOnActive_) {
+                return;
+            }
             sideSpecialHitBounceUsed_ = true;
             onGround_ = false;
             vel_.x = -static_cast<float>(facing_) * kSideSpecialHitBounceSpeedX;
@@ -369,6 +388,7 @@ void Player::NotifyAttackHit() {
     }
 }
 
+// ===== 必殺技ターゲット選定（ロックオン） =====
 void Player::PrepareSpecialCommandTarget_(const PlayerInputCommand& command, const EnemyManager& enemyMgr) {
     nextSideSpecialLockOn_ = false;
     if (command.action != PlayerAction::Attack ||
@@ -407,6 +427,7 @@ void Player::PrepareSpecialCommandTarget_(const PlayerInputCommand& command, con
     }
 }
 
+// ===== カウンター判定処理 =====
 bool Player::IsCounterActive() const {
     return attackType_ == PlayerAttackType::DownSpecial &&
         iAttackState_ == PlayerIAttackState::DownCounter_Active;

@@ -1022,8 +1022,9 @@ void TestScene::DrawImGui(GameApp& app) {
             player_->HasSpecialHitDuringAction() ? "YES" : "NO");
         drawList->AddText(ImVec2(panelPos.x + 145.0f, panelPos.y + 80.0f), IM_COL32(230, 230, 230, 255), line);
 
-        std::snprintf(line, sizeof(line), "CancelLv: %d  FX:%d Cam:%d SE:%d",
+        std::snprintf(line, sizeof(line), "CancelLv: %d Var:%d  FX:%d Cam:%d SE:%d",
             player_->GetSpecialCancelCount(),
+            player_->GetCurrentSpecialVariantLevel(),
             player_->GetSpecialCancelEffectLevel(),
             player_->GetSpecialCancelCameraLevel(),
             player_->GetSpecialCancelSoundLevel());

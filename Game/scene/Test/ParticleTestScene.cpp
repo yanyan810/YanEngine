@@ -273,8 +273,8 @@ void ParticleTestScene::Update(GameApp& app, float dt)
         if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
             playerBase = editorObjects_[playerAttackObjectIndex_].position;
         }
-        playerAttackHitboxCube_->SetTranslate(playerBase + currentPlayerAttackHitbox_.offset);
-        playerAttackHitboxCube_->SetScale(currentPlayerAttackHitbox_.halfSize);
+        playerAttackHitboxCube_->SetTranslate(playerBase + previewPlayerAttackHitbox_.offset);
+        playerAttackHitboxCube_->SetScale(previewPlayerAttackHitbox_.halfSize);
         playerAttackHitboxCube_->Update(dt);
     }
 
@@ -387,7 +387,7 @@ void ParticleTestScene::DrawSceneContent_(GameApp& app)
         }
     }
 
-    if (playerAttackEditorEnabled_ && drawPlayerAttackHitbox_ && currentPlayerAttackHitbox_.active && playerAttackHitboxCube_) {
+    if (playerAttackEditorEnabled_ && drawPlayerAttackHitbox_ && previewPlayerAttackHitbox_.active && playerAttackHitboxCube_) {
         playerAttackHitboxCube_->Draw();
     }
 

@@ -176,12 +176,13 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
 
     ImGuiID mainNode = dockspaceId;
-    ImGuiID leftNode = ImGui::DockBuilderSplitNode(mainNode, ImGuiDir_Left, 0.20f, nullptr, &mainNode);
+    ImGuiID leftNode = ImGui::DockBuilderSplitNode(mainNode, ImGuiDir_Left, 0.26f, nullptr, &mainNode);
     ImGuiID rightNode = ImGui::DockBuilderSplitNode(mainNode, ImGuiDir_Right, 0.22f, nullptr, &mainNode);
     ImGuiID bottomNode = ImGui::DockBuilderSplitNode(mainNode, ImGuiDir_Down, 0.24f, nullptr, &mainNode);
     ImGuiID rightBottomNode = ImGui::DockBuilderSplitNode(rightNode, ImGuiDir_Down, 0.45f, nullptr, &rightNode);
 
     ImGui::DockBuilderDockWindow("Hierarchy", leftNode);
+    ImGui::DockBuilderDockWindow("PlayerAttack Editor", leftNode);
     ImGui::DockBuilderDockWindow("Boss Knockback Test", leftNode);
     ImGui::DockBuilderDockWindow("Inspector", rightNode);
     ImGui::DockBuilderDockWindow("Boss Attack Tuning", rightNode);
