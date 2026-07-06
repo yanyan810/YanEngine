@@ -1,4 +1,4 @@
-﻿#include "EnemyManager.h"
+#include "EnemyManager.h"
 #include "Enemy.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -428,9 +428,19 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		event.hitPosition = OverlapCenter(attackBox, enemyBodyBox);
 		hitEvents.push_back(event);
 		if (hitStopTuning_.enabled) {
-			const float hitStopSec = IsPlayerSpecialAttack(player.GetCurrentAttackType())
+			float hitStopSec = IsPlayerSpecialAttack(player.GetCurrentAttackType())
 				? hitStopTuning_.specialPlayerAttackSec * player.GetCurrentSpecialHitStopRate()
 				: hitStopTuning_.playerAttackSec;
+
+			// 上必殺技Lv3ジグザグの突進フェーズ中（ビームに入る前）は、専用のヒットストップ秒数を上書き適用
+			if (player.GetCurrentAttackType() == Player::PlayerAttackType::UpSpecial &&
+				player.GetCurrentSpecialVariantLevel() == static_cast<int>(PlayerISpecialVariant::Lv3)) {
+				const int beamPhaseBase = (static_cast<int>(player.GetUpLv3Waypoints().size()) + 1) * 100;
+				if (player.GetSpecialPulseIndex() < beamPhaseBase) {
+					hitStopSec = player.GetUpLv3HitStopSec();
+				}
+			}
+
 			pendingHitStopSec_ = std::max(pendingHitStopSec_, hitStopSec);
 		}
 	}

@@ -119,8 +119,8 @@ void Player::ApplyActionCommand_(const PlayerInputCommand& command) {
             action_ == PlayerAction::Attack &&
             (IsIAttackType_(attackType_) || (IsUAttackType_(attackType_) && lastUComboStage_ >= 2)) &&
             actionTimer_ > 0.0f) {
-            // 必殺技キャンセルは受付開始前に押しても拾えるよう短く先行入力する。
-            constexpr float kSpecialCancelBufferSec = 0.35f;
+            // 必殺技キャンセルは受付開始前に押しても拾えるよう先行入力の寿命を長めに確保する。
+            constexpr float kSpecialCancelBufferSec = 0.50f;
             bufferedSpecialCancelCommand_ = command;
             specialCancelBufferTimer_ = kSpecialCancelBufferSec;
         }
@@ -219,6 +219,8 @@ void Player::UpdateActionTimer_(float dt) {
     }
     if (actionTimer_ <= 0.0f) {
         const PlayerAttackType finishedType = attackType_;
+        const PlayerISpecialVariant finishedVariant = iSpecialVariant_;
+        const bool finishedHitDuringAction = specialHitDuringAction_;
         const bool shouldApplyPendingLandingRecovery =
             suppressLandingRecoveryUntilAttackEnd_ &&
             (landingRecoveryPending_ || onGround_);
@@ -235,8 +237,17 @@ void Player::UpdateActionTimer_(float dt) {
         iSpecialVariant_ = PlayerISpecialVariant::Lv0;
         iSpecialPulseIndex_ = 0;
         specialCancelBufferTimer_ = 0.0f;
-        hasSpecialChainCancelRight_ = false;
-        specialChainCancelEligible_ = false;
+        // 上必殺技 Lv1 または Lv2 の場合、ヒットの有無に関わらずアクション終了後も着地するまでチェインキャンセル権利を維持（強制有効化）する
+        const bool keepCancelRightForUpSpecialLv1or2 =
+            finishedType == PlayerAttackType::UpSpecial &&
+            (finishedVariant == PlayerISpecialVariant::Lv1 || finishedVariant == PlayerISpecialVariant::Lv2);
+        if (keepCancelRightForUpSpecialLv1or2) {
+            hasSpecialChainCancelRight_ = true;
+            specialChainCancelEligible_ = true;
+        } else {
+            hasSpecialChainCancelRight_ = false;
+            specialChainCancelEligible_ = false;
+        }
         nextSideSpecialLockOn_ = false;
         sideSpecialLockOnActive_ = false;
         suppressLandingRecoveryUntilAttackEnd_ = false;

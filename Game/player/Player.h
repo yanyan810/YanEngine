@@ -93,6 +93,35 @@ public:
         int damage = 8;
     };
 
+    // ===== 上必殺技Lv3 ジグザグ移動の経由地 =====
+    struct UpLv3Waypoint {
+        float offsetX = 0.0f;           // ボス基準 X オフセット（facing で左右反転）
+        float offsetY = 0.0f;           // ボス基準 Y オフセット
+        float duration = 0.2f;          // この経由地への移動時間（秒）
+        std::vector<float> hits;        // 当たり判定マーカー（セグメント内 0.0〜1.0）
+    };
+
+    // ===== 必殺技を指定するための Enum =====
+    enum class SpecialMoveIndex : uint8_t {
+        NeutralSpecial_Lv1,
+        NeutralSpecial_Lv2,
+        NeutralSpecial_Lv3,
+        UpSpecial_Lv1,
+        UpSpecial_Lv2,
+        UpSpecial_Lv3,
+        Count
+    };
+
+    // ===== 各必殺技用設定データ構造体 =====
+    struct SpecialMoveTuning {
+        float startOffsetX = 5.0f;
+        float startOffsetY = 0.0f;
+        bool startFollowPlayer = false;
+        float speedRate = 1.0f;
+        float hitStopSec = 0.06f;
+        std::vector<UpLv3Waypoint> waypoints;
+    };
+
     // ===== 解決済みのプレイヤー入力コマンド =====
     struct PlayerInputCommand {
         PlayerAction action = PlayerAction::Idle;
@@ -233,6 +262,7 @@ public:
     PlayerAttackType GetCurrentAttackType() const { return attackType_; }
     PlayerAttackGroup GetCurrentAttackGroup() const { return activeAttackGroup_; }
     PlayerAttackVariant GetCurrentAttackVariant() const { return activeAttackVariant_; }
+    int GetSpecialPulseIndex() const { return iSpecialPulseIndex_; }
     PlayerAttackDefinition& AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant);
     const PlayerAttackDefinition& AttackDefinition(PlayerAttackGroup group, PlayerAttackVariant variant) const;
     static const char* AttackGroupName(PlayerAttackGroup group);
@@ -248,6 +278,44 @@ public:
         const std::string& jointName,
         uint32_t count,
         const Vector3& localOffset = { 0.0f, 0.0f, 0.0f }) const;
+
+    // ===== 必殺技汎用エディタ用パラメータアクセス =====
+    const SpecialMoveTuning& GetSpecialMoveTuning(SpecialMoveIndex idx) const { return specialMoveTunings_[static_cast<size_t>(idx)]; }
+    SpecialMoveTuning& GetSpecialMoveTuningMutable(SpecialMoveIndex idx) { return specialMoveTunings_[static_cast<size_t>(idx)]; }
+
+    // ===== 後方互換マッピング（上Lv3） =====
+    float GetUpLv3StartOffsetX() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startOffsetX; }
+    float GetUpLv3StartOffsetY() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startOffsetY; }
+    bool GetUpLv3StartFollowPlayer() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startFollowPlayer; }
+    float GetUpLv3SpeedRate() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].speedRate; }
+    float GetUpLv3HitStopSec() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].hitStopSec; }
+
+    float& GetUpLv3StartOffsetXMutable() { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startOffsetX; }
+    float& GetUpLv3StartOffsetYMutable() { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startOffsetY; }
+    bool& GetUpLv3StartFollowPlayerMutable() { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startFollowPlayer; }
+    float& GetUpLv3SpeedRateMutable() { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].speedRate; }
+    float& GetUpLv3HitStopSecMutable() { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].hitStopSec; }
+
+    const std::vector<UpLv3Waypoint>& GetUpLv3Waypoints() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].waypoints; }
+    std::vector<UpLv3Waypoint>& GetUpLv3WaypointsMutable() { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].waypoints; }
+
+    // ===== 必殺技（通常Lv1・牙突）エディタ用パラメータアクセス =====
+    float GetNeutralLv1ThrustSpeed() const { return neutralLv1ThrustSpeed_; }
+    float GetNeutralLv1ThrustSec() const { return neutralLv1ThrustSec_; }
+
+    float& GetNeutralLv1ThrustSpeedMutable() { return neutralLv1ThrustSpeed_; }
+    float& GetNeutralLv1ThrustSecMutable() { return neutralLv1ThrustSec_; }
+
+    // ===== デバッグ用強制必殺技発動 =====
+    void DebugTriggerSpecialAttack(PlayerAttackType type, int level, const Vector3* optTarget = nullptr);
+
+    // ===== 必殺技（上Lv3）固定ターゲット =====
+    const Vector3& GetUpSpecialTarget() const { return upSpecialTarget_; }
+    bool IsUpSpecialTargetFixed() const { return upSpecialTargetFixed_; }
+    void SetUpSpecialTarget(const Vector3& target) { upSpecialTarget_ = target; upSpecialTargetFixed_ = true; }
+    void ClearUpSpecialTarget() { upSpecialTargetFixed_ = false; }
+    const Vector3& GetUpSpecialStartPos() const { return upSpecialStartPos_; }
+    void SetUpSpecialStartPos(const Vector3& pos) { upSpecialStartPos_ = pos; }
 
 private:
     // ===== 内部ヘルパー関数 (Private) =====
@@ -380,6 +448,18 @@ private:
     PlayerIAttackState iAttackState_ = PlayerIAttackState::None;
     float iAttackStateTime_ = 0.0f;
     bool iAttackHitActive_ = false;
+
+    // ===== 必殺技エディタ用汎用パラメータ =====
+    std::array<SpecialMoveTuning, static_cast<size_t>(SpecialMoveIndex::Count)> specialMoveTunings_;
+
+    // ===== 上必殺技ジグザグ移動先固定ターゲット =====
+    Vector3 upSpecialTarget_{};
+    bool upSpecialTargetFixed_ = false;
+    Vector3 upSpecialStartPos_{};
+
+    // ===== 必殺技（通常Lv1・牙突）エディタ用パラメータ =====
+    float neutralLv1ThrustSpeed_ = 16.0f;
+    float neutralLv1ThrustSec_ = 0.16f;
 
     // ===== ガード・しゃがみ・急降下 =====
     bool guarding_ = false;

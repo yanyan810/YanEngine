@@ -136,6 +136,23 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
 
     shadow_->SetMaterialColor({ 255,255,255, shadowMaxAlpha_ });
 
+    // ===== 必殺技ウェイポイントのデフォルト初期化 =====
+    for (size_t i = 0; i < static_cast<size_t>(SpecialMoveIndex::Count); ++i) {
+        specialMoveTunings_[i].startOffsetX = 5.0f;
+        specialMoveTunings_[i].startOffsetY = 0.0f;
+        specialMoveTunings_[i].startFollowPlayer = (i == static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)) ? false : true;
+        specialMoveTunings_[i].speedRate = 1.0f;
+        specialMoveTunings_[i].hitStopSec = 0.06f;
+        specialMoveTunings_[i].waypoints.clear();
+    }
+    // Up Special Lv3 (ジグザグ移動) のみにデフォルトの3点Waypointをプリセット
+    auto& zigzag = specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)];
+    zigzag.startFollowPlayer = false;
+    zigzag.waypoints = {
+        { 3.0f,  2.0f, 0.12f, { 0.0f, 0.5f, 0.9f } },
+        { 0.0f,  4.0f, 0.18f, { 0.0f, 0.5f, 0.9f } },
+        {-1.5f,  0.0f, 0.24f, { 0.0f, 0.5f, 0.9f } }
+    };
 }
 
 

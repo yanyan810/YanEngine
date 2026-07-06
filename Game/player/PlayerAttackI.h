@@ -17,6 +17,7 @@ enum class PlayerIAttackState : uint8_t {
     DownCounter_Active,
     DownCounter_Success,
     DownCounter_Recover,
+    NeutralFinish_Windup,
     NeutralFinish_Active,
     NeutralFinish_Recover,
 };
@@ -49,6 +50,7 @@ private:
     static void UpdateNeutralSpecialLv1(Player& player, float dt);
     static void UpdateNeutralSpecialLv2(Player& player, float dt);
     static void UpdateNeutralSpecialLv3(Player& player, float dt);
+    static bool UpdateNeutralSpecialWaypointMovement(Player& player, float dt, uint8_t spIdx);
 };
 
 class PlayerISideSpecial {
@@ -77,6 +79,7 @@ private:
     static void UpdateUpSpecialLv1(Player& player, float dt);
     static void UpdateUpSpecialLv2(Player& player, float dt);
     static void UpdateUpSpecialLv3(Player& player, float dt);
+    static bool UpdateUpSpecialWaypointMovement(Player& player, float dt, uint8_t spIdx);
 };
 
 class PlayerIDownSpecial {
