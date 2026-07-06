@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Player.h"
 
@@ -27,10 +27,13 @@ constexpr float kUpRiseSpeedX = 4.0f;
 constexpr float kDownCounterActiveSec = 0.35f;
 constexpr float kDownCounterSuccessSec = 0.20f;
 constexpr float kDownCounterRecoverSec = 0.32f;
-constexpr float kNeutralFinishActiveSec = 0.14f;
-constexpr float kNeutralFinishRecoverSec = 0.24f;
-constexpr float kNeutralLv2PulseGapSec = 0.11f;
-constexpr float kNeutralLv3ChargeSec = 0.06f;
+constexpr float kNeutralMinChargeSec = 0.10f;
+constexpr float kNeutralMaxChargeSec = 0.80f;
+constexpr float kNeutralActiveSec = 0.16f;
+constexpr float kNeutralRecoverSec = 0.28f;
+constexpr float kNeutralLv3SlashSec = 0.12f;
+constexpr float kNeutralLv3BeamActiveSec = 0.22f;
+constexpr float kNeutralLv3PulseIntervalSec = 0.06f;
 constexpr int kNeutralFinishDamage = 14;
 constexpr int kUpRiseDamage = 12;
 constexpr int kDownCounterSuccessDamage = 22;
@@ -47,6 +50,12 @@ constexpr float kUpLv2SecondRiseSec = 0.18f;
 constexpr float kUpLv3ChargeSec = 0.07f;
 constexpr float kDownLv2SuccessSlideSpeed = 18.0f;
 constexpr float kDownLv3SuccessRiseSpeed = 16.0f;
+constexpr float kUpLv1MoveSec = 0.36f;
+constexpr float kUpLv2BeamActiveSec = 0.32f;
+constexpr float kUpLv3ApproachSec = 0.12f;
+constexpr float kUpLv3SlashDownSec = 0.18f;
+constexpr float kUpLv3SlashUpSec = 0.24f;
+constexpr float kUpLv3BeamSec = 0.24f;
 
 // ===== 必殺技ごとの基礎ヒットボックス =====
 // Vector3 は constexpr 化できないため const で保持する。
@@ -167,6 +176,79 @@ inline Vector3 ScaleVector3(const Vector3& value, const Vector3& scale) {
 
 inline int ApplyDamageRate(int baseDamage, float damageRate) {
     return static_cast<int>(std::lround(static_cast<float>(baseDamage) * damageRate));
+}
+
+// ===== ビーム / 衝撃波判定用の共有定数とヘルパー関数 =====
+constexpr float kUpLv2BeamMinLength = 4.0f;
+constexpr float kUpLv3BeamThicknessX = 0.90f;
+constexpr float kUpLv3BeamThicknessY = 0.90f;
+constexpr float kUpLv3BeamThicknessZ = 0.65f;
+
+inline Vector3 NormalizedOrFacing(const Vector3& value, int facing) {
+    const float length = std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    if (length <= 0.001f) {
+        return { static_cast<float>(facing), 0.0f, 0.0f };
+    }
+    return { value.x / length, value.y / length, value.z / length };
+}
+
+inline Vector3 UpSpecialTargetOrFallback(
+    const Vector3& playerPos,
+    int facing,
+    bool hasTarget,
+    const Vector3& target) {
+    if (hasTarget) {
+        return target;
+    }
+    return {
+        playerPos.x + static_cast<float>(facing) * 6.0f,
+        playerPos.y + 2.0f,
+        playerPos.z
+    };
+}
+
+inline void BuildBeamBox(
+    const Vector3& playerPos,
+    int facing,
+    const Vector3& target,
+    float minLength,
+    float thicknessX,
+    float thicknessY,
+    float thicknessZ,
+    Vector3& outCenter,
+    Vector3& outHalfSize) {
+    const Vector3 start = {
+        playerPos.x,
+        playerPos.y + 1.0f,
+        playerPos.z
+    };
+    Vector3 end = target;
+
+    const Vector3 toTarget = {
+        end.x - start.x,
+        end.y - start.y,
+        end.z - start.z
+    };
+    const Vector3 dir = NormalizedOrFacing(toTarget, facing);
+    const float length = std::max(
+        minLength,
+        std::sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y + toTarget.z * toTarget.z));
+    end = {
+        start.x + dir.x * length,
+        start.y + dir.y * length,
+        start.z + dir.z * length
+    };
+
+    outCenter = {
+        (start.x + end.x) * 0.5f,
+        (start.y + end.y) * 0.5f,
+        (start.z + end.z) * 0.5f
+    };
+    outHalfSize = {
+        std::max(thicknessX, std::abs(end.x - start.x) * 0.5f + thicknessX),
+        std::max(thicknessY, std::abs(end.y - start.y) * 0.5f + thicknessY),
+        std::max(thicknessZ, std::abs(end.z - start.z) * 0.5f + thicknessZ)
+    };
 }
 
 } // namespace PlayerIAttackInternal

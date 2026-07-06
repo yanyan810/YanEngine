@@ -1,6 +1,7 @@
-﻿#include "Player.h"
+#include "Player.h"
 
 #include "EnemyManager.h"
+#include "PlayerAttackIInternal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -243,11 +244,65 @@ float Player::GetAttackActionSec_(PlayerAttackType type, PlayerAttackGroup group
     case PlayerAttackType::Smash:
         return AttackDefinition(group, variant).actionSec;
     case PlayerAttackType::NeutralSpecial:
-        return 0.45f;
+        {
+            const PlayerIAttackInternal::SpecialCancelLevelTuning& tuning =
+                PlayerIAttackInternal::GetCancelTuning(type, specialCancelCount_);
+            if (specialCancelCount_ == 0) { // Lv0
+                const float windup = PlayerIAttackInternal::kNeutralMaxChargeSec / tuning.attackSpeedRate;
+                const float move = 0.26f * tuning.moveDurationRate;
+                const float recover = PlayerIAttackInternal::kNeutralRecoverSec / tuning.attackSpeedRate;
+                return windup + move + recover + 0.05f;
+            } else if (specialCancelCount_ == 1) { // Lv1
+                const float move = GetNeutralLv1ThrustSec() * tuning.moveDurationRate;
+                const float recover = PlayerIAttackInternal::kNeutralRecoverSec / tuning.attackSpeedRate;
+                return move + recover + 0.05f;
+            } else if (specialCancelCount_ == 2) { // Lv2
+                const float move = PlayerIAttackInternal::kNeutralActiveSec * tuning.moveDurationRate;
+                const float recover = PlayerIAttackInternal::kNeutralRecoverSec / tuning.attackSpeedRate;
+                return move + recover + 0.05f;
+            } else if (specialCancelCount_ == 3) { // Lv3
+                const float move = (PlayerIAttackInternal::kNeutralLv3SlashSec + PlayerIAttackInternal::kNeutralLv3BeamActiveSec) * tuning.moveDurationRate;
+                const float recover = PlayerIAttackInternal::kNeutralRecoverSec / tuning.attackSpeedRate;
+                return move + recover + 0.05f;
+            }
+            return 0.45f;
+        }
     case PlayerAttackType::SideSpecial:
         return 1.30f;
     case PlayerAttackType::UpSpecial:
-        return 0.62f;
+        {
+            const PlayerIAttackInternal::SpecialCancelLevelTuning& tuning =
+                PlayerIAttackInternal::GetCancelTuning(type, specialCancelCount_);
+            if (specialCancelCount_ == 1) { // Lv1
+                const float windup = (PlayerIAttackInternal::kUpRiseWindupSec * 0.8f) / tuning.attackSpeedRate;
+                const float move = PlayerIAttackInternal::kUpLv1MoveSec * tuning.moveDurationRate;
+                const float recover = (PlayerIAttackInternal::kUpRiseRecoverSec * 0.9f) / tuning.attackSpeedRate;
+                return windup + move + recover + 0.05f; // 余裕を持たせる
+            } else if (specialCancelCount_ == 2) { // Lv2
+                const float windup = PlayerIAttackInternal::kUpLv2HoverSec;
+                const float move = PlayerIAttackInternal::kUpLv2BeamActiveSec * tuning.activeDurationRate;
+                const float recover = (PlayerIAttackInternal::kUpRiseRecoverSec * 0.85f) / tuning.attackSpeedRate;
+                return windup + move + recover + 0.05f;
+            } else if (specialCancelCount_ == 3) { // Lv3
+                const float windup = PlayerIAttackInternal::kUpLv3ChargeSec;
+                
+                // 動的な経由地の合計時間を計算
+                float totalMoveSec = 0.0f;
+                for (const auto& wp : GetUpLv3Waypoints()) {
+                    totalMoveSec += wp.duration;
+                }
+                // 速度倍率を適用
+                totalMoveSec *= (1.0f / GetUpLv3SpeedRate());
+
+                // ビームの秒数を加算
+                totalMoveSec += PlayerIAttackInternal::kUpLv3BeamSec;
+
+                const float move = totalMoveSec * tuning.moveDurationRate;
+                const float recover = (PlayerIAttackInternal::kUpRiseRecoverSec * 0.75f) / tuning.attackSpeedRate;
+                return windup + move + recover + 0.05f;
+            }
+            return 0.62f; // Lv0
+        }
     case PlayerAttackType::DownSpecial:
         return 0.72f;
     case PlayerAttackType::None:
@@ -308,6 +363,16 @@ bool Player::IsSpecialRecoveryCancelable_() const {
 
     switch (iAttackState_) {
     case PlayerIAttackState::NeutralFinish_Recover:
+        {
+            if (iSpecialVariant_ == PlayerISpecialVariant::Lv1) {
+                const PlayerIAttackInternal::SpecialCancelLevelTuning& tuning =
+                    PlayerIAttackInternal::GetCurrentCancelTuning(*this);
+                const float totalRecoverSec = PlayerIAttackInternal::ScaledByAttackSpeed(
+                    PlayerIAttackInternal::kNeutralRecoverSec, tuning.attackSpeedRate);
+                return iAttackStateTime_ >= totalRecoverSec * 0.80f;
+            }
+            return true;
+        }
     case PlayerIAttackState::SideSlide_Recover:
     case PlayerIAttackState::UpRise_Recover:
     case PlayerIAttackState::DownCounter_Recover:
@@ -440,4 +505,55 @@ void Player::NotifyCounterSuccess() {
     }
     iCounterSuccess_ = true;
     PlayerIAttack::ChangeState(*this, PlayerIAttackState::DownCounter_Success);
+}
+
+void Player::DebugTriggerSpecialAttack(PlayerAttackType type, int level, const Vector3* optTarget) {
+    if (type != PlayerAttackType::NeutralSpecial &&
+        type != PlayerAttackType::SideSpecial &&
+        type != PlayerAttackType::UpSpecial &&
+        type != PlayerAttackType::DownSpecial) {
+        return;
+    }
+
+    // 状態を強制リセットし、キャンセルゲージ消費なしで攻撃状態にする
+    action_ = PlayerAction::Attack;
+    attackType_ = type;
+    specialCancelCount_ = level; // 指定のLvをセット
+
+    // 方向グループの決定
+    activeAttackGroup_ = PlayerAttackGroup::Ground;
+    if (type == PlayerAttackType::NeutralSpecial) activeAttackVariant_ = PlayerAttackVariant::Neutral;
+    else if (type == PlayerAttackType::SideSpecial) activeAttackVariant_ = PlayerAttackVariant::Side;
+    else if (type == PlayerAttackType::UpSpecial) activeAttackVariant_ = PlayerAttackVariant::Up;
+    else if (type == PlayerAttackType::DownSpecial) activeAttackVariant_ = PlayerAttackVariant::Neutral;
+
+    attackElapsedSec_ = 0.0f;
+    currentAttackHit_ = false;
+    specialHitDuringAction_ = false;
+    sideSpecialHitBounceUsed_ = false;
+    crouching_ = false;
+    fastFalling_ = false;
+    guarding_ = false;
+    onGround_ = false; // デバッグ発動時に着地で即時リセットされないようにする
+
+    if (optTarget) {
+        sideSpecialLockOnActive_ = true;
+        sideSpecialLockOnTarget_ = *optTarget;
+    } else {
+        sideSpecialLockOnActive_ = false;
+    }
+
+    suppressLandingRecoveryUntilAttackEnd_ = true;
+    landingRecoveryPending_ = false;
+
+    if (launched_) {
+        ResetLaunchState_(PlayerAction::Attack);
+    }
+
+    // 必殺技ステート開始
+    StartIAttack_(type);
+
+    // 動作時間の取得とロック
+    actionTimer_ = GetAttackActionSec_(type, activeAttackGroup_, activeAttackVariant_);
+    LockMove(actionTimer_);
 }

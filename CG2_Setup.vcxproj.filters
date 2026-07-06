@@ -217,6 +217,15 @@
     <ClCompile Include="Game\scene\Test\TestScene.cpp">
       <Filter>Game\Scene\Test</Filter>
     </ClCompile>
+    <ClCompile Include="Game\scene\Test\TestScene.UI.cpp">
+      <Filter>Game\Scene\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\scene\Test\TestScene.PathPreview.cpp">
+      <Filter>Game\Scene\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\scene\Test\TestScene.Trajectory.cpp">
+      <Filter>Game\Scene\Test</Filter>
+    </ClCompile>
     <ClCompile Include="Game\scene\Test\TestSceneBossTuning.cpp">
       <Filter>Game\Scene\Test</Filter>
     </ClCompile>
@@ -484,6 +493,9 @@
       <Filter>Game\Scene\Test</Filter>
     </ClInclude>
     <ClInclude Include="Game\scene\Test\TestScene.h">
+      <Filter>Game\Scene\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\scene\Test\TestScene.Trajectory.h">
       <Filter>Game\Scene\Test</Filter>
     </ClInclude>
     <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h">

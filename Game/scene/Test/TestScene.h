@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "IScene.h"
 #include <memory>
 #include "WinApp.h"
@@ -135,5 +135,20 @@ private:
     // ===== LevelLoader =====
     std::vector<std::unique_ptr<Object3d>> levelObjects_;
 
+    // ===== 必殺技移動先3DプレビューCube =====
+    std::unique_ptr<Object3d> upSpecialStartPreview_;
+    std::vector<std::unique_ptr<Object3d>> upSpecialWaypointPreviews_; // 経由地プレビュー球
+    std::unique_ptr<Object3d> neutralSpecialLv1ThrustPreview_;
+    std::unique_ptr<Object3d> neutralSpecialLv0ChargePreview_;
+    bool drawAttackPathPreviews_ = true;
+    std::vector<std::unique_ptr<Object3d>> hitPointPreviews_;
+    int dragTargetIndex_ = -1;
+    int selectedWaypointIndex_ = 0; // 現在編集対象として選択されているウェイポイントのインデックス
+    int selectedSpecialMoveIndex_ = 5; // 現在編集対象として選択されている必殺技のインデックス (デフォルト: 5 = UpSpecial_Lv3)
     std::unique_ptr<Object3d> CreateBoundaryPreview(GameApp& app, const Vector4& color);
+
+    // 必殺技プレビュー描画・ドラッグ制御用ヘルパー
+    void UpdateAttackPathPreviews(GameApp& app, float dt);
+    void HandleAttackPathMouseDrag();
+    void DrawAttackPathPreviews();
 };

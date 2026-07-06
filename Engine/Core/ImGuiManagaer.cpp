@@ -1,4 +1,4 @@
-﻿#include "ImGuiManagaer.h"
+#include "ImGuiManagaer.h"
 #include "WinApp.h"
 #include "DirectXCommon.h"
 #include "SrvManager.h"
@@ -183,10 +183,9 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
 
     ImGui::DockBuilderDockWindow("Hierarchy", leftNode);
     ImGui::DockBuilderDockWindow("PlayerAttack Editor", leftNode);
-    ImGui::DockBuilderDockWindow("Boss Knockback Test", leftNode);
+    ImGui::DockBuilderDockWindow("Fighter Basic Tuning", leftNode);
     ImGui::DockBuilderDockWindow("Inspector", rightNode);
-    ImGui::DockBuilderDockWindow("Boss Attack Tuning", rightNode);
-    ImGui::DockBuilderDockWindow("Attack Tuning", rightNode);
+    ImGui::DockBuilderDockWindow("Fighter Advanced Tuning", rightNode);
     ImGui::DockBuilderDockWindow("Scene", mainNode);
     ImGui::DockBuilderDockWindow("Console", bottomNode);
 

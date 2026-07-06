@@ -197,3 +197,10 @@ git push
 git add -f externals/assimp/lib/Debug/assimp-vc143-mtd.pdb
 git commit -m "Add assimp debug PDB for CI"
 git push
+
+# ===============================
+# Blender / Paint Tools / OS System
+# ===============================
+*.blend1
+*.mdp
+[Dd]esktop.ini

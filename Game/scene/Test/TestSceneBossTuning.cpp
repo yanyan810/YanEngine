@@ -18,6 +18,15 @@ json ToJson(const Vector3& v) {
     return json::array({ v.x, v.y, v.z });
 }
 
+json ToJson(const Player::UpLv3Waypoint& wp) {
+    return {
+        { "offsetX", wp.offsetX },
+        { "offsetY", wp.offsetY },
+        { "duration", wp.duration },
+        { "hits", wp.hits }
+    };
+}
+
 Vector3 Vector3FromJson(const json& value, const Vector3& fallback) {
     if (!value.is_array() || value.size() < 3) {
         return fallback;
@@ -187,6 +196,37 @@ bool TestSceneBossTuning::Save(const std::string& path, const EnemyManager& enem
         root["hitStop"] = ToJson(enemyManager.HitStop());
         root["grabHold"] = ToJson(enemyManager.GrabHold());
         root["battle"] = ToJson(enemyManager.Battle());
+        
+        // 各必殺技のパラメータおよびWaypointリストの保存
+        static const char* specialMoveKeys[] = {
+            "NeutralSpecial_Lv1",
+            "NeutralSpecial_Lv2",
+            "NeutralSpecial_Lv3",
+            "UpSpecial_Lv1",
+            "UpSpecial_Lv2",
+            "UpSpecial_Lv3"
+        };
+
+        json spMoveTuningsJson = json::object();
+        for (size_t idx = 0; idx < static_cast<size_t>(Player::SpecialMoveIndex::Count); ++idx) {
+            const auto spIdx = static_cast<Player::SpecialMoveIndex>(idx);
+            const auto& tuning = player.GetSpecialMoveTuning(spIdx);
+            json moveJson = json::object();
+            moveJson["startOffsetX"] = tuning.startOffsetX;
+            moveJson["startOffsetY"] = tuning.startOffsetY;
+            moveJson["startFollowPlayer"] = tuning.startFollowPlayer;
+            moveJson["speedRate"] = tuning.speedRate;
+            moveJson["hitStopSec"] = tuning.hitStopSec;
+
+            json wpsJson = json::array();
+            for (const auto& wp : tuning.waypoints) {
+                wpsJson.push_back(ToJson(wp));
+            }
+            moveJson["waypoints"] = wpsJson;
+            spMoveTuningsJson[specialMoveKeys[idx]] = moveJson;
+        }
+        root["specialMoveTunings"] = spMoveTuningsJson;
+
         root["playerUAttacks"] = json::object();
         for (int groupIndex = 0; groupIndex < static_cast<int>(Player::PlayerAttackGroup::Count); ++groupIndex) {
             const auto group = static_cast<Player::PlayerAttackGroup>(groupIndex);
@@ -333,6 +373,110 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
         }
         if (root.contains("battle")) {
             ApplyJsonToBattle(root.at("battle"), enemyManager.Battle());
+        }
+
+        // 必殺技パラメータおよび経由地リストの復元
+        static const char* specialMoveKeys[] = {
+            "NeutralSpecial_Lv1",
+            "NeutralSpecial_Lv2",
+            "NeutralSpecial_Lv3",
+            "UpSpecial_Lv1",
+            "UpSpecial_Lv2",
+            "UpSpecial_Lv3"
+        };
+
+        if (root.contains("specialMoveTunings") && root.at("specialMoveTunings").is_object()) {
+            const json& spTunings = root.at("specialMoveTunings");
+            for (size_t idx = 0; idx < static_cast<size_t>(Player::SpecialMoveIndex::Count); ++idx) {
+                const auto spIdx = static_cast<Player::SpecialMoveIndex>(idx);
+                const std::string key = specialMoveKeys[idx];
+                if (spTunings.contains(key) && spTunings.at(key).is_object()) {
+                    const json& moveJson = spTunings.at(key);
+                    auto& tuning = player.GetSpecialMoveTuningMutable(spIdx);
+                    tuning.startOffsetX = moveJson.value("startOffsetX", tuning.startOffsetX);
+                    tuning.startOffsetY = moveJson.value("startOffsetY", tuning.startOffsetY);
+                    tuning.startFollowPlayer = moveJson.value("startFollowPlayer", tuning.startFollowPlayer);
+                    tuning.speedRate = moveJson.value("speedRate", tuning.speedRate);
+                    tuning.hitStopSec = moveJson.value("hitStopSec", tuning.hitStopSec);
+
+                    if (moveJson.contains("waypoints") && moveJson.at("waypoints").is_array()) {
+                        tuning.waypoints.clear();
+                        for (const auto& wpJson : moveJson.at("waypoints")) {
+                            if (!wpJson.is_object()) continue;
+                            Player::UpLv3Waypoint wp;
+                            wp.offsetX = wpJson.value("offsetX", wp.offsetX);
+                            wp.offsetY = wpJson.value("offsetY", wp.offsetY);
+                            wp.duration = wpJson.value("duration", wp.duration);
+                            if (wpJson.contains("hits") && wpJson.at("hits").is_array()) {
+                                wp.hits.clear();
+                                for (const auto& hitItem : wpJson.at("hits")) {
+                                    wp.hits.push_back(hitItem.get<float>());
+                                }
+                            }
+                            tuning.waypoints.push_back(wp);
+                        }
+                    }
+                }
+            }
+        }
+        else if (root.contains("playerUpLv3Zigzag") && root.at("playerUpLv3Zigzag").is_object()) {
+            // 後方互換：旧ジグザグパラメータを UpSpecial_Lv3 に流し込む
+            const json& zigzag = root.at("playerUpLv3Zigzag");
+            auto& tuning = player.GetSpecialMoveTuningMutable(Player::SpecialMoveIndex::UpSpecial_Lv3);
+            tuning.startOffsetX = zigzag.value("startOffsetX", tuning.startOffsetX);
+            tuning.startOffsetY = zigzag.value("startOffsetY", tuning.startOffsetY);
+            tuning.startFollowPlayer = zigzag.value("startFollowPlayer", tuning.startFollowPlayer);
+            tuning.speedRate = zigzag.value("speedRate", tuning.speedRate);
+            tuning.hitStopSec = zigzag.value("hitStopSec", tuning.hitStopSec);
+
+            if (zigzag.contains("waypoints") && zigzag.at("waypoints").is_array()) {
+                tuning.waypoints.clear();
+                for (const auto& wpJson : zigzag.at("waypoints")) {
+                    if (!wpJson.is_object()) continue;
+                    Player::UpLv3Waypoint wp;
+                    wp.offsetX = wpJson.value("offsetX", wp.offsetX);
+                    wp.offsetY = wpJson.value("offsetY", wp.offsetY);
+                    wp.duration = wpJson.value("duration", wp.duration);
+                    if (wpJson.contains("hits") && wpJson.at("hits").is_array()) {
+                        wp.hits.clear();
+                        for (const auto& hitItem : wpJson.at("hits")) {
+                            wp.hits.push_back(hitItem.get<float>());
+                        }
+                    }
+                    tuning.waypoints.push_back(wp);
+                }
+            } else {
+                // 古いJSONファイルから3 Waypointsを再現
+                float app1X = zigzag.value("approachOffsetX", 3.0f);
+                float app1Y = zigzag.value("approachOffsetY", 2.0f);
+                float app2X = zigzag.value("approachOffsetX2", 0.0f);
+                float app2Y = zigzag.value("approachOffsetY2", 4.0f);
+                float landX = zigzag.value("landingOffsetX", 1.5f);
+                float landY = zigzag.value("landingOffsetY", 0.0f);
+                landX = -landX; 
+
+                std::vector<float> seg1 = { 0.0f, 0.5f, 0.9f };
+                std::vector<float> seg2 = { 0.0f, 0.5f, 0.9f };
+                std::vector<float> seg3 = { 0.0f, 0.5f, 0.9f };
+
+                auto LoadHits = [](const json& parent, const std::string& key, std::vector<float>& dest) {
+                    if (parent.contains(key) && parent.at(key).is_array()) {
+                        dest.clear();
+                        for (const auto& item : parent.at(key)) {
+                            dest.push_back(item.get<float>());
+                        }
+                    }
+                };
+                LoadHits(zigzag, "seg1Hits", seg1);
+                LoadHits(zigzag, "seg2Hits", seg2);
+                LoadHits(zigzag, "seg3Hits", seg3);
+
+                tuning.waypoints = {
+                    { app1X, app1Y, 0.12f, seg1 },
+                    { app2X, app2Y, 0.18f, seg2 },
+                    { landX, landY, 0.24f, seg3 }
+                };
+            }
         }
 
         status = "Loaded: " + path;
