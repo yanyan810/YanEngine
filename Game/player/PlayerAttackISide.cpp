@@ -185,10 +185,9 @@ void PlayerISideSpecial::UpdateSideSpecialLv2(Player& player, float dt) {
         if (player.sideSpecialHitBounceUsed_) {
             player.vel_ = { 0.0f, 0.0f, 0.0f };
         } else {
-            const float zSign = (player.iSpecialPulseIndex_ % 2) == 0 ? 1.0f : -1.0f;
             player.vel_.x = static_cast<float>(player.facing_) * kSideSlideSpeed * 1.18f * tuning.moveSpeedRate;
             player.vel_.y = std::max(player.vel_.y, 2.0f);
-            player.vel_.z = zSign * kSideLv2ZigZagSpeedZ;
+            player.vel_.z = 0.0f;
         }
         player.iAttackHitActive_ = true;
         if (player.iAttackStateTime_ >= ScaledDuration(kSideSlideMoveSec * 1.45f, tuning.moveDurationRate)) {
@@ -288,7 +287,7 @@ bool PlayerISideSpecial::GetSideSpecialHitBox(const Player& player, Vector3& out
     outHalfSize = ScaleVector3(chargedHalfSize, tuning.hitboxScale);
     float offsetZ = 0.0f;
     if (player.iSpecialVariant_ == PlayerISpecialVariant::Lv2) {
-        offsetZ = player.iSpecialPulseIndex_ == 0 ? 0.45f : -0.45f;
+        offsetZ = (player.iSpecialPulseIndex_ % 2) == 0 ? 0.45f : -0.45f;
     } else if (player.iSpecialVariant_ == PlayerISpecialVariant::Lv3) {
         outHalfSize.x *= 1.18f;
     }

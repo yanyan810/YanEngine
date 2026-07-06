@@ -32,6 +32,8 @@ void PlayerINeutralSpecial::UpdateNeutralSpecial(Player& player, float dt) {
     }
 }
 
+//一発どーん系
+//溜めることができて、それに応じて火力があがる
 void PlayerINeutralSpecial::UpdateNeutralSpecialLv0(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
@@ -58,6 +60,7 @@ void PlayerINeutralSpecial::UpdateNeutralSpecialLv0(Player& player, float dt) {
     }
 }
 
+//lv0の強化版、溜め無しで発動し、溜め35%くらいの火力
 void PlayerINeutralSpecial::UpdateNeutralSpecialLv1(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
@@ -86,6 +89,7 @@ void PlayerINeutralSpecial::UpdateNeutralSpecialLv1(Player& player, float dt) {
     }
 }
 
+//lv0の強化版、溜め無しで発動し、溜め70%くらいの火力
 void PlayerINeutralSpecial::UpdateNeutralSpecialLv2(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
@@ -120,6 +124,8 @@ void PlayerINeutralSpecial::UpdateNeutralSpecialLv2(Player& player, float dt) {
     }
 }
 
+//2発ドーンドーン系
+//すぐ当たり判定が出て、0.5秒後とかにもう一発当たり判定が出る
 void PlayerINeutralSpecial::UpdateNeutralSpecialLv3(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
