@@ -195,7 +195,8 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     const bool preserveSideSpecialBounce =
         sideSpecialHitBounceUsed_ &&
-        !onGround_;
+        !onGround_ &&
+        !hasSpecialChainCancelRight_;
     const bool inputBlockedByLaunch = launched_ && !launchControlUnlocked_;
     const bool inputBlockedBySideSpecialBounce = preserveSideSpecialBounce;
     const bool useDebugCommand = hasDebugCommand_ && !inputBlockedByLaunch && !inputBlockedBySideSpecialBounce;

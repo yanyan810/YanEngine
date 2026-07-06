@@ -68,7 +68,7 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
         IsIAttackType_(type) &&
         (hasSpecialCancelRight_ || hasSpecialChainCancelRight_ || finalUComboRecoveryCancel || specialRecoveryCancel) &&
         cancelGauge_ > 0 &&
-        (!specialCancelUsedThisAction_ || specialRecoveryCancel);
+        (!specialCancelUsedThisAction_ || hasSpecialChainCancelRight_ || specialRecoveryCancel);
     const bool wasCancelableSpecial =
         hasSpecialCancelResource &&
         ((action_ == PlayerAction::Attack && actionTimer_ > 0.0f) || !onGround_);
@@ -113,7 +113,7 @@ void Player::StartAttackAction_(PlayerAttackType type, int horizontal, PlayerAtt
     sideSpecialHitBounceUsed_ = false;
     sideSpecialLockOnActive_ =
         wasCancelableSpecial &&
-        type == PlayerAttackType::SideSpecial &&
+        (type == PlayerAttackType::SideSpecial || type == PlayerAttackType::UpSpecial) &&
         nextSideSpecialLockOn_;
     if (sideSpecialLockOnActive_) {
         Vector3 toTarget = {
@@ -341,7 +341,7 @@ bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {
     if (IsIAttackType_(attackType_)) {
         return (hasSpecialChainCancelRight_ || IsSpecialRecoveryCancelable_()) &&
             cancelGauge_ > 0 &&
-            (!specialCancelUsedThisAction_ || IsSpecialRecoveryCancelable_());
+            (!specialCancelUsedThisAction_ || hasSpecialChainCancelRight_ || IsSpecialRecoveryCancelable_());
     }
     return (hasSpecialCancelRight_ || IsFinalUComboRecoveryCancelable_()) &&
         cancelGauge_ > 0 &&
@@ -352,7 +352,7 @@ bool Player::CanSpecialCancelNow() const {
     return ((action_ == PlayerAction::Attack && actionTimer_ > 0.0f) || !onGround_) &&
         (hasSpecialCancelRight_ || hasSpecialChainCancelRight_ || IsFinalUComboRecoveryCancelable_() || IsSpecialRecoveryCancelable_()) &&
         cancelGauge_ > 0 &&
-        (!specialCancelUsedThisAction_ || IsSpecialRecoveryCancelable_());
+        (!specialCancelUsedThisAction_ || hasSpecialChainCancelRight_ || IsSpecialRecoveryCancelable_());
 }
 
 // ===== 攻撃ヒット時のコールバック処理 =====
@@ -392,7 +392,8 @@ void Player::NotifyAttackHit() {
 void Player::PrepareSpecialCommandTarget_(const PlayerInputCommand& command, const EnemyManager& enemyMgr) {
     nextSideSpecialLockOn_ = false;
     if (command.action != PlayerAction::Attack ||
-        command.attackType != PlayerAttackType::SideSpecial ||
+        (command.attackType != PlayerAttackType::SideSpecial &&
+            command.attackType != PlayerAttackType::UpSpecial) ||
         !CanStartAttackCommand_(command)) {
         return;
     }

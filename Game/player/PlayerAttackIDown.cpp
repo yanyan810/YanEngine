@@ -35,6 +35,7 @@ void PlayerIDownSpecial::UpdateDownSpecial(Player& player, float dt) {
     }
 }
 
+//カウンター系の必殺技
 void PlayerIDownSpecial::UpdateDownSpecialLv0(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
@@ -69,6 +70,9 @@ void PlayerIDownSpecial::UpdateDownSpecialLv0(Player& player, float dt) {
     }
 }
 
+//一定時間動かずに待機してから、相手の攻撃を受けるとカウンターが発動する
+//カウンターが発動すると、相手の攻撃を受けた瞬間に自分の攻撃判定が出る、その後のプレイヤーの攻撃力も一回分Upする
+//また、攻撃されなかった場合でも攻撃判定が出るが、相手の攻撃を受けた場合よりも威力が低い
 void PlayerIDownSpecial::UpdateDownSpecialLv1(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
@@ -103,6 +107,9 @@ void PlayerIDownSpecial::UpdateDownSpecialLv1(Player& player, float dt) {
     }
 }
 
+//スーパーアーマーを持ち、相手の攻撃を受けても怯まずに攻撃判定が出る。
+//ダメージ50%カットする
+//一定時間攻撃判定が連続で出る
 void PlayerIDownSpecial::UpdateDownSpecialLv2(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
@@ -138,6 +145,8 @@ void PlayerIDownSpecial::UpdateDownSpecialLv2(Player& player, float dt) {
     }
 }
 
+//ボスの真上へいき真下に向かって一回攻撃判定を出し、上にちょっと上がって
+//その後、攻撃判定が出続ける落下攻撃を出し、最後に着地した瞬間にも攻撃判定が出る
 void PlayerIDownSpecial::UpdateDownSpecialLv3(Player& player, float dt) {
     const SpecialCancelLevelTuning& tuning = GetCurrentCancelTuning(player);
     player.iAttackStateTime_ += dt;
