@@ -1,4 +1,4 @@
-﻿#include "ParticleManager.h"
+#include "ParticleManager.h"
 #include "DirectXCommon.h"
 #include "Camera.h" 
 #include "Model.h"
@@ -19,6 +19,14 @@ using json = nlohmann::json;
 ParticleManager* ParticleManager::GetInstance() {
     static ParticleManager instance;
     return &instance;
+}
+
+void ParticleManager::UpdateGroupModel(const std::string& modelName, int modelType, Model* newModel) {
+    for (auto& [name, group] : particleGroups_) {
+        if (group.modelType == modelType && group.modelName == modelName) {
+            group.model = newModel;
+        }
+    }
 }
 
 namespace {
@@ -894,6 +902,47 @@ void ParticleManager::ConfigureHitEffectPreset(const std::string& groupName) {
     group.mappedEmitter->angularVelocityMinDeg = -360.0f;
     group.mappedEmitter->angularVelocityMaxDeg = 360.0f;
 }
+
+void ParticleManager::ConfigureTrailPreset(const std::string& groupName) {
+    auto it = particleGroups_.find(groupName);
+    if (it == particleGroups_.end()) return;
+
+    ParticleGroup& group = it->second;
+    group.blendMode = ParticleCommon::BlendMode::kBlendModeAdd;
+    group.postEffectMode = PostEffectMode::FullScreen;
+    group.depthTestEnabled = false;
+    group.isAutoEmit = false;
+    group.billboardMode = 0;
+
+    if (!group.mappedEmitter) return;
+
+    group.mappedEmitter->count = 1;
+    group.mappedEmitter->frequency = 0.0f;
+    group.mappedEmitter->frequencyTime = 0.0f;
+    group.mappedEmitter->radius = 0.0f; // 射出半径を0にして線上に綺麗に配置する
+    group.mappedEmitter->emit = 0;
+    group.mappedEmitter->lifeTimeMin = 0.30f; // 寿命を少し短めにしてスタイリッシュにフェード
+    group.mappedEmitter->lifeTimeMax = 0.50f;
+    group.mappedEmitter->velocityBase = { 0.0f, 0.0f, 0.0f }; // 速度を完全にゼロにしてその場に固定
+    group.mappedEmitter->velocityVariance = 0.0f;
+    group.mappedEmitter->speedMin = 0.0f;
+    group.mappedEmitter->speedMax = 0.0f;
+    group.mappedEmitter->shapeType = 0;
+    group.mappedEmitter->shapeAngle = 0.0f;
+    group.mappedEmitter->shapeSize = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->acceleration = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->startColor = { 1.0f, 0.95f, 0.45f, 1.0f }; // 美しい光の加算
+    group.mappedEmitter->endColor = { 1.0f, 0.25f, 0.05f, 0.0f };
+    group.mappedEmitter->scaleStart = { 0.45f, 0.45f, 0.45f }; // 適度な太さ
+    group.mappedEmitter->scaleEnd = { 0.0f, 0.0f, 0.0f };
+    group.mappedEmitter->angleRandomDeg = 0.0f;
+    group.mappedEmitter->jitterDeg = 0.0f;
+    group.mappedEmitter->rotationStartDeg = 0.0f;
+    group.mappedEmitter->rotationRandomDeg = 0.0f;
+    group.mappedEmitter->angularVelocityMinDeg = 0.0f;
+    group.mappedEmitter->angularVelocityMaxDeg = 0.0f;
+}
+
 
 void ParticleManager::UpdateCompute(ID3D12GraphicsCommandList* computeCmd) {
     for (auto& [name, group] : particleGroups_) {

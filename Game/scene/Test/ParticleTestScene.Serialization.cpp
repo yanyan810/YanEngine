@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -123,6 +123,13 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
                 });
             }
             object["keyframes"].push_back(std::move(keyJson));
+        }
+        object["vertexOffsets"] = json::array();
+        for (const auto& [idx, offset] : item.vertexOffsets) {
+            object["vertexOffsets"].push_back({
+                { "index", idx },
+                { "offset", { offset.x, offset.y, offset.z } }
+            });
         }
         root["objects"].push_back(std::move(object));
     }
@@ -335,6 +342,13 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
                 key.bonePoses.push_back(std::move(pose));
             }
             object.keyframes.push_back(key);
+        }
+
+        // vertexOffsetsのデシリアライズ
+        for (const auto& offsetSource : source.value("vertexOffsets", json::array())) {
+            uint32_t index = offsetSource.value("index", 0);
+            auto offsetVal = offsetSource.value("offset", json::array({ 0.0f, 0.0f, 0.0f }));
+            object.vertexOffsets[index] = { offsetVal[0], offsetVal[1], offsetVal[2] };
         }
 
         snapshot.nextObjectId = std::max(snapshot.nextObjectId, object.id + 1);

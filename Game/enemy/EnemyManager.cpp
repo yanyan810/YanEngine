@@ -388,21 +388,32 @@ void EnemyManager::QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, 
 
 std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(Player& player) {
 	std::vector<PlayerAttackHitEvent> hitEvents;
-	AABB attackBox{};
+	std::vector<AABB> attackBoxes;
 	const unsigned int attackSerial = player.GetAttackSerial();
 	const int damage = player.GetAttackDamage();
-	if (attackSerial == 0 || damage <= 0 || !player.GetAttackHitBox(attackBox)) {
+	if (attackSerial == 0 || damage <= 0 || !player.GetAttackHitBoxes(attackBoxes)) {
 		return hitEvents;
 	}
 
-	const AABB3 attackBox3 = ToAABB3(attackBox);
 	for (size_t enemyIndex = 0; enemyIndex < enemies_.size(); ++enemyIndex) {
 		auto& enemy = enemies_[enemyIndex];
 		if (!enemy.IsAlive() || enemy.WasHitByPlayerAttack(attackSerial)) {
 			continue;
 		}
 		const AABB enemyBodyBox = enemy.GetBodyAABB();
-		if (!Intersect3(attackBox3, ToAABB3(enemyBodyBox))) {
+		const AABB3 enemyBodyBox3 = ToAABB3(enemyBodyBox);
+
+		bool hit = false;
+		AABB hitBox{};
+		for (const auto& box : attackBoxes) {
+			if (Intersect3(ToAABB3(box), enemyBodyBox3)) {
+				hit = true;
+				hitBox = box;
+				break;
+			}
+		}
+
+		if (!hit) {
 			continue;
 		}
 
@@ -425,17 +436,17 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		event.hpAfter = enemy.GetHP();
 		event.playerPosition = player.GetPos3D();
 		event.targetPosition = enemy.GetPos3D();
-		event.hitPosition = OverlapCenter(attackBox, enemyBodyBox);
+		event.hitPosition = OverlapCenter(hitBox, enemyBodyBox);
 		hitEvents.push_back(event);
 		if (hitStopTuning_.enabled) {
 			float hitStopSec = IsPlayerSpecialAttack(player.GetCurrentAttackType())
 				? hitStopTuning_.specialPlayerAttackSec * player.GetCurrentSpecialHitStopRate()
 				: hitStopTuning_.playerAttackSec;
 
-			// 上必殺技Lv3ジグザグの突進フェーズ中（ビームに入る前）は、専用のヒットストップ秒数を上書き適用
+			// 上必殺技Lv3の突進フェーズ中（ビームに入る前）は、専用のヒットストップ秒数を上書き適用
 			if (player.GetCurrentAttackType() == Player::PlayerAttackType::UpSpecial &&
 				player.GetCurrentSpecialVariantLevel() == static_cast<int>(PlayerISpecialVariant::Lv3)) {
-				const int beamPhaseBase = (static_cast<int>(player.GetUpLv3Waypoints().size()) + 1) * 100;
+				const int beamPhaseBase = 40;
 				if (player.GetSpecialPulseIndex() < beamPhaseBase) {
 					hitStopSec = player.GetUpLv3HitStopSec();
 				}

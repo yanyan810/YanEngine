@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -369,7 +369,46 @@ void ParticleTestScene::DrawViewportGizmo_()
     Vector3 gizmoWorldPosition = item.position;
     bool editingBone = false;
     EditorBonePose* selectedBonePose = nullptr;
-    if (item.showBones && item.object && item.object->HasSkinningModel()) {
+    bool editingVertex = false;
+
+    if (item.editMode && item.object && item.object->GetModel()) {
+        Model* model = item.object->GetModel();
+        if (model) {
+            if (!item.selectedVertexIndices.empty()) {
+                Vector3 sumLocalPos{ 0.0f, 0.0f, 0.0f };
+                int validCount = 0;
+                for (int idx : item.selectedVertexIndices) {
+                    if (idx >= 0 && idx < static_cast<int>(model->GetVertexCount())) {
+                        sumLocalPos += model->GetVertexPosition(idx);
+                        validCount++;
+                    }
+                }
+                if (validCount > 0) {
+                    Vector3 localPos = {
+                        sumLocalPos.x / static_cast<float>(validCount),
+                        sumLocalPos.y / static_cast<float>(validCount),
+                        sumLocalPos.z / static_cast<float>(validCount)
+                    };
+                    Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(item.object->GetScale(), item.object->GetRotate(), item.object->GetTranslate());
+                    gizmoWorldPosition = {
+                        localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                        localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                        localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                    };
+                    editingVertex = true;
+                }
+            } else if (item.selectedVertexIndex >= 0 && item.selectedVertexIndex < static_cast<int>(model->GetVertexCount())) {
+                Vector3 localPos = model->GetVertexPosition(item.selectedVertexIndex);
+                Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(item.object->GetScale(), item.object->GetRotate(), item.object->GetTranslate());
+                gizmoWorldPosition = {
+                    localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                    localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                    localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                };
+                editingVertex = true;
+            }
+        }
+    } else if (item.showBones && item.object && item.object->HasSkinningModel()) {
         SyncEditorObjectBones_(item);
         if (!item.bonePoses.empty()) {
             item.selectedBone = std::clamp(item.selectedBone, 0, static_cast<int>(item.bonePoses.size()) - 1);
@@ -388,6 +427,140 @@ void ParticleTestScene::DrawViewportGizmo_()
     ImVec2 center{};
     if (!project(gizmoWorldPosition, center)) {
         return;
+    }
+
+    // --- 頂点ドットの描画とクリック選択判定（Edit Mode の場合） ---
+    if (item.editMode && item.object && item.object->GetModel()) {
+        Model* model = item.object->GetModel();
+        if (model) {
+            uint32_t vertexCount = model->GetVertexCount();
+            Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(item.object->GetScale(), item.object->GetRotate(), item.object->GetTranslate());
+            ImDrawList* drawList = ImGui::GetForegroundDrawList();
+            ImVec2 mousePos = ImGui::GetMousePos();
+
+            int hoveredIndex = -1;
+            float minDistance = 12.0f; // ドット選択の判定距離
+
+            for (uint32_t i = 0; i < vertexCount; ++i) {
+                Vector3 localPos = model->GetVertexPosition(i);
+                Vector3 worldPos = {
+                    localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                    localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                    localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                };
+
+                ImVec2 screenPos{};
+                if (project(worldPos, screenPos)) {
+                    bool selected = (static_cast<int>(i) == item.selectedVertexIndex) ||
+                        (std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), static_cast<int>(i)) != item.selectedVertexIndices.end());
+                    ImU32 dotColor = selected ? IM_COL32(255, 255, 0, 255) : IM_COL32(80, 80, 255, 220);
+                    drawList->AddCircleFilled(screenPos, selected ? 5.5f : 3.5f, dotColor, 12);
+                    drawList->AddCircle(screenPos, selected ? 7.0f : 5.0f, IM_COL32(30, 30, 30, 220), 12, 1.0f);
+
+                    float dx = mousePos.x - screenPos.x;
+                    float dy = mousePos.y - screenPos.y;
+                    float dist = std::sqrt(dx*dx + dy*dy);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        hoveredIndex = i;
+                    }
+                }
+            }
+
+            const bool mouseInsideScene =
+                mousePos.x >= sceneMin.x && mousePos.x <= sceneMax.x &&
+                mousePos.y >= sceneMin.y && mousePos.y <= sceneMax.y;
+
+            // allowRightClickRotateの算出
+            EditorObject* selectedObj = nullptr;
+            if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
+                selectedObj = &editorObjects_[selectedEditorObject_];
+            }
+            const bool isEditMode = selectedObj && selectedObj->editMode;
+            const bool allowRightClickRotate = isEditMode ? (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) : true;
+
+            // --- 右クリックによるボックス選択の処理 ---
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && mouseInsideScene && !allowRightClickRotate) {
+                boxSelectActive_ = true;
+                boxSelectStart_ = mousePos;
+            }
+
+            if (boxSelectActive_) {
+                drawList->AddRectFilled(boxSelectStart_, mousePos, IM_COL32(255, 255, 0, 40));
+                drawList->AddRect(boxSelectStart_, mousePos, IM_COL32(255, 255, 0, 180), 0.0f, 0, 1.5f);
+
+                if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+                    boxSelectActive_ = false;
+
+                    float minX = std::min(boxSelectStart_.x, mousePos.x);
+                    float maxX = std::max(boxSelectStart_.x, mousePos.x);
+                    float minY = std::min(boxSelectStart_.y, mousePos.y);
+                    float maxY = std::max(boxSelectStart_.y, mousePos.y);
+
+                    float rectW = maxX - minX;
+                    float rectH = maxY - minY;
+                    if (rectW > 4.0f && rectH > 4.0f) {
+                        PushUndoSnapshot_();
+
+                        if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
+                            !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                            item.selectedVertexIndices.clear();
+                            item.selectedVertexIndex = -1;
+                        }
+
+                        for (uint32_t i = 0; i < vertexCount; ++i) {
+                            Vector3 localPos = model->GetVertexPosition(i);
+                            Vector3 worldPos = {
+                                localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                                localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                                localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                            };
+                            ImVec2 screenPos{};
+                            if (project(worldPos, screenPos)) {
+                                if (screenPos.x >= minX && screenPos.x <= maxX &&
+                                    screenPos.y >= minY && screenPos.y <= maxY) {
+                                    if (std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), static_cast<int>(i)) == item.selectedVertexIndices.end()) {
+                                        item.selectedVertexIndices.push_back(i);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!item.selectedVertexIndices.empty()) {
+                            item.selectedVertexIndex = item.selectedVertexIndices.front();
+                        }
+                        return;
+                    }
+                }
+            }
+
+            // 単一左クリック選択判定
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
+                PushUndoSnapshot_();
+                if (hoveredIndex >= 0) {
+                    if (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift) ||
+                        ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                        auto it = std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), hoveredIndex);
+                        if (it == item.selectedVertexIndices.end()) {
+                            item.selectedVertexIndices.push_back(hoveredIndex);
+                        } else {
+                            item.selectedVertexIndices.erase(it);
+                        }
+                    } else {
+                        item.selectedVertexIndices.clear();
+                        item.selectedVertexIndices.push_back(hoveredIndex);
+                    }
+                    item.selectedVertexIndex = item.selectedVertexIndices.empty() ? -1 : item.selectedVertexIndices.back();
+                    return;
+                } else {
+                    if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
+                        !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                        item.selectedVertexIndices.clear();
+                        item.selectedVertexIndex = -1;
+                    }
+                }
+            }
+        }
     }
 
     const Vector3 axisWorld[3] = {
@@ -465,12 +638,101 @@ void ParticleTestScene::DrawViewportGizmo_()
         viewportGizmoLastMouseX_ = mouse.x;
         viewportGizmoLastMouseY_ = mouse.y;
         const int axis = activeViewportGizmoAxis_;
-        if (axis >= 0 && axis < 3) {
-            const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
-            const float amount = signedPixels / 55.0f;
-            if (std::abs(amount) > 0.00001f) {
-                if (gizmoMode_ == GizmoMode::Translate) {
-                    Vector3& translate = editingBone ? selectedBonePose->translate : item.position;
+
+        if (item.editMode && (item.selectedVertexIndex >= 0 || !item.selectedVertexIndices.empty())) {
+            // --- 頂点編集（移動）処理 ---
+            float amount = 0.0f;
+            float amountX = 0.0f;
+            float amountY = 0.0f;
+
+            if (axis >= 0 && axis < 3) {
+                const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
+                amount = signedPixels / 55.0f;
+            } else if (axis == 3) {
+                amountX = delta.x / 55.0f;
+                amountY = -delta.y / 55.0f;
+            }
+
+            if (std::abs(amount) > 0.00001f || std::abs(amountX) > 0.00001f || std::abs(amountY) > 0.00001f) {
+                // ワールド移動差分を算出
+                Vector3 worldDelta{ 0.0f, 0.0f, 0.0f };
+                if (axis == 0) worldDelta = { amount, 0.0f, 0.0f };
+                if (axis == 1) worldDelta = { 0.0f, amount, 0.0f };
+                if (axis == 2) worldDelta = { 0.0f, 0.0f, amount };
+                if (axis == 3) {
+                    const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
+                    worldDelta = CameraRight(cameraWorld) * amountX + CameraUp(cameraWorld) * amountY;
+                }
+
+                // オブジェクトの回転・スケールの逆行列を作成してローカル移動差分に変換
+                Matrix4x4 localRotScl = Matrix4x4::MakeAffineMatrix(item.scale, item.rotation, { 0.0f, 0.0f, 0.0f });
+                Matrix4x4 invRotScl = Matrix4x4::Inverse(localRotScl);
+
+                Vector3 localDelta = {
+                    worldDelta.x * invRotScl.m[0][0] + worldDelta.y * invRotScl.m[1][0] + worldDelta.z * invRotScl.m[2][0],
+                    worldDelta.x * invRotScl.m[0][1] + worldDelta.y * invRotScl.m[1][1] + worldDelta.z * invRotScl.m[2][1],
+                    worldDelta.x * invRotScl.m[0][2] + worldDelta.y * invRotScl.m[1][2] + worldDelta.z * invRotScl.m[2][2],
+                };
+
+                // 複数選択の頂点すべてに移動を適用
+                if (!item.selectedVertexIndices.empty()) {
+                    EnsureUniqueModelForObject_(item);
+                    Model* model = item.object ? item.object->GetModel() : nullptr;
+                    if (model) {
+                        uint32_t vertexCount = model->GetVertexCount();
+                        Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+                        if (!originalModel && item.geometryType >= 0) {
+                            originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+                        }
+
+                        // 同一座標の共有頂点も含めて一括移動させるための重複排除セット
+                        std::unordered_set<uint32_t> affectedVertices;
+                        for (int selIdx : item.selectedVertexIndices) {
+                            if (selIdx >= 0 && selIdx < static_cast<int>(vertexCount)) {
+                                if (originalModel) {
+                                    Vector3 origSelectedPos = originalModel->GetVertexPosition(selIdx);
+                                    for (uint32_t i = 0; i < vertexCount; ++i) {
+                                        Vector3 origPos = originalModel->GetVertexPosition(i);
+                                        float dx = origPos.x - origSelectedPos.x;
+                                        float dy = origPos.y - origSelectedPos.y;
+                                        float dz = origPos.z - origSelectedPos.z;
+                                        float distSq = dx*dx + dy*dy + dz*dz;
+                                        if (distSq < 0.0001f) {
+                                            affectedVertices.insert(i);
+                                        }
+                                    }
+                                } else {
+                                    affectedVertices.insert(selIdx);
+                                }
+                            }
+                        }
+
+                        for (uint32_t i : affectedVertices) {
+                            if (!item.vertexOffsets.contains(i)) {
+                                if (originalModel) {
+                                    item.vertexOffsets[i] = originalModel->GetVertexPosition(i);
+                                } else {
+                                    item.vertexOffsets[i] = model->GetVertexPosition(i);
+                                }
+                            }
+                            item.vertexOffsets[i] += localDelta;
+                            model->UpdateVertexPosition(i, item.vertexOffsets[i]);
+                        }
+                        transformDragChanged_ = true;
+                    }
+                } else {
+                    UpdateVertexPositionGroup_(item, item.selectedVertexIndex, localDelta);
+                    transformDragChanged_ = true;
+                }
+            }
+        } else {
+            // --- 通常のトランスフォーム・ボーン移動処理（既存の処理） ---
+            if (axis >= 0 && axis < 3) {
+                const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
+                const float amount = signedPixels / 55.0f;
+                if (std::abs(amount) > 0.00001f) {
+                    if (gizmoMode_ == GizmoMode::Translate) {
+                        Vector3& translate = editingBone ? selectedBonePose->translate : item.position;
                     if (axis == 0) translate.x += amount;
                     if (axis == 1) translate.y += amount;
                     if (axis == 2) translate.z += amount;
@@ -518,6 +780,7 @@ void ParticleTestScene::DrawViewportGizmo_()
                 ApplyEditorObjectTransform_(item);
             }
         }
+        }
     }
 
     if (activeViewportGizmoAxis_ >= 0 && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
@@ -551,63 +814,15 @@ void ParticleTestScene::DrawEditorCameraControls_()
         return;
     }
 
-    ImGuiIO& io = ImGui::GetIO();
-    const ImVec2 mouse = ImGui::GetMousePos();
-    const bool mouseInsideScene =
-        mouse.x >= gSceneImageMin.x && mouse.x <= gSceneImageMax.x &&
-        mouse.y >= gSceneImageMin.y && mouse.y <= gSceneImageMax.y;
-
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && mouseInsideScene) {
-        editorCameraControlActive_ = true;
-    }
-    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-        editorCameraControlActive_ = false;
-    }
-
-    if (editorCameraControlActive_) {
-        editorCameraRotation_.y += io.MouseDelta.x * editorCameraLookSpeed_;
-        editorCameraRotation_.x += io.MouseDelta.y * editorCameraLookSpeed_;
-        editorCameraRotation_.x = std::clamp(editorCameraRotation_.x, -kPi * 0.49f, kPi * 0.49f);
-
-        const Matrix4x4 cameraRotation = Matrix4x4::RotateXYZ(editorCameraRotation_.x, editorCameraRotation_.y, editorCameraRotation_.z);
-        const Vector3 right = CameraRight(cameraRotation);
-        const Vector3 up = CameraUp(cameraRotation);
-        const Vector3 forward = CameraForward(cameraRotation);
-        const float speed = editorCameraMoveSpeed_ * (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 3.0f : 1.0f);
-
-        if (ImGui::IsKeyDown(ImGuiKey_W)) {
-            editorCameraPosition_ += forward * speed;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_S)) {
-            editorCameraPosition_ -= forward * speed;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_D)) {
-            editorCameraPosition_ += right * speed;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_A)) {
-            editorCameraPosition_ -= right * speed;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_E)) {
-            editorCameraPosition_ += up * speed;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) {
-            editorCameraPosition_ -= up * speed;
-        }
-
-        camera_->SetTranslate(editorCameraPosition_);
-        camera_->SetRotate(editorCameraRotation_);
-        camera_->Update();
-    }
-
     ImGui::Separator();
     ImGui::TextUnformatted("Editor Camera");
-    bool cameraChanged = false;
-    cameraChanged |= ImGui::DragFloat3("Camera Position", &editorCameraPosition_.x, 0.1f);
-    cameraChanged |= ImGui::DragFloat3("Camera Rotation", &editorCameraRotation_.x, 0.01f);
+    bool uiChanged = false;
+    uiChanged |= ImGui::DragFloat3("Camera Position", &editorCameraPosition_.x, 0.1f);
+    uiChanged |= ImGui::DragFloat3("Camera Rotation", &editorCameraRotation_.x, 0.01f);
     ImGui::DragFloat("Move Speed", &editorCameraMoveSpeed_, 0.01f, 0.01f, 5.0f);
     ImGui::DragFloat("Look Speed", &editorCameraLookSpeed_, 0.0005f, 0.001f, 0.05f, "%.4f");
     const bool applyCamera = ImGui::Button("Apply Camera");
-    if (cameraChanged || applyCamera) {
+    if (uiChanged || applyCamera) {
         camera_->SetTranslate(editorCameraPosition_);
         camera_->SetRotate(editorCameraRotation_);
         camera_->Update();
@@ -664,7 +879,11 @@ void ParticleTestScene::DrawAnimationCameraControls_()
         AddCameraKeyframe_();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete Near Camera Key")) {
+    const char* deleteCameraBtnLabel = "Delete Near Camera Key";
+    if (selectedKeyframeType_ == DragTarget::CameraKeyframe && selectedKeyframeIndex_ >= 0) {
+        deleteCameraBtnLabel = "Delete Selected Camera Key";
+    }
+    if (ImGui::Button(deleteCameraBtnLabel)) {
         PushUndoSnapshot_();
         DeleteNearestCameraKeyframe_();
     }
@@ -696,7 +915,37 @@ void ParticleTestScene::HandleEffectEditorShortcuts_(GameApp& app)
         PasteEditorObject_(app);
     }
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
-        if (selectedEditorObject_ >= 0) {
+        if (selectedKeyframeIndex_ >= 0 && selectedKeyframeType_ != DragTarget::None) {
+            PushUndoSnapshot_();
+            switch (selectedKeyframeType_) {
+            case DragTarget::ModelKeyframe:
+                if (selectedKeyframeObjectIndex_ >= 0 && selectedKeyframeObjectIndex_ < static_cast<int>(editorObjects_.size())) {
+                    auto& keys = editorObjects_[selectedKeyframeObjectIndex_].keyframes;
+                    if (selectedKeyframeIndex_ >= 0 && selectedKeyframeIndex_ < static_cast<int>(keys.size())) {
+                        keys.erase(keys.begin() + selectedKeyframeIndex_);
+                        EvaluateTimeline_(false);
+                    }
+                }
+                break;
+            case DragTarget::CameraKeyframe:
+                if (selectedKeyframeIndex_ >= 0 && selectedKeyframeIndex_ < static_cast<int>(cameraKeyframes_.size())) {
+                    cameraKeyframes_.erase(cameraKeyframes_.begin() + selectedKeyframeIndex_);
+                    EvaluateTimeline_(false);
+                }
+                break;
+            case DragTarget::PlayerAttackHitboxKeyframe:
+                if (selectedKeyframeIndex_ >= 0 && selectedKeyframeIndex_ < static_cast<int>(playerAttackHitboxKeyframes_.size())) {
+                    playerAttackHitboxKeyframes_.erase(playerAttackHitboxKeyframes_.begin() + selectedKeyframeIndex_);
+                    EvaluateTimeline_(false);
+                }
+                break;
+            default:
+                break;
+            }
+            selectedKeyframeIndex_ = -1;
+            selectedKeyframeType_ = DragTarget::None;
+            selectedKeyframeObjectIndex_ = -1;
+        } else if (selectedEditorObject_ >= 0) {
             RequestDeleteSelectedObject_();
         } else if (selectedParticleNode_ >= 0) {
             PushUndoSnapshot_();
@@ -1129,6 +1378,126 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
 
         DrawGizmoControls_(item);
         DrawBoneControls_(item);
+
+        // 頂点編集（Edit Mode）コントロール
+        ImGui::Separator();
+        ImGui::TextUnformatted("Vertex Edit Mode");
+        if (ImGui::Checkbox("Edit Mode", &item.editMode)) {
+            // Edit Modeをトグルしたとき、まだユニークモデルになっていないならユニークモデルを作成する
+            if (item.editMode) {
+                EnsureUniqueModelForObject_(item);
+            } else {
+                item.selectedVertexIndex = -1;
+            }
+        }
+
+        if (item.editMode) {
+            Model* model = item.object ? item.object->GetModel() : nullptr;
+            if (model) {
+                uint32_t vertexCount = model->GetVertexCount();
+                ImGui::Text("Total Vertices: %u", vertexCount);
+
+                // --- 選択中頂点のインデックス表示 ---
+                if (!item.selectedVertexIndices.empty()) {
+                    if (item.selectedVertexIndices.size() == 1) {
+                        ImGui::Text("Selected Vertex: #%d", item.selectedVertexIndex);
+
+                        // 現在の頂点ローカル座標を取得して編集できるようにする
+                        Vector3 currentPos = model->GetVertexPosition(item.selectedVertexIndex);
+
+                        bool vtxChanged = ImGui::DragFloat3("Vertex Position", &currentPos.x, 0.01f);
+                        if (vtxChanged) {
+                            // Undoスナップショットをドラッグ開始時に保存
+                            if (ImGui::IsItemActivated() && !transformDragActive_) {
+                                transformDragBefore_ = CaptureEditorSnapshot_();
+                                transformDragActive_ = true;
+                                transformDragChanged_ = false;
+                            }
+
+                            // 移動差分を計算して、グループ内の頂点に適用
+                            Vector3 oldPos = model->GetVertexPosition(item.selectedVertexIndex);
+                            Vector3 localDelta = { currentPos.x - oldPos.x, currentPos.y - oldPos.y, currentPos.z - oldPos.z };
+
+                            UpdateVertexPositionGroup_(item, item.selectedVertexIndex, localDelta);
+                            transformDragChanged_ = true;
+                        }
+
+                        if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+                            if (transformDragChanged_) {
+                                PushUndoSnapshot_(transformDragBefore_);
+                            }
+                            transformDragActive_ = false;
+                            transformDragChanged_ = false;
+                        }
+                    } else {
+                        ImGui::Text("Selected Vertices: %zu", item.selectedVertexIndices.size());
+                        std::string indicesStr = "#";
+                        for (size_t k = 0; k < std::min<size_t>(item.selectedVertexIndices.size(), 5); ++k) {
+                            if (k > 0) indicesStr += ", #";
+                            indicesStr += std::to_string(item.selectedVertexIndices[k]);
+                        }
+                        if (item.selectedVertexIndices.size() > 5) {
+                            indicesStr += "... and " + std::to_string(item.selectedVertexIndices.size() - 5) + " more";
+                        }
+                        ImGui::TextUnformatted(indicesStr.c_str());
+                    }
+
+                    if (ImGui::Button("Reset Vertex")) {
+                        PushUndoSnapshot_();
+
+                        Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+                        if (!originalModel && item.geometryType >= 0) {
+                            originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+                        }
+
+                        if (originalModel) {
+                            std::unordered_set<uint32_t> affectedVertices;
+                            uint32_t vertexCount = model->GetVertexCount();
+
+                            for (int selIdx : item.selectedVertexIndices) {
+                                if (selIdx >= 0 && selIdx < static_cast<int>(vertexCount)) {
+                                    Vector3 origSelectedPos = originalModel->GetVertexPosition(selIdx);
+                                    for (uint32_t i = 0; i < vertexCount; ++i) {
+                                        Vector3 origPos = originalModel->GetVertexPosition(i);
+                                        float dx = origPos.x - origSelectedPos.x;
+                                        float dy = origPos.y - origSelectedPos.y;
+                                        float dz = origPos.z - origSelectedPos.z;
+                                        float distSq = dx * dx + dy * dy + dz * dz;
+                                        if (distSq < 0.0001f) {
+                                            affectedVertices.insert(i);
+                                        }
+                                    }
+                                }
+                            }
+
+                            for (uint32_t i : affectedVertices) {
+                                item.vertexOffsets.erase(i);
+                                model->UpdateVertexPosition(i, originalModel->GetVertexPosition(i));
+                            }
+                        }
+                    }
+                } else {
+                    ImGui::TextDisabled("No vertex selected. Click or Box Select (Right Click Drag) vertices.");
+                }
+
+                if (ImGui::Button("Reset All Vertices")) {
+                    PushUndoSnapshot_();
+                    item.vertexOffsets.clear();
+
+                    // 初期モデルからすべての頂点座標をコピーして上書きリセットする
+                    Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+                    if (!originalModel && item.geometryType >= 0) {
+                        originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+                    }
+
+                    if (originalModel) {
+                        for (uint32_t i = 0; i < vertexCount; ++i) {
+                            model->UpdateVertexPosition(i, originalModel->GetVertexPosition(i));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (selectedParticleNode_ >= 0 && selectedParticleNode_ < static_cast<int>(particleNodes_.size())) {
@@ -1270,7 +1639,13 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
             AddKeyframeToSelected_();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Delete Near Keyframe")) {
+        const char* deleteBtnLabel = "Delete Near Keyframe";
+        if (selectedKeyframeType_ == DragTarget::ModelKeyframe &&
+            selectedKeyframeObjectIndex_ == selectedEditorObject_ &&
+            selectedKeyframeIndex_ >= 0) {
+            deleteBtnLabel = "Delete Selected Keyframe";
+        }
+        if (ImGui::Button(deleteBtnLabel)) {
             PushUndoSnapshot_();
             DeleteNearestKeyframeFromSelected_();
         }
@@ -1405,7 +1780,11 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
         EvaluateTimeline_(false);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete Near HitBox Keyframe")) {
+    const char* deleteHitboxBtnLabel = "Delete Near HitBox Keyframe";
+    if (selectedKeyframeType_ == DragTarget::PlayerAttackHitboxKeyframe && selectedKeyframeIndex_ >= 0) {
+        deleteHitboxBtnLabel = "Delete Selected HitBox Keyframe";
+    }
+    if (ImGui::Button(deleteHitboxBtnLabel)) {
         DeleteNearestPlayerAttackHitboxKeyframe_();
         EvaluateTimeline_(false);
     }

@@ -1,4 +1,4 @@
-﻿#include "Model.h"
+#include "Model.h"
 #include <sstream>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -692,11 +692,10 @@ void Model::InitializeFromModelData(ModelCommon* modelCommon, const ModelData& m
 	// Material CB
 	materialResource_ = dx->CreateBufferResource(sizeof(Material));
 	materialResource_->Map(0, nullptr, reinterpret_cast<void**>(&materialData_));
+	*materialData_ = {};
 	materialData_->color = { 1,1,1,1 };
-	materialData_->enableLighting = 2;
+	materialData_->enableLighting = 1;
 	materialData_->uvTransform = Matrix4x4::MakeIdentity4x4();
-	materialData_->shininess = 32.0f;
-	materialData_->environmentCoefficient = 0.0f;
 
 	// VB
 	vertexResource_ = dx->CreateBufferResource(sizeof(VertexData) * totalVtx);
@@ -720,33 +719,32 @@ void Model::InitializeFromModelData(ModelCommon* modelCommon, const ModelData& m
 	vertexBufferView_.SizeInBytes = UINT(sizeof(VertexData) * totalVtx);
 	vertexBufferView_.StrideInBytes = sizeof(VertexData);
 
-	// Index が無ければ自動生成
-	if (modelData_.indices.empty()) {
-		for (auto& mesh : modelData_.meshes) {
-			mesh.startIndex = static_cast<uint32_t>(modelData_.indices.size());
-			mesh.indexCount = mesh.vertexCount;
+	// IB 作成（元のInitializeと完全に同じロジックで実装）
+	const size_t totalIdx = modelData_.indices.size();
+	if (totalIdx > 0) {
+		indexResource_ = dx->CreateBufferResource(sizeof(uint32_t) * totalIdx);
+		indexResource_->Map(0, nullptr, reinterpret_cast<void**>(&indexData_));
 
-			for (uint32_t i = 0; i < mesh.vertexCount; ++i) {
-				modelData_.indices.push_back(mesh.startVertex + i);
+		uint32_t ibCursor = 0;
+		for (auto& mesh : modelData_.meshes) {
+			const uint32_t vOffset = mesh.startVertex;
+			const uint32_t srcStart = mesh.startIndex;
+			const uint32_t count = mesh.indexCount;
+
+			mesh.startIndex = ibCursor;
+
+			for (uint32_t k = 0; k < count; ++k) {
+				const uint32_t localIndex = modelData_.indices[srcStart + k];
+				indexData_[ibCursor + k] = localIndex + vOffset;
 			}
+
+			ibCursor += count;
 		}
-	} else {
-		uint32_t indexCursor = 0;
-		for (auto& mesh : modelData_.meshes) {
-			mesh.startIndex = indexCursor;
-			mesh.indexCount = mesh.vertexCount;
-			indexCursor += mesh.indexCount;
-		}
+
+		indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
+		indexBufferView_.SizeInBytes = static_cast<UINT>(sizeof(uint32_t) * totalIdx);
+		indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
 	}
-
-	indexResource_ = dx->CreateBufferResource(sizeof(uint32_t) * modelData_.indices.size());
-	uint32_t* mappedIndex = nullptr;
-	indexResource_->Map(0, nullptr, reinterpret_cast<void**>(&mappedIndex));
-	std::memcpy(mappedIndex, modelData_.indices.data(), sizeof(uint32_t) * modelData_.indices.size());
-
-	indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
-	indexBufferView_.SizeInBytes = UINT(sizeof(uint32_t) * modelData_.indices.size());
-	indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
 }
 
 void Model::Draw(ID3D12GraphicsCommandList* cmd) {
@@ -1794,3 +1792,19 @@ Matrix4x4 Model::GetNodeWorldMatrix(int nodeIndex) const
 
 	return world;
 }
+
+Vector3 Model::GetVertexPosition(uint32_t index) const
+{
+	if (vertexData_ && index < GetVertexCount()) {
+		return { vertexData_[index].position.x, vertexData_[index].position.y, vertexData_[index].position.z };
+	}
+	return { 0.0f, 0.0f, 0.0f };
+}
+
+void Model::UpdateVertexPosition(uint32_t index, const Vector3& position)
+{
+	if (vertexData_ && index < GetVertexCount()) {
+		vertexData_[index].position = { position.x, position.y, position.z, 1.0f };
+	}
+}
+

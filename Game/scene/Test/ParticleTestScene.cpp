@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -55,6 +55,9 @@ void ParticleTestScene::OnEnter(GameApp& app)
 
     editorCameraPosition_ = { 0.0f, 3.0f, -20.0f };
     editorCameraRotation_ = { 0.0f, 0.0f, 0.0f };
+    editorCameraControlActive_ = false;
+    editorCameraPanActive_ = false;
+    shiftMovementActive_ = false;
 
     camera_ = std::make_unique<Camera>();
     camera_->SetTranslate(editorCameraPosition_);
@@ -130,6 +133,8 @@ void ParticleTestScene::OnExit(GameApp&)
 
 void ParticleTestScene::Update(GameApp& app, float dt)
 {
+    UpdateCameraControls_(app, dt);
+
     const Input* input = app.GetInput();
     if (!input) {
         return;
@@ -355,7 +360,7 @@ void ParticleTestScene::DrawPostEffectTargets(GameApp& app)
     app.Render()->SetObjectLayerBloomColor(layerBloomColor);
     app.Render()->SetObjectLayerOutlineBloomColor(layerOutlineBloomColor);
     for (auto& item : editorObjects_) {
-        if ((item.bloomPostEffect || item.outlineBloomPostEffect) && item.object) {
+        if (item.active && (item.bloomPostEffect || item.outlineBloomPostEffect) && item.object) {
             item.object->Draw();
         }
     }
@@ -364,14 +369,14 @@ void ParticleTestScene::DrawPostEffectTargets(GameApp& app)
 bool ParticleTestScene::HasObjectBloomTargets() const
 {
     return std::any_of(editorObjects_.begin(), editorObjects_.end(), [](const EditorObject& item) {
-        return item.bloomPostEffect && item.object;
+        return item.active && item.bloomPostEffect && item.object;
     });
 }
 
 bool ParticleTestScene::HasObjectOutlineBloomTargets() const
 {
     return std::any_of(editorObjects_.begin(), editorObjects_.end(), [](const EditorObject& item) {
-        return item.outlineBloomPostEffect && item.object;
+        return item.active && item.outlineBloomPostEffect && item.object;
     });
 }
 
@@ -382,7 +387,7 @@ void ParticleTestScene::DrawSceneContent_(GameApp& app)
     }*/
 
     for (auto& item : editorObjects_) {
-        if (item.object) {
+        if (item.active && item.object) {
             item.object->Draw();
         }
     }
@@ -446,3 +451,236 @@ void ParticleTestScene::SpawnHitEffectPreview_()
         hitEffectSpawnPosition_,
         static_cast<uint32_t>(std::max(1, hitEffectSpawnCount_)));
 }
+
+void ParticleTestScene::EnsureUniqueModelForObject_(EditorObject& item)
+{
+    if (!item.object) {
+        return;
+    }
+    Model* currentModel = item.object->GetModel();
+    if (!currentModel) {
+        return;
+    }
+
+    std::string uniqueKey = "Unique_" + item.name + "_" + std::to_string(item.id);
+    Model* existingUnique = ModelManager::GetInstance()->FindModel(uniqueKey);
+    if (existingUnique && currentModel == existingUnique) {
+        return;
+    }
+
+    Model* uniqueModel = ModelManager::GetInstance()->CreatePrimitiveModel(uniqueKey, currentModel->GetModelData());
+    item.object->SetModel(uniqueModel);
+
+    // すでにある頂点変形データを適用
+    for (const auto& [idx, pos] : item.vertexOffsets) {
+        uniqueModel->UpdateVertexPosition(idx, pos);
+    }
+
+    // パーティクルマネージャーの該当するグループのモデルも差し替える
+    auto* pm = ParticleManager::GetInstance();
+    if (item.geometryType >= 0) {
+        pm->UpdateGroupModel(std::to_string(item.geometryType), 1, uniqueModel);
+    } else {
+        pm->UpdateGroupModel(item.modelPath, 2, uniqueModel);
+    }
+}
+
+void ParticleTestScene::SyncParticleModelsWithEditorObjects_()
+{
+    auto* pm = ParticleManager::GetInstance();
+    for (auto& item : editorObjects_) {
+        if (!item.object || item.vertexOffsets.empty()) {
+            continue;
+        }
+        Model* model = item.object->GetModel();
+        if (model) {
+            std::string uniqueKey = "Unique_" + item.name + "_" + std::to_string(item.id);
+            if (model == ModelManager::GetInstance()->FindModel(uniqueKey)) {
+                if (item.geometryType >= 0) {
+                    pm->UpdateGroupModel(std::to_string(item.geometryType), 1, model);
+                } else {
+                    pm->UpdateGroupModel(item.modelPath, 2, model);
+                }
+            }
+        }
+    }
+}
+
+void ParticleTestScene::UpdateVertexPositionGroup_(EditorObject& item, int baseVertexIndex, const Vector3& localDelta)
+{
+    EnsureUniqueModelForObject_(item);
+    Model* model = item.object ? item.object->GetModel() : nullptr;
+    if (!model) {
+        return;
+    }
+
+    uint32_t vertexCount = model->GetVertexCount();
+
+    // 初期モデルから基準の頂点座標を取得する
+    Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+    if (!originalModel && item.geometryType >= 0) {
+        originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+    }
+
+    if (originalModel && baseVertexIndex >= 0 && baseVertexIndex < static_cast<int>(vertexCount)) {
+        Vector3 origSelectedPos = originalModel->GetVertexPosition(baseVertexIndex);
+
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            Vector3 origPos = originalModel->GetVertexPosition(i);
+            float dx = origPos.x - origSelectedPos.x;
+            float dy = origPos.y - origSelectedPos.y;
+            float dz = origPos.z - origSelectedPos.z;
+            float distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq < 0.0001f) { // 同じ位置と判定する閾値 (0.01m以内)
+                if (!item.vertexOffsets.contains(i)) {
+                    item.vertexOffsets[i] = origPos;
+                }
+                item.vertexOffsets[i] += localDelta;
+                model->UpdateVertexPosition(i, item.vertexOffsets[i]);
+            }
+        }
+    } else {
+        // フォールバック（選択された頂点のみ移動）
+        if (baseVertexIndex >= 0 && baseVertexIndex < static_cast<int>(vertexCount)) {
+            if (!item.vertexOffsets.contains(baseVertexIndex)) {
+                item.vertexOffsets[baseVertexIndex] = model->GetVertexPosition(baseVertexIndex);
+            }
+            item.vertexOffsets[baseVertexIndex] += localDelta;
+            model->UpdateVertexPosition(baseVertexIndex, item.vertexOffsets[baseVertexIndex]);
+        }
+    }
+}
+
+void ParticleTestScene::UpdateCameraControls_(GameApp& app, float dt)
+{
+#ifdef USE_IMGUI
+    if (!camera_ || !gHasSceneImageRect) {
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool mouseInsideScene =
+        mouse.x >= gSceneImageMin.x && mouse.x <= gSceneImageMax.x &&
+        mouse.y >= gSceneImageMin.y && mouse.y <= gSceneImageMax.y;
+
+    // --- 物理キー状態の取得（GetAsyncKeyState併用で暴走を完全防止） ---
+    // マウスボタン: ImGui AND 物理 → 片方でも離されたら即false
+    const bool physRightDown  = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+    const bool physMiddleDown = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+    const bool physShiftDown  = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
+
+    const bool isRightMouseDown  = ImGui::IsMouseDown(ImGuiMouseButton_Right) && physRightDown;
+    const bool isMiddleMouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Middle) && physMiddleDown;
+    // Shift: ImGuiまたは物理のどちらかがtrueなら「押している」判定（開始用）
+    // ただしリリース判定は物理キーで行う
+    const bool isShiftDown = (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) && physShiftDown;
+
+    // WASDQEキー: ImGui AND 物理の両方で判定（スタック防止）
+    auto isKeyPhysicallyDown = [](ImGuiKey imguiKey, int vk) -> bool {
+        return ImGui::IsKeyDown(imguiKey) && (GetAsyncKeyState(vk) & 0x8000);
+    };
+    const bool keyW = isKeyPhysicallyDown(ImGuiKey_W, 0x57);
+    const bool keyS = isKeyPhysicallyDown(ImGuiKey_S, 0x53);
+    const bool keyA = isKeyPhysicallyDown(ImGuiKey_A, 0x41);
+    const bool keyD = isKeyPhysicallyDown(ImGuiKey_D, 0x44);
+    const bool keyQ = isKeyPhysicallyDown(ImGuiKey_Q, 0x51);
+    const bool keyE = isKeyPhysicallyDown(ImGuiKey_E, 0x45);
+    const bool isAnyWASDQE = keyW || keyS || keyA || keyD || keyQ || keyE;
+
+    // --- 右クリック（ドラッグ）によるカメラ回転のアクティブ判定 ---
+    EditorObject* selectedObj = nullptr;
+    if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
+        selectedObj = &editorObjects_[selectedEditorObject_];
+    }
+    const bool isEditMode = selectedObj && selectedObj->editMode;
+
+    bool allowRightClickRotate = !isEditMode || isShiftDown;
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && mouseInsideScene && allowRightClickRotate) {
+        editorCameraControlActive_ = true;
+    }
+    if (!isRightMouseDown) {
+        editorCameraControlActive_ = false;
+    }
+
+    // --- 中クリックによるPan判定 ---
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) && mouseInsideScene) {
+        editorCameraPanActive_ = true;
+    }
+    if (!isMiddleMouseDown) {
+        editorCameraPanActive_ = false;
+    }
+
+    // --- 2本指回転（ホイール） ---
+    bool twoFingerRotateActive = false;
+    if (mouseInsideScene && !editorCameraControlActive_ && !editorCameraPanActive_ && !boxSelectActive_) {
+        if (std::abs(io.MouseWheel) > 0.01f || std::abs(io.MouseWheelH) > 0.01f) {
+            editorCameraRotation_.y += io.MouseWheelH * 0.02f;
+            editorCameraRotation_.x -= io.MouseWheel * 0.02f;
+            editorCameraRotation_.x = std::clamp(editorCameraRotation_.x, -kPi * 0.49f, kPi * 0.49f);
+            twoFingerRotateActive = true;
+        }
+    }
+
+    // --- Shift+WASD移動のアクティブ判定 ---
+    if (isShiftDown && isAnyWASDQE && mouseInsideScene) {
+        shiftMovementActive_ = true;
+    }
+    if (!isShiftDown || !isAnyWASDQE) {
+        shiftMovementActive_ = false;
+    }
+
+    bool cameraChanged = false;
+
+    // === 平行移動（Pan）===
+    if (editorCameraPanActive_) {
+        const Matrix4x4 cameraRotation = Matrix4x4::RotateXYZ(editorCameraRotation_.x, editorCameraRotation_.y, editorCameraRotation_.z);
+        const Vector3 right = CameraRight(cameraRotation);
+        const Vector3 up = CameraUp(cameraRotation);
+        const float panSpeed = 0.02f * editorCameraMoveSpeed_;
+        
+        editorCameraPosition_ -= right * (io.MouseDelta.x * panSpeed);
+        editorCameraPosition_ += up * (io.MouseDelta.y * panSpeed);
+        cameraChanged = true;
+    }
+
+    // === 右ドラッグ回転（WASDは含めない！） ===
+    if (editorCameraControlActive_) {
+        editorCameraRotation_.y += io.MouseDelta.x * editorCameraLookSpeed_;
+        editorCameraRotation_.x += io.MouseDelta.y * editorCameraLookSpeed_;
+        editorCameraRotation_.x = std::clamp(editorCameraRotation_.x, -kPi * 0.49f, kPi * 0.49f);
+        cameraChanged = true;
+    }
+
+    // === 2本指回転の反映 ===
+    if (twoFingerRotateActive) {
+        cameraChanged = true;
+    }
+
+    // === Shift+WASD移動（Shiftが押されている時のみ） ===
+    if (shiftMovementActive_) {
+        const Matrix4x4 cameraRotation = Matrix4x4::RotateXYZ(editorCameraRotation_.x, editorCameraRotation_.y, editorCameraRotation_.z);
+        const Vector3 right = CameraRight(cameraRotation);
+        const Vector3 up = CameraUp(cameraRotation);
+        const Vector3 forward = CameraForward(cameraRotation);
+        const float speed = editorCameraMoveSpeed_ * 1.0f;
+
+        if (keyW) { editorCameraPosition_ += forward * speed; }
+        if (keyS) { editorCameraPosition_ -= forward * speed; }
+        if (keyD) { editorCameraPosition_ += right * speed; }
+        if (keyA) { editorCameraPosition_ -= right * speed; }
+        if (keyE) { editorCameraPosition_ += up * speed; }
+        if (keyQ) { editorCameraPosition_ -= up * speed; }
+        cameraChanged = true;
+    }
+
+    if (cameraChanged) {
+        camera_->SetTranslate(editorCameraPosition_);
+        camera_->SetRotate(editorCameraRotation_);
+        camera_->Update();
+    }
+#endif
+}
+
+

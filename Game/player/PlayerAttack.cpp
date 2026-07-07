@@ -220,6 +220,46 @@ bool Player::GetAttackHitBox(AABB& outHitBox) const {
     return true;
 }
 
+bool Player::GetAttackHitBoxes(std::vector<AABB>& outHitBoxes) const {
+    outHitBoxes.clear();
+
+    // 上Lv3必殺技の突進中の場合、記録されたクロスマーク軌跡線分からAABBを生成して返す
+    if (action_ == PlayerAction::Attack && 
+        attackType_ == PlayerAttackType::UpSpecial &&
+        iSpecialVariant_ == PlayerISpecialVariant::Lv3 &&
+        iAttackState_ == PlayerIAttackState::UpRise_Move) {
+        
+        if (!upSpecialTrailLines_.empty()) {
+            const PlayerIAttackInternal::SpecialCancelLevelTuning& tuning = 
+                PlayerIAttackInternal::GetCurrentCancelTuning(*this);
+            // 軌跡の太さ（攻撃判定の半径）
+            const float thickness = 1.0f * tuning.hitboxScale.x;
+            
+            for (const auto& line : upSpecialTrailLines_) {
+                AABB box;
+                box.min.x = std::min(line.start.x, line.end.x) - thickness;
+                box.min.y = std::min(line.start.y, line.end.y) - thickness;
+                box.min.z = std::min(line.start.z, line.end.z) - thickness;
+                
+                box.max.x = std::max(line.start.x, line.end.x) + thickness;
+                box.max.y = std::max(line.start.y, line.end.y) + thickness;
+                box.max.z = std::max(line.start.z, line.end.z) + thickness;
+                
+                outHitBoxes.push_back(box);
+            }
+            return true;
+        }
+    }
+
+    // それ以外のアクションは従来の単一AABBを取得して返す
+    AABB singleBox{};
+    if (GetAttackHitBox(singleBox)) {
+        outHitBoxes.push_back(singleBox);
+        return true;
+    }
+    return false;
+}
+
 int Player::GetAttackDamage() const {
     switch (attackType_) {
     case PlayerAttackType::Weak:

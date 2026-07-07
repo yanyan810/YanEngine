@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "IScene.h"
 #include "ParticleTestEditorTypes.h"
@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 class Camera;
 class Object3d;
@@ -100,6 +101,10 @@ private:
     bool OpenModelFileDialog_(std::string& outModelPath);
     bool OpenTextureFileDialog_(std::string& outTexturePath);
     void HandleEffectEditorShortcuts_(GameApp& app);
+    void EnsureUniqueModelForObject_(EditorObject& item);
+    void SyncParticleModelsWithEditorObjects_();
+    void UpdateCameraControls_(GameApp& app, float dt);
+    void UpdateVertexPositionGroup_(EditorObject& item, int baseVertexIndex, const Vector3& localDelta);
     void DrawEffectInspectorImGui_(GameApp& app);
     void DrawPlayerAttackInspectorImGui_(GameApp& app);
     void DrawAnimationCameraControls_();
@@ -160,6 +165,10 @@ private:
     float editorCameraMoveSpeed_ = 0.2f;
     float editorCameraLookSpeed_ = 0.006f;
     bool editorCameraControlActive_ = false;
+    bool editorCameraPanActive_ = false;
+    bool shiftMovementActive_ = false;
+    bool boxSelectActive_ = false;
+    ImVec2 boxSelectStart_{};
     bool transformDragActive_ = false;
     bool transformDragChanged_ = false;
     EditorSnapshot transformDragBefore_{};
@@ -180,7 +189,6 @@ private:
     bool pendingTimelineRebuild_ = false;
     float pendingTimelineRebuildTime_ = 0.0f;
     EditorMode lastEditorMode_ = EditorMode::Blender;
-
     enum class DragTarget {
         None = 0,
         TimelineTime,
@@ -198,6 +206,9 @@ private:
     float dragStartOffset_ = 0.0f;
     float dragStartVal1_ = 0.0f;
     float dragStartVal2_ = 0.0f;
+    int selectedKeyframeIndex_ = -1;
+    DragTarget selectedKeyframeType_ = DragTarget::None;
+    int selectedKeyframeObjectIndex_ = -1;
 
     void DrawDopeSheet_(GameApp& app);
     bool OpenParticleFileDialog_(std::vector<std::string>& outGroupNames, std::string& outFileName);

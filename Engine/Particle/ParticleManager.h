@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <vector>
 #include <random>
 #include <wrl.h>
@@ -165,6 +165,7 @@ public:
     Vector4 GetPrimaryPostEffectOutlineBloomColor() const;
     PostEffectMode GetPrimaryPostEffectMode() const;
     void ConfigureHitEffectPreset(const std::string& groupName);
+    void ConfigureTrailPreset(const std::string& groupName);
     void SetEditorSelectedGroupName(const std::string& groupName);
     void SetGroupBlendMode(const std::string& groupName, ParticleCommon::BlendMode mode);            // ★追加
     void Update(float deltaTime, const Camera& camera);
@@ -193,6 +194,8 @@ public:
     void CreateParticleGroup(
         const std::string& name,
         Model* model);
+
+    void UpdateGroupModel(const std::string& modelName, int modelType, Model* newModel);
 
     void Emit(const std::string& groupName,
         const Vector3& pos,
