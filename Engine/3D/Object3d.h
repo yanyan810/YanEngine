@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "MathStruct.h"
 #include <string>
 #include <vector>
@@ -204,7 +204,7 @@ private:
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
 
-	bool isVisible_=false;
+	bool isVisible_=true;
 
 private:
 

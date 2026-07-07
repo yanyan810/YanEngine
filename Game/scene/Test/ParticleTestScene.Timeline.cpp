@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -63,11 +63,29 @@ void ParticleTestScene::DeleteNearestCameraKeyframe_()
         return;
     }
 
+    if (selectedKeyframeType_ == DragTarget::CameraKeyframe &&
+        selectedKeyframeIndex_ >= 0 &&
+        selectedKeyframeIndex_ < static_cast<int>(cameraKeyframes_.size())) {
+        cameraKeyframes_.erase(cameraKeyframes_.begin() + selectedKeyframeIndex_);
+        selectedKeyframeIndex_ = -1;
+        selectedKeyframeType_ = DragTarget::None;
+        selectedKeyframeObjectIndex_ = -1;
+        EvaluateTimeline_(false);
+        return;
+    }
+
     auto it = std::min_element(cameraKeyframes_.begin(), cameraKeyframes_.end(), [this](const CameraKeyframe& a, const CameraKeyframe& b) {
         return std::abs(a.time - timelineTime_) < std::abs(b.time - timelineTime_);
     });
     if (it != cameraKeyframes_.end() && std::abs(it->time - timelineTime_) <= 0.05f) {
+        int targetIdx = static_cast<int>(std::distance(cameraKeyframes_.begin(), it));
         cameraKeyframes_.erase(it);
+        if (selectedKeyframeType_ == DragTarget::CameraKeyframe &&
+            selectedKeyframeIndex_ == targetIdx) {
+            selectedKeyframeIndex_ = -1;
+            selectedKeyframeType_ = DragTarget::None;
+            selectedKeyframeObjectIndex_ = -1;
+        }
     }
 }
 
@@ -93,11 +111,29 @@ void ParticleTestScene::DeleteNearestPlayerAttackHitboxKeyframe_()
         return;
     }
 
+    if (selectedKeyframeType_ == DragTarget::PlayerAttackHitboxKeyframe &&
+        selectedKeyframeIndex_ >= 0 &&
+        selectedKeyframeIndex_ < static_cast<int>(playerAttackHitboxKeyframes_.size())) {
+        playerAttackHitboxKeyframes_.erase(playerAttackHitboxKeyframes_.begin() + selectedKeyframeIndex_);
+        selectedKeyframeIndex_ = -1;
+        selectedKeyframeType_ = DragTarget::None;
+        selectedKeyframeObjectIndex_ = -1;
+        EvaluateTimeline_(false);
+        return;
+    }
+
     auto it = std::min_element(playerAttackHitboxKeyframes_.begin(), playerAttackHitboxKeyframes_.end(), [this](const PlayerAttackHitboxKeyframe& a, const PlayerAttackHitboxKeyframe& b) {
         return std::abs(a.time - timelineTime_) < std::abs(b.time - timelineTime_);
     });
     if (it != playerAttackHitboxKeyframes_.end() && std::abs(it->time - timelineTime_) <= 0.05f) {
+        int targetIdx = static_cast<int>(std::distance(playerAttackHitboxKeyframes_.begin(), it));
         playerAttackHitboxKeyframes_.erase(it);
+        if (selectedKeyframeType_ == DragTarget::PlayerAttackHitboxKeyframe &&
+            selectedKeyframeIndex_ == targetIdx) {
+            selectedKeyframeIndex_ = -1;
+            selectedKeyframeType_ = DragTarget::None;
+            selectedKeyframeObjectIndex_ = -1;
+        }
     }
 }
 
@@ -303,11 +339,32 @@ void ParticleTestScene::DeleteNearestKeyframeFromSelected_()
         return;
     }
 
+    if (selectedKeyframeType_ == DragTarget::ModelKeyframe &&
+        selectedKeyframeObjectIndex_ == selectedEditorObject_ &&
+        selectedKeyframeIndex_ >= 0 &&
+        selectedKeyframeIndex_ < static_cast<int>(keys.size())) {
+        keys.erase(keys.begin() + selectedKeyframeIndex_);
+        selectedKeyframeIndex_ = -1;
+        selectedKeyframeType_ = DragTarget::None;
+        selectedKeyframeObjectIndex_ = -1;
+        EvaluateTimeline_(false);
+        return;
+    }
+
     auto it = std::min_element(keys.begin(), keys.end(), [this](const EffectKeyframe& a, const EffectKeyframe& b) {
         return std::abs(a.time - timelineTime_) < std::abs(b.time - timelineTime_);
     });
     if (it != keys.end() && std::abs(it->time - timelineTime_) <= 0.05f) {
+        int targetIdx = static_cast<int>(std::distance(keys.begin(), it));
         keys.erase(it);
+        if (selectedKeyframeType_ == DragTarget::ModelKeyframe &&
+            selectedKeyframeObjectIndex_ == selectedEditorObject_ &&
+            selectedKeyframeIndex_ == targetIdx) {
+            selectedKeyframeIndex_ = -1;
+            selectedKeyframeType_ = DragTarget::None;
+            selectedKeyframeObjectIndex_ = -1;
+        }
+        EvaluateTimeline_(false);
     }
 }
 
@@ -347,11 +404,18 @@ void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
 
     for (auto& item : editorObjects_) {
         if (item.keyframes.empty()) {
+            item.active = true;
             ApplyEditorObjectTransform_(item);
             continue;
         }
 
         SortKeyframes_(item);
+        if (timelineTime_ < item.keyframes.front().time) {
+            item.active = false;
+            continue;
+        }
+        item.active = true;
+
         if (timelineTime_ <= item.keyframes.front().time) {
             item.position = item.keyframes.front().position;
             item.rotation = item.keyframes.front().rotation;
@@ -437,6 +501,7 @@ void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
             node.hasEmitted = true;
         }
     }
+    SyncParticleModelsWithEditorObjects_();
 }
 
 float ParticleTestScene::GetParticleNodeDuration_(const ParticleNode& node) const
@@ -535,6 +600,9 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
         object.attachRotation = item.attachRotation;
         object.attachScale = item.attachScale;
         object.keyframes = item.keyframes;
+        object.selectedVertexIndex = item.selectedVertexIndex;
+        object.selectedVertexIndices = item.selectedVertexIndices;
+        object.vertexOffsets = item.vertexOffsets;
         snapshot.objects.push_back(std::move(object));
     }
     return snapshot;
@@ -571,6 +639,9 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.attachRotation = src.attachRotation;
         item.attachScale = src.attachScale;
         item.keyframes = src.keyframes;
+        item.selectedVertexIndex = src.selectedVertexIndex;
+        item.selectedVertexIndices = src.selectedVertexIndices;
+        item.vertexOffsets = src.vertexOffsets;
         item.object = std::make_unique<Object3d>();
         item.object->Initialize(app.ObjCom(), app.Dx());
         item.object->SetCamera(GetSceneCamera_());
@@ -580,6 +651,11 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
             item.object->SetModel(item.modelPath);
         }
         item.object->SetEnableLighting(0);
+
+        if (!item.vertexOffsets.empty()) {
+            EnsureUniqueModelForObject_(item);
+        }
+
         ApplyEditorObjectTransform_(item);
         editorObjects_.push_back(std::move(item));
     }

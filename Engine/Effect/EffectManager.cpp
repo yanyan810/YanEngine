@@ -1,4 +1,4 @@
-﻿#include "EffectManager.h"
+#include "EffectManager.h"
 #include "ParticleManager.h"
 #include "Object3d.h"
 #include "ModelManager.h"
@@ -216,6 +216,13 @@ void EffectManager::LoadEffect(const std::string& effectName, const std::string&
         std::sort(node.keyframes.begin(), node.keyframes.end(), [](const EffectObjectKeyframe& a, const EffectObjectKeyframe& b) {
             return a.time < b.time;
         });
+
+        // vertexOffsetsの読み込み
+        for (const auto& offsetSource : objSource.value("vertexOffsets", json::array())) {
+            uint32_t index = offsetSource.value("index", 0);
+            auto offsetVal = offsetSource.value("offset", json::array({ 0.0f, 0.0f, 0.0f }));
+            node.vertexOffsets[index] = { offsetVal[0], offsetVal[1], offsetVal[2] };
+        }
         
         temp.objectNodes.push_back(std::move(node));
     }
@@ -283,6 +290,19 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
         actObj.object->SetScale(node.scale);
         actObj.object->SetMaterialColor(node.color);
 
+        actObj.vertexOffsets = node.vertexOffsets;
+        if (!node.vertexOffsets.empty() && actObj.object->GetModel()) {
+            Model* originalModel = actObj.object->GetModel();
+            static uint32_t sUniqueCounter = 0;
+            std::string uniqueKey = "UniquePlayModel_" + effectName + "_" + node.name + "_" + std::to_string(node.id) + "_" + std::to_string(sUniqueCounter++);
+            Model* uniqueModel = ModelManager::GetInstance()->CreatePrimitiveModel(uniqueKey, originalModel->GetModelData());
+            actObj.object->SetModel(uniqueModel);
+
+            for (const auto& [idx, pos] : node.vertexOffsets) {
+                uniqueModel->UpdateVertexPosition(idx, pos);
+            }
+        }
+
         active.objects.push_back(std::move(actObj));
     }
 
@@ -319,6 +339,12 @@ void EffectManager::Update(float dt) {
         // 3Dオブジェクトのキーフレームアニメーション更新
         for (auto& obj : active.objects) {
             if (!obj.keyframes.empty()) {
+                if (active.currentTime < obj.keyframes.front().time) {
+                    obj.object->SetIsVisible(false);
+                } else {
+                    obj.object->SetIsVisible(true);
+                }
+
                 Vector3 pos = obj.keyframes.front().position;
                 Vector3 rot = obj.keyframes.front().rotation;
                 Vector3 scl = obj.keyframes.front().scale;

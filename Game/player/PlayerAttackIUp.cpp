@@ -1,4 +1,5 @@
 #include "PlayerAttackIInternal.h"
+#include "ParticleManager.h"
 
 using namespace PlayerIAttackInternal;
 
@@ -349,23 +350,74 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
                 player.facing_,
                 player.sideSpecialLockOnActive_,
                 player.sideSpecialLockOnTarget_);
-            player.SetUpSpecialTarget(rawTarget); // ボスの位置を固定
+            
+            // ターゲット中心位置（少し高さをモデル中心に合わせる）
+            Vector3 centerPos = { rawTarget.x, rawTarget.y + 1.0f, rawTarget.z };
+            player.SetUpSpecialTarget(centerPos); // ターゲット位置を固定
 
-            // ボス基準の開始地点を計算してワープ（フラグによってプレイヤー位置追従か切り替え）
-            Vector3 startPos;
-            if (spTuning.startFollowPlayer) {
-                // プレイヤーの現在地をそのまま開始地点にする（ワープなし）
-                startPos = player.pos_;
-            } else {
-                // ボス基準オフセットでワープ
-                startPos = {
-                    rawTarget.x - static_cast<float>(player.facing_) * spTuning.startOffsetX,
-                    rawTarget.y + spTuning.startOffsetY,
-                    rawTarget.z
-                };
-                player.pos_ = startPos;
-            }
+            // ボス基準の開始地点を計算してワープ
+            Vector3 startPos = {
+                centerPos.x - static_cast<float>(player.facing_) * 6.0f,
+                centerPos.y,
+                centerPos.z
+            };
+            player.pos_ = startPos;
             player.SetUpSpecialStartPos(startPos);
+
+            // ===== 4段ピラミッド状X字（計10個）の生成 =====
+            player.upSpecialTrailLines_.clear();
+            
+            float dy = 1.2f;  // 段の高さ間隔
+            float dx = 1.5f;  // Xの間隔
+            float size = 0.7f; // Xの一辺の長さの半分
+            
+            for (int i = 0; i < 4; ++i) {
+                float y = centerPos.y + (1.5f - static_cast<float>(i)) * dy;
+                int count = i + 1;
+                for (int j = 0; j < count; ++j) {
+                    float x = centerPos.x - 0.5f * static_cast<float>(i) * dx + static_cast<float>(j) * dx;
+                    Vector3 C = { x, y, centerPos.z };
+                    
+                    // 線分1 (左下から右上)
+                    Player::TrailLine line1 = {
+                        { C.x - size, C.y - size, C.z },
+                        { C.x + size, C.y + size, C.z }
+                    };
+                    // 線分2 (左上から右下)
+                    Player::TrailLine line2 = {
+                        { C.x - size, C.y + size, C.z },
+                        { C.x + size, C.y - size, C.z }
+                    };
+                    player.upSpecialTrailLines_.push_back(line1);
+                    player.upSpecialTrailLines_.push_back(line2);
+                }
+            }
+
+            // ===== エフェクトの即時一斉発生 =====
+            auto* pm = ParticleManager::GetInstance();
+            for (size_t i = 0; i < player.upSpecialTrailLines_.size(); ++i) {
+                if (i >= 20) break; // 念のため上限
+
+                const auto& line = player.upSpecialTrailLines_[i];
+                std::string groupName = "PlayerUpSpecialTrail_" + std::to_string(i);
+
+                // シーンクリア等でグループが消えていた場合の動的生成
+                if (!pm->HasGroup(groupName)) {
+                    pm->CreateParticleGroup(groupName, "resources/circle.png");
+                    pm->ConfigureTrailPreset(groupName);
+                }
+
+                const int numParticles = 12;
+                for (int step = 0; step <= numParticles; ++step) {
+                    float t = static_cast<float>(step) / static_cast<float>(numParticles);
+                    Vector3 p = {
+                        line.start.x + (line.end.x - line.start.x) * t,
+                        line.start.y + (line.end.y - line.start.y) * t,
+                        line.start.z + (line.end.z - line.start.z) * t
+                    };
+                    pm->Emit(groupName, p, 1);
+                }
+            }
 
             PlayerIAttack::ChangeState(player, PlayerIAttackState::UpRise_Move);
         }
@@ -374,33 +426,62 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
         {
             player.onGround_ = false;
             
-            const auto& waypoints = spTuning.waypoints;
             const float durationBeam = ScaledDuration(kUpLv3BeamSec, tuning.moveDurationRate);
+            const float slideDuration = 0.18f * tuning.moveDurationRate; // 高速直線突進時間
 
-            float totalMoveDuration = 0.0f;
-            for (const auto& wp : waypoints) {
-                totalMoveDuration += ScaledDuration(wp.duration, tuning.moveDurationRate) * (1.0f / spTuning.speedRate);
-            }
+            Vector3 startPos = player.GetUpSpecialStartPos();
+            Vector3 centerPos = player.GetUpSpecialTarget();
+            Vector3 endPos = {
+                centerPos.x + (centerPos.x - startPos.x),
+                centerPos.y,
+                centerPos.z
+            };
 
-            // ウェイポイントがある場合はそれに沿って移動
-            bool pathFinished = true;
-            if (!waypoints.empty()) {
-                pathFinished = PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(player, dt, static_cast<uint8_t>(spIdx));
-            }
+            // 前フレーム位置を記録
+            Vector3 prevPos = player.pos_;
 
-            if (pathFinished) {
-                // ビームフェーズ（全経由地通過後 or 経由地0個）
-                const int beamPhaseBase = (static_cast<int>(waypoints.size()) + 1) * 100;
+            // 直線突進移動の更新
+            if (player.iAttackStateTime_ < slideDuration) {
+                const float remainingTime = slideDuration - player.iAttackStateTime_;
+                if (remainingTime > 0.001f) {
+                    player.vel_.x = (endPos.x - player.pos_.x) / remainingTime;
+                    player.vel_.y = (endPos.y - player.pos_.y) / remainingTime;
+                    player.vel_.z = (endPos.z - player.pos_.z) / remainingTime;
+                } else {
+                    player.vel_ = { 0.0f, 0.0f, 0.0f };
+                }
+
+                // プレイヤーの現在移動ラインに沿ってパーティクルエフェクトを発生
+                auto* pm = ParticleManager::GetInstance();
+                if (!pm->HasGroup("PlayerUpSpecialTrail_Player")) {
+                    pm->CreateParticleGroup("PlayerUpSpecialTrail_Player", "resources/circle.png");
+                    pm->ConfigureTrailPreset("PlayerUpSpecialTrail_Player");
+                }
+
+                const int pCount = 6;
+                for (int i = 0; i < pCount; ++i) {
+                    float t = static_cast<float>(i) / static_cast<float>(pCount);
+                    Vector3 p = {
+                        prevPos.x + (player.pos_.x - prevPos.x) * t,
+                        prevPos.y + (player.pos_.y - prevPos.y) * t,
+                        prevPos.z + (player.pos_.z - prevPos.z) * t
+                    };
+                    pm->Emit("PlayerUpSpecialTrail_Player", p, 1);
+                }
+            } else {
+                // ビームフェーズ
+                const int beamPhaseBase = 40;
                 if (player.iSpecialPulseIndex_ < beamPhaseBase) {
                     player.iSpecialPulseIndex_ = beamPhaseBase;
                     ++player.attackSerial_;
                     player.facing_ = -player.facing_; // 反転してボスを向く
                     player.vel_ = { 0.0f, 0.0f, 0.0f };
+                    player.pos_ = endPos; // 突進完了位置に固定
                 }
                 player.iAttackHitActive_ = true;
             }
 
-            if (player.iAttackStateTime_ >= totalMoveDuration + durationBeam) {
+            if (player.iAttackStateTime_ >= slideDuration + durationBeam) {
                 player.ClearUpSpecialTarget();
                 PlayerIAttack::ChangeState(player, PlayerIAttackState::UpRise_Recover);
             }

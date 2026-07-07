@@ -81,6 +81,7 @@ void Player::ApplyLandingRecovery_() {
     uComboDebugFlashSec_ = 0.0f;
     specialCancelBufferTimer_ = 0.0f;
     landingRecoveryPending_ = false;
+    upSpecialTrailLines_.clear();
 }
 
 
@@ -145,7 +146,7 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
         specialMoveTunings_[i].hitStopSec = 0.06f;
         specialMoveTunings_[i].waypoints.clear();
     }
-    // Up Special Lv3 (ジグザグ移動) のみにデフォルトの3点Waypointをプリセット
+    // Up Special Lv3 (ジグザグ移動) のみにデフォルト of 3点Waypointをプリセット
     auto& zigzag = specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)];
     zigzag.startFollowPlayer = false;
     zigzag.waypoints = {
@@ -153,6 +154,20 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
         { 0.0f,  4.0f, 0.18f, { 0.0f, 0.5f, 0.9f } },
         {-1.5f,  0.0f, 0.24f, { 0.0f, 0.5f, 0.9f } }
     };
+
+    // ===== プレイヤーの軌跡エフェクト用パーティクルグループの作成 =====
+    auto* pm = ParticleManager::GetInstance();
+    if (!pm->HasGroup("PlayerUpSpecialTrail_Player")) {
+        pm->CreateParticleGroup("PlayerUpSpecialTrail_Player", "resources/circle.png");
+        pm->ConfigureTrailPreset("PlayerUpSpecialTrail_Player");
+    }
+    for (int i = 0; i < 20; ++i) {
+        std::string name = "PlayerUpSpecialTrail_" + std::to_string(i);
+        if (!pm->HasGroup(name)) {
+            pm->CreateParticleGroup(name, "resources/circle.png");
+            pm->ConfigureTrailPreset(name);
+        }
+    }
 }
 
 

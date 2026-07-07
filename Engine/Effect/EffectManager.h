@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <string>
 #include <vector>
 #include <list>
@@ -54,6 +54,7 @@ public:
         Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         std::vector<EffectObjectKeyframe> keyframes;
+        std::unordered_map<uint32_t, Vector3> vertexOffsets;
     };
 
     struct EffectTemplate {
@@ -76,6 +77,7 @@ public:
         Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         std::vector<EffectObjectKeyframe> keyframes;
+        std::unordered_map<uint32_t, Vector3> vertexOffsets;
     };
 
     struct ActiveEffect {

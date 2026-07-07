@@ -101,6 +101,12 @@ public:
         std::vector<float> hits;        // 当たり判定マーカー（セグメント内 0.0〜1.0）
     };
 
+    // ===== 上必殺技Lv3 クロスマーク軌跡の線分 =====
+    struct TrailLine {
+        Vector3 start;
+        Vector3 end;
+    };
+
     // ===== 必殺技を指定するための Enum =====
     enum class SpecialMoveIndex : uint8_t {
         NeutralSpecial_Lv1,
@@ -150,6 +156,7 @@ public:
     // ===== 攻撃・判定・キャンセル関連のクエリ・通知 =====
     bool GetAttackDebugVisualBox(Vector3& outCenter, Vector3& outHalfSize, bool& outIsActive) const;
     bool GetAttackHitBox(AABB& outHitBox) const;
+    bool GetAttackHitBoxes(std::vector<AABB>& outHitBoxes) const;
     int GetAttackDamage() const;
     unsigned int GetAttackSerial() const { return attackSerial_; }
     int GetCancelGauge() const { return cancelGauge_; }
@@ -456,6 +463,7 @@ private:
     Vector3 upSpecialTarget_{};
     bool upSpecialTargetFixed_ = false;
     Vector3 upSpecialStartPos_{};
+    std::vector<TrailLine> upSpecialTrailLines_;
 
     // ===== 必殺技（通常Lv1・牙突）エディタ用パラメータ =====
     float neutralLv1ThrustSpeed_ = 16.0f;

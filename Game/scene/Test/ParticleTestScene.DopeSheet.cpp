@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -104,6 +104,7 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     bool clicked = ImGui::IsMouseClicked(0);
     
     // 1. Camera Track
+    bool anyKeyframeClicked = false;
     {
         drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_TableRowBg));
         drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), "Camera Keys");
@@ -118,9 +119,13 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
                 PushUndoSnapshot_();
                 dragTarget_ = DragTarget::CameraKeyframe;
                 dragKeyframeIndex_ = i;
+                selectedKeyframeType_ = DragTarget::CameraKeyframe;
+                selectedKeyframeIndex_ = i;
+                selectedKeyframeObjectIndex_ = -1;
+                anyKeyframeClicked = true;
             }
             
-            bool isSelected = (dragTarget_ == DragTarget::CameraKeyframe && dragKeyframeIndex_ == i);
+            bool isSelected = (selectedKeyframeType_ == DragTarget::CameraKeyframe && selectedKeyframeIndex_ == i);
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelected ? ImColor(255, 200, 0) : ImColor(200, 200, 200));
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelected ? ImColor(255, 200, 0) : ImColor(200, 200, 200));
         }
@@ -139,11 +144,15 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
             if (hovered && clicked && dragTarget_ == DragTarget::None) {
                 dragTarget_ = DragTarget::PlayerAttackHitboxKeyframe;
                 dragKeyframeIndex_ = i;
+                selectedKeyframeType_ = DragTarget::PlayerAttackHitboxKeyframe;
+                selectedKeyframeIndex_ = i;
+                selectedKeyframeObjectIndex_ = -1;
+                anyKeyframeClicked = true;
             }
 
-            const bool isSelected = dragTarget_ == DragTarget::PlayerAttackHitboxKeyframe && dragKeyframeIndex_ == i;
+            const bool isSelected = selectedKeyframeType_ == DragTarget::PlayerAttackHitboxKeyframe && selectedKeyframeIndex_ == i;
             const ImColor color = playerAttackHitboxKeyframes_[i].active
-                ? (isSelected ? ImColor(80, 255, 120) : ImColor(70, 210, 100))
+                ? (isSelected ? ImColor(255, 200, 0) : ImColor(70, 210, 100))
                 : ImColor(110, 110, 110);
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), color);
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), color);
@@ -181,13 +190,24 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
                 dragKeyframeIndex_ = i;
                 selectedEditorObject_ = objIdx;
                 selectedParticleNode_ = -1;
+                selectedKeyframeType_ = DragTarget::ModelKeyframe;
+                selectedKeyframeIndex_ = i;
+                selectedKeyframeObjectIndex_ = objIdx;
+                anyKeyframeClicked = true;
             }
             
-            bool isSelectedKey = (dragTarget_ == DragTarget::ModelKeyframe && dragObjectIndex_ == objIdx && dragKeyframeIndex_ == i);
+            bool isSelectedKey = (selectedKeyframeType_ == DragTarget::ModelKeyframe && selectedKeyframeObjectIndex_ == objIdx && selectedKeyframeIndex_ == i);
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelectedKey ? ImColor(255, 200, 0) : ImColor(200, 150, 50));
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelectedKey ? ImColor(255, 200, 0) : ImColor(200, 150, 50));
         }
         currentY += trackHeight;
+    }
+
+    // Dope Sheet背景がクリックされたかつ、キーフレームがどれもクリックされていなかったら選択解除
+    if (clicked && !anyKeyframeClicked && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
+        selectedKeyframeType_ = DragTarget::None;
+        selectedKeyframeIndex_ = -1;
+        selectedKeyframeObjectIndex_ = -1;
     }
     
     // 3. Particle Nodes Tracks

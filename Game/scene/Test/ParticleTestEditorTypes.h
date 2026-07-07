@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Object3dCommon.h"
 #include "Vector3.h"
@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 class Object3d;
 
@@ -124,7 +125,12 @@ struct EditorObject {
     Vector3 attachOffset{ 0.0f, 0.0f, 0.0f };
     Vector3 attachRotation{ 0.0f, 0.0f, 0.0f };
     Vector3 attachScale{ 1.0f, 1.0f, 1.0f };
+    bool active = true;
     std::vector<EffectKeyframe> keyframes;
+    bool editMode = false;
+    int selectedVertexIndex = -1;
+    std::vector<int> selectedVertexIndices;
+    std::unordered_map<uint32_t, Vector3> vertexOffsets;
 };
 
 struct EditorObjectSnapshot {
@@ -153,6 +159,9 @@ struct EditorObjectSnapshot {
     Vector3 attachRotation{ 0.0f, 0.0f, 0.0f };
     Vector3 attachScale{ 1.0f, 1.0f, 1.0f };
     std::vector<EffectKeyframe> keyframes;
+    int selectedVertexIndex = -1;
+    std::vector<int> selectedVertexIndices;
+    std::unordered_map<uint32_t, Vector3> vertexOffsets;
 };
 
 struct EditorSnapshot {

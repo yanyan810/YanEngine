@@ -1,4 +1,4 @@
-﻿#include "Object3d.h"
+#include "Object3d.h"
 #include "Object3dCommon.h"
 #include "PrimitiveCommon.h"
 
@@ -235,6 +235,10 @@ void Object3d::Update(float dt)
 
 void Object3d::Draw()
 {
+	if (!isVisible_) {
+		return;
+	}
+
 	if (!model_) {
 		OutputDebugStringA("[Object3d] Draw skipped: model_ is null\n");
 		return;
@@ -618,6 +622,10 @@ void Object3d::Draw()
 
 void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 {
+	if (!isVisible_) {
+		return;
+	}
+
 	if (!model_) {
 		return;
 	}

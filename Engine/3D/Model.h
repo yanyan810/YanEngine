@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "ModelCommon.h"
 #include "MathStruct.h"
 #include "AABB.h"
@@ -187,6 +187,12 @@ public:
 	std::vector<MeshCollisionData> GetMeshesLocalAABBs() const;
 
 	//modeldataを取得
+	const ModelData& GetModelData() const { return modelData_; }
+
+	// 頂点のローカル座標を取得・更新
+	Vector3 GetVertexPosition(uint32_t index) const;
+	void UpdateVertexPosition(uint32_t index, const Vector3& position);
+
 	const std::unordered_map<std::string, Animation>& GetAnimations() const {
 		return modelData_.animations;
 	}
