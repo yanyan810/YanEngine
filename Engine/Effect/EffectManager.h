@@ -10,6 +10,7 @@ class Object3dCommon;
 class DirectXCommon;
 class Camera;
 class Object3d;
+class Model;
 
 class EffectManager {
 public:
@@ -35,6 +36,7 @@ public:
         bool outlineBloomPostEffect = false;
         Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
+        std::unordered_map<uint32_t, Vector3> vertexOffsets;
     };
 
     struct EffectObjectNode {
@@ -78,6 +80,7 @@ public:
         Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
         std::vector<EffectObjectKeyframe> keyframes;
         std::unordered_map<uint32_t, Vector3> vertexOffsets;
+        Model* baseModel = nullptr;
     };
 
     struct ActiveEffect {

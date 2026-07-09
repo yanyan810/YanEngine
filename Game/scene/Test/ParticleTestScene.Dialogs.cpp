@@ -96,6 +96,59 @@ bool ParticleTestScene::OpenTextureFileDialog_(std::string& outTexturePath)
     return true;
 }
 
+bool ParticleTestScene::OpenEffectJsonFileDialog_(bool saveDialog, std::string& outJsonPath)
+{
+    std::filesystem::path effectsDir = std::filesystem::absolute("resources/effects").lexically_normal();
+    std::filesystem::create_directories(effectsDir);
+
+    char filePath[MAX_PATH]{};
+    std::filesystem::path currentPath(effectJsonPath_);
+    std::string initialName = currentPath.filename().string();
+    if (initialName.empty()) {
+        initialName = "effect_editor.json";
+    }
+    strncpy_s(filePath, sizeof(filePath), initialName.c_str(), _TRUNCATE);
+
+    std::string initialDir = effectsDir.string();
+    OPENFILENAMEA fileName{};
+    fileName.lStructSize = sizeof(fileName);
+    fileName.hwndOwner = GetActiveWindow();
+    fileName.lpstrFilter =
+        "Effect JSON Files (*.json)\0*.json\0"
+        "All Files (*.*)\0*.*\0";
+    fileName.lpstrFile = filePath;
+    fileName.nMaxFile = MAX_PATH;
+    fileName.lpstrInitialDir = initialDir.c_str();
+    fileName.lpstrDefExt = "json";
+    fileName.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    BOOL accepted = FALSE;
+    if (saveDialog) {
+        fileName.Flags |= OFN_OVERWRITEPROMPT;
+        accepted = GetSaveFileNameA(&fileName);
+    } else {
+        fileName.Flags |= OFN_FILEMUSTEXIST;
+        accepted = GetOpenFileNameA(&fileName);
+    }
+
+    if (!accepted) {
+        return false;
+    }
+
+    std::filesystem::path selectedPath(filePath);
+    if (selectedPath.extension().empty()) {
+        selectedPath.replace_extension(".json");
+    }
+
+    if (saveDialog) {
+        selectedPath = effectsDir / selectedPath.filename();
+        selectedPath.replace_extension(".json");
+    }
+
+    std::filesystem::path relativePath = std::filesystem::relative(selectedPath, std::filesystem::current_path());
+    outJsonPath = relativePath.generic_string();
+    return true;
+}
 
 bool ParticleTestScene::OpenParticleFileDialog_(std::vector<std::string>& outGroupNames, std::string& outFileName)
 {

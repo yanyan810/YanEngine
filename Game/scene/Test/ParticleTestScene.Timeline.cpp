@@ -309,6 +309,7 @@ void ParticleTestScene::AddKeyframeToSelected_()
             key.bloomColor = item.bloomColor;
             key.outlineBloomColor = item.outlineBloomColor;
             key.bonePoses = item.bonePoses;
+            key.vertexOffsets = item.vertexOffsets;
             return;
         }
     }
@@ -323,7 +324,8 @@ void ParticleTestScene::AddKeyframeToSelected_()
         item.outlineBloomPostEffect,
         item.bloomColor,
         item.outlineBloomColor,
-        item.bonePoses
+        item.bonePoses,
+        item.vertexOffsets
     });
     SortKeyframes_(item);
 }
@@ -429,6 +431,8 @@ void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
                 item.bonePoses = item.keyframes.front().bonePoses;
                 ApplyEditorObjectBonePose_(item);
             }
+            item.vertexOffsets = item.keyframes.front().vertexOffsets;
+            ApplyVertexOffsets_(item);
             ApplyEditorObjectTransform_(item);
             continue;
         }
@@ -445,6 +449,8 @@ void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
                 item.bonePoses = item.keyframes.back().bonePoses;
                 ApplyEditorObjectBonePose_(item);
             }
+            item.vertexOffsets = item.keyframes.back().vertexOffsets;
+            ApplyVertexOffsets_(item);
             ApplyEditorObjectTransform_(item);
             continue;
         }
@@ -472,6 +478,8 @@ void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
                     }
                     ApplyEditorObjectBonePose_(item);
                 }
+                item.vertexOffsets = LerpVertexOffsets_(item, a, b, t);
+                ApplyVertexOffsets_(item);
                 ApplyEditorObjectTransform_(item);
                 break;
             }
@@ -602,6 +610,9 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
         object.keyframes = item.keyframes;
         object.selectedVertexIndex = item.selectedVertexIndex;
         object.selectedVertexIndices = item.selectedVertexIndices;
+        object.vertexRangeStart = item.vertexRangeStart;
+        object.vertexRangeEnd = item.vertexRangeEnd;
+        object.vertexSelectionOffset = item.vertexSelectionOffset;
         object.vertexOffsets = item.vertexOffsets;
         snapshot.objects.push_back(std::move(object));
     }
@@ -641,6 +652,9 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.keyframes = src.keyframes;
         item.selectedVertexIndex = src.selectedVertexIndex;
         item.selectedVertexIndices = src.selectedVertexIndices;
+        item.vertexRangeStart = src.vertexRangeStart;
+        item.vertexRangeEnd = src.vertexRangeEnd;
+        item.vertexSelectionOffset = src.vertexSelectionOffset;
         item.vertexOffsets = src.vertexOffsets;
         item.object = std::make_unique<Object3d>();
         item.object->Initialize(app.ObjCom(), app.Dx());
@@ -666,6 +680,8 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
     nextEditorObjectId_ = snapshot.nextObjectId;
     timelineTime_ = snapshot.timelineTime;
     timelineDuration_ = std::max(0.05f, snapshot.timelineDuration);
+    timelineViewDuration_ = std::clamp(timelineViewDuration_ <= 0.0f ? timelineDuration_ : timelineViewDuration_, std::min(0.05f, timelineDuration_), timelineDuration_);
+    timelineViewStart_ = std::clamp(timelineViewStart_, 0.0f, std::max(0.0f, timelineDuration_ - timelineViewDuration_));
     timelineLoop_ = snapshot.timelineLoop;
     animationCameraPosition_ = snapshot.animationCameraPosition;
     animationCameraRotation_ = snapshot.animationCameraRotation;

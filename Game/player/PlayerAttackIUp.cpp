@@ -1,5 +1,6 @@
 #include "PlayerAttackIInternal.h"
 #include "ParticleManager.h"
+#include "Effect/EffectManager.h"
 
 using namespace PlayerIAttackInternal;
 
@@ -12,6 +13,12 @@ constexpr float kUpLv2BeamThicknessZ = 0.55f;
 constexpr float kUpLv3ApproachSpeed = 28.0f;
 constexpr float kUpLv3PierceSpeed = 30.0f;
 constexpr float kUpLv3PierceRiseSpeed = 18.0f;
+constexpr float kPi = 3.1415926535f;
+constexpr float kUpLv3RangeSlashAreaX = 4.2f;
+constexpr float kUpLv3RangeSlashAreaY = 2.5f;
+constexpr float kUpLv3RangeSlashLineLength = 1.95f;
+constexpr const char* kUpLv3RangeSlashEffectName = "slash_effect";
+uint32_t sUpLv3RangeSlashSeed = 0;
 }
 
 // ウェイポイントがある場合の共通移動更新ロジック
@@ -366,7 +373,8 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
 
             // ===== 4段ピラミッド状X字（計10個）の生成 =====
             player.upSpecialTrailLines_.clear();
-            
+
+#if 0
             float dy = 1.2f;  // 段の高さ間隔
             float dx = 1.5f;  // Xの間隔
             float size = 0.7f; // Xの一辺の長さの半分
@@ -394,30 +402,38 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
             }
 
             // ===== エフェクトの即時一斉発生 =====
-            auto* pm = ParticleManager::GetInstance();
-            for (size_t i = 0; i < player.upSpecialTrailLines_.size(); ++i) {
-                if (i >= 20) break; // 念のため上限
+#endif
+            player.upSpecialTrailLines_.clear();
+            const float facing = static_cast<float>(player.facing_);
+            const float seed = static_cast<float>(++sUpLv3RangeSlashSeed);
+            for (int i = 0; i < kUpLv3RangeSlashLineCount; ++i) {
+                const float index = static_cast<float>(i);
+                const float normalized = (index + 0.5f) / static_cast<float>(kUpLv3RangeSlashLineCount);
+                const float randomOffset = std::sin(seed * 12.9898f + index * 78.233f) * 43758.5453f;
+                const float jitter = (randomOffset - std::floor(randomOffset)) - 0.5f;
+                const float arcRad = (-155.0f + normalized * 130.0f + jitter * 18.0f) * (kPi / 180.0f);
+                const float waveRad = (index * 97.0f + seed * 37.0f) * (kPi / 180.0f);
+                const float ring = static_cast<float>(i % 3) / 2.0f;
 
-                const auto& line = player.upSpecialTrailLines_[i];
-                std::string groupName = "PlayerUpSpecialTrail_" + std::to_string(i);
+                Vector3 c = {
+                    centerPos.x + facing * (std::cos(arcRad) * kUpLv3RangeSlashAreaX * (0.55f + ring * 0.45f)),
+                    centerPos.y + 0.4f + std::sin(arcRad) * kUpLv3RangeSlashAreaY + std::sin(waveRad) * 0.35f,
+                    centerPos.z + std::cos(waveRad) * 0.55f
+                };
 
-                // シーンクリア等でグループが消えていた場合の動的生成
-                if (!pm->HasGroup(groupName)) {
-                    pm->CreateParticleGroup(groupName, "resources/circle.png");
-                    pm->ConfigureTrailPreset(groupName);
-                }
+                const float slashRad = (28.0f + static_cast<float>(i % 5) * 13.0f) * (kPi / 180.0f);
+                const float halfLen = kUpLv3RangeSlashLineLength * (0.75f + ring * 0.35f);
+                const float dx = std::cos(slashRad) * halfLen * facing;
+                const float dy = std::sin(slashRad) * halfLen;
+                const float zTilt = ((i % 2) == 0 ? 0.32f : -0.32f) * (0.5f + ring);
 
-                const int numParticles = 12;
-                for (int step = 0; step <= numParticles; ++step) {
-                    float t = static_cast<float>(step) / static_cast<float>(numParticles);
-                    Vector3 p = {
-                        line.start.x + (line.end.x - line.start.x) * t,
-                        line.start.y + (line.end.y - line.start.y) * t,
-                        line.start.z + (line.end.z - line.start.z) * t
-                    };
-                    pm->Emit(groupName, p, 1);
-                }
+                player.upSpecialTrailLines_.push_back({
+                    { c.x - dx, c.y - dy, c.z - zTilt },
+                    { c.x + dx, c.y + dy, c.z + zTilt }
+                });
             }
+
+            player.iSpecialPulseIndex_ = 0;
 
             PlayerIAttack::ChangeState(player, PlayerIAttackState::UpRise_Move);
         }
@@ -427,7 +443,9 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
             player.onGround_ = false;
             
             const float durationBeam = ScaledDuration(kUpLv3BeamSec, tuning.moveDurationRate);
-            const float slideDuration = 0.18f * tuning.moveDurationRate; // 高速直線突進時間
+            const float slideDuration = std::max(
+                0.18f * tuning.moveDurationRate,
+                static_cast<float>(player.upSpecialTrailLines_.size()) * kUpLv3RangeSlashIntervalSec);
 
             Vector3 startPos = player.GetUpSpecialStartPos();
             Vector3 centerPos = player.GetUpSpecialTarget();
@@ -442,6 +460,26 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
 
             // 直線突進移動の更新
             if (player.iAttackStateTime_ < slideDuration) {
+                player.iAttackHitActive_ = true;
+                const int slashIndex = std::min(
+                    static_cast<int>(player.upSpecialTrailLines_.size()),
+                    static_cast<int>(player.iAttackStateTime_ / kUpLv3RangeSlashIntervalSec) + 1);
+                while (player.iSpecialPulseIndex_ < slashIndex) {
+                    const int nextIndex = player.iSpecialPulseIndex_;
+                    player.iSpecialPulseIndex_ = nextIndex + 1;
+                    ++player.attackSerial_;
+
+                    if (nextIndex >= 0 && nextIndex < static_cast<int>(player.upSpecialTrailLines_.size())) {
+                        const auto& line = player.upSpecialTrailLines_[nextIndex];
+                        Vector3 p = {
+                            (line.start.x + line.end.x) * 0.5f,
+                            (line.start.y + line.end.y) * 0.5f,
+                            (line.start.z + line.end.z) * 0.5f
+                        };
+                        EffectManager::GetInstance()->Play(kUpLv3RangeSlashEffectName, p);
+                    }
+                }
+
                 const float remainingTime = slideDuration - player.iAttackStateTime_;
                 if (remainingTime > 0.001f) {
                     player.vel_.x = (endPos.x - player.pos_.x) / remainingTime;

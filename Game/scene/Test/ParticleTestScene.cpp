@@ -42,6 +42,40 @@ extern bool gParticleTestAnimationCameraPreviewSwapped;
 
 using json = nlohmann::json;
 using namespace ParticleTestSceneSupport;
+
+namespace {
+struct VertexPositionKey {
+    long long x = 0;
+    long long y = 0;
+    long long z = 0;
+
+    bool operator==(const VertexPositionKey& other) const
+    {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
+struct VertexPositionKeyHash {
+    size_t operator()(const VertexPositionKey& key) const
+    {
+        size_t seed = std::hash<long long>{}(key.x);
+        seed ^= std::hash<long long>{}(key.y) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
+        seed ^= std::hash<long long>{}(key.z) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
+        return seed;
+    }
+};
+
+VertexPositionKey MakeVertexPositionKey(const Vector3& pos)
+{
+    constexpr float kScale = 10000.0f;
+    return {
+        static_cast<long long>(std::llround(pos.x * kScale)),
+        static_cast<long long>(std::llround(pos.y * kScale)),
+        static_cast<long long>(std::llround(pos.z * kScale)),
+    };
+}
+}
+
 void ParticleTestScene::OnEnter(GameApp& app)
 {
     if (auto* input = app.GetInput()) {
@@ -506,6 +540,96 @@ void ParticleTestScene::SyncParticleModelsWithEditorObjects_()
     }
 }
 
+void ParticleTestScene::ApplyVertexOffsets_(EditorObject& item)
+{
+    if (!item.object) {
+        return;
+    }
+
+    Model* model = item.object->GetModel();
+    if (!model) {
+        return;
+    }
+
+    Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+    if (!originalModel && item.geometryType >= 0) {
+        originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+    }
+
+    if (!item.vertexOffsets.empty()) {
+        EnsureUniqueModelForObject_(item);
+        model = item.object ? item.object->GetModel() : nullptr;
+        if (!model) {
+            return;
+        }
+    }
+
+    if (originalModel) {
+        const uint32_t vertexCount = model->GetVertexCount();
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            model->UpdateVertexPosition(i, originalModel->GetVertexPosition(i));
+        }
+    }
+
+    for (const auto& [idx, pos] : item.vertexOffsets) {
+        model->UpdateVertexPosition(idx, pos);
+    }
+}
+
+std::unordered_map<uint32_t, Vector3> ParticleTestScene::LerpVertexOffsets_(const EditorObject& item, const EffectKeyframe& a, const EffectKeyframe& b, float t) const
+{
+    std::unordered_map<uint32_t, Vector3> result;
+
+    Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+    if (!originalModel && item.geometryType >= 0) {
+        originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+    }
+
+    std::unordered_set<uint32_t> indices;
+    indices.reserve(a.vertexOffsets.size() + b.vertexOffsets.size());
+    for (const auto& [idx, _] : a.vertexOffsets) {
+        indices.insert(idx);
+    }
+    for (const auto& [idx, _] : b.vertexOffsets) {
+        indices.insert(idx);
+    }
+
+    for (uint32_t idx : indices) {
+        Vector3 from{};
+        Vector3 to{};
+
+        if (auto it = a.vertexOffsets.find(idx); it != a.vertexOffsets.end()) {
+            from = it->second;
+        } else if (originalModel && idx < originalModel->GetVertexCount()) {
+            from = originalModel->GetVertexPosition(idx);
+        } else {
+            continue;
+        }
+
+        if (auto it = b.vertexOffsets.find(idx); it != b.vertexOffsets.end()) {
+            to = it->second;
+        } else if (originalModel && idx < originalModel->GetVertexCount()) {
+            to = originalModel->GetVertexPosition(idx);
+        } else {
+            continue;
+        }
+
+        Vector3 value = LerpVector3(from, to, t);
+        if (originalModel && idx < originalModel->GetVertexCount()) {
+            const Vector3 base = originalModel->GetVertexPosition(idx);
+            const float dx = value.x - base.x;
+            const float dy = value.y - base.y;
+            const float dz = value.z - base.z;
+            if (dx * dx + dy * dy + dz * dz < 0.0000001f) {
+                continue;
+            }
+        }
+        result[idx] = value;
+    }
+
+    return result;
+}
+
 void ParticleTestScene::UpdateVertexPositionGroup_(EditorObject& item, int baseVertexIndex, const Vector3& localDelta)
 {
     EnsureUniqueModelForObject_(item);
@@ -548,6 +672,65 @@ void ParticleTestScene::UpdateVertexPositionGroup_(EditorObject& item, int baseV
             item.vertexOffsets[baseVertexIndex] += localDelta;
             model->UpdateVertexPosition(baseVertexIndex, item.vertexOffsets[baseVertexIndex]);
         }
+    }
+}
+
+void ParticleTestScene::MoveSelectedVertices_(EditorObject& item, const Vector3& localDelta)
+{
+    if (std::abs(localDelta.x) <= 0.00001f &&
+        std::abs(localDelta.y) <= 0.00001f &&
+        std::abs(localDelta.z) <= 0.00001f) {
+        return;
+    }
+
+    if (item.selectedVertexIndices.empty()) {
+        UpdateVertexPositionGroup_(item, item.selectedVertexIndex, localDelta);
+        return;
+    }
+
+    EnsureUniqueModelForObject_(item);
+    Model* model = item.object ? item.object->GetModel() : nullptr;
+    if (!model) {
+        return;
+    }
+
+    const uint32_t vertexCount = model->GetVertexCount();
+    Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+    if (!originalModel && item.geometryType >= 0) {
+        originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+    }
+
+    std::unordered_set<uint32_t> affectedVertices;
+    if (originalModel) {
+        std::unordered_set<VertexPositionKey, VertexPositionKeyHash> selectedPositionKeys;
+        selectedPositionKeys.reserve(item.selectedVertexIndices.size());
+        for (int selIdx : item.selectedVertexIndices) {
+            if (selIdx >= 0 && selIdx < static_cast<int>(vertexCount)) {
+                selectedPositionKeys.insert(MakeVertexPositionKey(originalModel->GetVertexPosition(static_cast<uint32_t>(selIdx))));
+            }
+        }
+
+        affectedVertices.reserve(vertexCount);
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            if (selectedPositionKeys.contains(MakeVertexPositionKey(originalModel->GetVertexPosition(i)))) {
+                affectedVertices.insert(i);
+            }
+        }
+    } else {
+        affectedVertices.reserve(item.selectedVertexIndices.size());
+        for (int selIdx : item.selectedVertexIndices) {
+            if (selIdx >= 0 && selIdx < static_cast<int>(vertexCount)) {
+                affectedVertices.insert(static_cast<uint32_t>(selIdx));
+            }
+        }
+    }
+
+    for (uint32_t i : affectedVertices) {
+        if (!item.vertexOffsets.contains(i)) {
+            item.vertexOffsets[i] = originalModel ? originalModel->GetVertexPosition(i) : model->GetVertexPosition(i);
+        }
+        item.vertexOffsets[i] += localDelta;
+        model->UpdateVertexPosition(i, item.vertexOffsets[i]);
     }
 }
 

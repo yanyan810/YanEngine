@@ -7,6 +7,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <unordered_set>
 
 using json = nlohmann::json;
 
@@ -97,6 +98,75 @@ Vector4 EffectLerp(const Vector4& a, const Vector4& b, float t) {
         a.z + (b.z - a.z) * t,
         a.w + (b.w - a.w) * t
     };
+}
+
+bool HasVertexOffsetsInKeyframes(const std::vector<EffectManager::EffectObjectKeyframe>& keyframes)
+{
+    return std::any_of(keyframes.begin(), keyframes.end(), [](const EffectManager::EffectObjectKeyframe& key) {
+        return !key.vertexOffsets.empty();
+    });
+}
+
+std::unordered_map<uint32_t, Vector3> EffectLerpVertexOffsets(
+    Model* baseModel,
+    const EffectManager::EffectObjectKeyframe& a,
+    const EffectManager::EffectObjectKeyframe& b,
+    float t)
+{
+    std::unordered_map<uint32_t, Vector3> result;
+    if (!baseModel) {
+        return result;
+    }
+
+    std::unordered_set<uint32_t> indices;
+    indices.reserve(a.vertexOffsets.size() + b.vertexOffsets.size());
+    for (const auto& [idx, _] : a.vertexOffsets) {
+        indices.insert(idx);
+    }
+    for (const auto& [idx, _] : b.vertexOffsets) {
+        indices.insert(idx);
+    }
+
+    const uint32_t vertexCount = baseModel->GetVertexCount();
+    for (uint32_t idx : indices) {
+        if (idx >= vertexCount) {
+            continue;
+        }
+
+        Vector3 from = baseModel->GetVertexPosition(idx);
+        Vector3 to = from;
+        if (auto it = a.vertexOffsets.find(idx); it != a.vertexOffsets.end()) {
+            from = it->second;
+        }
+        if (auto it = b.vertexOffsets.find(idx); it != b.vertexOffsets.end()) {
+            to = it->second;
+        }
+
+        const Vector3 value = EffectLerp(from, to, t);
+        const Vector3 base = baseModel->GetVertexPosition(idx);
+        const float dx = value.x - base.x;
+        const float dy = value.y - base.y;
+        const float dz = value.z - base.z;
+        if (dx * dx + dy * dy + dz * dz >= 0.0000001f) {
+            result[idx] = value;
+        }
+    }
+    return result;
+}
+
+void ApplyEffectVertexOffsets(Model* model, Model* baseModel, const std::unordered_map<uint32_t, Vector3>& vertexOffsets)
+{
+    if (!model || !baseModel) {
+        return;
+    }
+
+    const uint32_t vertexCount = model->GetVertexCount();
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        model->UpdateVertexPosition(i, baseModel->GetVertexPosition(i));
+    }
+    for (const auto& [idx, pos] : vertexOffsets) {
+        model->UpdateVertexPosition(idx, pos);
+    }
 }
 }
 
@@ -209,6 +279,12 @@ void EffectManager::LoadEffect(const std::string& effectName, const std::string&
             
             auto kobc = kfSource.value("outlineBloomColor", obc);
             kf.outlineBloomColor = { kobc[0], kobc[1], kobc[2], kobc[3] };
+
+            for (const auto& offsetSource : kfSource.value("vertexOffsets", json::array())) {
+                uint32_t index = offsetSource.value("index", 0);
+                auto offsetVal = offsetSource.value("offset", json::array({ 0.0f, 0.0f, 0.0f }));
+                kf.vertexOffsets[index] = { offsetVal[0], offsetVal[1], offsetVal[2] };
+            }
             
             node.keyframes.push_back(kf);
         }
@@ -271,6 +347,7 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
         } else if (!node.modelPath.empty()) {
             actObj.object->SetModel(node.modelPath);
         }
+        actObj.baseModel = actObj.object->GetModel();
 
         // テクスチャ設定
         if (!node.texturePath.empty()) {
@@ -291,16 +368,14 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
         actObj.object->SetMaterialColor(node.color);
 
         actObj.vertexOffsets = node.vertexOffsets;
-        if (!node.vertexOffsets.empty() && actObj.object->GetModel()) {
+        if ((!node.vertexOffsets.empty() || HasVertexOffsetsInKeyframes(node.keyframes)) && actObj.object->GetModel()) {
             Model* originalModel = actObj.object->GetModel();
             static uint32_t sUniqueCounter = 0;
             std::string uniqueKey = "UniquePlayModel_" + effectName + "_" + node.name + "_" + std::to_string(node.id) + "_" + std::to_string(sUniqueCounter++);
             Model* uniqueModel = ModelManager::GetInstance()->CreatePrimitiveModel(uniqueKey, originalModel->GetModelData());
             actObj.object->SetModel(uniqueModel);
 
-            for (const auto& [idx, pos] : node.vertexOffsets) {
-                uniqueModel->UpdateVertexPosition(idx, pos);
-            }
+            ApplyEffectVertexOffsets(uniqueModel, actObj.baseModel, node.vertexOffsets);
         }
 
         active.objects.push_back(std::move(actObj));
@@ -349,17 +424,20 @@ void EffectManager::Update(float dt) {
                 Vector3 rot = obj.keyframes.front().rotation;
                 Vector3 scl = obj.keyframes.front().scale;
                 Vector4 col = obj.keyframes.front().color;
+                std::unordered_map<uint32_t, Vector3> vertexOffsets = obj.keyframes.front().vertexOffsets;
 
                 if (active.currentTime <= obj.keyframes.front().time) {
                     pos = obj.keyframes.front().position;
                     rot = obj.keyframes.front().rotation;
                     scl = obj.keyframes.front().scale;
                     col = obj.keyframes.front().color;
+                    vertexOffsets = obj.keyframes.front().vertexOffsets;
                 } else if (active.currentTime >= obj.keyframes.back().time) {
                     pos = obj.keyframes.back().position;
                     rot = obj.keyframes.back().rotation;
                     scl = obj.keyframes.back().scale;
                     col = obj.keyframes.back().color;
+                    vertexOffsets = obj.keyframes.back().vertexOffsets;
                 } else {
                     for (size_t k = 0; k < obj.keyframes.size() - 1; ++k) {
                         const auto& kf0 = obj.keyframes[k];
@@ -370,6 +448,7 @@ void EffectManager::Update(float dt) {
                             rot = EffectLerp(kf0.rotation, kf1.rotation, t);
                             scl = EffectLerp(kf0.scale, kf1.scale, t);
                             col = EffectLerp(kf0.color, kf1.color, t);
+                            vertexOffsets = EffectLerpVertexOffsets(obj.baseModel, kf0, kf1, t);
                             break;
                         }
                     }
@@ -379,6 +458,7 @@ void EffectManager::Update(float dt) {
                 obj.object->SetRotate(rot);
                 obj.object->SetScale(scl);
                 obj.object->SetMaterialColor(col);
+                ApplyEffectVertexOffsets(obj.object->GetModel(), obj.baseModel, vertexOffsets);
             } else {
                 // キーフレームが無い場合、テンプレートから初期座標を取得し、worldPositionを考慮して配置
                 const EffectObjectNode* nodeTemplate = nullptr;

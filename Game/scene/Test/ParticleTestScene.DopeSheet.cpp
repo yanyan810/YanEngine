@@ -70,17 +70,35 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     float timelineWidth = ImGui::GetContentRegionMax().x - timelineStartX - 16.0f;
     if (timelineWidth < 50.0f) timelineWidth = 50.0f;
     float timelineEndX = timelineStartX + timelineWidth;
+
+    timelineViewDuration_ = std::clamp(
+        timelineViewDuration_ <= 0.0f ? timelineDuration_ : timelineViewDuration_,
+        std::min(0.05f, timelineDuration_),
+        timelineDuration_);
+    timelineViewStart_ = std::clamp(timelineViewStart_, 0.0f, std::max(0.0f, timelineDuration_ - timelineViewDuration_));
     
     auto timeToX = [&](float t) -> float {
-        if (timelineDuration_ <= 0.0f) return timelineStartX;
-        return timelineStartX + (t / timelineDuration_) * timelineWidth;
+        if (timelineViewDuration_ <= 0.0f) return timelineStartX;
+        return timelineStartX + ((t - timelineViewStart_) / timelineViewDuration_) * timelineWidth;
     };
     
     auto xToTime = [&](float x) -> float {
         if (timelineWidth <= 0.0f) return 0.0f;
-        float t = ((x - timelineStartX) / timelineWidth) * timelineDuration_;
+        float t = timelineViewStart_ + ((x - timelineStartX) / timelineWidth) * timelineViewDuration_;
         return std::clamp(t, 0.0f, timelineDuration_);
     };
+
+    const bool mouseOverTimeline =
+        io.MousePos.x >= timelineStartX && io.MousePos.x <= timelineEndX &&
+        io.MousePos.y >= canvasPos.y && io.MousePos.y <= canvasPos.y + canvasSize.y;
+    if (mouseOverTimeline && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && std::abs(io.MouseWheel) > 0.001f) {
+        const float mouseRatio = std::clamp((io.MousePos.x - timelineStartX) / timelineWidth, 0.0f, 1.0f);
+        const float mouseTime = xToTime(io.MousePos.x);
+        const float zoomFactor = io.MouseWheel > 0.0f ? 0.8f : 1.25f;
+        timelineViewDuration_ = std::clamp(timelineViewDuration_ * zoomFactor, std::min(0.05f, timelineDuration_), timelineDuration_);
+        timelineViewStart_ = mouseTime - mouseRatio * timelineViewDuration_;
+        timelineViewStart_ = std::clamp(timelineViewStart_, 0.0f, std::max(0.0f, timelineDuration_ - timelineViewDuration_));
+    }
     
     // ヘッダー背景
     drawList->AddRectFilled(canvasPos, ImVec2(timelineEndX, canvasPos.y + headerHeight), ImGui::GetColorU32(ImGuiCol_HeaderActive));
@@ -88,14 +106,18 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     
     // グリッド線の描画
     int gridCount = 10;
-    if (timelineDuration_ > 5.0f) gridCount = static_cast<int>(timelineDuration_);
+    if (timelineViewDuration_ > 5.0f) gridCount = static_cast<int>(timelineViewDuration_);
     for (int i = 0; i <= gridCount; ++i) {
-        float t = (static_cast<float>(i) / gridCount) * timelineDuration_;
+        float t = timelineViewStart_ + (static_cast<float>(i) / gridCount) * timelineViewDuration_;
         float gridX = timeToX(t);
         drawList->AddLine(ImVec2(gridX, canvasPos.y), ImVec2(gridX, canvasPos.y + totalHeight), ImGui::GetColorU32(ImGuiCol_Border, 0.3f));
         
         char buf[32];
-        sprintf_s(buf, "%.1fs", t);
+        if (timelineViewDuration_ <= 1.0f) {
+            sprintf_s(buf, "%.3fs", t);
+        } else {
+            sprintf_s(buf, "%.2fs", t);
+        }
         drawList->AddText(ImVec2(gridX + 2.0f, canvasPos.y + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), buf);
     }
     

@@ -227,7 +227,8 @@ bool Player::GetAttackHitBoxes(std::vector<AABB>& outHitBoxes) const {
     if (action_ == PlayerAction::Attack && 
         attackType_ == PlayerAttackType::UpSpecial &&
         iSpecialVariant_ == PlayerISpecialVariant::Lv3 &&
-        iAttackState_ == PlayerIAttackState::UpRise_Move) {
+        iAttackState_ == PlayerIAttackState::UpRise_Move &&
+        iSpecialPulseIndex_ < 40) {
         
         if (!upSpecialTrailLines_.empty()) {
             const PlayerIAttackInternal::SpecialCancelLevelTuning& tuning = 
@@ -235,7 +236,12 @@ bool Player::GetAttackHitBoxes(std::vector<AABB>& outHitBoxes) const {
             // 軌跡の太さ（攻撃判定の半径）
             const float thickness = 1.0f * tuning.hitboxScale.x;
             
-            for (const auto& line : upSpecialTrailLines_) {
+            const int lineIndex = std::clamp(
+                iSpecialPulseIndex_ - 1,
+                0,
+                static_cast<int>(upSpecialTrailLines_.size()) - 1);
+            const auto& line = upSpecialTrailLines_[lineIndex];
+            {
                 AABB box;
                 box.min.x = std::min(line.start.x, line.end.x) - thickness;
                 box.min.y = std::min(line.start.y, line.end.y) - thickness;
@@ -333,6 +339,10 @@ float Player::GetAttackActionSec_(PlayerAttackType type, PlayerAttackGroup group
                 }
                 // 速度倍率を適用
                 totalMoveSec *= (1.0f / GetUpLv3SpeedRate());
+                totalMoveSec = std::max(
+                    totalMoveSec,
+                    static_cast<float>(PlayerIAttackInternal::kUpLv3RangeSlashLineCount) *
+                    PlayerIAttackInternal::kUpLv3RangeSlashIntervalSec);
 
                 // ビームの秒数を加算
                 totalMoveSec += PlayerIAttackInternal::kUpLv3BeamSec;

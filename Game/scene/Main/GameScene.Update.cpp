@@ -170,6 +170,7 @@ void GameScene::Update(GameApp& app, float dt) {
         ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
         ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
         EffectManager::GetInstance()->LoadEffect("fallAttak", "resources/effects/fallAttak.json");
+        EffectManager::GetInstance()->LoadEffect("slash_effect", "resources/effects/slash_effect.json");
         EnsureHitEffectGroup_();
     }
 

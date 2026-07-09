@@ -56,6 +56,8 @@ constexpr float kUpLv3ApproachSec = 0.12f;
 constexpr float kUpLv3SlashDownSec = 0.18f;
 constexpr float kUpLv3SlashUpSec = 0.24f;
 constexpr float kUpLv3BeamSec = 0.24f;
+constexpr int kUpLv3RangeSlashLineCount = 18;
+constexpr float kUpLv3RangeSlashIntervalSec = 0.055f;
 
 // ===== 必殺技ごとの基礎ヒットボックス =====
 // Vector3 は constexpr 化できないため const で保持する。

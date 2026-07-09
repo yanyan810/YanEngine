@@ -42,6 +42,20 @@ extern bool gParticleTestAnimationCameraPreviewSwapped;
 
 using json = nlohmann::json;
 using namespace ParticleTestSceneSupport;
+
+std::string ParticleTestScene::MakeEffectsJsonPath_(const std::string& path) const
+{
+    std::filesystem::path source(path);
+    std::filesystem::path fileName = source.filename();
+    if (fileName.empty()) {
+        fileName = "effect_editor.json";
+    }
+    if (fileName.extension().empty()) {
+        fileName.replace_extension(".json");
+    }
+    return (std::filesystem::path("resources/effects") / fileName).generic_string();
+}
+
 void ParticleTestScene::SaveEffectJson_(const std::string& path) const
 {
     json root;
@@ -120,6 +134,13 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
                     { "translate", { pose.translate.x, pose.translate.y, pose.translate.z } },
                     { "rotate", { pose.rotate.x, pose.rotate.y, pose.rotate.z } },
                     { "scale", { pose.scale.x, pose.scale.y, pose.scale.z } }
+                });
+            }
+            keyJson["vertexOffsets"] = json::array();
+            for (const auto& [idx, offset] : key.vertexOffsets) {
+                keyJson["vertexOffsets"].push_back({
+                    { "index", idx },
+                    { "offset", { offset.x, offset.y, offset.z } }
                 });
             }
             object["keyframes"].push_back(std::move(keyJson));
@@ -218,11 +239,11 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         root["playerAttackEditor"]["sideSpecialTimelines"].push_back(std::move(jTimeline));
     }
 
-    std::filesystem::path outputPath(path);
+    std::filesystem::path outputPath(MakeEffectsJsonPath_(path));
     if (outputPath.has_parent_path()) {
         std::filesystem::create_directories(outputPath.parent_path());
     }
-    std::ofstream file(path);
+    std::ofstream file(outputPath);
     if (file.is_open()) {
         file << root.dump(4);
     }
@@ -340,6 +361,11 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
                 pose.rotate = { br[0], br[1], br[2] };
                 pose.scale = { bs[0], bs[1], bs[2] };
                 key.bonePoses.push_back(std::move(pose));
+            }
+            for (const auto& offsetSource : keySource.value("vertexOffsets", json::array())) {
+                uint32_t index = offsetSource.value("index", 0);
+                auto offsetVal = offsetSource.value("offset", json::array({ 0.0f, 0.0f, 0.0f }));
+                key.vertexOffsets[index] = { offsetVal[0], offsetVal[1], offsetVal[2] };
             }
             object.keyframes.push_back(key);
         }

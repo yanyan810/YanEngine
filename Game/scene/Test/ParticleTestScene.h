@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <unordered_set>
 
 class Camera;
@@ -97,14 +98,19 @@ private:
     void Redo_(GameApp& app);
     void SaveEffectJson_(const std::string& path) const;
     void LoadEffectJson_(GameApp& app, const std::string& path);
+    std::string MakeEffectsJsonPath_(const std::string& path) const;
     bool OpenModelFileDialog_();
     bool OpenModelFileDialog_(std::string& outModelPath);
     bool OpenTextureFileDialog_(std::string& outTexturePath);
+    bool OpenEffectJsonFileDialog_(bool saveDialog, std::string& outJsonPath);
     void HandleEffectEditorShortcuts_(GameApp& app);
     void EnsureUniqueModelForObject_(EditorObject& item);
     void SyncParticleModelsWithEditorObjects_();
     void UpdateCameraControls_(GameApp& app, float dt);
+    void ApplyVertexOffsets_(EditorObject& item);
+    std::unordered_map<uint32_t, Vector3> LerpVertexOffsets_(const EditorObject& item, const EffectKeyframe& a, const EffectKeyframe& b, float t) const;
     void UpdateVertexPositionGroup_(EditorObject& item, int baseVertexIndex, const Vector3& localDelta);
+    void MoveSelectedVertices_(EditorObject& item, const Vector3& localDelta);
     void DrawEffectInspectorImGui_(GameApp& app);
     void DrawPlayerAttackInspectorImGui_(GameApp& app);
     void DrawAnimationCameraControls_();
@@ -138,6 +144,8 @@ private:
     Vector3 hitEffectSpawnPosition_{ 0.0f, 1.0f, 0.0f };
     float timelineTime_ = 0.0f;
     float timelineDuration_ = 1.0f;
+    float timelineViewStart_ = 0.0f;
+    float timelineViewDuration_ = 1.0f;
     bool timelinePlaying_ = false;
     bool timelineLoop_ = true;
     bool useAnimationCameraPreview_ = false;
