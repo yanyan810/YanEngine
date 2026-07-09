@@ -441,6 +441,10 @@ void ParticleTestScene::DrawViewportGizmo_()
             int hoveredIndex = -1;
             float minDistance = 12.0f; // ドット選択の判定距離
 
+            std::unordered_set<int> selectedVertexSet(
+                item.selectedVertexIndices.begin(),
+                item.selectedVertexIndices.end());
+
             for (uint32_t i = 0; i < vertexCount; ++i) {
                 Vector3 localPos = model->GetVertexPosition(i);
                 Vector3 worldPos = {
@@ -452,7 +456,7 @@ void ParticleTestScene::DrawViewportGizmo_()
                 ImVec2 screenPos{};
                 if (project(worldPos, screenPos)) {
                     bool selected = (static_cast<int>(i) == item.selectedVertexIndex) ||
-                        (std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), static_cast<int>(i)) != item.selectedVertexIndices.end());
+                        selectedVertexSet.contains(static_cast<int>(i));
                     ImU32 dotColor = selected ? IM_COL32(255, 255, 0, 255) : IM_COL32(80, 80, 255, 220);
                     drawList->AddCircleFilled(screenPos, selected ? 5.5f : 3.5f, dotColor, 12);
                     drawList->AddCircle(screenPos, selected ? 7.0f : 5.0f, IM_COL32(30, 30, 30, 220), 12, 1.0f);
@@ -528,6 +532,7 @@ void ParticleTestScene::DrawViewportGizmo_()
 
                         if (!item.selectedVertexIndices.empty()) {
                             item.selectedVertexIndex = item.selectedVertexIndices.front();
+                            item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
                         }
                         return;
                     }
@@ -551,12 +556,14 @@ void ParticleTestScene::DrawViewportGizmo_()
                         item.selectedVertexIndices.push_back(hoveredIndex);
                     }
                     item.selectedVertexIndex = item.selectedVertexIndices.empty() ? -1 : item.selectedVertexIndices.back();
+                    item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
                     return;
                 } else {
                     if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
                         !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
                         item.selectedVertexIndices.clear();
                         item.selectedVertexIndex = -1;
+                        item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
                     }
                 }
             }
@@ -686,38 +693,7 @@ void ParticleTestScene::DrawViewportGizmo_()
                         }
 
                         // 同一座標の共有頂点も含めて一括移動させるための重複排除セット
-                        std::unordered_set<uint32_t> affectedVertices;
-                        for (int selIdx : item.selectedVertexIndices) {
-                            if (selIdx >= 0 && selIdx < static_cast<int>(vertexCount)) {
-                                if (originalModel) {
-                                    Vector3 origSelectedPos = originalModel->GetVertexPosition(selIdx);
-                                    for (uint32_t i = 0; i < vertexCount; ++i) {
-                                        Vector3 origPos = originalModel->GetVertexPosition(i);
-                                        float dx = origPos.x - origSelectedPos.x;
-                                        float dy = origPos.y - origSelectedPos.y;
-                                        float dz = origPos.z - origSelectedPos.z;
-                                        float distSq = dx*dx + dy*dy + dz*dz;
-                                        if (distSq < 0.0001f) {
-                                            affectedVertices.insert(i);
-                                        }
-                                    }
-                                } else {
-                                    affectedVertices.insert(selIdx);
-                                }
-                            }
-                        }
-
-                        for (uint32_t i : affectedVertices) {
-                            if (!item.vertexOffsets.contains(i)) {
-                                if (originalModel) {
-                                    item.vertexOffsets[i] = originalModel->GetVertexPosition(i);
-                                } else {
-                                    item.vertexOffsets[i] = model->GetVertexPosition(i);
-                                }
-                            }
-                            item.vertexOffsets[i] += localDelta;
-                            model->UpdateVertexPosition(i, item.vertexOffsets[i]);
-                        }
+                        MoveSelectedVertices_(item, localDelta);
                         transformDragChanged_ = true;
                     }
                 } else {
@@ -1075,7 +1051,26 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
 
     ImGui::InputText("Effect JSON", effectJsonPath_, sizeof(effectJsonPath_));
     if (ImGui::Button("Save Effect JSON")) {
+        const std::string savePath = MakeEffectsJsonPath_(effectJsonPath_);
+        strncpy_s(effectJsonPath_, sizeof(effectJsonPath_), savePath.c_str(), _TRUNCATE);
         SaveEffectJson_(effectJsonPath_);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As...##EffectJson")) {
+        std::string jsonPath;
+        if (OpenEffectJsonFileDialog_(true, jsonPath)) {
+            strncpy_s(effectJsonPath_, sizeof(effectJsonPath_), jsonPath.c_str(), _TRUNCATE);
+            SaveEffectJson_(effectJsonPath_);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open...##EffectJson")) {
+        std::string jsonPath;
+        if (OpenEffectJsonFileDialog_(false, jsonPath)) {
+            strncpy_s(effectJsonPath_, sizeof(effectJsonPath_), jsonPath.c_str(), _TRUNCATE);
+            PushUndoSnapshot_();
+            LoadEffectJson_(app, effectJsonPath_);
+        }
     }
     ImGui::SameLine();
     if (ImGui::Button("Load Effect JSON")) {
@@ -1388,6 +1383,8 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
                 EnsureUniqueModelForObject_(item);
             } else {
                 item.selectedVertexIndex = -1;
+                item.selectedVertexIndices.clear();
+                item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
             }
         }
 
@@ -1396,6 +1393,46 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
             if (model) {
                 uint32_t vertexCount = model->GetVertexCount();
                 ImGui::Text("Total Vertices: %u", vertexCount);
+                const int lastVertexIndex = std::max(0, static_cast<int>(vertexCount) - 1);
+                item.vertexRangeStart = std::clamp(item.vertexRangeStart, 0, lastVertexIndex);
+                item.vertexRangeEnd = std::clamp(item.vertexRangeEnd, 0, lastVertexIndex);
+
+                ImGui::InputInt("Range Start", &item.vertexRangeStart);
+                ImGui::InputInt("Range End", &item.vertexRangeEnd);
+
+                auto appendVertexRange = [&]() {
+                    if (vertexCount == 0) {
+                        return;
+                    }
+
+                    const int start = std::clamp(std::min(item.vertexRangeStart, item.vertexRangeEnd), 0, lastVertexIndex);
+                    const int end = std::clamp(std::max(item.vertexRangeStart, item.vertexRangeEnd), 0, lastVertexIndex);
+                    for (int i = start; i <= end; ++i) {
+                        if (std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), i) == item.selectedVertexIndices.end()) {
+                            item.selectedVertexIndices.push_back(i);
+                        }
+                    }
+                    item.selectedVertexIndex = item.selectedVertexIndices.empty() ? -1 : item.selectedVertexIndices.back();
+                    item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
+                };
+
+                if (ImGui::Button("Select Range")) {
+                    PushUndoSnapshot_();
+                    item.selectedVertexIndices.clear();
+                    appendVertexRange();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Add Range")) {
+                    PushUndoSnapshot_();
+                    appendVertexRange();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear Selection")) {
+                    PushUndoSnapshot_();
+                    item.selectedVertexIndices.clear();
+                    item.selectedVertexIndex = -1;
+                    item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
+                }
 
                 // --- 選択中頂点のインデックス表示 ---
                 if (!item.selectedVertexIndices.empty()) {
@@ -1418,7 +1455,7 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
                             Vector3 oldPos = model->GetVertexPosition(item.selectedVertexIndex);
                             Vector3 localDelta = { currentPos.x - oldPos.x, currentPos.y - oldPos.y, currentPos.z - oldPos.z };
 
-                            UpdateVertexPositionGroup_(item, item.selectedVertexIndex, localDelta);
+                            MoveSelectedVertices_(item, localDelta);
                             transformDragChanged_ = true;
                         }
 
@@ -1440,6 +1477,33 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
                             indicesStr += "... and " + std::to_string(item.selectedVertexIndices.size() - 5) + " more";
                         }
                         ImGui::TextUnformatted(indicesStr.c_str());
+
+                        Vector3 currentOffset = item.vertexSelectionOffset;
+                        bool offsetChanged = ImGui::DragFloat3("Selection Offset", &currentOffset.x, 0.01f);
+                        if (offsetChanged) {
+                            if (ImGui::IsItemActivated() && !transformDragActive_) {
+                                transformDragBefore_ = CaptureEditorSnapshot_();
+                                transformDragActive_ = true;
+                                transformDragChanged_ = false;
+                            }
+
+                            Vector3 localDelta = {
+                                currentOffset.x - item.vertexSelectionOffset.x,
+                                currentOffset.y - item.vertexSelectionOffset.y,
+                                currentOffset.z - item.vertexSelectionOffset.z
+                            };
+                            MoveSelectedVertices_(item, localDelta);
+                            item.vertexSelectionOffset = currentOffset;
+                            transformDragChanged_ = true;
+                        }
+
+                        if (ImGui::IsItemDeactivatedAfterEdit() && transformDragActive_) {
+                            if (transformDragChanged_) {
+                                PushUndoSnapshot_(transformDragBefore_);
+                            }
+                            transformDragActive_ = false;
+                            transformDragChanged_ = false;
+                        }
                     }
 
                     if (ImGui::Button("Reset Vertex")) {
@@ -1584,6 +1648,8 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
     if (ImGui::DragFloat("Duration", &timelineDuration_, 0.05f, 0.05f, 30.0f, "%.2f s")) {
         if (timelineDuration_ < 0.05f) timelineDuration_ = 0.05f;
         timelineTime_ = std::clamp(timelineTime_, 0.0f, timelineDuration_);
+        timelineViewDuration_ = std::clamp(timelineViewDuration_, std::min(0.05f, timelineDuration_), timelineDuration_);
+        timelineViewStart_ = std::clamp(timelineViewStart_, 0.0f, std::max(0.0f, timelineDuration_ - timelineViewDuration_));
         RequestTimelineRebuild_(timelineTime_);
     }
     
@@ -2000,7 +2066,26 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 
     ImGui::InputText("Editor JSON", effectJsonPath_, sizeof(effectJsonPath_));
     if (ImGui::Button("Save PlayerAttack JSON")) {
+        const std::string savePath = MakeEffectsJsonPath_(effectJsonPath_);
+        strncpy_s(effectJsonPath_, sizeof(effectJsonPath_), savePath.c_str(), _TRUNCATE);
         SaveEffectJson_(effectJsonPath_);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As...##PlayerAttackJson")) {
+        std::string jsonPath;
+        if (OpenEffectJsonFileDialog_(true, jsonPath)) {
+            strncpy_s(effectJsonPath_, sizeof(effectJsonPath_), jsonPath.c_str(), _TRUNCATE);
+            SaveEffectJson_(effectJsonPath_);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open...##PlayerAttackJson")) {
+        std::string jsonPath;
+        if (OpenEffectJsonFileDialog_(false, jsonPath)) {
+            strncpy_s(effectJsonPath_, sizeof(effectJsonPath_), jsonPath.c_str(), _TRUNCATE);
+            PushUndoSnapshot_();
+            LoadEffectJson_(app, effectJsonPath_);
+        }
     }
     ImGui::SameLine();
     if (ImGui::Button("Load PlayerAttack JSON")) {

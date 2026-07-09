@@ -1,4 +1,4 @@
-#include "TestScene.h"
+﻿#include "TestScene.h"
 #include "TestSceneBossTuning.h"
 #include "TestSceneKnockbackPreview.h"
 #include "TestScene.Trajectory.h"
@@ -208,6 +208,7 @@ void TestScene::OnEnter(GameApp& app) {
     ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
     ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
     EffectManager::GetInstance()->LoadEffect("fallAttak", "resources/effects/fallAttak.json");
+    EffectManager::GetInstance()->LoadEffect("slash_effect", "resources/effects/slash_effect.json");
 }
 
 void TestScene::OnExit(GameApp& /*app*/) {

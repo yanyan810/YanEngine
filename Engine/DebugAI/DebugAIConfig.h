@@ -14,6 +14,9 @@ struct DebugAIConfig {
     bool detectSameState = true;
     bool detectNoProgress = true;
     bool detectLowFps = true;
+    bool recordBotActions = true;
+    bool logActionResults = true;
+    bool logFrames = true;
 
     float sameStateLimitSeconds = 10.0f;
     float noProgressLimitSeconds = 15.0f;
@@ -21,4 +24,5 @@ struct DebugAIConfig {
     float lowFpsThreshold = 30.0f;
     unsigned long long duplicateIssueCooldownFrames = 60;
     unsigned int idleSampleIntervalFrames = 6;
+    unsigned int frameLogIntervalFrames = 30;
 };

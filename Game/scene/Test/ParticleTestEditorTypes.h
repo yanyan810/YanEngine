@@ -43,6 +43,7 @@ struct EffectKeyframe {
     Vector4 bloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
     Vector4 outlineBloomColor{ 1.0f, 0.72f, 0.22f, 1.0f };
     std::vector<EditorBonePose> bonePoses;
+    std::unordered_map<uint32_t, Vector3> vertexOffsets;
 };
 
 struct CameraKeyframe {
@@ -130,6 +131,9 @@ struct EditorObject {
     bool editMode = false;
     int selectedVertexIndex = -1;
     std::vector<int> selectedVertexIndices;
+    int vertexRangeStart = 0;
+    int vertexRangeEnd = 0;
+    Vector3 vertexSelectionOffset{ 0.0f, 0.0f, 0.0f };
     std::unordered_map<uint32_t, Vector3> vertexOffsets;
 };
 
@@ -161,6 +165,9 @@ struct EditorObjectSnapshot {
     std::vector<EffectKeyframe> keyframes;
     int selectedVertexIndex = -1;
     std::vector<int> selectedVertexIndices;
+    int vertexRangeStart = 0;
+    int vertexRangeEnd = 0;
+    Vector3 vertexSelectionOffset{ 0.0f, 0.0f, 0.0f };
     std::unordered_map<uint32_t, Vector3> vertexOffsets;
 };
 

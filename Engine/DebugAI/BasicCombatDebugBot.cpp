@@ -1,7 +1,10 @@
 ﻿#include "BasicCombatDebugBot.h"
 
 #include <cmath>
+#include <fstream>
 #include <limits>
+#include <nlohmann/json.hpp>
+#include <utility>
 
 namespace {
 
@@ -22,11 +25,6 @@ bool IsCombatEntity(const DebugEntityState& entity) {
         (entity.category == "Enemy" || entity.category == "Boss" || entity.type == "Boss");
 }
 
-bool IsEnemyAttackEntity(const DebugEntityState& entity) {
-    return entity.alive &&
-        (entity.category == "EnemyAttack" || entity.category == "EnemyBullet" || entity.category == "Bullet");
-}
-
 bool IsIncomingAttackEntity(const DebugEntityState& entity) {
     return entity.alive &&
         (entity.threatHint == "IncomingAttack" ||
@@ -37,7 +35,97 @@ bool IsIncomingAttackEntity(const DebugEntityState& entity) {
 
 }
 
+void BasicCombatDebugBot::SetBehaviorPlanPath(std::string path) {
+    behaviorPlanPath_ = std::move(path);
+    behaviorPlan_.loaded = false;
+}
+
+void BasicCombatDebugBot::EnsureBehaviorPlanLoaded_() const {
+    if (behaviorPlan_.loaded) {
+        return;
+    }
+    behaviorPlan_.loaded = true;
+
+    std::ifstream in(behaviorPlanPath_);
+    if (!in.is_open() && behaviorPlanPath_ != "resources/debug_ai/behavior_plan.json") {
+        in.open("resources/debug_ai/behavior_plan.json");
+    }
+    if (!in.is_open()) {
+        return;
+    }
+
+    try {
+        const nlohmann::json plan = nlohmann::json::parse(in);
+        auto readStringArray = [&plan](const char* key, std::vector<std::string>& out) {
+            const auto it = plan.find(key);
+            if (it == plan.end() || !it->is_array()) {
+                return;
+            }
+            std::vector<std::string> values;
+            for (const nlohmann::json& value : *it) {
+                if (value.is_string()) {
+                    values.push_back(value.get<std::string>());
+                }
+            }
+            if (!values.empty()) {
+                out = std::move(values);
+            }
+        };
+        auto readFloat = [&plan](const char* key, float& out) {
+            const auto it = plan.find(key);
+            if (it != plan.end() && it->is_number()) {
+                out = it->get<float>();
+            }
+        };
+        auto readUInt = [&plan](const char* key, unsigned int& out) {
+            const auto it = plan.find(key);
+            if (it != plan.end() && it->is_number_unsigned()) {
+                out = it->get<unsigned int>();
+                if (out == 0) {
+                    out = 1;
+                }
+            }
+        };
+
+        readStringArray("escapeActions", behaviorPlan_.escapeActions);
+        readStringArray("closeAttackActions", behaviorPlan_.closeAttackActions);
+        readStringArray("approachActions", behaviorPlan_.approachActions);
+        readStringArray("avoidActions", behaviorPlan_.avoidActions);
+        readFloat("threatDistance", behaviorPlan_.threatDistance);
+        readFloat("attackRangeX", behaviorPlan_.attackRangeX);
+        readFloat("attackRangeZ", behaviorPlan_.attackRangeZ);
+        readFloat("tooCloseRangeX", behaviorPlan_.tooCloseRangeX);
+        readFloat("tooCloseRangeZ", behaviorPlan_.tooCloseRangeZ);
+        readUInt("escapeHoldFrames", behaviorPlan_.escapeHoldFrames);
+        readUInt("approachHoldFrames", behaviorPlan_.approachHoldFrames);
+        readUInt("attackHoldFrames", behaviorPlan_.attackHoldFrames);
+
+        const auto preferEscapeIt = plan.find("preferEscapeWhenThreatened");
+        if (preferEscapeIt != plan.end() && preferEscapeIt->is_boolean()) {
+            behaviorPlan_.preferEscapeWhenThreatened = preferEscapeIt->get<bool>();
+        }
+    } catch (...) {
+        behaviorPlan_ = BehaviorPlan{};
+        behaviorPlan_.loaded = true;
+    }
+}
+
+const std::string* BasicCombatDebugBot::FirstAvailableAction_(
+    const DebugGameState& state,
+    const std::vector<std::string>& actionNames) const {
+    for (const std::string& actionName : actionNames) {
+        for (const DebugAction& availableAction : state.availableActions) {
+            if (availableAction.name == actionName) {
+                return &actionName;
+            }
+        }
+    }
+    return nullptr;
+}
+
 bool BasicCombatDebugBot::ChooseAction(const DebugGameState& state, DebugAction& outAction) {
+    EnsureBehaviorPlanLoaded_();
+
     if (state.availableActions.empty()) {
         return false;
     }
@@ -69,7 +157,8 @@ bool BasicCombatDebugBot::HasAction_(const DebugGameState& state, const char* ac
 }
 
 bool BasicCombatDebugBot::TryChooseWallEscape_(const DebugGameState& state, DebugAction& outAction) const {
-    if (!state.mapBounds.enabled || !HasAction_(state, "Move")) {
+    const std::string* approachAction = FirstAvailableAction_(state, behaviorPlan_.approachActions);
+    if (!state.mapBounds.enabled || approachAction == nullptr) {
         return false;
     }
 
@@ -96,10 +185,10 @@ bool BasicCombatDebugBot::TryChooseWallEscape_(const DebugGameState& state, Debu
         return false;
     }
 
-    outAction = { "Move" };
+    outAction = { *approachAction };
     outAction.intParam = horizontal;
     outAction.floatParam = static_cast<float>(depth);
-    outAction.holdFrames = 8;
+    outAction.holdFrames = behaviorPlan_.approachHoldFrames;
     return true;
 }
 
@@ -109,19 +198,13 @@ bool BasicCombatDebugBot::TryChooseEnemyAction_(const DebugGameState& state, Deb
             continue;
         }
 
-        const bool isAttackHitbox = IsEnemyAttackEntity(entity);
-        const float threatDistanceSq = isAttackHitbox ? 25.0f : 36.0f;
-        if (DistanceSq2D(state.playerPosition, entity.position) <= threatDistanceSq) {
-            if (HasAction_(state, "DodgeAway")) {
-                outAction = { "DodgeAway" };
+        const float threatDistanceSq = behaviorPlan_.threatDistance * behaviorPlan_.threatDistance;
+        if (behaviorPlan_.preferEscapeWhenThreatened &&
+            DistanceSq2D(state.playerPosition, entity.position) <= threatDistanceSq) {
+            if (const std::string* escapeAction = FirstAvailableAction_(state, behaviorPlan_.escapeActions)) {
+                outAction = { *escapeAction };
                 outAction.targetId = entity.id;
-                outAction.holdFrames = 14;
-                return true;
-            }
-            if (HasAction_(state, "Retreat")) {
-                outAction = { "Retreat" };
-                outAction.targetId = entity.id;
-                outAction.holdFrames = 12;
+                outAction.holdFrames = behaviorPlan_.escapeHoldFrames;
                 return true;
             }
         }
@@ -148,49 +231,36 @@ bool BasicCombatDebugBot::TryChooseEnemyAction_(const DebugGameState& state, Deb
 
     const float dx = nearest->position.x - state.playerPosition.x;
     const float dz = nearest->position.z - state.playerPosition.z;
-    constexpr float kAttackRangeX = 2.4f;
-    constexpr float kAttackRangeZ = 2.8f;
-    constexpr float kTooCloseRangeX = 1.4f;
-    constexpr float kTooCloseRangeZ = 1.6f;
+    const float kAttackRangeX = behaviorPlan_.attackRangeX;
+    const float kAttackRangeZ = behaviorPlan_.attackRangeZ;
+    const float kTooCloseRangeX = behaviorPlan_.tooCloseRangeX;
+    const float kTooCloseRangeZ = behaviorPlan_.tooCloseRangeZ;
 
     if (Abs(dx) <= kTooCloseRangeX && Abs(dz) <= kTooCloseRangeZ) {
-        if (HasAction_(state, "DodgeAway")) {
-            outAction = { "DodgeAway" };
+        if (const std::string* escapeAction = FirstAvailableAction_(state, behaviorPlan_.escapeActions)) {
+            outAction = { *escapeAction };
             outAction.targetId = nearest->id;
-            outAction.holdFrames = 14;
-            return true;
-        }
-        if (HasAction_(state, "Retreat")) {
-            outAction = { "Retreat" };
-            outAction.targetId = nearest->id;
-            outAction.holdFrames = 12;
+            outAction.holdFrames = behaviorPlan_.escapeHoldFrames;
             return true;
         }
     }
 
     if (Abs(dx) <= kAttackRangeX && Abs(dz) <= kAttackRangeZ) {
-        if (HasAction_(state, "AttackWeak")) {
-            outAction = { "AttackWeak" };
-            outAction.targetId = nearest->id;
-            outAction.intParam = dx > 0.2f ? +1 : (dx < -0.2f ? -1 : 0);
-            outAction.holdFrames = 12;
-            return true;
-        }
-        if (HasAction_(state, "AttackTilt")) {
-            outAction = { "AttackTilt" };
+        if (const std::string* attackAction = FirstAvailableAction_(state, behaviorPlan_.closeAttackActions)) {
+            outAction = { *attackAction };
             outAction.targetId = nearest->id;
             outAction.intParam = dx >= 0.0f ? +1 : -1;
-            outAction.holdFrames = 12;
+            outAction.holdFrames = behaviorPlan_.attackHoldFrames;
             return true;
         }
     }
 
-    if (HasAction_(state, "Move")) {
-        outAction = { "Move" };
+    if (const std::string* approachAction = FirstAvailableAction_(state, behaviorPlan_.approachActions)) {
+        outAction = { *approachAction };
         outAction.targetId = nearest->id;
         outAction.intParam = dx > 0.4f ? +1 : (dx < -0.4f ? -1 : 0);
         outAction.floatParam = dz > 0.4f ? +1.0f : (dz < -0.4f ? -1.0f : 0.0f);
-        outAction.holdFrames = 8;
+        outAction.holdFrames = behaviorPlan_.approachHoldFrames;
         return true;
     }
 

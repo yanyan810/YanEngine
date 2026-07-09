@@ -14,6 +14,13 @@ struct DebugAction {
     unsigned int holdFrames = 1;
 };
 
+struct DebugAILoadingSourceFile {
+    std::string path;
+    bool loaded = false;
+    bool found = false;
+    bool truncated = false;
+};
+
 struct DebugMapBounds {
     Vector3 min = { -1000.0f, -1000.0f, -1000.0f };
     Vector3 max = { 1000.0f, 1000.0f, 1000.0f };

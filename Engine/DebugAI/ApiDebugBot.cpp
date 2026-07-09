@@ -26,6 +26,7 @@ bool ApiDebugBot::ChooseAction(const DebugGameState& state, DebugAction& outActi
 
     DebugAction apiAction;
     if (provider_ && provider_(state, apiAction) && IsAllowedAction_(state, apiAction)) {
+        jsonMissCount_ = 0;
         outAction = apiAction;
         lastStatus_ = "ActionProvider";
         return true;
@@ -36,12 +37,14 @@ bool ApiDebugBot::ChooseAction(const DebugGameState& state, DebugAction& outActi
         if (jsonProvider_(state, responseJson) &&
             DebugJson::TryParseActionResponseJson(responseJson, apiAction, &lastReason_) &&
             IsAllowedAction_(state, apiAction)) {
+            jsonMissCount_ = 0;
             outAction = apiAction;
             lastStatus_ = "JsonProvider";
             return true;
         }
         lastStatus_ = "JsonProviderFallback";
-        if (!fallbackOnJsonMiss_) {
+        ++jsonMissCount_;
+        if (!fallbackOnJsonMiss_ || jsonMissCount_ < fallbackAfterJsonMisses_) {
             return false;
         }
     } else if (provider_) {

@@ -170,6 +170,7 @@ void GameScene::Update(GameApp& app, float dt) {
         ParticleManager::GetInstance()->LoadAdditional("playerHitEffect.json", "", skipPreviewGroups);
         ParticleManager::GetInstance()->LoadAdditional("fallAttak_Effect.json", "fallAttak_", skipPreviewGroups);
         EffectManager::GetInstance()->LoadEffect("fallAttak", "resources/effects/fallAttak.json");
+        EffectManager::GetInstance()->LoadEffect("slash_effect", "resources/effects/slash_effect.json");
         EnsureHitEffectGroup_();
     }
 
@@ -270,6 +271,9 @@ void GameScene::Update(GameApp& app, float dt) {
 
         if (debugAIEnabled_ && app.DebugAI()) {
             app.DebugAI()->InjectAction();
+            if (app.DebugAI()->IsWaitingForAction()) {
+                return;
+            }
         }
 
         DebugAction manualAction;
@@ -293,7 +297,7 @@ void GameScene::Update(GameApp& app, float dt) {
                 effectPosition.y += 0.15f;
                 SpawnHitEffect_(effectPosition);
             }
-            if (!playerAttackHits.empty() && app.DebugAI()) {
+            if (!playerAttackHits.empty() && app.DebugAI() && app.DebugAI()->ShouldLogEvents()) {
                 const DebugGameState hitState = CaptureDebugState();
                 const Player::PlayerAttackType attackType = player_->GetCurrentAttackType();
                 for (const auto& hit : playerAttackHits) {
