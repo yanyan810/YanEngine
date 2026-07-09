@@ -4,6 +4,8 @@
 #include <cmath>
 #include <filesystem>
 #include <sstream>
+#include <string>
+#include <utility>
 
 namespace {
 
@@ -250,6 +252,11 @@ void DebugAIManager::SetConfig(const DebugAIConfig& config) {
     }
 }
 
+void DebugAIManager::SetLoadingDetails(std::string status, std::vector<DebugAILoadingSourceFile> sourceFiles) {
+    loadingStatus_ = std::move(status);
+    loadingSourceFiles_ = std::move(sourceFiles);
+}
+
 void DebugAIManager::Shutdown() {
     logger_.WriteReport();
     replayRecorder_.Close();
@@ -263,6 +270,7 @@ void DebugAIManager::SetEnabled(bool enabled) {
         StopReplay();
         heldActionFramesRemaining_ = 0;
         hasPendingAction_ = false;
+        waitingForAction_ = false;
         idleAfterUpdateFrames_ = 0;
     }
 }
@@ -347,11 +355,13 @@ void DebugAIManager::StopReplay() {
 
 void DebugAIManager::InjectAction() {
     if (!enabled_ || adapter_ == nullptr) {
+        waitingForAction_ = false;
         return;
     }
     hasPendingAction_ = false;
 
     if (!replayMode_ && heldActionFramesRemaining_ > 0) {
+        waitingForAction_ = false;
         adapter_->ExecuteDebugAction(heldAction_);
         lastAction_ = heldAction_;
         --heldActionFramesRemaining_;
@@ -359,6 +369,7 @@ void DebugAIManager::InjectAction() {
     }
 
     if (replayMode_) {
+        waitingForAction_ = false;
         DebugGameState currentState = adapter_->CaptureDebugState();
         DebugReplayAction replayAction;
         if (replayPlayer_.PopDueAction(currentState.frameNumber, replayAction)) {
@@ -379,6 +390,7 @@ void DebugAIManager::InjectAction() {
     DebugGameState beforeState = adapter_->CaptureDebugState();
     DebugAction chosenAction;
     if (bot_ != nullptr && bot_->ChooseAction(beforeState, chosenAction)) {
+        waitingForAction_ = false;
         NormalizeChosenAction(chosenAction);
         pendingBeforeState_ = beforeState;
         pendingAction_ = chosenAction;
@@ -387,7 +399,19 @@ void DebugAIManager::InjectAction() {
         lastAction_ = chosenAction;
         heldAction_ = chosenAction;
         heldActionFramesRemaining_ = chosenAction.holdFrames > 1 ? chosenAction.holdFrames - 1 : 0;
+        return;
     }
+
+    waitingForAction_ = ShouldWaitForAction_();
+}
+
+bool DebugAIManager::ShouldWaitForAction_() const {
+    for (const DebugAILoadingSourceFile& source : loadingSourceFiles_) {
+        if (!source.loaded) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void DebugAIManager::ProcessAfterUpdate(float dt) {
@@ -395,10 +419,35 @@ void DebugAIManager::ProcessAfterUpdate(float dt) {
         return;
     }
 
-    if (!hasPendingAction_ && !replayMode_) {
+    const bool shouldDetectIssues =
+        config_.detectNegativeHp ||
+        config_.detectInvalidCounts ||
+        config_.detectInvalidPosition ||
+        config_.detectMapBounds ||
+        config_.detectSameState ||
+        config_.detectNoProgress ||
+        config_.detectLowFps;
+    const bool needsImmediateActionSample =
+        replayMode_ ||
+        (hasPendingAction_ && (config_.recordBotActions || config_.logActionResults));
+    const bool needsSample =
+        needsImmediateActionSample ||
+        replayMode_ ||
+        config_.logFrames ||
+        shouldDetectIssues;
+
+    if (!needsSample) {
+        hasPendingAction_ = false;
+        return;
+    }
+
+    if (!needsImmediateActionSample) {
         const unsigned int interval = std::max(1u, config_.idleSampleIntervalFrames);
         ++idleAfterUpdateFrames_;
         if (idleAfterUpdateFrames_ < interval) {
+            if (hasPendingAction_) {
+                hasPendingAction_ = false;
+            }
             return;
         }
         idleAfterUpdateFrames_ = 0;
@@ -411,14 +460,14 @@ void DebugAIManager::ProcessAfterUpdate(float dt) {
 
     if (hasPendingAction_) {
         executedAction = &pendingAction_;
-        if (!replayMode_) {
+        if (!replayMode_ && config_.recordBotActions) {
             replayRecorder_.RecordAction(pendingBeforeState_, pendingAction_, afterState);
             logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
         }
         
         if (replayMode_) {
             logger_.LogEvent(afterState, "ReplayActionResult", BuildStateDiffMessage(pendingBeforeState_, afterState, pendingAction_));
-        } else {
+        } else if (config_.logActionResults) {
             logger_.LogEvent(afterState, "BotActionResult", BuildStateDiffMessage(pendingBeforeState_, afterState, pendingAction_));
         }
         hasPendingAction_ = false;
@@ -428,8 +477,17 @@ void DebugAIManager::ProcessAfterUpdate(float dt) {
         CheckReplayDrift(afterState);
     }
 
-    logger_.LogFrame(afterState, executedAction);
-    DetectIssues_(afterState, dt);
+    if (config_.logFrames) {
+        const unsigned int frameLogInterval = std::max(1u, config_.frameLogIntervalFrames);
+        ++frameLogSampleFrames_;
+        if (executedAction != nullptr || frameLogSampleFrames_ >= frameLogInterval) {
+            logger_.LogFrame(afterState, executedAction);
+            frameLogSampleFrames_ = 0;
+        }
+    }
+    if (shouldDetectIssues) {
+        DetectIssues_(afterState, dt);
+    }
 
     isFirstReplayFrame_ = false;
 }

@@ -193,13 +193,49 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::Checkbox("Show Debug AI Details", &debugAIImGuiPanelState_.showDetails);
     if (app.DebugAI()) {
         ImGui::Text("Status: %s", app.DebugAI()->IsEnabled() ? "Running" : "Stopped");
+        ImGui::Text("Source Load: %s", app.DebugAI()->IsWaitingForAction() ? "Loading" : "Ready");
         ImGui::Text("Replay: %s", app.DebugAI()->IsReplayPlaying() ? "Playing" : "Stopped");
+        if (app.DebugAI()->IsWaitingForAction()) {
+            ImGui::SeparatorText("Loading Sources");
+            ImGui::TextWrapped("%s", app.DebugAI()->LoadingStatus().c_str());
+            for (const DebugAILoadingSourceFile& source : app.DebugAI()->LoadingSourceFiles()) {
+                const char* mark = source.loaded ? (source.found ? "[x]" : "[!]") : "[ ]";
+                ImGui::Text("%s %s%s",
+                    mark,
+                    source.path.c_str(),
+                    source.truncated ? " (truncated)" : "");
+            }
+        }
     }
     ImGui::End();
 
+    if (app.DebugAI() && app.DebugAI()->IsWaitingForAction()) {
+        ImGui::SetNextWindowPos(ImVec2(24.0f, 24.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.82f);
+        ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav;
+        if (ImGui::Begin("DebugAI Loading Overlay", nullptr, flags)) {
+            ImGui::TextUnformatted("DebugAI: loading source files");
+            ImGui::TextWrapped("%s", app.DebugAI()->LoadingStatus().c_str());
+            ImGui::Separator();
+            ImGui::TextUnformatted("Now reading:");
+            for (const DebugAILoadingSourceFile& source : app.DebugAI()->LoadingSourceFiles()) {
+                const char* mark = source.loaded ? (source.found ? "[x]" : "[!]") : "[ ]";
+                ImGui::Text("%s %s%s",
+                    mark,
+                    source.path.c_str(),
+                    source.truncated ? " (truncated)" : "");
+            }
+        }
+        ImGui::End();
+    }
+
     const bool drawDebugAIDetails =
         debugAIImGuiPanelState_.showDetails ||
-        debugAIEnabled_ ||
         (app.DebugAI() && app.DebugAI()->IsReplayPlaying());
     if (drawDebugAIDetails) {
         const DebugAIImGuiPanelRequests debugAIRequests =

@@ -129,23 +129,43 @@ bool GameApp::Initialize_() {
     debugAIConfig.logDirectory = "C:/tmp/CG5_debug_ai";
     debugAIConfig.playerLogDirectory = "C:/tmp/CG5_debug_ai/player";
     debugAIConfig.aiLogDirectory = "C:/tmp/CG5_debug_ai/ai";
+    debugAIConfig.detectNegativeHp = false;
+    debugAIConfig.detectInvalidCounts = false;
+    debugAIConfig.detectInvalidPosition = false;
     debugAIConfig.detectMapBounds = false;
+    debugAIConfig.detectSameState = false;
+    debugAIConfig.detectNoProgress = false;
+    debugAIConfig.detectLowFps = false;
+    debugAIConfig.recordBotActions = false;
+    debugAIConfig.logActionResults = false;
+    debugAIConfig.logFrames = false;
+    debugAIConfig.idleSampleIntervalFrames = 30;
     debugAI_->Initialize(debugAIConfig);
 
     debugAIApiBot_ = std::make_unique<ApiDebugBot>();
     debugAIBasicCombatFallback_ = std::make_unique<BasicCombatDebugBot>();
+    debugAIBasicCombatFallback_->SetBehaviorPlanPath("resources/debug_ai/behavior_plan.json");
     debugAIApiBot_->SetFallbackBot(debugAIBasicCombatFallback_.get());
+    debugAIApiBot_->SetFallbackOnJsonMiss(true);
+    debugAIApiBot_->SetFallbackAfterJsonMisses(10);
     bool apiBotEnabled = false;
 
     debugAIGeminiProvider_ = std::make_unique<GeminiDebugActionProvider>();
     if (debugAIGeminiProvider_->ConfigureFromEnvironment()) {
-        debugAIApiBot_->SetJsonProvider([provider = debugAIGeminiProvider_.get()](
+        debugAIApiBot_->SetJsonProvider([provider = debugAIGeminiProvider_.get(), debugAI = debugAI_.get()](
             const DebugGameState& state,
             std::string& outJsonResponse) {
-            return provider->RequestActionJson(state, outJsonResponse);
+            const bool result = provider->RequestActionJson(state, outJsonResponse);
+            if (debugAI) {
+                debugAI->SetLoadingDetails(provider->LoadingStatus(), provider->LoadingSourceFiles());
+            }
+            return result;
         });
+        debugAI_->SetLoadingDetails(
+            debugAIGeminiProvider_->LoadingStatus(),
+            debugAIGeminiProvider_->LoadingSourceFiles());
         debugAI_->SetBot(debugAIApiBot_.get());
-        OutputDebugStringA("[DebugAI] Gemini ApiDebugBot enabled.\n");
+        OutputDebugStringA("[DebugAI] Gemini ApiDebugBot enabled with lightweight runtime settings.\n");
         apiBotEnabled = true;
     } else {
         OutputDebugStringA(("[DebugAI] Gemini disabled: " + debugAIGeminiProvider_->LastStatus() + "\n").c_str());
@@ -154,13 +174,20 @@ bool GameApp::Initialize_() {
     debugAIOpenAIProvider_ = std::make_unique<OpenAIDebugActionProvider>();
     if (!apiBotEnabled) {
         if (debugAIOpenAIProvider_->ConfigureFromEnvironment()) {
-            debugAIApiBot_->SetJsonProvider([provider = debugAIOpenAIProvider_.get()](
+            debugAIApiBot_->SetJsonProvider([provider = debugAIOpenAIProvider_.get(), debugAI = debugAI_.get()](
                 const DebugGameState& state,
                 std::string& outJsonResponse) {
-                return provider->RequestActionJson(state, outJsonResponse);
+                const bool result = provider->RequestActionJson(state, outJsonResponse);
+                if (debugAI) {
+                    debugAI->SetLoadingDetails(provider->LoadingStatus(), provider->LoadingSourceFiles());
+                }
+                return result;
             });
+            debugAI_->SetLoadingDetails(
+                debugAIOpenAIProvider_->LoadingStatus(),
+                debugAIOpenAIProvider_->LoadingSourceFiles());
             debugAI_->SetBot(debugAIApiBot_.get());
-            OutputDebugStringA("[DebugAI] OpenAI ApiDebugBot enabled.\n");
+            OutputDebugStringA("[DebugAI] OpenAI ApiDebugBot enabled with lightweight runtime settings.\n");
             apiBotEnabled = true;
         } else {
             OutputDebugStringA(("[DebugAI] OpenAI disabled: " + debugAIOpenAIProvider_->LastStatus() + "\n").c_str());
@@ -169,7 +196,8 @@ bool GameApp::Initialize_() {
 
     if (!apiBotEnabled) {
         debugAI_->SetBot(debugAIBasicCombatFallback_.get());
-        OutputDebugStringA("[DebugAI] API Bot disabled. Using BasicCombatDebugBot.\n");
+        debugAI_->SetLoadingDetails("API is not configured. Using local behavior_plan.json bot.", {});
+        OutputDebugStringA("[DebugAI] API Bot disabled. Using local behavior_plan.json bot.\n");
     }
 
     WarmupAssets_();

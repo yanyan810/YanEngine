@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <vector>
 
@@ -114,6 +115,138 @@ bool IsTruthy(const std::string& value) {
     return lower == "1" || lower == "true" || lower == "yes" || lower == "on";
 }
 
+void AppendSourceFileText(
+    const std::string& path,
+    std::ostringstream& out,
+    size_t& remainingChars,
+    const std::function<void(const DebugAILoadingSourceFile&)>& onLoaded) {
+    constexpr size_t kMaxCharsPerSourceFile = 1200;
+    if (path.empty() || remainingChars == 0) {
+        return;
+    }
+
+    DebugAILoadingSourceFile source;
+    source.path = path;
+
+    std::string text = ReadTextFile(path);
+    if (text.empty()) {
+        text = ReadTextFile("../" + path);
+    }
+    if (text.empty()) {
+        source.loaded = true;
+        source.found = false;
+        if (onLoaded) {
+            onLoaded(source);
+        }
+        out << "\n[Source file not found: " << path << "]\n";
+        return;
+    }
+
+    bool truncated = false;
+    const size_t maxChars = remainingChars < kMaxCharsPerSourceFile
+        ? remainingChars
+        : kMaxCharsPerSourceFile;
+    if (text.size() > maxChars) {
+        text.resize(maxChars);
+        truncated = true;
+    }
+    remainingChars -= text.size();
+    source.loaded = true;
+    source.found = true;
+    source.truncated = truncated;
+    if (onLoaded) {
+        onLoaded(source);
+    }
+
+    out << "\n--- " << path << " ---\n"
+        << text;
+    if (truncated) {
+        out << "\n[Source truncated]\n";
+    }
+    out
+        << "\n--- end " << path << " ---\n";
+}
+
+std::string BuildReferencedSourceText(
+    const std::string& goal,
+    const std::function<void(const DebugAILoadingSourceFile&)>& onLoaded = nullptr) {
+    if (goal.empty()) {
+        return {};
+    }
+
+    json value;
+    try {
+        value = json::parse(goal);
+    } catch (...) {
+        return {};
+    }
+    if (!value.is_object()) {
+        return {};
+    }
+
+    std::ostringstream out;
+    size_t remainingChars = 8000;
+    std::vector<std::string> appendedPaths;
+    const char* keys[] = { "actionSourceFiles", "sourceFiles" };
+    for (const char* key : keys) {
+        const auto it = value.find(key);
+        if (it == value.end() || !it->is_array()) {
+            continue;
+        }
+
+        for (const json& item : *it) {
+            if (!item.is_string()) {
+                continue;
+            }
+            const std::string path = item.get<std::string>();
+            if (std::find(appendedPaths.begin(), appendedPaths.end(), path) != appendedPaths.end()) {
+                continue;
+            }
+            appendedPaths.push_back(path);
+            AppendSourceFileText(path, out, remainingChars, onLoaded);
+            if (remainingChars == 0) {
+                return out.str();
+            }
+        }
+    }
+
+    return out.str();
+}
+
+std::vector<std::string> ExtractReferencedSourcePaths(const std::string& goal) {
+    std::vector<std::string> paths;
+    if (goal.empty()) {
+        return paths;
+    }
+
+    json value;
+    try {
+        value = json::parse(goal);
+    } catch (...) {
+        return paths;
+    }
+    if (!value.is_object()) {
+        return paths;
+    }
+
+    const char* keys[] = { "actionSourceFiles", "sourceFiles" };
+    for (const char* key : keys) {
+        const auto it = value.find(key);
+        if (it == value.end() || !it->is_array()) {
+            continue;
+        }
+        for (const json& item : *it) {
+            if (item.is_string()) {
+                const std::string path = item.get<std::string>();
+                if (std::find(paths.begin(), paths.end(), path) == paths.end()) {
+                    paths.push_back(path);
+                }
+            }
+        }
+    }
+    return paths;
+}
+
 }
 
 bool GeminiDebugActionProvider::ConfigureFromEnvironment() {
@@ -144,7 +277,9 @@ bool GeminiDebugActionProvider::ConfigureFromEnvironment() {
         goal_ = goal;
     }
     requestIntervalFrames_ = GetEnvironmentUInt64("DEBUGAI_GEMINI_INTERVAL_FRAMES", requestIntervalFrames_);
+    requestIntervalFrames_ = std::max<unsigned long long>(requestIntervalFrames_, 180);
     timeoutMilliseconds_ = static_cast<unsigned int>(GetEnvironmentUInt64("DEBUGAI_GEMINI_TIMEOUT_MS", timeoutMilliseconds_));
+    ClearReferencedSourceCache_();
     lastStatus_ = "Gemini provider configured.";
     return true;
 }
@@ -163,6 +298,7 @@ bool GeminiDebugActionProvider::RequestActionJson(const DebugGameState& state, s
             const std::string responseJson = pendingResponseJson_.get();
             requestPending_ = false;
             if (!responseJson.empty()) {
+                SetLoadingStatus_("Gemini response received.");
                 cachedResponseJson_ = responseJson;
                 hasCachedResponse_ = true;
                 outJsonResponse = cachedResponseJson_;
@@ -170,6 +306,9 @@ bool GeminiDebugActionProvider::RequestActionJson(const DebugGameState& state, s
                 return true;
             }
             lastStatus_ = "Gemini async request failed.";
+            SetLoadingStatus_("Gemini request failed.");
+            blockedAfterFailedRequest_ = true;
+            failedRequestFrame_ = lastRequestFrame_;
         } else {
             lastStatus_ = "Gemini async request pending.";
             return false;
@@ -184,19 +323,39 @@ bool GeminiDebugActionProvider::RequestActionJson(const DebugGameState& state, s
         return true;
     }
 
+    if (blockedAfterFailedRequest_ &&
+        requestIntervalFrames_ > 0 &&
+        state.frameNumber < failedRequestFrame_ + requestIntervalFrames_) {
+        lastStatus_ = "Gemini request failed. Waiting before retrying.";
+        SetLoadingStatus_("Gemini request failed. Retrying soon.");
+        return false;
+    }
+
     const DebugGameState requestState = state;
     lastRequestFrame_ = state.frameNumber;
     requestPending_ = true;
+    blockedAfterFailedRequest_ = false;
+    if (HasReferencedSourceCache_()) {
+        SetLoadingStatus_("Gemini is thinking about the next action.");
+    } else {
+        ResetLoadingSources_(ExtractReferencedSourcePaths(goal_));
+        SetLoadingStatus_("Gemini is reading referenced source files.");
+    }
     pendingResponseJson_ = std::async(std::launch::async, [this, requestState]() {
         const std::string requestBody = BuildRequestBody_(requestState);
+        SetLoadingStatus_("Gemini is thinking about the next action.");
         std::string responseBody;
         std::string status;
         if (!PostJson_(requestBody, responseBody, &status)) {
+            if (!status.empty()) {
+                SetLoadingStatus_(status);
+            }
             return std::string{};
         }
 
         std::string outputText;
         if (!ExtractOutputText_(responseBody, outputText)) {
+            SetLoadingStatus_("Gemini response did not contain valid output text.");
             return std::string{};
         }
 
@@ -207,7 +366,94 @@ bool GeminiDebugActionProvider::RequestActionJson(const DebugGameState& state, s
     return false;
 }
 
+bool GeminiDebugActionProvider::HasReferencedSourceCache_() const {
+    std::lock_guard<std::mutex> lock(sourceCacheMutex_);
+    return cachedSourceGoal_ == goal_;
+}
+
+std::string GeminiDebugActionProvider::GetReferencedSourceText_() const {
+    {
+        std::lock_guard<std::mutex> cacheLock(sourceCacheMutex_);
+        if (cachedSourceGoal_ == goal_) {
+            std::lock_guard<std::mutex> loadingLock(loadingMutex_);
+            loadingSourceFiles_ = cachedLoadingSourceFiles_;
+            return cachedReferencedSourceText_;
+        }
+    }
+
+    const std::string referencedSourceText = BuildReferencedSourceText(
+        goal_,
+        [this](const DebugAILoadingSourceFile& source) {
+            MarkLoadingSource_(source);
+        });
+
+    std::vector<DebugAILoadingSourceFile> loadedSources;
+    {
+        std::lock_guard<std::mutex> loadingLock(loadingMutex_);
+        loadedSources = loadingSourceFiles_;
+    }
+
+    {
+        std::lock_guard<std::mutex> cacheLock(sourceCacheMutex_);
+        cachedSourceGoal_ = goal_;
+        cachedReferencedSourceText_ = referencedSourceText;
+        cachedLoadingSourceFiles_ = std::move(loadedSources);
+    }
+
+    return referencedSourceText;
+}
+
+void GeminiDebugActionProvider::ClearReferencedSourceCache_() const {
+    std::lock_guard<std::mutex> lock(sourceCacheMutex_);
+    cachedSourceGoal_.clear();
+    cachedReferencedSourceText_.clear();
+    cachedLoadingSourceFiles_.clear();
+}
+
+std::vector<std::string> GeminiDebugActionProvider::ReferencedSourcePaths() const {
+    return ExtractReferencedSourcePaths(goal_);
+}
+
+std::string GeminiDebugActionProvider::LoadingStatus() const {
+    std::lock_guard<std::mutex> lock(loadingMutex_);
+    return loadingStatus_;
+}
+
+std::vector<DebugAILoadingSourceFile> GeminiDebugActionProvider::LoadingSourceFiles() const {
+    std::lock_guard<std::mutex> lock(loadingMutex_);
+    return loadingSourceFiles_;
+}
+
+void GeminiDebugActionProvider::ResetLoadingSources_(const std::vector<std::string>& paths) const {
+    std::lock_guard<std::mutex> lock(loadingMutex_);
+    loadingSourceFiles_.clear();
+    loadingSourceFiles_.reserve(paths.size());
+    for (const std::string& path : paths) {
+        DebugAILoadingSourceFile source;
+        source.path = path;
+        loadingSourceFiles_.push_back(source);
+    }
+}
+
+void GeminiDebugActionProvider::MarkLoadingSource_(const DebugAILoadingSourceFile& source) const {
+    std::lock_guard<std::mutex> lock(loadingMutex_);
+    for (DebugAILoadingSourceFile& existing : loadingSourceFiles_) {
+        if (existing.path == source.path) {
+            existing = source;
+            return;
+        }
+    }
+    loadingSourceFiles_.push_back(source);
+}
+
+void GeminiDebugActionProvider::SetLoadingStatus_(std::string status) const {
+    std::lock_guard<std::mutex> lock(loadingMutex_);
+    loadingStatus_ = std::move(status);
+}
+
 std::string GeminiDebugActionProvider::BuildRequestBody_(const DebugGameState& state) const {
+    const std::string referencedSourceText = GetReferencedSourceText_();
+
     std::vector<std::string> actionNames;
     actionNames.reserve(state.availableActions.size());
     for (const DebugAction& action : state.availableActions) {
@@ -258,8 +504,11 @@ std::string GeminiDebugActionProvider::BuildRequestBody_(const DebugGameState& s
         << "Action guide: Move uses intParam -1/0/1 for left/right and floatParam -1/0/1 for depth.\n"
         << "Use Retreat to move away from the nearest enemy. Use DodgeAway to jump away from the nearest enemy.\n"
         << "If an entity near the player has threatHint IncomingAttack or category EnemyAttack, prefer DodgeAway or Retreat before attacking.\n"
+        << "The goal may include actionSourceFiles/sourceFiles. Use those source snippets only as reference; choose from availableActions.\n"
         << "Use targetId only when it appears in entities. Otherwise use an empty string.\n"
         << "Return only JSON that matches the schema.\n"
+        << "Referenced source snippets:\n"
+        << (referencedSourceText.empty() ? "(none)\n" : referencedSourceText)
         << "Current state JSON:\n"
         << DebugJson::ToAiStateJsonString(state, goal_);
 
@@ -281,12 +530,8 @@ std::string GeminiDebugActionProvider::BuildRequestBody_(const DebugGameState& s
             },
         }) },
         { "generationConfig", {
-            { "responseFormat", {
-                { "text", {
-                    { "mimeType", "application/json" },
-                    { "schema", schema },
-                }},
-            }},
+            { "responseMimeType", "application/json" },
+            { "responseSchema", schema },
             { "maxOutputTokens", 200 },
         }},
     };

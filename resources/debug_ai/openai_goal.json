@@ -1,24 +1,26 @@
 {
-  "objective": "敵を倒してステージを進める",
-  "style": "近距離重視",
-  "preferActions": [
-    "Move",
-    "Retreat",
-    "DodgeAway",
-    "Jump",
-    "AttackWeak",
-    "AttackSideSpecial"
+  "objective": "Defeat enemies and progress through the stage.",
+  "style": "defensive close-range combat",
+  "actionSourceFiles": [
+    "Game/scene/Main/GameSceneDebugProfile.cpp",
+    "Game/scene/Main/GameScene.DebugAI.cpp"
+  ],
+  "sourceFiles": [
+    "Game/player/PlayerInput.cpp",
+    "Game/player/PlayerMovement.cpp",
+    "Game/player/PlayerAttack.cpp",
+    "Game/player/PlayerAttackU.cpp",
+    "Game/player/PlayerAttackI.cpp"
   ],
   "avoidActions": [
     "Wait"
   ],
   "rules": [
-    "敵が遠いときはMoveで近づく",
-    "敵に近いときはAttackWeakを優先する",
-    "entitiesにthreatHintがIncomingAttackのものが近くにあるときは攻撃よりDodgeAwayかRetreatを優先する",
-    "敵の攻撃が来る場合はDodgeAwayかRetreatで避ける",
-    "敵との距離が近すぎる場合はDodgeAwayを優先する",
-    "ジャンプ攻撃を時々混ぜる"
+    "Avoid enemy attacks before attacking.",
+    "When a nearby entity has threatHint IncomingAttack, prefer DodgeAway or Retreat.",
+    "Approach enemies with Move when they are far away.",
+    "Use close-range attacks only after reaching attack range.",
+    "Use only actions listed in availableActions."
   ],
-  "notes": "availableActionsにある行動だけを選んでください"
+  "output": "Create or update resources/debug_ai/behavior_plan.json for the local bot."
 }

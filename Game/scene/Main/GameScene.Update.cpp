@@ -271,6 +271,9 @@ void GameScene::Update(GameApp& app, float dt) {
 
         if (debugAIEnabled_ && app.DebugAI()) {
             app.DebugAI()->InjectAction();
+            if (app.DebugAI()->IsWaitingForAction()) {
+                return;
+            }
         }
 
         DebugAction manualAction;
@@ -294,7 +297,7 @@ void GameScene::Update(GameApp& app, float dt) {
                 effectPosition.y += 0.15f;
                 SpawnHitEffect_(effectPosition);
             }
-            if (!playerAttackHits.empty() && app.DebugAI()) {
+            if (!playerAttackHits.empty() && app.DebugAI() && app.DebugAI()->ShouldLogEvents()) {
                 const DebugGameState hitState = CaptureDebugState();
                 const Player::PlayerAttackType attackType = player_->GetCurrentAttackType();
                 for (const auto& hit : playerAttackHits) {
