@@ -47,6 +47,9 @@ void BasicCombatDebugBot::EnsureBehaviorPlanLoaded_() const {
     behaviorPlan_.loaded = true;
 
     std::ifstream in(behaviorPlanPath_);
+    if (!in.is_open() && behaviorPlanPath_ != "resources/debug_ai/behavior_plan.json") {
+        in.open("resources/debug_ai/behavior_plan.json");
+    }
     if (!in.is_open()) {
         return;
     }

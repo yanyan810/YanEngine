@@ -126,9 +126,9 @@ bool GameApp::Initialize_() {
 
     debugAI_ = std::make_unique<DebugAIManager>();
     DebugAIConfig debugAIConfig;
-    debugAIConfig.logDirectory = "C:/tmp/CG5_debug_ai";
-    debugAIConfig.playerLogDirectory = "C:/tmp/CG5_debug_ai/player";
-    debugAIConfig.aiLogDirectory = "C:/tmp/CG5_debug_ai/ai";
+    debugAIConfig.logDirectory = "generated/debug_ai";
+    debugAIConfig.playerLogDirectory = "generated/debug_ai/player";
+    debugAIConfig.aiLogDirectory = "generated/debug_ai/ai";
     debugAIConfig.detectNegativeHp = false;
     debugAIConfig.detectInvalidCounts = false;
     debugAIConfig.detectInvalidPosition = false;
@@ -144,7 +144,7 @@ bool GameApp::Initialize_() {
 
     debugAIApiBot_ = std::make_unique<ApiDebugBot>();
     debugAIBasicCombatFallback_ = std::make_unique<BasicCombatDebugBot>();
-    debugAIBasicCombatFallback_->SetBehaviorPlanPath("resources/debug_ai/behavior_plan.json");
+    debugAIBasicCombatFallback_->SetBehaviorPlanPath("generated/debug_ai/behavior_plan.json");
     debugAIApiBot_->SetFallbackBot(debugAIBasicCombatFallback_.get());
     debugAIApiBot_->SetFallbackOnJsonMiss(true);
     debugAIApiBot_->SetFallbackAfterJsonMisses(10);

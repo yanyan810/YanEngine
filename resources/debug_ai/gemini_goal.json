@@ -19,5 +19,5 @@
   "敵の攻撃が来る瞬間にジャンプや移動で距離を離れる",
   "敵の小動きが終わったら近づき攻撃をする"
   ],
-  "output": "Create or update resources/debug_ai/behavior_plan.json for the local bot."
+  "output": "Create or update generated/debug_ai/behavior_plan.json for generated AI output. Use resources/debug_ai files only as editable templates."
 }
