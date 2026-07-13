@@ -1,4 +1,4 @@
-﻿#include "WinApp.h"
+#include "WinApp.h"
 
 #pragma comment(lib,"winmm.lib")
 
@@ -10,14 +10,13 @@ bool WinApp::ProcessMessage() {
 
 	MSG msg{};
 
-	if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-
+	while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
-	}
 
-	if (msg.message == WM_QUIT) {
-		return true;
+		if (msg.message == WM_QUIT) {
+			return true;
+		}
 	}
 
 	return false;

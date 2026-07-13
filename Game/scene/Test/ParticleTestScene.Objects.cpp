@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -15,6 +15,7 @@
 #include "TextureManager.h"
 
 #include <nlohmann/json.hpp>
+#include <regex>
 
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -197,8 +198,17 @@ void ParticleTestScene::PasteEditorObject_(GameApp& app)
 
     EditorObject item;
     item.id = nextEditorObjectId_++;
-    char name[64]{};
-    std::snprintf(name, sizeof(name), "%s_Copy_%02d", copiedObject_.name.c_str(), item.id);
+    
+    std::string baseName = copiedObject_.name;
+    try {
+        std::regex copyRegex("(_Copy(_\\d+)?)+$");
+        baseName = std::regex_replace(baseName, copyRegex, "");
+    } catch (...) {
+        // Fallback in case of regex error
+    }
+
+    char name[128]{};
+    std::snprintf(name, sizeof(name), "%s_Copy_%02d", baseName.c_str(), item.id);
     item.name = name;
     item.modelPath = copiedObject_.modelPath;
     item.geometryType = copiedObject_.geometryType;
@@ -313,6 +323,7 @@ ParticleTestScene::EditorObjectSnapshot ParticleTestScene::CaptureSelectedObject
     snapshot.attachRotation = item.attachRotation;
     snapshot.attachScale = item.attachScale;
     snapshot.keyframes = item.keyframes;
+    snapshot.visible = item.visible;
     return snapshot;
 }
 
@@ -362,11 +373,8 @@ void ParticleTestScene::ApplyEditorObjectTransform_(EditorObject& item)
     }
     item.object->SetCamera(GetSceneCamera_());
     item.object->SetTranslate(item.position);
-    if (item.billboard && GetSceneCamera_()) {
-        item.object->SetRotate(GetSceneCamera_()->GetRotate());
-    } else {
-        item.object->SetRotate(item.rotation);
-    }
+    item.object->SetRotate(item.rotation);
+    item.object->SetBillboard(item.billboard);
     item.object->SetScale(item.scale);
     item.object->SetMaterialColor(item.color);
     item.object->SetBlendMode(item.blendMode);

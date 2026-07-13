@@ -93,10 +93,16 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
         io.MousePos.y >= canvasPos.y && io.MousePos.y <= canvasPos.y + canvasSize.y;
     if (mouseOverTimeline && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && std::abs(io.MouseWheel) > 0.001f) {
         const float mouseRatio = std::clamp((io.MousePos.x - timelineStartX) / timelineWidth, 0.0f, 1.0f);
-        const float mouseTime = xToTime(io.MousePos.x);
+        // マウス位置での現在時間（ズーム前）
+        const float mouseTime = timelineViewStart_ + mouseRatio * timelineViewDuration_;
+        
         const float zoomFactor = io.MouseWheel > 0.0f ? 0.8f : 1.25f;
-        timelineViewDuration_ = std::clamp(timelineViewDuration_ * zoomFactor, std::min(0.05f, timelineDuration_), timelineDuration_);
-        timelineViewStart_ = mouseTime - mouseRatio * timelineViewDuration_;
+        float nextViewDuration = std::clamp(timelineViewDuration_ * zoomFactor, std::min(0.05f, timelineDuration_), timelineDuration_);
+        
+        // マウス位置を不変点とする新しいタイムライン開始位置
+        timelineViewStart_ = mouseTime - mouseRatio * nextViewDuration;
+        timelineViewDuration_ = nextViewDuration;
+        
         timelineViewStart_ = std::clamp(timelineViewStart_, 0.0f, std::max(0.0f, timelineDuration_ - timelineViewDuration_));
     }
     
@@ -104,19 +110,43 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     drawList->AddRectFilled(canvasPos, ImVec2(timelineEndX, canvasPos.y + headerHeight), ImGui::GetColorU32(ImGuiCol_HeaderActive));
     drawList->AddLine(ImVec2(canvasPos.x, canvasPos.y + headerHeight), ImVec2(timelineEndX, canvasPos.y + headerHeight), ImGui::GetColorU32(ImGuiCol_Border));
     
-    // グリッド線の描画
-    int gridCount = 10;
-    if (timelineViewDuration_ > 5.0f) gridCount = static_cast<int>(timelineViewDuration_);
-    for (int i = 0; i <= gridCount; ++i) {
-        float t = timelineViewStart_ + (static_cast<float>(i) / gridCount) * timelineViewDuration_;
+    // タイムライン描画領域をクリップ（ラベル領域へのはみ出しを防ぐ）
+    drawList->PushClipRect(ImVec2(timelineStartX, canvasPos.y), ImVec2(timelineEndX, canvasPos.y + totalHeight), true);
+
+    // グリッド線の描画 (表示幅に応じて適切な時間ステップを自動計算)
+    float minPixelStep = 60.0f; // グリッドテキスト同士が重ならない最低間隔
+    float maxGrids = timelineWidth / minPixelStep;
+    if (maxGrids < 1.0f) maxGrids = 1.0f;
+    
+    float rawStep = timelineViewDuration_ / maxGrids;
+    float gridStep = 1.0f;
+    if (rawStep < 0.01f) gridStep = 0.01f;
+    else if (rawStep < 0.02f) gridStep = 0.02f;
+    else if (rawStep < 0.05f) gridStep = 0.05f;
+    else if (rawStep < 0.1f)  gridStep = 0.1f;
+    else if (rawStep < 0.2f)  gridStep = 0.2f;
+    else if (rawStep < 0.5f)  gridStep = 0.5f;
+    else if (rawStep < 1.0f)  gridStep = 1.0f;
+    else if (rawStep < 2.0f)  gridStep = 2.0f;
+    else if (rawStep < 5.0f)  gridStep = 5.0f;
+    else gridStep = 10.0f;
+
+    // キリの良い開始時間を決定
+    float firstGridTime = std::ceil(timelineViewStart_ / gridStep) * gridStep;
+    for (float t = firstGridTime; t <= timelineViewStart_ + timelineViewDuration_ + 0.0001f; t += gridStep) {
+        if (t < timelineViewStart_ || t > timelineViewStart_ + timelineViewDuration_) {
+            continue;
+        }
         float gridX = timeToX(t);
         drawList->AddLine(ImVec2(gridX, canvasPos.y), ImVec2(gridX, canvasPos.y + totalHeight), ImGui::GetColorU32(ImGuiCol_Border, 0.3f));
         
         char buf[32];
-        if (timelineViewDuration_ <= 1.0f) {
+        if (gridStep < 0.1f) {
             sprintf_s(buf, "%.3fs", t);
-        } else {
+        } else if (gridStep < 1.0f) {
             sprintf_s(buf, "%.2fs", t);
+        } else {
+            sprintf_s(buf, "%.1fs", t);
         }
         drawList->AddText(ImVec2(gridX + 2.0f, canvasPos.y + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), buf);
     }
@@ -304,6 +334,9 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     
     bool hoveredHead = (mousePos.x >= curX - 6.0f && mousePos.x <= curX + 6.0f && mousePos.y >= canvasPos.y && mousePos.y <= canvasPos.y + headerHeight);
     bool hoveredHeaderArea = (mousePos.x >= timelineStartX && mousePos.x <= timelineEndX && mousePos.y >= canvasPos.y && mousePos.y <= canvasPos.y + headerHeight);
+    
+    // クリッピングを終了
+    drawList->PopClipRect();
     
     if (clicked && dragTarget_ == DragTarget::None) {
         if (hoveredHead || hoveredHeaderArea) {

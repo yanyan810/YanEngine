@@ -1801,6 +1801,17 @@ Vector3 Model::GetVertexPosition(uint32_t index) const
 	return { 0.0f, 0.0f, 0.0f };
 }
 
+Vector3 Model::GetSourceVertexPosition(uint32_t index) const
+{
+	for (const auto& mesh : modelData_.meshes) {
+		if (index >= mesh.startVertex && index < mesh.startVertex + mesh.vertices.size()) {
+			const Vector4& position = mesh.vertices[index - mesh.startVertex].position;
+			return { position.x, position.y, position.z };
+		}
+	}
+	return { 0.0f, 0.0f, 0.0f };
+}
+
 void Model::UpdateVertexPosition(uint32_t index, const Vector3& position)
 {
 	if (vertexData_ && index < GetVertexCount()) {

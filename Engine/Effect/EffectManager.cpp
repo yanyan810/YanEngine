@@ -339,6 +339,7 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
         actObj.object->Initialize(objCommon_, dxCommon_);
         actObj.object->SetCamera(camera_);
         actObj.object->SetIsVisible(true);
+        actObj.object->SetBillboard(node.billboard);
 
         // モデル設定
         if (node.geometryType >= 0) {
@@ -456,6 +457,7 @@ void EffectManager::Update(float dt) {
 
                 obj.object->SetTranslate(active.worldPosition + pos);
                 obj.object->SetRotate(rot);
+                obj.object->SetBillboard(obj.billboard);
                 obj.object->SetScale(scl);
                 obj.object->SetMaterialColor(col);
                 ApplyEffectVertexOffsets(obj.object->GetModel(), obj.baseModel, vertexOffsets);
@@ -471,6 +473,7 @@ void EffectManager::Update(float dt) {
                 if (nodeTemplate) {
                     obj.object->SetTranslate(active.worldPosition + nodeTemplate->position);
                     obj.object->SetRotate(nodeTemplate->rotation);
+                    obj.object->SetBillboard(obj.billboard);
                     obj.object->SetScale(nodeTemplate->scale);
                     obj.object->SetMaterialColor(nodeTemplate->color);
                 }

@@ -393,8 +393,15 @@ void ParticleTestScene::DrawPostEffectTargets(GameApp& app)
     }
     app.Render()->SetObjectLayerBloomColor(layerBloomColor);
     app.Render()->SetObjectLayerOutlineBloomColor(layerOutlineBloomColor);
-    for (auto& item : editorObjects_) {
-        if (item.active && (item.bloomPostEffect || item.outlineBloomPostEffect) && item.object) {
+    for (int i = 0; i < static_cast<int>(editorObjects_.size()); ++i) {
+        auto& item = editorObjects_[i];
+        const bool isSelected = item.selected || (i == selectedEditorObject_);
+        if (item.visible && item.active && (item.bloomPostEffect || item.outlineBloomPostEffect || isSelected) && item.object) {
+            // This pass is the silhouette mask used by OutlineBloom.PS.  Drawing the
+            // inverse-hull outline into the mask produces detached triangles on meshes
+            // with split (hard-edge) vertices, so always draw the original mesh here.
+            item.object->SetEnableOutline(false);
+            item.object->Update(0.0f);
             item.object->Draw();
         }
     }
@@ -403,15 +410,20 @@ void ParticleTestScene::DrawPostEffectTargets(GameApp& app)
 bool ParticleTestScene::HasObjectBloomTargets() const
 {
     return std::any_of(editorObjects_.begin(), editorObjects_.end(), [](const EditorObject& item) {
-        return item.active && item.bloomPostEffect && item.object;
+        return item.visible && item.active && item.bloomPostEffect && item.object;
     });
 }
 
 bool ParticleTestScene::HasObjectOutlineBloomTargets() const
 {
-    return std::any_of(editorObjects_.begin(), editorObjects_.end(), [](const EditorObject& item) {
-        return item.active && item.outlineBloomPostEffect && item.object;
-    });
+    for (int i = 0; i < static_cast<int>(editorObjects_.size()); ++i) {
+        const auto& item = editorObjects_[i];
+        const bool isSelected = item.selected || (i == selectedEditorObject_);
+        if (item.visible && item.active && (item.outlineBloomPostEffect || isSelected) && item.object) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void ParticleTestScene::DrawSceneContent_(GameApp& app)
@@ -420,8 +432,21 @@ void ParticleTestScene::DrawSceneContent_(GameApp& app)
         ground_->Draw();
     }*/
 
-    for (auto& item : editorObjects_) {
-        if (item.active && item.object) {
+    for (int i = 0; i < static_cast<int>(editorObjects_.size()); ++i) {
+        auto& item = editorObjects_[i];
+        if (item.visible && item.active && item.object) {
+            const bool isSelected = item.selected || (i == selectedEditorObject_);
+            // Selection is outlined from the object post-effect mask.  The geometric
+            // inverse hull is unsuitable for editable/split-vertex meshes.
+            item.object->SetEnableOutline(!isSelected && item.outlineBloomPostEffect);
+            if (isSelected) {
+                item.object->SetOutlineColor({ 1.0f, 0.65f, 0.0f, 1.0f });
+                item.object->SetOutlineThickness(0.0f);
+            } else {
+                item.object->SetOutlineColor(item.outlineBloomColor);
+                item.object->SetOutlineThickness(item.outlineBloomPostEffect ? 0.05f : 0.0f);
+            }
+            item.object->Update(0.0f);
             item.object->Draw();
         }
     }
