@@ -1,4 +1,4 @@
-﻿#include "Input.h"
+#include "Input.h"
 #include <cassert>
 #include <cstring>
 
@@ -84,8 +84,14 @@ void Input::Update() {
 
     HRESULT hr = keyboardDevice_->GetDeviceState(sizeof(keys_), keys_);
     if (FAILED(hr)) {
-        keyboardDevice_->Acquire();
-        keyboardDevice_->GetDeviceState(sizeof(keys_), keys_);
+        // Acquireを毎フレーム実行すると極めて重くなるため、1秒のインターバルを設ける
+        static DWORD lastAcquireTime = 0;
+        DWORD currentTime = GetTickCount();
+        if (currentTime - lastAcquireTime > 1000) {
+            keyboardDevice_->Acquire();
+            lastAcquireTime = currentTime;
+        }
+        memset(keys_, 0, sizeof(keys_));
     }
 
     UpdateMouseDelta();

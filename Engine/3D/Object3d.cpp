@@ -156,10 +156,27 @@ void Object3d::EnsureInstanceMaterial_()
 	instanceMaterialInitializedFromModel_ = true;
 }
 
+Matrix4x4 Object3d::CalculateWorldMatrix() const {
+	if (isBillboard_ && camera_) {
+		Matrix4x4 s = Matrix4x4::Scale(transform.scale);
+		Matrix4x4 r_local = Matrix4x4::RotateXYZ(transform.rotate.x, transform.rotate.y, transform.rotate.z);
+		
+		const Matrix4x4& camWorld = camera_->GetWorldMatrix();
+		Matrix4x4 r_cam = Matrix4x4::MakeIdentity4x4();
+		r_cam.m[0][0] = camWorld.m[0][0]; r_cam.m[0][1] = camWorld.m[0][1]; r_cam.m[0][2] = camWorld.m[0][2];
+		r_cam.m[1][0] = camWorld.m[1][0]; r_cam.m[1][1] = camWorld.m[1][1]; r_cam.m[1][2] = camWorld.m[1][2];
+		r_cam.m[2][0] = camWorld.m[2][0]; r_cam.m[2][1] = camWorld.m[2][1]; r_cam.m[2][2] = camWorld.m[2][2];
+		
+		Matrix4x4 r = Matrix4x4::Multiply(r_local, r_cam);
+		Matrix4x4 t = Matrix4x4::Translation(transform.translate);
+		return Matrix4x4::Multiply(Matrix4x4::Multiply(s, r), t);
+	}
+	return Matrix4x4::MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
+}
+
 void Object3d::Update(float dt)
 {
-	Matrix4x4 worldMatrixModel = Matrix4x4::MakeAffineMatrix(
-		transform.scale, transform.rotate, transform.translate);
+	Matrix4x4 worldMatrixModel = CalculateWorldMatrix();
 
 	if (animator_) {
 		animator_->Update(dt);
@@ -773,8 +790,7 @@ bool Object3d::TryGetJointWorldMatrix(const std::string& jointName, Matrix4x4& o
 	}
 
 	const int32_t jointIndex = it->second;
-	Matrix4x4 worldMatrixModel = Matrix4x4::MakeAffineMatrix(
-		transform.scale, transform.rotate, transform.translate);
+	Matrix4x4 worldMatrixModel = CalculateWorldMatrix();
 
 	out = Matrix4x4::Multiply(
 		poseSkeleton.joints[jointIndex].skeletonSpaceMatrix,

@@ -15,6 +15,8 @@
 #include "TextureManager.h"
 
 #include <nlohmann/json.hpp>
+#include <regex>
+#include <Windows.h>
 
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -333,18 +335,14 @@ void ParticleTestScene::DrawViewportBones_()
 #endif
 }
 
-void ParticleTestScene::DrawViewportGizmo_()
+void ParticleTestScene::DrawViewportGizmo_(GameApp& app)
 {
 #ifdef USE_IMGUI
     Camera* sceneCamera = GetSceneCamera_();
     if (!gHasSceneImageRect || !sceneCamera) {
         return;
     }
-    if (selectedEditorObject_ < 0 || selectedEditorObject_ >= static_cast<int>(editorObjects_.size())) {
-        return;
-    }
 
-    EditorObject& item = editorObjects_[selectedEditorObject_];
     const ImVec2 sceneMin = gSceneImageMin;
     const ImVec2 sceneMax = gSceneImageMax;
     const float sceneW = std::max(1.0f, sceneMax.x - sceneMin.x);
@@ -366,30 +364,56 @@ void ParticleTestScene::DrawViewportGizmo_()
             out.y >= sceneMin.y - 80.0f && out.y <= sceneMax.y + 80.0f;
     };
 
-    Vector3 gizmoWorldPosition = item.position;
-    bool editingBone = false;
-    EditorBonePose* selectedBonePose = nullptr;
-    bool editingVertex = false;
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool mouseInsideScene =
+        mouse.x >= sceneMin.x && mouse.x <= sceneMax.x &&
+        mouse.y >= sceneMin.y && mouse.y <= sceneMax.y;
 
-    if (item.editMode && item.object && item.object->GetModel()) {
-        Model* model = item.object->GetModel();
-        if (model) {
-            if (!item.selectedVertexIndices.empty()) {
-                Vector3 sumLocalPos{ 0.0f, 0.0f, 0.0f };
-                int validCount = 0;
-                for (int idx : item.selectedVertexIndices) {
-                    if (idx >= 0 && idx < static_cast<int>(model->GetVertexCount())) {
-                        sumLocalPos += model->GetVertexPosition(idx);
-                        validCount++;
+    bool hasSelection = (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size()));
+    bool clickedGizmo = false;
+
+    if (hasSelection) {
+        EditorObject& item = editorObjects_[selectedEditorObject_];
+        Vector3 gizmoWorldPosition = item.position;
+        bool editingBone = false;
+        EditorBonePose* selectedBonePose = nullptr;
+        bool editingVertex = false;
+
+        if (item.editMode && item.object && item.object->GetModel()) {
+            Model* model = item.object->GetModel();
+            if (model) {
+                auto editorVertexPosition = [&](uint32_t index) {
+                    auto offset = item.vertexOffsets.find(index);
+                    return offset != item.vertexOffsets.end()
+                        ? offset->second
+                        : model->GetSourceVertexPosition(index);
+                };
+                if (!item.selectedVertexIndices.empty()) {
+                    Vector3 sumLocalPos{ 0.0f, 0.0f, 0.0f };
+                    int validCount = 0;
+                    for (int idx : item.selectedVertexIndices) {
+                            if (idx >= 0 && idx < static_cast<int>(model->GetSourceVertexCount())) {
+                            sumLocalPos += editorVertexPosition(static_cast<uint32_t>(idx));
+                            validCount++;
+                        }
                     }
-                }
-                if (validCount > 0) {
-                    Vector3 localPos = {
-                        sumLocalPos.x / static_cast<float>(validCount),
-                        sumLocalPos.y / static_cast<float>(validCount),
-                        sumLocalPos.z / static_cast<float>(validCount)
-                    };
-                    Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(item.object->GetScale(), item.object->GetRotate(), item.object->GetTranslate());
+                    if (validCount > 0) {
+                        Vector3 localPos = {
+                            sumLocalPos.x / static_cast<float>(validCount),
+                            sumLocalPos.y / static_cast<float>(validCount),
+                            sumLocalPos.z / static_cast<float>(validCount)
+                        };
+                        const Matrix4x4& worldMat = item.object->GetWorldMatrix();
+                        gizmoWorldPosition = {
+                            localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                            localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                            localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                        };
+                        editingVertex = true;
+                    }
+                } else if (item.selectedVertexIndex >= 0 && item.selectedVertexIndex < static_cast<int>(model->GetSourceVertexCount())) {
+                    Vector3 localPos = editorVertexPosition(static_cast<uint32_t>(item.selectedVertexIndex));
+                    const Matrix4x4& worldMat = item.object->GetWorldMatrix();
                     gizmoWorldPosition = {
                         localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
                         localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
@@ -397,389 +421,581 @@ void ParticleTestScene::DrawViewportGizmo_()
                     };
                     editingVertex = true;
                 }
-            } else if (item.selectedVertexIndex >= 0 && item.selectedVertexIndex < static_cast<int>(model->GetVertexCount())) {
-                Vector3 localPos = model->GetVertexPosition(item.selectedVertexIndex);
-                Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(item.object->GetScale(), item.object->GetRotate(), item.object->GetTranslate());
-                gizmoWorldPosition = {
-                    localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
-                    localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
-                    localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
-                };
-                editingVertex = true;
             }
-        }
-    } else if (item.showBones && item.object && item.object->HasSkinningModel()) {
-        SyncEditorObjectBones_(item);
-        if (!item.bonePoses.empty()) {
-            item.selectedBone = std::clamp(item.selectedBone, 0, static_cast<int>(item.bonePoses.size()) - 1);
-            const Model::Skeleton* skeleton = item.object->GetSkeleton();
-            if (skeleton && item.selectedBone < static_cast<int>(skeleton->joints.size())) {
-                Matrix4x4 jointWorld{};
-                if (item.object->TryGetJointWorldMatrix(skeleton->joints[item.selectedBone].name, jointWorld)) {
-                    gizmoWorldPosition = { jointWorld.m[3][0], jointWorld.m[3][1], jointWorld.m[3][2] };
-                    selectedBonePose = &item.bonePoses[item.selectedBone];
-                    editingBone = selectedBonePose != nullptr;
+        } else if (item.showBones && item.object && item.object->HasSkinningModel()) {
+            SyncEditorObjectBones_(item);
+            if (!item.bonePoses.empty()) {
+                item.selectedBone = std::clamp(item.selectedBone, 0, static_cast<int>(item.bonePoses.size()) - 1);
+                const Model::Skeleton* skeleton = item.object->GetSkeleton();
+                if (skeleton && item.selectedBone < static_cast<int>(skeleton->joints.size())) {
+                    Matrix4x4 jointWorld{};
+                    if (item.object->TryGetJointWorldMatrix(skeleton->joints[item.selectedBone].name, jointWorld)) {
+                        gizmoWorldPosition = { jointWorld.m[3][0], jointWorld.m[3][1], jointWorld.m[3][2] };
+                        selectedBonePose = &item.bonePoses[item.selectedBone];
+                        editingBone = selectedBonePose != nullptr;
+                    }
                 }
             }
         }
-    }
 
-    ImVec2 center{};
-    if (!project(gizmoWorldPosition, center)) {
-        return;
-    }
+        ImVec2 center{};
+        if (project(gizmoWorldPosition, center)) {
+            // --- 頂点ドットの描画とクリック選択判定（Edit Mode の場合） ---
+            if (item.editMode && item.object && item.object->GetModel()) {
+                Model* model = item.object->GetModel();
+                if (model) {
+                    auto editorVertexPosition = [&](uint32_t index) {
+                        auto offset = item.vertexOffsets.find(index);
+                        return offset != item.vertexOffsets.end()
+                            ? offset->second
+                            : model->GetSourceVertexPosition(index);
+                    };
+                    // vertexCount fields are also used as GPU draw metadata and can be
+                    // narrower than the retained CPU vertex array. Edit mode must enumerate
+                    // the complete source array (e.g. all sphere stacks, not only the top one).
+                    uint32_t vertexCount = model->GetSourceVertexCount();
+                    // Use the exact matrix sent to the renderer. It already includes the
+                    // model-root transform when required and camera-facing billboard rotation.
+                    const Matrix4x4& worldMat = item.object->GetWorldMatrix();
+                    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+                    ImVec2 mousePos = ImGui::GetMousePos();
 
-    // --- 頂点ドットの描画とクリック選択判定（Edit Mode の場合） ---
-    if (item.editMode && item.object && item.object->GetModel()) {
-        Model* model = item.object->GetModel();
-        if (model) {
-            uint32_t vertexCount = model->GetVertexCount();
-            Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(item.object->GetScale(), item.object->GetRotate(), item.object->GetTranslate());
-            ImDrawList* drawList = ImGui::GetForegroundDrawList();
-            ImVec2 mousePos = ImGui::GetMousePos();
+                    int hoveredIndex = -1;
+                    float minDistance = 12.0f; // ドット選択の判定距離
 
-            int hoveredIndex = -1;
-            float minDistance = 12.0f; // ドット選択の判定距離
+                    std::unordered_set<int> selectedVertexSet(
+                        item.selectedVertexIndices.begin(),
+                        item.selectedVertexIndices.end());
 
-            std::unordered_set<int> selectedVertexSet(
-                item.selectedVertexIndices.begin(),
-                item.selectedVertexIndices.end());
+                    for (uint32_t i = 0; i < vertexCount; ++i) {
+                        Vector3 localPos = editorVertexPosition(i);
+                        Vector3 worldPos = {
+                            localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                            localPos.x * worldMat.m[0][1] + worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                            localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                        };
 
-            for (uint32_t i = 0; i < vertexCount; ++i) {
-                Vector3 localPos = model->GetVertexPosition(i);
-                Vector3 worldPos = {
-                    localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
-                    localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
-                    localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
-                };
+                        ImVec2 screenPos{};
+                        if (project(worldPos, screenPos)) {
+                            bool selected = (static_cast<int>(i) == item.selectedVertexIndex) ||
+                                selectedVertexSet.contains(static_cast<int>(i));
+                            ImU32 dotColor = selected ? IM_COL32(255, 255, 0, 255) : IM_COL32(80, 80, 255, 220);
+                            drawList->AddCircleFilled(screenPos, selected ? 5.5f : 3.5f, dotColor, 12);
+                            drawList->AddCircle(screenPos, selected ? 7.0f : 5.0f, IM_COL32(30, 30, 30, 220), 12, 1.0f);
 
-                ImVec2 screenPos{};
-                if (project(worldPos, screenPos)) {
-                    bool selected = (static_cast<int>(i) == item.selectedVertexIndex) ||
-                        selectedVertexSet.contains(static_cast<int>(i));
-                    ImU32 dotColor = selected ? IM_COL32(255, 255, 0, 255) : IM_COL32(80, 80, 255, 220);
-                    drawList->AddCircleFilled(screenPos, selected ? 5.5f : 3.5f, dotColor, 12);
-                    drawList->AddCircle(screenPos, selected ? 7.0f : 5.0f, IM_COL32(30, 30, 30, 220), 12, 1.0f);
+                            float dx = mousePos.x - screenPos.x;
+                            float dy = mousePos.y - screenPos.y;
+                            float dist = std::sqrt(dx*dx + dy*dy);
+                            if (dist < minDistance) {
+                                minDistance = dist;
+                                hoveredIndex = i;
+                            }
+                        }
+                    }
 
-                    float dx = mousePos.x - screenPos.x;
-                    float dy = mousePos.y - screenPos.y;
-                    float dist = std::sqrt(dx*dx + dy*dy);
-                    if (dist < minDistance) {
-                        minDistance = dist;
-                        hoveredIndex = i;
+                    const bool mouseInsideScene =
+                        mousePos.x >= sceneMin.x && mousePos.x <= sceneMax.x &&
+                        mousePos.y >= sceneMin.y && mousePos.y <= sceneMax.y;
+
+                    // allowRightClickRotateの算出
+                    EditorObject* selectedObj = nullptr;
+                    if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
+                        selectedObj = &editorObjects_[selectedEditorObject_];
+                    }
+                    const bool isEditMode = selectedObj && selectedObj->editMode;
+                    const bool allowRightClickRotate = isEditMode ? (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) : true;
+
+                    // --- 右クリックによるボックス選択の処理 ---
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && mouseInsideScene && !allowRightClickRotate) {
+                        boxSelectActive_ = true;
+                        boxSelectStart_ = mousePos;
+                    }
+
+                    if (boxSelectActive_) {
+                        drawList->AddRectFilled(boxSelectStart_, mousePos, IM_COL32(255, 255, 0, 40));
+                        drawList->AddRect(boxSelectStart_, mousePos, IM_COL32(255, 255, 0, 180), 0.0f, 0, 1.5f);
+
+                        if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+                            boxSelectActive_ = false;
+
+                            float minX = std::min(boxSelectStart_.x, mousePos.x);
+                            float maxX = std::max(boxSelectStart_.x, mousePos.x);
+                            float minY = std::min(boxSelectStart_.y, mousePos.y);
+                            float maxY = std::max(boxSelectStart_.y, mousePos.y);
+
+                            float rectW = maxX - minX;
+                            float rectH = maxY - minY;
+                            if (rectW > 4.0f && rectH > 4.0f) {
+                                PushUndoSnapshot_();
+
+                                if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
+                                    !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                                    item.selectedVertexIndices.clear();
+                                    item.selectedVertexIndex = -1;
+                                }
+
+                                for (uint32_t i = 0; i < vertexCount; ++i) {
+                                    Vector3 localPos = editorVertexPosition(i);
+                                    Vector3 worldPos = {
+                                        localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
+                                        localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
+                                        localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
+                                    };
+                                    ImVec2 screenPos{};
+                                    if (project(worldPos, screenPos)) {
+                                        if (screenPos.x >= minX && screenPos.x <= maxX &&
+                                            screenPos.y >= minY && screenPos.y <= maxY) {
+                                            if (std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), static_cast<int>(i)) == item.selectedVertexIndices.end()) {
+                                                item.selectedVertexIndices.push_back(i);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!item.selectedVertexIndices.empty()) {
+                                    item.selectedVertexIndex = item.selectedVertexIndices.front();
+                                    item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
+                                }
+                                return;
+                            }
+                        }
+                    }
+
+                    // 単一左クリック選択判定
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
+                        PushUndoSnapshot_();
+                        if (hoveredIndex >= 0) {
+                            if (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift) ||
+                                ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                                auto it = std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), hoveredIndex);
+                                if (it == item.selectedVertexIndices.end()) {
+                                    item.selectedVertexIndices.push_back(hoveredIndex);
+                                } else {
+                                    item.selectedVertexIndices.erase(it);
+                                }
+                            } else {
+                                item.selectedVertexIndices.clear();
+                                item.selectedVertexIndices.push_back(hoveredIndex);
+                            }
+                            item.selectedVertexIndex = item.selectedVertexIndices.empty() ? -1 : item.selectedVertexIndices.back();
+                            item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
+                            return;
+                        } else {
+                            if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
+                                !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                                item.selectedVertexIndices.clear();
+                                item.selectedVertexIndex = -1;
+                                item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
+                            }
+                        }
                     }
                 }
             }
 
-            const bool mouseInsideScene =
-                mousePos.x >= sceneMin.x && mousePos.x <= sceneMax.x &&
-                mousePos.y >= sceneMin.y && mousePos.y <= sceneMax.y;
+            const Vector3 axisWorld[3] = {
+                { 1.0f, 0.0f, 0.0f },
+                { 0.0f, 1.0f, 0.0f },
+                { 0.0f, 0.0f, 1.0f },
+            };
+            const ImU32 axisColor[3] = {
+                IM_COL32(255, 70, 70, 255),
+                IM_COL32(80, 255, 80, 255),
+                IM_COL32(90, 130, 255, 255),
+            };
+            ImVec2 axisEnd[3]{};
+            ImVec2 axisDir[3]{};
+            float axisLen[3]{};
+            const float worldHandleLength = 1.5f;
 
-            // allowRightClickRotateの算出
-            EditorObject* selectedObj = nullptr;
-            if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
-                selectedObj = &editorObjects_[selectedEditorObject_];
+            for (int axis = 0; axis < 3; ++axis) {
+                ImVec2 projectedEnd{};
+                if (!project(gizmoWorldPosition + axisWorld[axis] * worldHandleLength, projectedEnd)) {
+                    projectedEnd = center;
+                }
+                ImVec2 rawDir{ projectedEnd.x - center.x, projectedEnd.y - center.y };
+                float len = std::sqrt(rawDir.x * rawDir.x + rawDir.y * rawDir.y);
+                if (len < 0.001f) {
+                    rawDir = axis == 0 ? ImVec2(1.0f, 0.0f) : axis == 1 ? ImVec2(0.0f, -1.0f) : ImVec2(0.7f, 0.7f);
+                    len = 1.0f;
+                }
+                axisDir[axis] = ImVec2(rawDir.x / len, rawDir.y / len);
+                axisLen[axis] = 72.0f;
+                axisEnd[axis] = ImVec2(center.x + axisDir[axis].x * axisLen[axis], center.y + axisDir[axis].y * axisLen[axis]);
             }
-            const bool isEditMode = selectedObj && selectedObj->editMode;
-            const bool allowRightClickRotate = isEditMode ? (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) : true;
 
-            // --- 右クリックによるボックス選択の処理 ---
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && mouseInsideScene && !allowRightClickRotate) {
-                boxSelectActive_ = true;
-                boxSelectStart_ = mousePos;
+            auto distanceToSegment = [](const ImVec2& p, const ImVec2& a, const ImVec2& b) {
+                const ImVec2 ab{ b.x - a.x, b.y - a.y };
+                const ImVec2 ap{ p.x - a.x, p.y - a.y };
+                const float abLen2 = ab.x * ab.x + ab.y * ab.y;
+                float t = abLen2 > 0.001f ? (ap.x * ab.x + ap.y * ab.y) / abLen2 : 0.0f;
+                t = std::clamp(t, 0.0f, 1.0f);
+                const ImVec2 nearest{ a.x + ab.x * t, a.y + ab.y * t };
+                const float dx = p.x - nearest.x;
+                const float dy = p.y - nearest.y;
+                return std::sqrt(dx * dx + dy * dy);
+            };
+
+            ImDrawList* drawList = ImGui::GetForegroundDrawList();
+
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
+                int nearestAxis = -1;
+                float nearestDistance = 9999.0f;
+                for (int axis = 0; axis < 3; ++axis) {
+                    const float distance = distanceToSegment(mouse, center, axisEnd[axis]);
+                    if (distance < nearestDistance) {
+                        nearestDistance = distance;
+                        nearestAxis = axis;
+                    }
+                }
+                const float centerDistance = std::sqrt((mouse.x - center.x) * (mouse.x - center.x) + (mouse.y - center.y) * (mouse.y - center.y));
+                if (centerDistance <= 14.0f || nearestDistance <= 10.0f) {
+                    activeViewportGizmoAxis_ = centerDistance <= 14.0f ? 3 : nearestAxis;
+                    viewportGizmoLastMouseX_ = mouse.x;
+                    viewportGizmoLastMouseY_ = mouse.y;
+                    transformDragBefore_ = CaptureEditorSnapshot_();
+                    transformDragActive_ = true;
+                    transformDragChanged_ = false;
+                    clickedGizmo = true;
+                }
             }
 
-            if (boxSelectActive_) {
-                drawList->AddRectFilled(boxSelectStart_, mousePos, IM_COL32(255, 255, 0, 40));
-                drawList->AddRect(boxSelectStart_, mousePos, IM_COL32(255, 255, 0, 180), 0.0f, 0, 1.5f);
+            if (activeViewportGizmoAxis_ >= 0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                const ImVec2 delta{ mouse.x - viewportGizmoLastMouseX_, mouse.y - viewportGizmoLastMouseY_ };
+                viewportGizmoLastMouseX_ = mouse.x;
+                viewportGizmoLastMouseY_ = mouse.y;
+                const int axis = activeViewportGizmoAxis_;
 
-                if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-                    boxSelectActive_ = false;
+                if (item.editMode && (item.selectedVertexIndex >= 0 || !item.selectedVertexIndices.empty())) {
+                    // --- 頂点編集（移動）処理 ---
+                    float amount = 0.0f;
+                    float amountX = 0.0f;
+                    float amountY = 0.0f;
 
-                    float minX = std::min(boxSelectStart_.x, mousePos.x);
-                    float maxX = std::max(boxSelectStart_.x, mousePos.x);
-                    float minY = std::min(boxSelectStart_.y, mousePos.y);
-                    float maxY = std::max(boxSelectStart_.y, mousePos.y);
+                    if (axis >= 0 && axis < 3) {
+                        const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
+                        amount = signedPixels / 55.0f;
+                    } else if (axis == 3) {
+                        amountX = delta.x / 55.0f;
+                        amountY = -delta.y / 55.0f;
+                    }
 
-                    float rectW = maxX - minX;
-                    float rectH = maxY - minY;
-                    if (rectW > 4.0f && rectH > 4.0f) {
-                        PushUndoSnapshot_();
-
-                        if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
-                            !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
-                            item.selectedVertexIndices.clear();
-                            item.selectedVertexIndex = -1;
+                    if (std::abs(amount) > 0.00001f || std::abs(amountX) > 0.00001f || std::abs(amountY) > 0.00001f) {
+                        // ワールド移動差分を算出
+                        Vector3 worldDelta{ 0.0f, 0.0f, 0.0f };
+                        if (axis == 0) worldDelta = { amount, 0.0f, 0.0f };
+                        if (axis == 1) worldDelta = { 0.0f, amount, 0.0f };
+                        if (axis == 2) worldDelta = { 0.0f, 0.0f, amount };
+                        if (axis == 3) {
+                            const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
+                            worldDelta = CameraRight(cameraWorld) * amountX + CameraUp(cameraWorld) * amountY;
                         }
 
-                        for (uint32_t i = 0; i < vertexCount; ++i) {
-                            Vector3 localPos = model->GetVertexPosition(i);
-                            Vector3 worldPos = {
-                                localPos.x * worldMat.m[0][0] + localPos.y * worldMat.m[1][0] + localPos.z * worldMat.m[2][0] + worldMat.m[3][0],
-                                localPos.x * worldMat.m[0][1] + localPos.y * worldMat.m[1][1] + localPos.z * worldMat.m[2][1] + worldMat.m[3][1],
-                                localPos.x * worldMat.m[0][2] + localPos.y * worldMat.m[1][2] + localPos.z * worldMat.m[2][2] + worldMat.m[3][2],
-                            };
-                            ImVec2 screenPos{};
-                            if (project(worldPos, screenPos)) {
-                                if (screenPos.x >= minX && screenPos.x <= maxX &&
-                                    screenPos.y >= minY && screenPos.y <= maxY) {
-                                    if (std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), static_cast<int>(i)) == item.selectedVertexIndices.end()) {
-                                        item.selectedVertexIndices.push_back(i);
+                        // オブジェクトの回転・スケールの逆行列を作成してローカル移動差分に変換
+                        Matrix4x4 invRotScl = Matrix4x4::Inverse(item.object->GetWorldMatrix());
+
+                        Vector3 localDelta = {
+                            worldDelta.x * invRotScl.m[0][0] + worldDelta.y * invRotScl.m[1][0] + worldDelta.z * invRotScl.m[2][0],
+                            worldDelta.x * invRotScl.m[0][1] + worldDelta.y * invRotScl.m[1][1] + worldDelta.z * invRotScl.m[2][1],
+                            worldDelta.x * invRotScl.m[0][2] + worldDelta.y * invRotScl.m[1][2] + worldDelta.z * invRotScl.m[2][2],
+                        };
+
+                        // 複数選択の頂点すべてに移動を適用
+                        if (!item.selectedVertexIndices.empty()) {
+                            EnsureUniqueModelForObject_(item);
+                            Model* model = item.object ? item.object->GetModel() : nullptr;
+                            if (model) {
+                                uint32_t vertexCount = model->GetVertexCount();
+                                Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
+                                if (!originalModel && item.geometryType >= 0) {
+                                    originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
+                                }
+
+                                // 同一座標の共有頂点も含めて一括移動させるための重複排除セット
+                                MoveSelectedVertices_(item, localDelta);
+                                transformDragChanged_ = true;
+                            }
+                        } else {
+                            UpdateVertexPositionGroup_(item, item.selectedVertexIndex, localDelta);
+                            transformDragChanged_ = true;
+                        }
+                    }
+                } else {
+                    // --- 通常のトランスフォーム・ボーン移動処理（複数選択対応） ---
+                    if (axis >= 0 && axis < 3) {
+                        const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
+                        const float amount = signedPixels / 55.0f;
+                        if (std::abs(amount) > 0.00001f) {
+                            if (editingBone) {
+                                if (gizmoMode_ == GizmoMode::Translate) {
+                                    Vector3& translate = selectedBonePose->translate;
+                                    if (axis == 0) translate.x += amount;
+                                    if (axis == 1) translate.y += amount;
+                                    if (axis == 2) translate.z += amount;
+                                } else if (gizmoMode_ == GizmoMode::Rotate) {
+                                    Vector3& rotate = selectedBonePose->rotate;
+                                    if (axis == 0) rotate.x += amount * 0.35f;
+                                    if (axis == 1) rotate.y += amount * 0.35f;
+                                    if (axis == 2) rotate.z += amount * 0.35f;
+                                } else {
+                                    Vector3& scale = selectedBonePose->scale;
+                                    if (axis == 0) scale.x = std::max(0.01f, scale.x + amount);
+                                    if (axis == 1) scale.y = std::max(0.01f, scale.y + amount);
+                                    if (axis == 2) scale.z = std::max(0.01f, scale.z + amount);
+                                }
+                                ApplyEditorObjectBonePose_(item);
+                            } else {
+                                for (auto& obj : editorObjects_) {
+                                    if (obj.selected || &obj == &item) {
+                                        if (gizmoMode_ == GizmoMode::Translate) {
+                                            if (axis == 0) obj.position.x += amount;
+                                            if (axis == 1) obj.position.y += amount;
+                                            if (axis == 2) obj.position.z += amount;
+                                        } else if (gizmoMode_ == GizmoMode::Rotate) {
+                                            if (axis == 0) obj.rotation.x += amount * 0.35f;
+                                            if (axis == 1) obj.rotation.y += amount * 0.35f;
+                                            if (axis == 2) obj.rotation.z += amount * 0.35f;
+                                        } else {
+                                            if (axis == 0) obj.scale.x = std::max(0.01f, obj.scale.x + amount);
+                                            if (axis == 1) obj.scale.y = std::max(0.01f, obj.scale.y + amount);
+                                            if (axis == 2) obj.scale.z = std::max(0.01f, obj.scale.z + amount);
+                                        }
+                                        ApplyEditorObjectTransform_(obj);
                                     }
                                 }
                             }
+                            transformDragChanged_ = true;
                         }
-
-                        if (!item.selectedVertexIndices.empty()) {
-                            item.selectedVertexIndex = item.selectedVertexIndices.front();
-                            item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
-                        }
-                        return;
-                    }
-                }
-            }
-
-            // 単一左クリック選択判定
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
-                PushUndoSnapshot_();
-                if (hoveredIndex >= 0) {
-                    if (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift) ||
-                        ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
-                        auto it = std::find(item.selectedVertexIndices.begin(), item.selectedVertexIndices.end(), hoveredIndex);
-                        if (it == item.selectedVertexIndices.end()) {
-                            item.selectedVertexIndices.push_back(hoveredIndex);
+                    } else if (axis == 3) {
+                        const float amountX = delta.x / 55.0f;
+                        const float amountY = -delta.y / 55.0f;
+                        if (editingBone) {
+                            if (gizmoMode_ == GizmoMode::Translate) {
+                                const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
+                                selectedBonePose->translate += CameraRight(cameraWorld) * amountX;
+                                selectedBonePose->translate += CameraUp(cameraWorld) * amountY;
+                            } else if (gizmoMode_ == GizmoMode::Scale) {
+                                const float amount = (amountX + amountY) * 0.5f;
+                                selectedBonePose->scale.x = std::max(0.01f, selectedBonePose->scale.x + amount);
+                                selectedBonePose->scale.y = std::max(0.01f, selectedBonePose->scale.y + amount);
+                                selectedBonePose->scale.z = std::max(0.01f, selectedBonePose->scale.z + amount);
+                            } else {
+                                selectedBonePose->rotate.y += amountX * 0.35f;
+                                selectedBonePose->rotate.x += amountY * 0.35f;
+                            }
+                            ApplyEditorObjectBonePose_(item);
                         } else {
-                            item.selectedVertexIndices.erase(it);
+                            for (auto& obj : editorObjects_) {
+                                if (obj.selected || &obj == &item) {
+                                    if (gizmoMode_ == GizmoMode::Translate) {
+                                        const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
+                                        obj.position += CameraRight(cameraWorld) * amountX;
+                                        obj.position += CameraUp(cameraWorld) * amountY;
+                                    } else if (gizmoMode_ == GizmoMode::Scale) {
+                                        const float amount = (amountX + amountY) * 0.5f;
+                                        obj.scale.x = std::max(0.01f, obj.scale.x + amount);
+                                        obj.scale.y = std::max(0.01f, obj.scale.y + amount);
+                                        obj.scale.z = std::max(0.01f, obj.scale.z + amount);
+                                    } else {
+                                        obj.rotation.y += amountX * 0.35f;
+                                        obj.rotation.x += amountY * 0.35f;
+                                    }
+                                    ApplyEditorObjectTransform_(obj);
+                                }
+                            }
                         }
-                    } else {
-                        item.selectedVertexIndices.clear();
-                        item.selectedVertexIndices.push_back(hoveredIndex);
-                    }
-                    item.selectedVertexIndex = item.selectedVertexIndices.empty() ? -1 : item.selectedVertexIndices.back();
-                    item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
-                    return;
-                } else {
-                    if (!ImGui::IsKeyDown(ImGuiKey_LeftShift) && !ImGui::IsKeyDown(ImGuiKey_RightShift) &&
-                        !ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && !ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
-                        item.selectedVertexIndices.clear();
-                        item.selectedVertexIndex = -1;
-                        item.vertexSelectionOffset = { 0.0f, 0.0f, 0.0f };
-                    }
-                }
-            }
-        }
-    }
-
-    const Vector3 axisWorld[3] = {
-        { 1.0f, 0.0f, 0.0f },
-        { 0.0f, 1.0f, 0.0f },
-        { 0.0f, 0.0f, 1.0f },
-    };
-    const ImU32 axisColor[3] = {
-        IM_COL32(255, 70, 70, 255),
-        IM_COL32(80, 255, 80, 255),
-        IM_COL32(90, 130, 255, 255),
-    };
-    ImVec2 axisEnd[3]{};
-    ImVec2 axisDir[3]{};
-    float axisLen[3]{};
-    const float worldHandleLength = 1.5f;
-
-    for (int axis = 0; axis < 3; ++axis) {
-        ImVec2 projectedEnd{};
-        if (!project(gizmoWorldPosition + axisWorld[axis] * worldHandleLength, projectedEnd)) {
-            projectedEnd = center;
-        }
-        ImVec2 rawDir{ projectedEnd.x - center.x, projectedEnd.y - center.y };
-        float len = std::sqrt(rawDir.x * rawDir.x + rawDir.y * rawDir.y);
-        if (len < 0.001f) {
-            rawDir = axis == 0 ? ImVec2(1.0f, 0.0f) : axis == 1 ? ImVec2(0.0f, -1.0f) : ImVec2(0.7f, 0.7f);
-            len = 1.0f;
-        }
-        axisDir[axis] = ImVec2(rawDir.x / len, rawDir.y / len);
-        axisLen[axis] = 72.0f;
-        axisEnd[axis] = ImVec2(center.x + axisDir[axis].x * axisLen[axis], center.y + axisDir[axis].y * axisLen[axis]);
-    }
-
-    auto distanceToSegment = [](const ImVec2& p, const ImVec2& a, const ImVec2& b) {
-        const ImVec2 ab{ b.x - a.x, b.y - a.y };
-        const ImVec2 ap{ p.x - a.x, p.y - a.y };
-        const float abLen2 = ab.x * ab.x + ab.y * ab.y;
-        float t = abLen2 > 0.001f ? (ap.x * ab.x + ap.y * ab.y) / abLen2 : 0.0f;
-        t = std::clamp(t, 0.0f, 1.0f);
-        const ImVec2 nearest{ a.x + ab.x * t, a.y + ab.y * t };
-        const float dx = p.x - nearest.x;
-        const float dy = p.y - nearest.y;
-        return std::sqrt(dx * dx + dy * dy);
-    };
-
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    const bool mouseInsideScene =
-        ImGui::GetMousePos().x >= sceneMin.x && ImGui::GetMousePos().x <= sceneMax.x &&
-        ImGui::GetMousePos().y >= sceneMin.y && ImGui::GetMousePos().y <= sceneMax.y;
-    const ImVec2 mouse = ImGui::GetMousePos();
-
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && activeViewportGizmoAxis_ < 0 && !viewportBoneDragActive_) {
-        int nearestAxis = -1;
-        float nearestDistance = 9999.0f;
-        for (int axis = 0; axis < 3; ++axis) {
-            const float distance = distanceToSegment(mouse, center, axisEnd[axis]);
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestAxis = axis;
-            }
-        }
-        const float centerDistance = std::sqrt((mouse.x - center.x) * (mouse.x - center.x) + (mouse.y - center.y) * (mouse.y - center.y));
-        if (centerDistance <= 14.0f || nearestDistance <= 10.0f) {
-            activeViewportGizmoAxis_ = centerDistance <= 14.0f ? 3 : nearestAxis;
-            viewportGizmoLastMouseX_ = mouse.x;
-            viewportGizmoLastMouseY_ = mouse.y;
-            transformDragBefore_ = CaptureEditorSnapshot_();
-            transformDragActive_ = true;
-            transformDragChanged_ = false;
-        }
-    }
-
-    if (activeViewportGizmoAxis_ >= 0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        const ImVec2 delta{ mouse.x - viewportGizmoLastMouseX_, mouse.y - viewportGizmoLastMouseY_ };
-        viewportGizmoLastMouseX_ = mouse.x;
-        viewportGizmoLastMouseY_ = mouse.y;
-        const int axis = activeViewportGizmoAxis_;
-
-        if (item.editMode && (item.selectedVertexIndex >= 0 || !item.selectedVertexIndices.empty())) {
-            // --- 頂点編集（移動）処理 ---
-            float amount = 0.0f;
-            float amountX = 0.0f;
-            float amountY = 0.0f;
-
-            if (axis >= 0 && axis < 3) {
-                const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
-                amount = signedPixels / 55.0f;
-            } else if (axis == 3) {
-                amountX = delta.x / 55.0f;
-                amountY = -delta.y / 55.0f;
-            }
-
-            if (std::abs(amount) > 0.00001f || std::abs(amountX) > 0.00001f || std::abs(amountY) > 0.00001f) {
-                // ワールド移動差分を算出
-                Vector3 worldDelta{ 0.0f, 0.0f, 0.0f };
-                if (axis == 0) worldDelta = { amount, 0.0f, 0.0f };
-                if (axis == 1) worldDelta = { 0.0f, amount, 0.0f };
-                if (axis == 2) worldDelta = { 0.0f, 0.0f, amount };
-                if (axis == 3) {
-                    const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
-                    worldDelta = CameraRight(cameraWorld) * amountX + CameraUp(cameraWorld) * amountY;
-                }
-
-                // オブジェクトの回転・スケールの逆行列を作成してローカル移動差分に変換
-                Matrix4x4 localRotScl = Matrix4x4::MakeAffineMatrix(item.scale, item.rotation, { 0.0f, 0.0f, 0.0f });
-                Matrix4x4 invRotScl = Matrix4x4::Inverse(localRotScl);
-
-                Vector3 localDelta = {
-                    worldDelta.x * invRotScl.m[0][0] + worldDelta.y * invRotScl.m[1][0] + worldDelta.z * invRotScl.m[2][0],
-                    worldDelta.x * invRotScl.m[0][1] + worldDelta.y * invRotScl.m[1][1] + worldDelta.z * invRotScl.m[2][1],
-                    worldDelta.x * invRotScl.m[0][2] + worldDelta.y * invRotScl.m[1][2] + worldDelta.z * invRotScl.m[2][2],
-                };
-
-                // 複数選択の頂点すべてに移動を適用
-                if (!item.selectedVertexIndices.empty()) {
-                    EnsureUniqueModelForObject_(item);
-                    Model* model = item.object ? item.object->GetModel() : nullptr;
-                    if (model) {
-                        uint32_t vertexCount = model->GetVertexCount();
-                        Model* originalModel = ModelManager::GetInstance()->FindModel(item.modelPath);
-                        if (!originalModel && item.geometryType >= 0) {
-                            originalModel = GetOrCreateEditorGeometryModel(item.geometryType);
-                        }
-
-                        // 同一座標の共有頂点も含めて一括移動させるための重複排除セット
-                        MoveSelectedVertices_(item, localDelta);
                         transformDragChanged_ = true;
                     }
-                } else {
-                    UpdateVertexPositionGroup_(item, item.selectedVertexIndex, localDelta);
-                    transformDragChanged_ = true;
                 }
             }
-        } else {
-            // --- 通常のトランスフォーム・ボーン移動処理（既存の処理） ---
-            if (axis >= 0 && axis < 3) {
-                const float signedPixels = delta.x * axisDir[axis].x + delta.y * axisDir[axis].y;
-                const float amount = signedPixels / 55.0f;
-                if (std::abs(amount) > 0.00001f) {
-                    if (gizmoMode_ == GizmoMode::Translate) {
-                        Vector3& translate = editingBone ? selectedBonePose->translate : item.position;
-                    if (axis == 0) translate.x += amount;
-                    if (axis == 1) translate.y += amount;
-                    if (axis == 2) translate.z += amount;
-                } else if (gizmoMode_ == GizmoMode::Rotate) {
-                    Vector3& rotate = editingBone ? selectedBonePose->rotate : item.rotation;
-                    if (axis == 0) rotate.x += amount * 0.35f;
-                    if (axis == 1) rotate.y += amount * 0.35f;
-                    if (axis == 2) rotate.z += amount * 0.35f;
-                } else {
-                    Vector3& scale = editingBone ? selectedBonePose->scale : item.scale;
-                    if (axis == 0) scale.x = std::max(0.01f, scale.x + amount);
-                    if (axis == 1) scale.y = std::max(0.01f, scale.y + amount);
-                    if (axis == 2) scale.z = std::max(0.01f, scale.z + amount);
+
+            if (activeViewportGizmoAxis_ >= 0 && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                if (transformDragChanged_) {
+                    PushUndoSnapshot_(transformDragBefore_);
                 }
-                transformDragChanged_ = true;
-                if (editingBone) {
-                    ApplyEditorObjectBonePose_(item);
-                } else {
-                    ApplyEditorObjectTransform_(item);
-                }
+                activeViewportGizmoAxis_ = -1;
+                transformDragActive_ = false;
+                transformDragChanged_ = false;
             }
-        } else if (axis == 3) {
-            const float amountX = delta.x / 55.0f;
-            const float amountY = -delta.y / 55.0f;
-            if (gizmoMode_ == GizmoMode::Translate) {
-                const Matrix4x4& cameraWorld = sceneCamera->GetWorldMatrix();
-                Vector3& translate = editingBone ? selectedBonePose->translate : item.position;
-                translate += CameraRight(cameraWorld) * amountX;
-                translate += CameraUp(cameraWorld) * amountY;
-            } else if (gizmoMode_ == GizmoMode::Scale) {
-                const float amount = (amountX + amountY) * 0.5f;
-                Vector3& scale = editingBone ? selectedBonePose->scale : item.scale;
-                scale.x = std::max(0.01f, scale.x + amount);
-                scale.y = std::max(0.01f, scale.y + amount);
-                scale.z = std::max(0.01f, scale.z + amount);
-            } else {
-                Vector3& rotate = editingBone ? selectedBonePose->rotate : item.rotation;
-                rotate.y += amountX * 0.35f;
-                rotate.x += amountY * 0.35f;
+
+            const char* modeText =
+                gizmoMode_ == GizmoMode::Translate ? "Translate" :
+                gizmoMode_ == GizmoMode::Rotate ? "Rotate" : "Scale";
+            const std::string gizmoLabel = editingBone ? (std::string("Bone ") + modeText) : modeText;
+            drawList->AddCircleFilled(center, activeViewportGizmoAxis_ == 3 ? 9.0f : 7.0f, IM_COL32(255, 255, 255, 230));
+            drawList->AddCircle(center, gizmoMode_ == GizmoMode::Rotate ? 46.0f : 14.0f, IM_COL32(255, 255, 255, 180), 48, 2.0f);
+            for (int axis = 0; axis < 3; ++axis) {
+                const float thickness = activeViewportGizmoAxis_ == axis ? 5.0f : 3.0f;
+                drawList->AddLine(center, axisEnd[axis], axisColor[axis], thickness);
+                drawList->AddCircleFilled(axisEnd[axis], gizmoMode_ == GizmoMode::Scale ? 7.0f : 5.0f, axisColor[axis]);
             }
-            transformDragChanged_ = true;
-            if (editingBone) {
-                ApplyEditorObjectBonePose_(item);
-            } else {
-                ApplyEditorObjectTransform_(item);
-            }
-        }
+            drawList->AddText(ImVec2(center.x + 12.0f, center.y + 12.0f), IM_COL32(255, 255, 255, 230), gizmoLabel.c_str());
         }
     }
 
-    if (activeViewportGizmoAxis_ >= 0 && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        if (transformDragChanged_) {
-            PushUndoSnapshot_(transformDragBefore_);
-        }
-        activeViewportGizmoAxis_ = -1;
-        transformDragActive_ = false;
-        transformDragChanged_ = false;
-    }
+    // --- シーン上でのオブジェクトクリック判定 (ギズモをクリックしなかった、または未選択の場合) ---
+    const bool isEditModeActive = hasSelection && editorObjects_[selectedEditorObject_].editMode;
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideScene && !clickedGizmo && !viewportBoneDragActive_ && !isEditModeActive) {
+        int clickedObjectIndex = -1;
+        float minDistanceToCamera = 99999.0f;
 
-    const char* modeText =
-        gizmoMode_ == GizmoMode::Translate ? "Translate" :
-        gizmoMode_ == GizmoMode::Rotate ? "Rotate" : "Scale";
-    const std::string gizmoLabel = editingBone ? (std::string("Bone ") + modeText) : modeText;
-    drawList->AddCircleFilled(center, activeViewportGizmoAxis_ == 3 ? 9.0f : 7.0f, IM_COL32(255, 255, 255, 230));
-    drawList->AddCircle(center, gizmoMode_ == GizmoMode::Rotate ? 46.0f : 14.0f, IM_COL32(255, 255, 255, 180), 48, 2.0f);
-    for (int axis = 0; axis < 3; ++axis) {
-        const float thickness = activeViewportGizmoAxis_ == axis ? 5.0f : 3.0f;
-        drawList->AddLine(center, axisEnd[axis], axisColor[axis], thickness);
-        drawList->AddCircleFilled(axisEnd[axis], gizmoMode_ == GizmoMode::Scale ? 7.0f : 5.0f, axisColor[axis]);
+        // 3Dレイ（ワールド空間）を作成する
+        float ndcX = ((mouse.x - sceneMin.x) / sceneW) * 2.0f - 1.0f;
+        float ndcY = 1.0f - ((mouse.y - sceneMin.y) / sceneH) * 2.0f;
+
+        Matrix4x4 vp = sceneCamera->GetViewProjectionMatrix();
+        Matrix4x4 invVP = Matrix4x4::Inverse(vp);
+
+        Vector4 nearPointClip = { ndcX, ndcY, 0.0f, 1.0f };
+        Vector4 farPointClip = { ndcX, ndcY, 1.0f, 1.0f };
+
+        auto transformClipToWorld = [&](const Vector4& clip) -> Vector3 {
+            float x = clip.x * invVP.m[0][0] + clip.y * invVP.m[1][0] + clip.z * invVP.m[2][0] + invVP.m[3][0];
+            float y = clip.x * invVP.m[0][1] + clip.y * invVP.m[1][1] + clip.z * invVP.m[2][1] + invVP.m[3][1];
+            float z = clip.x * invVP.m[0][2] + clip.y * invVP.m[1][2] + clip.z * invVP.m[2][2] + invVP.m[3][2];
+            float w = clip.x * invVP.m[0][3] + clip.y * invVP.m[1][3] + clip.z * invVP.m[2][3] + invVP.m[3][3];
+            if (std::abs(w) > 0.0001f) {
+                return { x / w, y / w, z / w };
+            }
+            return { x, y, z };
+        };
+
+        Vector3 rayOrigin = transformClipToWorld(nearPointClip);
+        Vector3 rayTarget = transformClipToWorld(farPointClip);
+        Vector3 rayDir = { rayTarget.x - rayOrigin.x, rayTarget.y - rayOrigin.y, rayTarget.z - rayOrigin.z };
+        
+        float len = std::sqrt(rayDir.x * rayDir.x + rayDir.y * rayDir.y + rayDir.z * rayDir.z);
+        if (len > 0.001f) {
+            rayDir = { rayDir.x / len, rayDir.y / len, rayDir.z / len };
+        }
+
+        for (int k = 0; k < static_cast<int>(editorObjects_.size()); ++k) {
+            const auto& obj = editorObjects_[k];
+            if (!obj.visible) {
+                continue;
+            }
+            
+            AABB localAABB{ {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f} };
+            if (obj.object) {
+                Model* model = obj.object->GetModel();
+                if (model) {
+                    AABB tempAABB{};
+                    if (model->GetLocalAABB(tempAABB)) {
+                        localAABB = tempAABB;
+                    }
+                }
+            }
+
+            Matrix4x4 worldMat = Matrix4x4::MakeAffineMatrix(obj.scale, obj.rotation, obj.position);
+            Matrix4x4 invWorld = Matrix4x4::Inverse(worldMat);
+
+            // レイをローカル空間に変換
+            Vector3 localRayOrigin = {
+                rayOrigin.x * invWorld.m[0][0] + rayOrigin.y * invWorld.m[1][0] + rayOrigin.z * invWorld.m[2][0] + invWorld.m[3][0],
+                rayOrigin.x * invWorld.m[0][1] + rayOrigin.y * invWorld.m[1][1] + rayOrigin.z * invWorld.m[2][1] + invWorld.m[3][1],
+                rayOrigin.x * invWorld.m[0][2] + rayOrigin.y * invWorld.m[1][2] + rayOrigin.z * invWorld.m[2][2] + invWorld.m[3][2],
+            };
+            Vector3 localRayDir = {
+                rayDir.x * invWorld.m[0][0] + rayDir.y * invWorld.m[1][0] + rayDir.z * invWorld.m[2][0],
+                rayDir.x * invWorld.m[0][1] + rayDir.y * invWorld.m[1][1] + rayDir.z * invWorld.m[2][1],
+                rayDir.x * invWorld.m[0][2] + rayDir.y * invWorld.m[1][2] + rayDir.z * invWorld.m[2][2],
+            };
+
+            // スラブ法によるRay-AABB判定
+            float tmin = 0.0f;
+            float tmax = 99999.0f;
+            bool intersect = true;
+
+            // X軸
+            if (std::abs(localRayDir.x) < 0.00001f) {
+                if (localRayOrigin.x < localAABB.min.x || localRayOrigin.x > localAABB.max.x) {
+                    intersect = false;
+                }
+            } else {
+                float t1 = (localAABB.min.x - localRayOrigin.x) / localRayDir.x;
+                float t2 = (localAABB.max.x - localRayOrigin.x) / localRayDir.x;
+                if (t1 > t2) std::swap(t1, t2);
+                tmin = std::max(tmin, t1);
+                tmax = std::min(tmax, t2);
+            }
+
+            // Y軸
+            if (intersect) {
+                if (std::abs(localRayDir.y) < 0.00001f) {
+                    if (localRayOrigin.y < localAABB.min.y || localRayOrigin.y > localAABB.max.y) {
+                        intersect = false;
+                    }
+                } else {
+                    float t1 = (localAABB.min.y - localRayOrigin.y) / localRayDir.y;
+                    float t2 = (localAABB.max.y - localRayOrigin.y) / localRayDir.y;
+                    if (t1 > t2) std::swap(t1, t2);
+                    tmin = std::max(tmin, t1);
+                    tmax = std::min(tmax, t2);
+                }
+            }
+
+            // Z軸
+            if (intersect) {
+                if (std::abs(localRayDir.z) < 0.00001f) {
+                    if (localRayOrigin.z < localAABB.min.z || localRayOrigin.z > localAABB.max.z) {
+                        intersect = false;
+                    }
+                } else {
+                    float t1 = (localAABB.min.z - localRayOrigin.z) / localRayDir.z;
+                    float t2 = (localAABB.max.z - localRayOrigin.z) / localRayDir.z;
+                    if (t1 > t2) std::swap(t1, t2);
+                    tmin = std::max(tmin, t1);
+                    tmax = std::min(tmax, t2);
+                }
+            }
+
+            if (intersect && tmin <= tmax) {
+                Vector3 hitPointWorld = {
+                    rayOrigin.x + rayDir.x * tmin,
+                    rayOrigin.y + rayDir.y * tmin,
+                    rayOrigin.z + rayDir.z * tmin
+                };
+
+                const Matrix4x4& viewMat = sceneCamera->GetViewMatrix();
+                float hitViewSpaceZ = hitPointWorld.x * viewMat.m[0][2] +
+                                      hitPointWorld.y * viewMat.m[1][2] +
+                                      hitPointWorld.z * viewMat.m[2][2] +
+                                      viewMat.m[3][2];
+
+                if (hitViewSpaceZ < minDistanceToCamera) {
+                    minDistanceToCamera = hitViewSpaceZ;
+                    clickedObjectIndex = k;
+                }
+            }
+        }
+
+        if (clickedObjectIndex >= 0) {
+            PushUndoSnapshot_();
+            ImGuiIO& io = ImGui::GetIO();
+            const bool isCtrlPressed = io.KeyCtrl ||
+                                       (app.GetInput() && (app.GetInput()->IsKeyPressed(DIK_LCONTROL) || app.GetInput()->IsKeyPressed(DIK_RCONTROL)));
+            if (isCtrlPressed) {
+                editorObjects_[clickedObjectIndex].selected = !editorObjects_[clickedObjectIndex].selected;
+                if (editorObjects_[clickedObjectIndex].selected) {
+                    selectedEditorObject_ = clickedObjectIndex;
+                } else if (selectedEditorObject_ == clickedObjectIndex) {
+                    selectedEditorObject_ = -1;
+                    for (int k = 0; k < static_cast<int>(editorObjects_.size()); ++k) {
+                        if (editorObjects_[k].selected) {
+                            selectedEditorObject_ = k;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                for (auto& other : editorObjects_) {
+                    other.selected = false;
+                }
+                editorObjects_[clickedObjectIndex].selected = true;
+                selectedEditorObject_ = clickedObjectIndex;
+            }
+            selectedParticleNode_ = -1;
+        }
     }
-    drawList->AddText(ImVec2(center.x + 12.0f, center.y + 12.0f), IM_COL32(255, 255, 255, 230), gizmoLabel.c_str());
 #endif
 }
 
@@ -863,6 +1079,20 @@ void ParticleTestScene::DrawAnimationCameraControls_()
         PushUndoSnapshot_();
         DeleteNearestCameraKeyframe_();
     }
+
+    if (selectedKeyframeType_ == DragTarget::CameraKeyframe &&
+        selectedKeyframeIndex_ >= 0 &&
+        selectedKeyframeIndex_ < static_cast<int>(cameraKeyframes_.size())) {
+        
+        auto& key = cameraKeyframes_[selectedKeyframeIndex_];
+        ImGui::SeparatorText("Selected Camera Keyframe");
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::InputFloat("Camera Key Time", &key.time, 0.01f, 0.1f, "%.3f")) {
+            key.time = std::clamp(key.time, 0.0f, timelineDuration_);
+            SortCameraKeyframes_();
+            EvaluateTimeline_(false);
+        }
+    }
 #endif
 }
 
@@ -877,20 +1107,58 @@ void ParticleTestScene::HandleEffectEditorShortcuts_(GameApp& app)
         mouse.x >= gSceneImageMin.x && mouse.x <= gSceneImageMax.x &&
         mouse.y >= gSceneImageMin.y && mouse.y <= gSceneImageMax.y;
 
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+    Input* input = app.GetInput();
+    if (!input) return;
+
+    // Ctrlキー押下判定（ImGuiとDirectInputの論理和、GetAsyncKeyStateはラグを招くので使わない）
+    const bool isCtrlPressed = io.KeyCtrl || input->IsKeyPressed(DIK_LCONTROL) || input->IsKeyPressed(DIK_RCONTROL);
+
+    // 各キーのトリガー判定（ImGuiとDirectInputの論理和で確実に1回だけ検知）
+    auto isTriggered = [&](ImGuiKey imguiKey, BYTE dikKey) {
+        return ImGui::IsKeyPressed(imguiKey, false) || input->IsKeyTrigger(dikKey);
+    };
+
+    // Ctrl+A で全選択
+    if (!io.WantTextInput && isCtrlPressed && isTriggered(ImGuiKey_A, DIK_A)) {
+        for (auto& obj : editorObjects_) {
+            obj.selected = true;
+        }
+        if (!editorObjects_.empty()) {
+            selectedEditorObject_ = static_cast<int>(editorObjects_.size()) - 1;
+            selectedParticleNode_ = -1;
+        }
+    }
+
+    // Iキーで選択中オブジェクトすべてにキーフレームを挿入
+    if (!io.WantTextInput && isTriggered(ImGuiKey_I, DIK_I)) {
+        PushUndoSnapshot_();
+        bool anyKeyframed = false;
+        for (auto& obj : editorObjects_) {
+            const bool isCurrentlySelected = obj.selected || (selectedEditorObject_ >= 0 && &obj == &editorObjects_[selectedEditorObject_]);
+            if (isCurrentlySelected) {
+                AddKeyframeToObject_(obj);
+                anyKeyframed = true;
+            }
+        }
+        if (anyKeyframed) {
+            EvaluateTimeline_(false);
+        }
+    }
+
+    if (!io.WantTextInput && isCtrlPressed && isTriggered(ImGuiKey_Z, DIK_Z)) {
         Undo_(app);
     }
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+    if (!io.WantTextInput && isCtrlPressed && isTriggered(ImGuiKey_Y, DIK_Y)) {
         Redo_(app);
     }
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+    if (!io.WantTextInput && isCtrlPressed && isTriggered(ImGuiKey_C, DIK_C)) {
         CopySelectedObject_();
     }
-    if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false) && hasCopiedObject_) {
+    if (!io.WantTextInput && isCtrlPressed && isTriggered(ImGuiKey_V, DIK_V) && hasCopiedObject_) {
         PushUndoSnapshot_();
         PasteEditorObject_(app);
     }
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+    if (!io.WantTextInput && isTriggered(ImGuiKey_Delete, DIK_DELETE)) {
         if (selectedKeyframeIndex_ >= 0 && selectedKeyframeType_ != DragTarget::None) {
             PushUndoSnapshot_();
             switch (selectedKeyframeType_) {
@@ -929,13 +1197,13 @@ void ParticleTestScene::HandleEffectEditorShortcuts_(GameApp& app)
             selectedParticleNode_ = -1;
         }
     }
-    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) {
+    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && isTriggered(ImGuiKey_W, DIK_W)) {
         gizmoMode_ = GizmoMode::Translate;
     }
-    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && isTriggered(ImGuiKey_E, DIK_E)) {
         gizmoMode_ = GizmoMode::Rotate;
     }
-    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_R, false)) {
+    if (!rightCameraDrag && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && isTriggered(ImGuiKey_R, DIK_R)) {
         gizmoMode_ = GizmoMode::Scale;
     }
 #endif
@@ -1081,11 +1349,48 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
     ImGui::Separator();
     ImGui::TextUnformatted("Scene Objects");
     for (int i = 0; i < static_cast<int>(editorObjects_.size()); ++i) {
-        const bool selected = i == selectedEditorObject_;
-        if (ImGui::Selectable(editorObjects_[i].name.c_str(), selected)) {
-            selectedEditorObject_ = i;
-            selectedParticleNode_ = -1;
+        auto& obj = editorObjects_[i];
+        const bool selected = obj.selected || (i == selectedEditorObject_);
+        
+        ImGui::PushID(i);
+        
+        if (ImGui::Checkbox("##visible", &obj.visible)) {
+            if (obj.object) {
+                obj.object->SetIsVisible(obj.visible);
+            }
         }
+        
+        ImGui::SameLine();
+        
+        if (ImGui::Selectable(obj.name.c_str(), selected)) {
+            selectedParticleNode_ = -1;
+            const bool isCtrlPressed = ImGui::GetIO().KeyCtrl || 
+                                       (app.GetInput() && (app.GetInput()->IsKeyPressed(DIK_LCONTROL) || app.GetInput()->IsKeyPressed(DIK_RCONTROL)));
+            if (isCtrlPressed) {
+                // Ctrlキー押下時：選択状態をトグル
+                obj.selected = !obj.selected;
+                if (obj.selected) {
+                    selectedEditorObject_ = i;
+                } else if (selectedEditorObject_ == i) {
+                    selectedEditorObject_ = -1;
+                    for (int k = 0; k < static_cast<int>(editorObjects_.size()); ++k) {
+                        if (editorObjects_[k].selected) {
+                            selectedEditorObject_ = k;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Ctrlキーなし：これ単体のみを選択（他は解除）
+                for (auto& other : editorObjects_) {
+                    other.selected = false;
+                }
+                obj.selected = true;
+                selectedEditorObject_ = i;
+            }
+        }
+        
+        ImGui::PopID();
     }
     for (int i = 0; i < static_cast<int>(particleNodes_.size()); ++i) {
         const bool selected = i == selectedParticleNode_;
@@ -1158,23 +1463,81 @@ void ParticleTestScene::DrawEffectInspectorImGui_(GameApp& app)
             changed = true;
         }
 
+        Vector3 oldPosition = item.position;
+        Vector3 oldRotation = item.rotation;
+        Vector3 oldScale = item.scale;
+
         bool positionChanged = ImGui::DragFloat3("Position", &item.position.x, 0.05f);
-        changed |= positionChanged;
+        if (positionChanged) {
+            Vector3 delta = { item.position.x - oldPosition.x, item.position.y - oldPosition.y, item.position.z - oldPosition.z };
+            for (auto& obj : editorObjects_) {
+                if (obj.selected || &obj == &item) {
+                    if (&obj != &item) {
+                        obj.position = { obj.position.x + delta.x, obj.position.y + delta.y, obj.position.z + delta.z };
+                        ApplyEditorObjectTransform_(obj);
+                    }
+                }
+            }
+            changed = true;
+        }
         trackDragEdit(positionChanged);
+
         bool rotationChanged = ImGui::DragFloat3("Rotation", &item.rotation.x, 0.01f);
-        changed |= rotationChanged;
+        if (rotationChanged) {
+            Vector3 delta = { item.rotation.x - oldRotation.x, item.rotation.y - oldRotation.y, item.rotation.z - oldRotation.z };
+            for (auto& obj : editorObjects_) {
+                if (obj.selected || &obj == &item) {
+                    if (&obj != &item) {
+                        obj.rotation = { obj.rotation.x + delta.x, obj.rotation.y + delta.y, obj.rotation.z + delta.z };
+                        ApplyEditorObjectTransform_(obj);
+                    }
+                }
+            }
+            changed = true;
+        }
         trackDragEdit(rotationChanged);
+
         bool scaleChanged = ImGui::DragFloat3("Scale", &item.scale.x, 0.05f, 0.01f, 100.0f);
-        changed |= scaleChanged;
+        if (scaleChanged) {
+            Vector3 delta = { item.scale.x - oldScale.x, item.scale.y - oldScale.y, item.scale.z - oldScale.z };
+            for (auto& obj : editorObjects_) {
+                if (obj.selected || &obj == &item) {
+                    if (&obj != &item) {
+                        obj.scale = { obj.scale.x + delta.x, obj.scale.y + delta.y, obj.scale.z + delta.z };
+                        obj.scale.x = std::max(0.001f, obj.scale.x);
+                        obj.scale.y = std::max(0.001f, obj.scale.y);
+                        obj.scale.z = std::max(0.001f, obj.scale.z);
+                        ApplyEditorObjectTransform_(obj);
+                    }
+                }
+            }
+            changed = true;
+        }
         trackDragEdit(scaleChanged);
+
         bool colorChanged = ImGui::ColorEdit4("Color / Alpha", &item.color.x);
-        changed |= colorChanged;
+        if (colorChanged) {
+            for (auto& obj : editorObjects_) {
+                if (obj.selected || &obj == &item) {
+                    if (&obj != &item) {
+                        obj.color = item.color;
+                    }
+                }
+            }
+            changed = true;
+        }
         trackDragEdit(colorChanged);
+
         int currentBlend = static_cast<int>(item.blendMode);
         if (ImGui::Combo("Blend Mode", &currentBlend, kObjectBlendModeNames, IM_ARRAYSIZE(kObjectBlendModeNames))) {
             PushUndoSnapshot_();
             currentBlend = std::clamp(currentBlend, 0, static_cast<int>(Object3dCommon::BlendMode::kCountOfBlendMode) - 1);
             item.blendMode = static_cast<Object3dCommon::BlendMode>(currentBlend);
+            for (auto& obj : editorObjects_) {
+                if (obj.selected || &obj == &item) {
+                    obj.blendMode = item.blendMode;
+                }
+            }
             changed = true;
         }
 
@@ -1658,6 +2021,12 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
     if (ImGui::SliderFloat("Current Time", &timelineTime_, 0.0f, timelineDuration_, "%.3f s")) {
         RequestTimelineRebuild_(timelineTime_);
     }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::InputFloat("##timelineTimeInput", &timelineTime_, 0.01f, 0.1f, "%.3f")) {
+        timelineTime_ = std::clamp(timelineTime_, 0.0f, timelineDuration_);
+        RequestTimelineRebuild_(timelineTime_);
+    }
 
     ImGui::SameLine();
     if (ImGui::Button("Add Particle Node")) {
@@ -1699,6 +2068,28 @@ void ParticleTestScene::DrawEffectEditorImGui_(GameApp& app)
     if (selectedEditorObject_ >= 0 && selectedEditorObject_ < static_cast<int>(editorObjects_.size())) {
         EditorObject& item = editorObjects_[selectedEditorObject_];
         ImGui::Text("Keyframes: %s (%s)", item.name.c_str(), item.modelPath.c_str());
+
+        if (selectedKeyframeType_ == DragTarget::ModelKeyframe &&
+            selectedKeyframeObjectIndex_ == selectedEditorObject_ &&
+            selectedKeyframeIndex_ >= 0 &&
+            selectedKeyframeIndex_ < static_cast<int>(item.keyframes.size())) {
+            
+            auto& key = item.keyframes[selectedKeyframeIndex_];
+            ImGui::SeparatorText("Selected Keyframe Info");
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::InputFloat("Keyframe Time", &key.time, 0.01f, 0.1f, "%.3f")) {
+                key.time = std::clamp(key.time, 0.0f, timelineDuration_);
+                SortKeyframes_(item);
+                EvaluateTimeline_(false);
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            const char* kInterpolationNames[] = { "Linear", "Ease In", "Ease Out", "Ease In Out" };
+            if (ImGui::Combo("Interpolation", &key.interpolationType, kInterpolationNames, IM_ARRAYSIZE(kInterpolationNames))) {
+                EvaluateTimeline_(false);
+            }
+            ImGui::Separator();
+        }
         
         if (ImGui::Button("Add / Replace Keyframe")) {
             PushUndoSnapshot_();
@@ -1853,6 +2244,20 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
     if (ImGui::Button(deleteHitboxBtnLabel)) {
         DeleteNearestPlayerAttackHitboxKeyframe_();
         EvaluateTimeline_(false);
+    }
+
+    if (selectedKeyframeType_ == DragTarget::PlayerAttackHitboxKeyframe &&
+        selectedKeyframeIndex_ >= 0 &&
+        selectedKeyframeIndex_ < static_cast<int>(playerAttackHitboxKeyframes_.size())) {
+        
+        auto& key = playerAttackHitboxKeyframes_[selectedKeyframeIndex_];
+        ImGui::SeparatorText("Selected HitBox Keyframe");
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::InputFloat("HitBox Key Time", &key.time, 0.01f, 0.1f, "%.3f")) {
+            key.time = std::clamp(key.time, 0.0f, timelineDuration_);
+            SortPlayerAttackHitboxKeyframes_();
+            EvaluateTimeline_(false);
+        }
     }
 
     if (ImGui::BeginTable("PlayerAttackHitboxKeys", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
@@ -2274,7 +2679,7 @@ void ParticleTestScene::DrawImGui(GameApp& app)
             DrawPlayerAttackEditorImGui_(app);
         }
         DrawViewportBones_();
-        DrawViewportGizmo_();
+        DrawViewportGizmo_(app);
     } else {
         DrawParticleModeImGui_();
     }

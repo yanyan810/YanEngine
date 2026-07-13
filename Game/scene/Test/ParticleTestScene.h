@@ -70,6 +70,7 @@ private:
     EditorObjectSnapshot CaptureSelectedObject_() const;
     void CopySelectedObject_();
     void AddKeyframeToSelected_();
+    void AddKeyframeToObject_(EditorObject& item);
     void DeleteNearestKeyframeFromSelected_();
     void SortKeyframes_(EditorObject& item);
     void SortCameraKeyframes_();
@@ -117,7 +118,7 @@ private:
     void DrawGizmoControls_(EditorObject& item);
     void DrawBoneControls_(EditorObject& item);
     void DrawViewportBones_();
-    void DrawViewportGizmo_();
+    void DrawViewportGizmo_(GameApp& app);
     void DrawEditorCameraControls_();
     void DrawEffectEditorImGui_(GameApp& app);
     void DrawParticleModeImGui_();

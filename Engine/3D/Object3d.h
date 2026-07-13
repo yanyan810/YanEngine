@@ -70,6 +70,9 @@ public:
 
 	void SetModel(const std::string& filePath);
 
+	void SetBillboard(bool billboard) { isBillboard_ = billboard; }
+	bool GetBillboard() const { return isBillboard_; }
+
 public:
 	void SetScale(const Vector3& s) { transform.scale = s; }
 	void SetRotate(const Vector3& r) { transform.rotate = r; }
@@ -78,6 +81,7 @@ public:
 	const Vector3& GetScale()     const { return transform.scale; }
 	const Vector3& GetRotate()    const { return transform.rotate; }
 	const Vector3& GetTranslate() const { return transform.translate; }
+	const Matrix4x4& GetWorldMatrix() const { return transformationMatrixDataModel->World; }
 
 	void SetLightColor(const Vector4& color) { light_->SetDirectionalLightColor(color); }
 	void SetDirection(const Vector3& direction) { light_->SetDirectionalLightDirection(direction); }
@@ -200,6 +204,7 @@ public:
 
 private:
 	void EnsureInstanceMaterial_();
+	Matrix4x4 CalculateWorldMatrix() const;
 
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
@@ -250,6 +255,7 @@ private:
 	
 	Object3dCommon::BlendMode blendMode_ = Object3dCommon::BlendMode::kBlendModeNormal;
 	PrimitiveCommon* primitiveCommon_ = nullptr;
+	bool isBillboard_ = false;
 
 public:
 	//=============

@@ -95,6 +95,7 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
         object["billboard"] = item.billboard;
         object["bloomPostEffect"] = item.bloomPostEffect;
         object["outlineBloomPostEffect"] = item.outlineBloomPostEffect;
+        object["visible"] = item.visible;
         object["bloomColor"] = { item.bloomColor.x, item.bloomColor.y, item.bloomColor.z, item.bloomColor.w };
         object["outlineBloomColor"] = { item.outlineBloomColor.x, item.outlineBloomColor.y, item.outlineBloomColor.z, item.outlineBloomColor.w };
         object["showBones"] = item.showBones;
@@ -125,7 +126,8 @@ void ParticleTestScene::SaveEffectJson_(const std::string& path) const
                 { "bloomPostEffect", key.bloomPostEffect },
                 { "outlineBloomPostEffect", key.outlineBloomPostEffect },
                 { "bloomColor", { key.bloomColor.x, key.bloomColor.y, key.bloomColor.z, key.bloomColor.w } },
-                { "outlineBloomColor", { key.outlineBloomColor.x, key.outlineBloomColor.y, key.outlineBloomColor.z, key.outlineBloomColor.w } }
+                { "outlineBloomColor", { key.outlineBloomColor.x, key.outlineBloomColor.y, key.outlineBloomColor.z, key.outlineBloomColor.w } },
+                { "interpolationType", key.interpolationType }
             };
             keyJson["bonePoses"] = json::array();
             for (const auto& pose : key.bonePoses) {
@@ -306,6 +308,7 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
         object.billboard = source.value("billboard", false);
         object.bloomPostEffect = source.value("bloomPostEffect", false);
         object.outlineBloomPostEffect = source.value("outlineBloomPostEffect", false);
+        object.visible = source.value("visible", true);
         auto bc = source.value("bloomColor", json::array({ 1.0f, 0.72f, 0.22f, 1.0f }));
         object.bloomColor = { bc[0], bc[1], bc[2], bc[3] };
         auto obc = source.value("outlineBloomColor", json::array({ 1.0f, 0.72f, 0.22f, 1.0f }));
@@ -351,6 +354,7 @@ void ParticleTestScene::LoadEffectJson_(GameApp& app, const std::string& path)
             key.bloomColor = { kbc[0], kbc[1], kbc[2], kbc[3] };
             auto kobc = keySource.value("outlineBloomColor", json::array({ object.outlineBloomColor.x, object.outlineBloomColor.y, object.outlineBloomColor.z, object.outlineBloomColor.w }));
             key.outlineBloomColor = { kobc[0], kobc[1], kobc[2], kobc[3] };
+            key.interpolationType = keySource.value("interpolationType", 0);
             for (const auto& poseSource : keySource.value("bonePoses", json::array())) {
                 EditorBonePose pose;
                 pose.name = poseSource.value("name", std::string{});

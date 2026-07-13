@@ -191,6 +191,14 @@ public:
 
 	// 頂点のローカル座標を取得・更新
 	Vector3 GetVertexPosition(uint32_t index) const;
+	Vector3 GetSourceVertexPosition(uint32_t index) const;
+	uint32_t GetSourceVertexCount() const {
+		uint32_t total = 0;
+		for (const auto& mesh : modelData_.meshes) {
+			total += static_cast<uint32_t>(mesh.vertices.size());
+		}
+		return total;
+	}
 	void UpdateVertexPosition(uint32_t index, const Vector3& position);
 
 	const std::unordered_map<std::string, Animation>& GetAnimations() const {

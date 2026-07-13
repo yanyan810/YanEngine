@@ -36,27 +36,24 @@ PixelShaderOutput main(VertexShaderOutput input)
     float centerMask = BrightMask(baseColor);
 
     float outerMask = 0.0f;
-    float totalWeight = 0.0f;
 
     [unroll]
-    for (int y = -5; y <= 5; ++y) {
+    for (int y = -3; y <= 3; ++y) {
         [unroll]
-        for (int x = -5; x <= 5; ++x) {
+        for (int x = -3; x <= 3; ++x) {
             if (x == 0 && y == 0) {
                 continue;
             }
 
             float2 offset = float2((float)x, (float)y);
-            float dist2 = dot(offset, offset);
-            float weight = exp(-dist2 / 18.0f);
-            float sampleMask = BrightMask(gTexture.Sample(gSampler, input.texcoord + offset * texel * 3.0f));
-            outerMask += sampleMask * weight;
-            totalWeight += weight;
+            float sampleMask = BrightMask(gTexture.Sample(gSampler, input.texcoord + offset * texel));
+            outerMask = max(outerMask, sampleMask);
         }
     }
 
-    outerMask = outerMask / max(totalWeight, 0.001f);
-    outerMask = saturate((outerMask - centerMask * 0.35f) * 2.6f);
+    // A max-filter dilation gives the selection a solid, readable three-pixel
+    // silhouette instead of the previous wide but very faint weighted average.
+    outerMask = saturate((outerMask - centerMask) * 4.0f);
 
     float3 glow = bloomColor.rgb * outerMask * bloomIntensity * bloomAlpha * bloomColor.a;
 

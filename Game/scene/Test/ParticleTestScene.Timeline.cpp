@@ -291,13 +291,8 @@ void ParticleTestScene::EvaluatePlayerSpecialTimeline_()
     }
 }
 
-void ParticleTestScene::AddKeyframeToSelected_()
+void ParticleTestScene::AddKeyframeToObject_(EditorObject& item)
 {
-    if (selectedEditorObject_ < 0 || selectedEditorObject_ >= static_cast<int>(editorObjects_.size())) {
-        return;
-    }
-
-    EditorObject& item = editorObjects_[selectedEditorObject_];
     for (auto& key : item.keyframes) {
         if (std::abs(key.time - timelineTime_) < 0.001f) {
             key.position = item.position;
@@ -328,6 +323,15 @@ void ParticleTestScene::AddKeyframeToSelected_()
         item.vertexOffsets
     });
     SortKeyframes_(item);
+}
+
+void ParticleTestScene::AddKeyframeToSelected_()
+{
+    if (selectedEditorObject_ < 0 || selectedEditorObject_ >= static_cast<int>(editorObjects_.size())) {
+        return;
+    }
+
+    AddKeyframeToObject_(editorObjects_[selectedEditorObject_]);
 }
 
 void ParticleTestScene::DeleteNearestKeyframeFromSelected_()
@@ -461,24 +465,34 @@ void ParticleTestScene::EvaluateTimeline_(bool emitParticles)
             if (timelineTime_ >= a.time && timelineTime_ <= b.time) {
                 const float range = std::max(0.001f, b.time - a.time);
                 const float t = (timelineTime_ - a.time) / range;
-                item.position = LerpVector3(a.position, b.position, t);
-                item.rotation = LerpVector3(a.rotation, b.rotation, t);
-                item.scale = LerpVector3(a.scale, b.scale, t);
-                item.color = LerpVector4(a.color, b.color, t);
+                
+                float easedT = t;
+                if (a.interpolationType == 1) { // Ease In
+                    easedT = t * t;
+                } else if (a.interpolationType == 2) { // Ease Out
+                    easedT = t * (2.0f - t);
+                } else if (a.interpolationType == 3) { // Ease In Out
+                    easedT = t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) * 0.5f;
+                }
+
+                item.position = LerpVector3(a.position, b.position, easedT);
+                item.rotation = LerpVector3(a.rotation, b.rotation, easedT);
+                item.scale = LerpVector3(a.scale, b.scale, easedT);
+                item.color = LerpVector4(a.color, b.color, easedT);
                 item.bloomPostEffect = a.bloomPostEffect;
                 item.outlineBloomPostEffect = a.outlineBloomPostEffect;
-                item.bloomColor = LerpVector4(a.bloomColor, b.bloomColor, t);
-                item.outlineBloomColor = LerpVector4(a.outlineBloomColor, b.outlineBloomColor, t);
+                item.bloomColor = LerpVector4(a.bloomColor, b.bloomColor, easedT);
+                item.outlineBloomColor = LerpVector4(a.outlineBloomColor, b.outlineBloomColor, easedT);
                 if (!a.bonePoses.empty() && a.bonePoses.size() == b.bonePoses.size()) {
                     item.bonePoses = a.bonePoses;
                     for (size_t boneIndex = 0; boneIndex < item.bonePoses.size(); ++boneIndex) {
-                        item.bonePoses[boneIndex].translate = LerpVector3(a.bonePoses[boneIndex].translate, b.bonePoses[boneIndex].translate, t);
-                        item.bonePoses[boneIndex].rotate = LerpVector3(a.bonePoses[boneIndex].rotate, b.bonePoses[boneIndex].rotate, t);
-                        item.bonePoses[boneIndex].scale = LerpVector3(a.bonePoses[boneIndex].scale, b.bonePoses[boneIndex].scale, t);
+                        item.bonePoses[boneIndex].translate = LerpVector3(a.bonePoses[boneIndex].translate, b.bonePoses[boneIndex].translate, easedT);
+                        item.bonePoses[boneIndex].rotate = LerpVector3(a.bonePoses[boneIndex].rotate, b.bonePoses[boneIndex].rotate, easedT);
+                        item.bonePoses[boneIndex].scale = LerpVector3(a.bonePoses[boneIndex].scale, b.bonePoses[boneIndex].scale, easedT);
                     }
                     ApplyEditorObjectBonePose_(item);
                 }
-                item.vertexOffsets = LerpVertexOffsets_(item, a, b, t);
+                item.vertexOffsets = LerpVertexOffsets_(item, a, b, easedT);
                 ApplyVertexOffsets_(item);
                 ApplyEditorObjectTransform_(item);
                 break;
@@ -614,6 +628,8 @@ ParticleTestScene::EditorSnapshot ParticleTestScene::CaptureEditorSnapshot_() co
         object.vertexRangeEnd = item.vertexRangeEnd;
         object.vertexSelectionOffset = item.vertexSelectionOffset;
         object.vertexOffsets = item.vertexOffsets;
+        object.selected = item.selected;
+        object.visible = item.visible;
         snapshot.objects.push_back(std::move(object));
     }
     return snapshot;
@@ -656,8 +672,11 @@ void ParticleTestScene::RestoreEditorSnapshot_(GameApp& app, const EditorSnapsho
         item.vertexRangeEnd = src.vertexRangeEnd;
         item.vertexSelectionOffset = src.vertexSelectionOffset;
         item.vertexOffsets = src.vertexOffsets;
+        item.selected = src.selected;
+        item.visible = src.visible;
         item.object = std::make_unique<Object3d>();
         item.object->Initialize(app.ObjCom(), app.Dx());
+        item.object->SetIsVisible(item.visible);
         item.object->SetCamera(GetSceneCamera_());
         if (item.geometryType >= 0) {
             item.object->SetModel(GetOrCreateEditorGeometryModel(item.geometryType));
