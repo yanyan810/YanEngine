@@ -439,12 +439,19 @@ std::vector<EnemyManager::PlayerAttackHitEvent> EnemyManager::ApplyPlayerAttack(
 		event.hitPosition = OverlapCenter(hitBox, enemyBodyBox);
 		hitEvents.push_back(event);
 		if (hitStopTuning_.enabled) {
-			float hitStopSec = IsPlayerSpecialAttack(player.GetCurrentAttackType())
+			const bool isSpecialAttack = IsPlayerSpecialAttack(player.GetCurrentAttackType());
+			const float authoredHitStopSec = isSpecialAttack
+				? player.GetCurrentSpecialHitStopSec() : -1.0f;
+			float hitStopSec = isSpecialAttack
 				? hitStopTuning_.specialPlayerAttackSec * player.GetCurrentSpecialHitStopRate()
 				: hitStopTuning_.playerAttackSec;
+			if (authoredHitStopSec >= 0.0f) {
+				hitStopSec = authoredHitStopSec;
+			}
 
 			// 上必殺技Lv3の突進フェーズ中（ビームに入る前）は、専用のヒットストップ秒数を上書き適用
-			if (player.GetCurrentAttackType() == Player::PlayerAttackType::UpSpecial &&
+			if (authoredHitStopSec < 0.0f &&
+				player.GetCurrentAttackType() == Player::PlayerAttackType::UpSpecial &&
 				player.GetCurrentSpecialVariantLevel() == static_cast<int>(PlayerISpecialVariant::Lv3)) {
 				const int beamPhaseBase = 40;
 				if (player.GetSpecialPulseIndex() < beamPhaseBase) {

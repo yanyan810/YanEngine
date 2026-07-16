@@ -26,6 +26,37 @@ bool Player::BuildIAttackCommand_(PlayerInputCommand& command) const {
 
 // ===== 必殺技（Special）のヒットボックス・ダメージ・ヒットストップクエリ =====
 bool Player::GetIAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) const {
+    int authoredAttackIndex = -1;
+    switch (attackType_) {
+    case PlayerAttackType::NeutralSpecial: authoredAttackIndex = 0; break;
+    case PlayerAttackType::SideSpecial: authoredAttackIndex = 1; break;
+    case PlayerAttackType::UpSpecial: authoredAttackIndex = 2; break;
+    case PlayerAttackType::DownSpecial: authoredAttackIndex = 3; break;
+    default: break;
+    }
+    if (authoredAttackIndex >= 0) {
+        const int level = std::clamp(static_cast<int>(iSpecialVariant_), 0, 3);
+        const auto& timings = specialHitboxTimings_[authoredAttackIndex][level];
+        if (!timings.empty()) {
+            const SpecialHitboxTiming* activeTiming = nullptr;
+            for (const SpecialHitboxTiming& timing : timings) {
+                if (timing.active && attackElapsedSec_ >= timing.time &&
+                    attackElapsedSec_ <= timing.time + timing.duration) {
+                    activeTiming = &timing;
+                }
+            }
+            if (!activeTiming) return false;
+            const Vector3 base = activeTiming->followPlayerMovement ? pos_ : specialAttackStartPosition_;
+            outCenter = {
+                base.x + activeTiming->offset.x * static_cast<float>(facing_),
+                base.y + activeTiming->offset.y,
+                base.z + activeTiming->offset.z
+            };
+            outHalfSize = activeTiming->halfSize;
+            return true;
+        }
+    }
+
     if (attackType_ == PlayerAttackType::NeutralSpecial) {
         return PlayerIAttack::GetNeutralSpecialHitBox(*this, outCenter, outHalfSize);
     }
@@ -44,6 +75,24 @@ bool Player::GetIAttackDebugHitBox_(Vector3& outCenter, Vector3& outHalfSize) co
 }
 
 int Player::GetIAttackDamage_() const {
+    int authoredAttackIndex = -1;
+    switch (attackType_) {
+    case PlayerAttackType::NeutralSpecial: authoredAttackIndex = 0; break;
+    case PlayerAttackType::SideSpecial: authoredAttackIndex = 1; break;
+    case PlayerAttackType::UpSpecial: authoredAttackIndex = 2; break;
+    case PlayerAttackType::DownSpecial: authoredAttackIndex = 3; break;
+    default: break;
+    }
+    if (authoredAttackIndex >= 0) {
+        const int level = std::clamp(static_cast<int>(iSpecialVariant_), 0, 3);
+        const auto& timings = specialHitboxTimings_[authoredAttackIndex][level];
+        for (const SpecialHitboxTiming& timing : timings) {
+            if (timing.active && attackElapsedSec_ >= timing.time &&
+                attackElapsedSec_ <= timing.time + timing.duration) {
+                return timing.damage;
+            }
+        }
+    }
     if (attackType_ == PlayerAttackType::NeutralSpecial) {
         return PlayerIAttack::GetNeutralSpecialDamage(*this);
     }
@@ -66,6 +115,28 @@ float Player::GetCurrentSpecialHitStopRate() const {
     return GetCurrentCancelTuning(*this).hitStopRate;
 }
 
+float Player::GetCurrentSpecialHitStopSec() const {
+    int attackIndex = -1;
+    switch (attackType_) {
+    case PlayerAttackType::NeutralSpecial: attackIndex = 0; break;
+    case PlayerAttackType::SideSpecial: attackIndex = 1; break;
+    case PlayerAttackType::UpSpecial: attackIndex = 2; break;
+    case PlayerAttackType::DownSpecial: attackIndex = 3; break;
+    default: return -1.0f;
+    }
+
+    const int level = std::clamp(static_cast<int>(iSpecialVariant_), 0, 3);
+    const auto& timings = specialHitboxTimings_[attackIndex][level];
+    const SpecialHitboxTiming* activeTiming = nullptr;
+    for (const SpecialHitboxTiming& timing : timings) {
+        if (timing.active && attackElapsedSec_ >= timing.time &&
+            attackElapsedSec_ <= timing.time + timing.duration) {
+            activeTiming = &timing;
+        }
+    }
+    return activeTiming ? activeTiming->hitStopSec : -1.0f;
+}
+
 bool Player::IsSideSpecialLv3AttackActive() const {
     return attackType_ == PlayerAttackType::SideSpecial &&
         iSpecialVariant_ == PlayerISpecialVariant::Lv3 &&
@@ -75,6 +146,7 @@ bool Player::IsSideSpecialLv3AttackActive() const {
 
 // ===== 必殺技（Special）の開始・更新・ステート管理（Player本体側ラッパー） =====
 void Player::StartIAttack_(PlayerAttackType type) {
+    specialAttackStartPosition_ = pos_;
     if (type == PlayerAttackType::NeutralSpecial) {
         PlayerIAttack::StartNeutralSpecial(*this);
         return;

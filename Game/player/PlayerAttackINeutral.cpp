@@ -34,13 +34,27 @@ bool PlayerINeutralSpecial::UpdateNeutralSpecialWaypointMovement(Player& player,
                 origin.y + waypoints[i].offsetY,
                 origin.z
             };
+			const Vector3 segmentStart = i > 0 ? Vector3{
+				origin.x - static_cast<float>(player.facing_) * waypoints[i - 1].offsetX,
+				origin.y + waypoints[i - 1].offsetY,
+				origin.z
+			} : Vector3{
+				origin.x - static_cast<float>(player.facing_) * spTuning.startOffsetX,
+				origin.y + spTuning.startOffsetY,
+				origin.z
+			};
 
             const float elapsedInPhase = player.iAttackStateTime_ - cumulativeTime;
-            const float remainingTime = segDuration - elapsedInPhase;
-            if (remainingTime > 0.001f) {
-                player.vel_.x = (target.x - player.pos_.x) / remainingTime;
-                player.vel_.y = (target.y - player.pos_.y) / remainingTime;
-                player.vel_.z = (target.z - player.pos_.z) / remainingTime;
+            if (dt > 0.0001f) {
+				const float nextProgress = ApplyWaypointEasing((elapsedInPhase + dt) / segDuration, waypoints[i].interpolation);
+				const Vector3 desired{
+					segmentStart.x + (target.x - segmentStart.x) * nextProgress,
+					segmentStart.y + (target.y - segmentStart.y) * nextProgress,
+					segmentStart.z + (target.z - segmentStart.z) * nextProgress
+				};
+				player.vel_.x = (desired.x - player.pos_.x) / dt;
+				player.vel_.y = (desired.y - player.pos_.y) / dt;
+				player.vel_.z = (desired.z - player.pos_.z) / dt;
             } else {
                 player.vel_ = { 0.0f, 0.0f, 0.0f };
             }

@@ -5,6 +5,7 @@
 #include "TextureManager.h"
 #include "GeometryGenerator.h"
 #include <fstream>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <unordered_set>
@@ -198,8 +199,14 @@ void EffectManager::SetGraphicsResources(Object3dCommon* objCommon, DirectXCommo
 }
 
 void EffectManager::LoadEffect(const std::string& effectName, const std::string& jsonPath) {
+	static thread_local std::unordered_set<std::string> loadingPaths;
+	const std::string normalizedPath = std::filesystem::path(jsonPath).lexically_normal().generic_string();
+	if (loadingPaths.contains(normalizedPath)) return;
+	loadingPaths.insert(normalizedPath);
+
     std::ifstream file(jsonPath);
     if (!file.is_open()) {
+		loadingPaths.erase(normalizedPath);
         return;
     }
 
@@ -211,6 +218,18 @@ void EffectManager::LoadEffect(const std::string& effectName, const std::string&
     temp.duration = root.value("timeline", json::object()).value("duration", 1.0f);
 
     for (const auto& nodeSource : root.value("particleNodes", json::array())) {
+		if (nodeSource.value("nodeType", std::string("particle")) == "effect") {
+			EffectReferenceNode node;
+			node.name = nodeSource.value("name", "EffectNode");
+			node.jsonPath = nodeSource.value("particleFileName", "");
+			node.startTime = nodeSource.value("startTime", 0.0f);
+			auto position = nodeSource.value("position", json::array({ 0.0f, 0.0f, 0.0f }));
+			node.position = { position[0], position[1], position[2] };
+			node.templateName = effectName + "::" + node.name + "_" + std::to_string(temp.effectNodes.size());
+			if (!node.jsonPath.empty()) LoadEffect(node.templateName, node.jsonPath);
+			temp.effectNodes.push_back(std::move(node));
+			continue;
+		}
         EffectParticleNode node;
         node.name = nodeSource.value("name", "ParticleNode");
         if (nodeSource.contains("particleFileName")) {
@@ -228,6 +247,9 @@ void EffectManager::LoadEffect(const std::string& effectName, const std::string&
         node.scale = { s[0], s[1], s[2] };
         node.emitCount = nodeSource.value("emitCount", 10);
         node.presetDuration = nodeSource.value("presetDuration", 1.0f);
+		if (!node.particleFileName.empty()) {
+			ParticleManager::GetInstance()->LoadAdditional(node.particleFileName, "");
+		}
         temp.particleNodes.push_back(std::move(node));
     }
 
@@ -304,9 +326,10 @@ void EffectManager::LoadEffect(const std::string& effectName, const std::string&
     }
 
     templates_[effectName] = std::move(temp);
+	loadingPaths.erase(normalizedPath);
 }
 
-void EffectManager::Play(const std::string& effectName, const Vector3& worldPosition) {
+void EffectManager::Play(const std::string& effectName, const Vector3& worldPosition, float initialTime) {
     auto it = templates_.find(effectName);
     if (it == templates_.end()) {
         return;
@@ -316,9 +339,10 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
     ActiveEffect active;
     active.templateName = effectName;
     active.worldPosition = worldPosition;
-    active.currentTime = 0.0f;
+    active.currentTime = std::max(0.0f, initialTime);
     active.duration = temp.duration;
     active.hasEmitted.resize(temp.particleNodes.size(), false);
+	active.hasPlayedEffects.resize(temp.effectNodes.size(), false);
 
     // 3Dオブジェクトのインスタンス化
     for (const auto& node : temp.objectNodes) {
@@ -385,6 +409,14 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
     activeEffects_.push_back(std::move(active));
 }
 
+bool EffectManager::HasEffect(const std::string& effectName) const {
+    return templates_.contains(effectName);
+}
+
+void EffectManager::ClearActiveEffects() {
+    activeEffects_.clear();
+}
+
 void EffectManager::Update(float dt) {
     auto* pm = ParticleManager::GetInstance();
     for (auto it = activeEffects_.begin(); it != activeEffects_.end(); ) {
@@ -406,11 +438,22 @@ void EffectManager::Update(float dt) {
 
                     std::vector<std::string> groupNames = pm->GetGroupNamesLoadedFromFile(node.particleFileName);
                     for (const auto& groupName : groupNames) {
-                        pm->EmitConfigured(groupName, spawnPos, timeScale);
+                        pm->EmitConfigured(groupName, spawnPos, timeScale,
+                            std::max(0.0f, active.currentTime - node.startTime));
                     }
                 }
             }
         }
+
+		for (size_t i = 0; i < temp.effectNodes.size(); ++i) {
+			if (active.hasPlayedEffects[i]) continue;
+			const auto& node = temp.effectNodes[i];
+			if (active.currentTime >= node.startTime) {
+				active.hasPlayedEffects[i] = true;
+				Play(node.templateName, active.worldPosition + node.position,
+					std::max(0.0f, active.currentTime - node.startTime));
+			}
+		}
 
         // 3Dオブジェクトのキーフレームアニメーション更新
         for (auto& obj : active.objects) {

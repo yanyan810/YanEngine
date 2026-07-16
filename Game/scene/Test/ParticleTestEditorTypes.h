@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Object3dCommon.h"
 #include "Vector3.h"
@@ -15,6 +15,7 @@ namespace ParticleTestEditor {
 struct ParticleNode {
     std::string name;
     std::string particleFileName;
+    bool isEffectNode = false;
     float startTime = 0.5f;
     float endTime = 1.0f;
     Vector3 position{ 0.0f, 0.0f, 0.0f };
@@ -59,16 +60,19 @@ struct PlayerAttackHitboxKeyframe {
     Vector3 offset{ 1.0f, 1.0f, 0.0f };
     Vector3 halfSize{ 0.6f, 0.8f, 0.5f };
     bool active = true;
+    bool followPlayerMovement = true;
 };
 
 struct PlayerSpecialHitboxKeyframe {
     float time = 0.0f;
     float duration = 0.08f;
+    float hitStopSec = 0.14f;
     Vector3 offset{ 1.0f, 1.0f, 0.0f };
     Vector3 halfSize{ 0.6f, 0.8f, 0.5f };
     int damage = 12;
     bool active = true;
     bool multiHit = false;
+    bool followPlayerMovement = true;
 };
 
 struct PlayerSpecialMotionKeyframe {
@@ -76,6 +80,69 @@ struct PlayerSpecialMotionKeyframe {
     float duration = 0.10f;
     Vector3 velocity{ 0.0f, 0.0f, 0.0f };
     bool lockVelocity = false;
+};
+
+enum class PlayerSpecialPositionInterpolation {
+    Linear = 0,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    Step,
+};
+
+enum class PlayerSpecialPositionSpace {
+    PlayerStart = 0,
+    BossTarget,
+};
+
+struct PlayerSpecialPositionKeyframe {
+
+    float time =0.0f;
+    Vector3 offset = { 0.0f,0.0f,0.0f };
+    // This curve is used while moving from this key to the next key.
+    PlayerSpecialPositionInterpolation interpolation = PlayerSpecialPositionInterpolation::Linear;
+    PlayerSpecialPositionSpace space = PlayerSpecialPositionSpace::PlayerStart;
+
+};
+
+enum class PlayerSpecialOpacityInterpolation {
+    Step = 0,
+    Linear,
+};
+
+struct PlayerSpecialOpacityKeyframe {
+    float time = 0.0f;
+    float alpha = 1.0f;
+    PlayerSpecialOpacityInterpolation interpolation = PlayerSpecialOpacityInterpolation::Linear;
+};
+
+enum class PlayerSpecialRotationInterpolation {
+    Step = 0,
+    Linear,
+};
+
+struct PlayerSpecialRotationKeyframe {
+    float time = 0.0f;
+    Vector3 rotation{ 0.0f, 0.0f, 0.0f };
+    PlayerSpecialRotationInterpolation interpolation = PlayerSpecialRotationInterpolation::Linear;
+};
+
+struct PlayerSpecialEffectKeyframe {
+    float time = 0.0f;
+    std::string name = "AttackEffect";
+    std::string jsonPath;
+    Vector3 offset{ 0.0f, 0.0f, 0.0f };
+};
+
+struct PlayerSpecialParticleKeyframe {
+    float time = 0.0f;
+    std::string name = "AttackParticle";
+    std::string jsonPath;
+    float duration = 1.0f;
+    Vector3 position{ 0.0f, 0.0f, 0.0f };
+    Vector3 rotation{ 0.0f, 0.0f, 0.0f };
+    Vector3 scale{ 1.0f, 1.0f, 1.0f };
+    int emitCount = 10;
 };
 
 struct PlayerSpecialAnimationKeyframe {
@@ -99,6 +166,12 @@ struct PlayerSpecialTimeline {
     std::vector<PlayerSpecialMotionKeyframe> motions;
     std::vector<PlayerSpecialAnimationKeyframe> animations;
     std::vector<PlayerSpecialEventKeyframe> events;
+    std::vector<PlayerSpecialPositionKeyframe> positionKeyframes;
+    std::vector<PlayerSpecialOpacityKeyframe> opacityKeyframes;
+    std::vector<PlayerSpecialRotationKeyframe> rotationKeyframes;
+    std::vector<PlayerSpecialEffectKeyframe> effectKeyframes;
+    std::vector<PlayerSpecialParticleKeyframe> particleKeyframes;
+
 };
 
 struct EditorObject {
@@ -203,6 +276,16 @@ enum class EditorMode {
     Blender = 0,
     Particle,
     PlayerAttack,
+};
+
+enum class PlayerSpecialAttackType {
+
+    NeutralSpecial,//通常必殺
+	SideSpecial,//横必殺
+    UpSpecial,//上必殺
+    DownSpecial,//下必殺
+
+    Count,//種類数取得
 };
 
 } // namespace ParticleTestEditor

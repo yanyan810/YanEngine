@@ -171,7 +171,8 @@ void TestScene::DrawImGui(GameApp& app) {
         }
     }
 
-    if (player_ && camera_ && gHasSceneImageRect) {
+    // Legacy waypoint overlay moved to ParticleTestScene's PlayerAttack editor.
+    if (false && player_ && camera_ && gHasSceneImageRect) {
         if (Enemy* boss = enemyMgr_.GetBoss()) {
             const float sceneW = std::max(1.0f, gSceneImageMax.x - gSceneImageMin.x);
             const float sceneH = std::max(1.0f, gSceneImageMax.y - gSceneImageMin.y);
@@ -472,6 +473,11 @@ void TestScene::DrawImGui(GameApp& app) {
             case BossAI::State::Double_Melee_Attack_1: stateStr = "Double_Melee_Attack_1"; break;
             case BossAI::State::Double_Melee_Rock: stateStr = "Double_Melee_Rock"; break;
             case BossAI::State::Double_Melee_Attack_2: stateStr = "Double_Melee_Attack_2"; break;
+            case BossAI::State::Grab_WindUp: stateStr = "Grab_WindUp"; break;
+            case BossAI::State::Grab_Catch: stateStr = "Grab_Catch"; break;
+            case BossAI::State::Grab_Delay: stateStr = "Grab_Delay"; break;
+            case BossAI::State::Grab_Attack: stateStr = "Grab_Attack"; break;
+            case BossAI::State::Grab_Finish: stateStr = "Grab_Finish"; break;
             case BossAI::State::Rush_ToRight: stateStr = "Rush_ToRight"; break;
             case BossAI::State::Rush_Charge: stateStr = "Rush_Charge"; break;
             case BossAI::State::Rush_ExitLeft: stateStr = "Rush_ExitLeft"; break;
@@ -515,6 +521,10 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::SameLine();
             if (ImGui::Button("Boss Double Melee")) {
                 boss->GetBossAIMutable().ForceChangeState(BossAI::State::Double_Melee_Dash);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Boss Grab")) {
+                boss->GetBossAIMutable().ForceChangeState(BossAI::State::Grab_WindUp);
             }
             if (ImGui::Button("Hit1 (Launch)")) {
                 triggerBossTestHit(*boss, enemyMgr_.BossAttackIndex(MeleeKind::DoubleMelee1));
@@ -756,8 +766,8 @@ void TestScene::DrawImGui(GameApp& app) {
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNodeEx("Special Moves Path & Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Show 3D Target Cubes", &drawAttackPathPreviews_);
+        if (ImGui::TreeNodeEx("Special Attack Debug", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::TextDisabled("Movement paths are authored in PlayerAttack Editor.");
 
             static const char* specialMoveNames[] = {
                 "Neutral Special Lv1 (Gatotsu)",
@@ -768,13 +778,12 @@ void TestScene::DrawImGui(GameApp& app) {
                 "Up Special Lv3 (Zigzag)"
             };
 
-            ImGui::Combo("Select Special Move to Tune", &selectedSpecialMoveIndex_, specialMoveNames, IM_ARRAYSIZE(specialMoveNames));
-            ImGui::Separator();
+            (void)specialMoveNames;
 
             const auto spIdx = static_cast<Player::SpecialMoveIndex>(selectedSpecialMoveIndex_);
             auto& spTuning = player_->GetSpecialMoveTuningMutable(spIdx);
 
-            if (ImGui::TreeNodeEx("Special Move Custom Path & Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (false && ImGui::TreeNodeEx("Special Move Custom Path & Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::DragFloat("Speed Rate (速度倍率)", &spTuning.speedRate, 0.05f, 0.1f, 10.0f, "%.2f");
                 ImGui::DragFloat("HitStop Sec (ヒットストップ秒)", &spTuning.hitStopSec, 0.005f, 0.0f, 1.0f, "%.3f");
                 

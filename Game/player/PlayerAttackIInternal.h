@@ -126,6 +126,17 @@ inline float Clamp01(float value) {
     return std::clamp(value, 0.0f, 1.0f);
 }
 
+inline float ApplyWaypointEasing(float t, int interpolation) {
+    t = Clamp01(t);
+    switch (interpolation) {
+    case 1: return t * t;
+    case 2: return 1.0f - (1.0f - t) * (1.0f - t);
+    case 3: return t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) * 0.5f;
+    case 4: return t >= 1.0f ? 1.0f : 0.0f;
+    default: return t;
+    }
+}
+
 inline int ClampCancelLevel(int cancelCount) {
     return std::clamp(cancelCount, 0, kSpecialCancelLevelCount - 1);
 }

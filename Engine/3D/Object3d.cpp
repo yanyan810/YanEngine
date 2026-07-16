@@ -438,7 +438,8 @@ void Object3d::Draw()
 			cmd->IASetIndexBuffer(&model_->GetIBV());
 
 			const Matrix4x4& vp = camera_->GetViewProjectionMatrix();
-			const Matrix4x4 baseWorld = transformationMatrixDataModel->World;
+			const Matrix4x4 originalWorld = transformationMatrixDataModel->World;
+			const Matrix4x4 baseWorld = CalculateWorldMatrix();
 
 			// -------------------------------------------------
 			// -------------------------------------------------
@@ -492,10 +493,10 @@ void Object3d::Draw()
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2, overrideTexture);
 			}
 
-			transformationMatrixDataModel->World = baseWorld;
-			transformationMatrixDataModel->WVP = Matrix4x4::Multiply(baseWorld, vp);
+			transformationMatrixDataModel->World = originalWorld;
+			transformationMatrixDataModel->WVP = Matrix4x4::Multiply(originalWorld, vp);
 			transformationMatrixDataModel->WorldInverseTranspose =
-				Matrix4x4::Transpose(Matrix4x4::Inverse(baseWorld));
+				Matrix4x4::Transpose(Matrix4x4::Inverse(originalWorld));
 		}
 	} else {
 		EnsureInstanceMaterial_();
@@ -564,7 +565,8 @@ void Object3d::Draw()
 			model_->ComputeNodeGlobalMatrices(anim, animTime, nodeGlobals);
 
 			const Matrix4x4& vp = camera_->GetViewProjectionMatrix();
-			const Matrix4x4 baseWorld = transformationMatrixDataModel->World;
+			const Matrix4x4 originalWorld = transformationMatrixDataModel->World;
+			const Matrix4x4 baseWorld = CalculateWorldMatrix();
 
 			for (const auto& inst : model_->GetNodeInstances()) {
 				const Matrix4x4 nodeWorld = nodeGlobals[inst.nodeIndex];
@@ -589,6 +591,11 @@ void Object3d::Draw()
 
 				model_->DrawOneMesh(cmd, inst.meshIndex, 2, overrideTexture);
 			}
+
+			transformationMatrixDataModel->World = originalWorld;
+			transformationMatrixDataModel->WVP = Matrix4x4::Multiply(originalWorld, vp);
+			transformationMatrixDataModel->WorldInverseTranspose =
+				Matrix4x4::Transpose(Matrix4x4::Inverse(originalWorld));
 		} else {
 			cmd->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress());
 

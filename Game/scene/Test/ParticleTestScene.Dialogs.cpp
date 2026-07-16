@@ -150,6 +150,30 @@ bool ParticleTestScene::OpenEffectJsonFileDialog_(bool saveDialog, std::string& 
     return true;
 }
 
+bool ParticleTestScene::OpenPlayerSpecialJsonFileDialog_(std::string& outJsonPath)
+{
+    std::filesystem::path dataDir = std::filesystem::absolute("resources/Data").lexically_normal();
+    std::filesystem::create_directories(dataDir);
+
+    char filePath[MAX_PATH]{};
+    strncpy_s(filePath, sizeof(filePath), "PlayerIAttacks.json", _TRUNCATE);
+    const std::string initialDir = dataDir.string();
+    OPENFILENAMEA fileName{};
+    fileName.lStructSize = sizeof(fileName);
+    fileName.hwndOwner = GetActiveWindow();
+    fileName.lpstrFilter = "Player I Attack JSON (*.json)\0*.json\0All Files (*.*)\0*.*\0";
+    fileName.lpstrFile = filePath;
+    fileName.nMaxFile = MAX_PATH;
+    fileName.lpstrInitialDir = initialDir.c_str();
+    fileName.lpstrDefExt = "json";
+    fileName.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameA(&fileName)) return false;
+
+    outJsonPath = std::filesystem::relative(
+        std::filesystem::path(filePath), std::filesystem::current_path()).generic_string();
+    return true;
+}
+
 bool ParticleTestScene::OpenParticleFileDialog_(std::vector<std::string>& outGroupNames, std::string& outFileName)
 {
     char filePath[MAX_PATH]{};

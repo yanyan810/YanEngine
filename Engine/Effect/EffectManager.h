@@ -26,6 +26,14 @@ public:
         float presetDuration = 1.0f;
     };
 
+	struct EffectReferenceNode {
+		std::string name;
+		std::string jsonPath;
+		std::string templateName;
+		float startTime = 0.0f;
+		Vector3 position{ 0.0f, 0.0f, 0.0f };
+	};
+
     struct EffectObjectKeyframe {
         float time = 0.0f;
         Vector3 position{ 0.0f, 0.0f, 0.0f };
@@ -64,6 +72,7 @@ public:
         float duration = 1.0f;
         std::vector<EffectParticleNode> particleNodes;
         std::vector<EffectObjectNode> objectNodes;
+		std::vector<EffectReferenceNode> effectNodes;
     };
 
     struct ActiveEffectObject {
@@ -89,6 +98,7 @@ public:
         float currentTime = 0.0f;
         float duration = 1.0f;
         std::vector<bool> hasEmitted;
+		std::vector<bool> hasPlayedEffects;
         std::vector<ActiveEffectObject> objects;
     };
 
@@ -101,8 +111,10 @@ public:
     void Draw();
 
     void LoadEffect(const std::string& effectName, const std::string& jsonPath);
-    void Play(const std::string& effectName, const Vector3& worldPosition);
+    void Play(const std::string& effectName, const Vector3& worldPosition, float initialTime = 0.0f);
     void Update(float dt);
+    bool HasEffect(const std::string& effectName) const;
+    void ClearActiveEffects();
 
 private:
     EffectManager() = default;

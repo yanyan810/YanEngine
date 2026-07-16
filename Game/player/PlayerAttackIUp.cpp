@@ -29,7 +29,24 @@ bool PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(Player& player, float dt,
     player.onGround_ = false;
     const auto& spTuning = player.GetSpecialMoveTuning(spIdx);
     const auto& waypoints = spTuning.waypoints;
-    const Vector3 origin = player.GetUpSpecialTarget();
+    const Vector3 playerOrigin = player.specialAttackStartPosition_;
+    const Vector3 bossTarget = player.GetUpSpecialTarget();
+    auto resolveWaypoint = [&](const Player::UpLv3Waypoint& waypoint) {
+        const Vector3& base = waypoint.targetRelative ? bossTarget : playerOrigin;
+        return Vector3{
+            base.x + static_cast<float>(player.facing_) * waypoint.offsetX,
+            base.y + waypoint.offsetY,
+            base.z + waypoint.offsetZ
+        };
+    };
+    auto resolveStart = [&]() {
+        const Vector3& base = spTuning.startTargetRelative ? bossTarget : playerOrigin;
+        return Vector3{
+            base.x + static_cast<float>(player.facing_) * spTuning.startOffsetX,
+            base.y + spTuning.startOffsetY,
+            base.z + spTuning.startOffsetZ
+        };
+    };
 
     float totalMoveDuration = 0.0f;
     for (const auto& wp : waypoints) {
@@ -48,18 +65,22 @@ bool PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(Player& player, float dt,
                 ++player.attackSerial_;
             }
 
-            const Vector3 target = {
-                origin.x - static_cast<float>(player.facing_) * waypoints[i].offsetX,
-                origin.y + waypoints[i].offsetY,
-                origin.z
-            };
+            const Vector3 target = resolveWaypoint(waypoints[i]);
+			const Vector3 segmentStart = i > 0
+				? resolveWaypoint(waypoints[i - 1])
+				: resolveStart();
 
             const float elapsedInPhase = player.iAttackStateTime_ - cumulativeTime;
-            const float remainingTime = segDuration - elapsedInPhase;
-            if (remainingTime > 0.001f) {
-                player.vel_.x = (target.x - player.pos_.x) / remainingTime;
-                player.vel_.y = (target.y - player.pos_.y) / remainingTime;
-                player.vel_.z = (target.z - player.pos_.z) / remainingTime;
+            if (dt > 0.0001f) {
+				const float nextProgress = ApplyWaypointEasing((elapsedInPhase + dt) / segDuration, waypoints[i].interpolation);
+				const Vector3 desired{
+					segmentStart.x + (target.x - segmentStart.x) * nextProgress,
+					segmentStart.y + (target.y - segmentStart.y) * nextProgress,
+					segmentStart.z + (target.z - segmentStart.z) * nextProgress
+				};
+				player.vel_.x = (desired.x - player.pos_.x) / dt;
+				player.vel_.y = (desired.y - player.pos_.y) / dt;
+				player.vel_.z = (desired.z - player.pos_.z) / dt;
             } else {
                 player.vel_ = { 0.0f, 0.0f, 0.0f };
             }
@@ -87,11 +108,7 @@ bool PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(Player& player, float dt,
     if (!inMovementPhase) {
         player.vel_ = { 0.0f, 0.0f, 0.0f };
         if (!waypoints.empty()) {
-            player.pos_ = {
-                origin.x - static_cast<float>(player.facing_) * waypoints.back().offsetX,
-                origin.y + waypoints.back().offsetY,
-                origin.z
-            };
+            player.pos_ = resolveWaypoint(waypoints.back());
         }
         return true; // 終了
     }
@@ -189,19 +206,19 @@ void PlayerIUpSpecial::UpdateUpSpecialLv1(Player& player, float dt) {
         if (player.iAttackStateTime_ >= ScaledByAttackSpeed(kUpRiseWindupSec * 0.8f, tuning.attackSpeedRate)) {
             if (!spTuning.waypoints.empty()) {
                 // ウェイポイントがある場合は開始点を初期化
-                Vector3 rawTarget = UpSpecialTargetOrFallback(
-                    player.pos_,
-                    player.facing_,
-                    player.sideSpecialLockOnActive_,
+                const Vector3 origin = player.specialAttackStartPosition_;
+                const Vector3 rawTarget = UpSpecialTargetOrFallback(
+                    origin, player.facing_, player.sideSpecialLockOnActive_,
                     player.sideSpecialLockOnTarget_);
                 player.SetUpSpecialTarget(rawTarget);
+                const Vector3& startBase = spTuning.startTargetRelative ? rawTarget : origin;
 
                 Vector3 startPos = spTuning.startFollowPlayer
-                    ? player.pos_
+                    ? origin
                     : Vector3{
-                        rawTarget.x - static_cast<float>(player.facing_) * spTuning.startOffsetX,
-                        rawTarget.y + spTuning.startOffsetY,
-                        rawTarget.z
+                        startBase.x + static_cast<float>(player.facing_) * spTuning.startOffsetX,
+                        startBase.y + spTuning.startOffsetY,
+                        startBase.z + spTuning.startOffsetZ
                       };
                 player.pos_ = startPos;
                 player.SetUpSpecialStartPos(startPos);
@@ -280,19 +297,19 @@ void PlayerIUpSpecial::UpdateUpSpecialLv2(Player& player, float dt) {
         if (player.iAttackStateTime_ >= kUpLv2HoverSec) {
             if (!spTuning.waypoints.empty()) {
                 // ウェイポイントがある場合は開始点を初期化
-                Vector3 rawTarget = UpSpecialTargetOrFallback(
-                    player.pos_,
-                    player.facing_,
-                    player.sideSpecialLockOnActive_,
+                const Vector3 origin = player.specialAttackStartPosition_;
+                const Vector3 rawTarget = UpSpecialTargetOrFallback(
+                    origin, player.facing_, player.sideSpecialLockOnActive_,
                     player.sideSpecialLockOnTarget_);
                 player.SetUpSpecialTarget(rawTarget);
+                const Vector3& startBase = spTuning.startTargetRelative ? rawTarget : origin;
 
                 Vector3 startPos = spTuning.startFollowPlayer
-                    ? player.pos_
+                    ? origin
                     : Vector3{
-                        rawTarget.x - static_cast<float>(player.facing_) * spTuning.startOffsetX,
-                        rawTarget.y + spTuning.startOffsetY,
-                        rawTarget.z
+                        startBase.x + static_cast<float>(player.facing_) * spTuning.startOffsetX,
+                        startBase.y + spTuning.startOffsetY,
+                        startBase.z + spTuning.startOffsetZ
                       };
                 player.pos_ = startPos;
                 player.SetUpSpecialStartPos(startPos);
@@ -352,6 +369,28 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
         player.vel_.z = 0.0f;
         player.iAttackHitActive_ = false;
         if (player.iAttackStateTime_ >= kUpLv3ChargeSec) {
+            if (!spTuning.waypoints.empty()) {
+                const Vector3 origin = player.specialAttackStartPosition_;
+                const Vector3 target = UpSpecialTargetOrFallback(
+                    origin, player.facing_, player.sideSpecialLockOnActive_,
+                    player.sideSpecialLockOnTarget_);
+                player.SetUpSpecialTarget(target);
+                const Vector3& startBase = spTuning.startTargetRelative ? target : origin;
+                const Vector3 startPos = spTuning.startFollowPlayer
+                    ? origin
+                    : Vector3{
+                        startBase.x + static_cast<float>(player.facing_) * spTuning.startOffsetX,
+                        startBase.y + spTuning.startOffsetY,
+                        startBase.z + spTuning.startOffsetZ
+                    };
+                player.pos_ = startPos;
+                player.SetUpSpecialStartPos(startPos);
+                player.upSpecialTrailLines_.clear();
+                player.iSpecialPulseIndex_ = 0;
+                PlayerIAttack::ChangeState(player, PlayerIAttackState::UpRise_Move);
+                break;
+            }
+
             Vector3 rawTarget = UpSpecialTargetOrFallback(
                 player.pos_,
                 player.facing_,
@@ -441,6 +480,15 @@ void PlayerIUpSpecial::UpdateUpSpecialLv3(Player& player, float dt) {
     case PlayerIAttackState::UpRise_Move:
         {
             player.onGround_ = false;
+
+            if (!spTuning.waypoints.empty()) {
+                if (PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(
+                    player, dt, static_cast<uint8_t>(spIdx))) {
+                    player.ClearUpSpecialTarget();
+                    PlayerIAttack::ChangeState(player, PlayerIAttackState::UpRise_Recover);
+                }
+                break;
+            }
             
             const float durationBeam = ScaledDuration(kUpLv3BeamSec, tuning.moveDurationRate);
             const float slideDuration = std::max(
