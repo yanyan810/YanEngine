@@ -37,6 +37,7 @@ extern bool gParticleTestAnimationCameraPreviewSwapped;
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <Windows.h>
 #include <commdlg.h>
 
@@ -47,18 +48,31 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
 #ifdef USE_IMGUI
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+	static std::unordered_map<int, bool> expandedObjectTracks;
     
     int trackCount = 1; // Camera
     if (playerAttackEditorEnabled_) {
-        ++trackCount;
+        trackCount += 2; // Special hitboxes + movement points
     }
     trackCount += static_cast<int>(editorObjects_.size());
+	for (const auto& item : editorObjects_) {
+		if (expandedObjectTracks[item.id]) trackCount += 4;
+	}
     trackCount += static_cast<int>(particleNodes_.size());
     
     float trackHeight = 22.0f;
     float headerHeight = 24.0f;
     float totalHeight = headerHeight + trackCount * trackHeight;
-    canvasSize.y = std::min(110.0f, totalHeight + 4.0f);
+
+	static int visibleTrackRows = 8;
+	if (ImGui::SmallButton("Rows -")) visibleTrackRows = std::max(3, visibleTrackRows - 1);
+	ImGui::SameLine();
+	if (ImGui::SmallButton("Rows +")) visibleTrackRows = std::min(20, visibleTrackRows + 1);
+	ImGui::SameLine();
+	ImGui::TextDisabled("Visible rows: %d / Tracks: %d", visibleTrackRows, trackCount);
+	canvasSize = ImGui::GetContentRegionAvail();
+	const float requestedHeight = headerHeight + visibleTrackRows * trackHeight + 4.0f;
+	canvasSize.y = std::min(requestedHeight, totalHeight + 4.0f);
     if (canvasSize.y < 50.0f) canvasSize.y = 50.0f;
     
     ImGui::BeginChild("DopeSheetContainer", canvasSize, true, ImGuiWindowFlags_None);
@@ -67,7 +81,7 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     
     const float labelWidth = 160.0f;
     float timelineStartX = canvasPos.x + labelWidth;
-    float timelineWidth = ImGui::GetContentRegionMax().x - timelineStartX - 16.0f;
+    float timelineWidth = canvasSize.x - labelWidth - 16.0f;
     if (timelineWidth < 50.0f) timelineWidth = 50.0f;
     float timelineEndX = timelineStartX + timelineWidth;
 
@@ -111,7 +125,10 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     drawList->AddLine(ImVec2(canvasPos.x, canvasPos.y + headerHeight), ImVec2(timelineEndX, canvasPos.y + headerHeight), ImGui::GetColorU32(ImGuiCol_Border));
     
     // タイムライン描画領域をクリップ（ラベル領域へのはみ出しを防ぐ）
-    drawList->PushClipRect(ImVec2(timelineStartX, canvasPos.y), ImVec2(timelineEndX, canvasPos.y + totalHeight), true);
+    // Keep every custom row, including its label, inside the child window.
+    // The old timeline-only clip was temporarily replaced by label clips and
+    // allowed labels from scrolled rows to leak into the Scene viewport.
+    drawList->PushClipRect(canvasPos, ImVec2(timelineEndX, canvasPos.y + canvasSize.y), true);
 
     // グリッド線の描画 (表示幅に応じて適切な時間ステップを自動計算)
     float minPixelStep = 60.0f; // グリッドテキスト同士が重ならない最低間隔
@@ -159,7 +176,9 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     bool anyKeyframeClicked = false;
     {
         drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_TableRowBg));
+        drawList->PushClipRect(ImVec2(canvasPos.x, currentY), ImVec2(canvasPos.x + labelWidth - 6.0f, currentY + trackHeight), true);
         drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), "Camera Keys");
+        drawList->PopClipRect();
         drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
         
         for (int i = 0; i < static_cast<int>(cameraKeyframes_.size()); ++i) {
@@ -184,51 +203,146 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
         currentY += trackHeight;
     }
 
+    // 2. PlayerAttack special hitboxes
     if (playerAttackEditorEnabled_) {
-        drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
-        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), ImGui::GetColorU32(ImGuiCol_Text), "Player HitBox");
-        drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+        const auto& hitboxKeys = CurrentPlayerSpecialTimeline_().hitboxes;
+        drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight),
+            ImGui::GetColorU32(ImGuiCol_TableRowBg));
+        drawList->PushClipRect(ImVec2(canvasPos.x, currentY),
+            ImVec2(canvasPos.x + labelWidth - 6.0f, currentY + trackHeight), true);
+        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f),
+            ImColor(255, 165, 70), "HitBox Keys");
+        drawList->PopClipRect();
+        drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight),
+            ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
 
-        for (int i = 0; i < static_cast<int>(playerAttackHitboxKeyframes_.size()); ++i) {
-            float kx = timeToX(playerAttackHitboxKeyframes_[i].time);
-            ImVec2 center(kx, currentY + trackHeight * 0.5f);
-            bool hovered = (std::abs(mousePos.x - center.x) <= 6.0f && std::abs(mousePos.y - center.y) <= 6.0f);
+        for (int i = 0; i < static_cast<int>(hitboxKeys.size()); ++i) {
+            const float startX = timeToX(hitboxKeys[i].time);
+            const float endX = timeToX(hitboxKeys[i].time + hitboxKeys[i].duration);
+            const ImVec2 center(startX, currentY + trackHeight * 0.5f);
+            const bool hovered = std::abs(mousePos.x - center.x) <= 7.0f &&
+                std::abs(mousePos.y - center.y) <= 7.0f;
+
+            const bool selected = selectedKeyframeType_ == DragTarget::PlayerSpecialHitboxKeyframe &&
+                selectedKeyframeIndex_ == i;
+            const ImU32 barColor = selected ? IM_COL32(255, 205, 70, 180) : IM_COL32(255, 125, 55, 135);
+            drawList->AddRectFilled(
+                ImVec2(startX, currentY + 7.0f),
+                ImVec2(std::max(startX + 2.0f, endX), currentY + trackHeight - 7.0f),
+                barColor, 2.0f);
+
             if (hovered && clicked && dragTarget_ == DragTarget::None) {
-                dragTarget_ = DragTarget::PlayerAttackHitboxKeyframe;
+                PushUndoSnapshot_();
+                dragTarget_ = DragTarget::PlayerSpecialHitboxKeyframe;
                 dragKeyframeIndex_ = i;
-                selectedKeyframeType_ = DragTarget::PlayerAttackHitboxKeyframe;
+                currentSpecialHitbox_ = hitboxKeys[i];
+                timelineTime_ = hitboxKeys[i].time;
+                selectedKeyframeType_ = DragTarget::PlayerSpecialHitboxKeyframe;
                 selectedKeyframeIndex_ = i;
                 selectedKeyframeObjectIndex_ = -1;
                 anyKeyframeClicked = true;
+                EvaluatePlayerSpecialTimeline_();
             }
 
-            const bool isSelected = selectedKeyframeType_ == DragTarget::PlayerAttackHitboxKeyframe && selectedKeyframeIndex_ == i;
-            const ImColor color = playerAttackHitboxKeyframes_[i].active
-                ? (isSelected ? ImColor(255, 200, 0) : ImColor(70, 210, 100))
-                : ImColor(110, 110, 110);
-            drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), color);
-            drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), color);
+            const ImU32 keyColor = selected ? ImColor(255, 220, 70) : ImColor(255, 145, 55);
+            drawList->AddQuadFilled(
+                ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y),
+                ImVec2(center.x, center.y + 6.0f), ImVec2(center.x - 6.0f, center.y), keyColor);
+            if (hovered) {
+                ImGui::SetTooltip("HitBox %d  %.3f sec / Duration %.3f sec", i, hitboxKeys[i].time, hitboxKeys[i].duration);
+            }
         }
         currentY += trackHeight;
     }
-    
-    // 2. Model Objects Tracks
+
+    // 3. PlayerAttack movement points
+    if (playerAttackEditorEnabled_) {
+        const auto& movementKeys = CurrentPlayerSpecialTimeline_().positionKeyframes;
+        drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight),
+            ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
+        drawList->PushClipRect(ImVec2(canvasPos.x, currentY),
+            ImVec2(canvasPos.x + labelWidth - 6.0f, currentY + trackHeight), true);
+        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f),
+            ImColor(100, 225, 255), "Movement Points");
+        drawList->PopClipRect();
+        drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight),
+            ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+
+        for (int i = 0; i < static_cast<int>(movementKeys.size()); ++i) {
+            const float kx = timeToX(movementKeys[i].time);
+            const ImVec2 center(kx, currentY + trackHeight * 0.5f);
+            const bool hovered = std::abs(mousePos.x - center.x) <= 7.0f &&
+                std::abs(mousePos.y - center.y) <= 7.0f;
+            if (hovered && clicked && dragTarget_ == DragTarget::None) {
+                dragTarget_ = DragTarget::PlayerSpecialPositionKeyframe;
+                dragKeyframeIndex_ = i;
+                selectedPlayerSpecialPositionKey_ = i;
+                currentSpecialPosition_ = movementKeys[i];
+                timelineTime_ = movementKeys[i].time;
+                selectedKeyframeType_ = DragTarget::PlayerSpecialPositionKeyframe;
+                selectedKeyframeIndex_ = i;
+                selectedKeyframeObjectIndex_ = -1;
+                anyKeyframeClicked = true;
+                EvaluatePlayerSpecialTimeline_();
+            }
+
+            const bool selected = selectedPlayerSpecialPositionKey_ == i;
+            const ImU32 color = selected ? ImColor(255, 210, 50) : ImColor(80, 220, 255);
+            drawList->AddQuadFilled(
+                ImVec2(center.x, center.y - 6.0f), ImVec2(center.x + 6.0f, center.y),
+                ImVec2(center.x, center.y + 6.0f), ImVec2(center.x - 6.0f, center.y), color);
+            if (hovered) {
+                ImGui::SetTooltip("Point %d  %.3f sec", i, movementKeys[i].time);
+            }
+        }
+        currentY += trackHeight;
+    }
+
+    // 4. Model Objects Tracks
     for (int objIdx = 0; objIdx < static_cast<int>(editorObjects_.size()); ++objIdx) {
         auto& item = editorObjects_[objIdx];
         bool isSelectedObj = (selectedEditorObject_ == objIdx);
         
         drawList->AddRectFilled(ImVec2(canvasPos.x, currentY), ImVec2(timelineEndX, currentY + trackHeight), isSelectedObj ? ImGui::GetColorU32(ImGuiCol_HeaderHovered, 0.4f) : ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
         
-        ImGui::SetCursorScreenPos(ImVec2(canvasPos.x, currentY));
+        ImGui::SetCursorScreenPos(ImVec2(canvasPos.x + 2.0f, currentY + 2.0f));
+        ImGui::PushID(40000 + item.id);
+        if (ImGui::SmallButton(expandedObjectTracks[item.id] ? "v" : ">")) {
+			expandedObjectTracks[item.id] = !expandedObjectTracks[item.id];
+		}
+        ImGui::PopID();
+
+        ImGui::SetCursorScreenPos(ImVec2(canvasPos.x + 22.0f, currentY));
         char selectId[128];
         sprintf_s(selectId, "##select_obj_%d", objIdx);
-        if (ImGui::InvisibleButton(selectId, ImVec2(labelWidth, trackHeight))) {
+        if (ImGui::InvisibleButton(selectId, ImVec2(labelWidth - 22.0f, trackHeight))) {
             selectedEditorObject_ = objIdx;
             selectedParticleNode_ = -1;
         }
         
-        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), isSelectedObj ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), item.name.c_str());
+        drawList->PushClipRect(ImVec2(canvasPos.x, currentY), ImVec2(canvasPos.x + labelWidth - 6.0f, currentY + trackHeight), true);
+        drawList->AddText(ImVec2(canvasPos.x + 25.0f, currentY + 4.0f), isSelectedObj ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), item.name.c_str());
+        drawList->PopClipRect();
         drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+
+		// Draw the interpolation owned by each key as a colored segment leading
+		// to the next key: Linear / EaseIn / EaseOut / EaseInOut.
+		const ImU32 interpolationColors[] = {
+			IM_COL32(75, 210, 255, 230),
+			IM_COL32(180, 120, 255, 230),
+			IM_COL32(255, 155, 80, 230),
+			IM_COL32(100, 235, 145, 230),
+		};
+		for (int i = 0; i + 1 < static_cast<int>(item.keyframes.size()); ++i) {
+			const float startX = timeToX(item.keyframes[i].time);
+			const float endX = timeToX(item.keyframes[i + 1].time);
+			const float lineY = currentY + trackHeight * 0.5f;
+			const int interpolation = std::clamp(item.keyframes[i].interpolationType, 0, 3);
+			const bool selectedSegment = selectedKeyframeType_ == DragTarget::ModelKeyframe &&
+				selectedKeyframeObjectIndex_ == objIdx && selectedKeyframeIndex_ == i;
+			drawList->AddLine(ImVec2(startX, lineY), ImVec2(endX, lineY),
+				interpolationColors[interpolation], selectedSegment ? 4.0f : 2.0f);
+		}
         
         for (int i = 0; i < static_cast<int>(item.keyframes.size()); ++i) {
             float kx = timeToX(item.keyframes[i].time);
@@ -245,6 +359,7 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
                 selectedKeyframeType_ = DragTarget::ModelKeyframe;
                 selectedKeyframeIndex_ = i;
                 selectedKeyframeObjectIndex_ = objIdx;
+				selectedModelKeyframeChannel_ = 0;
                 anyKeyframeClicked = true;
             }
             
@@ -253,6 +368,52 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
             drawList->AddTriangleFilled(ImVec2(center.x, center.y - 6.0f), ImVec2(center.x - 6.0f, center.y), ImVec2(center.x, center.y + 6.0f), isSelectedKey ? ImColor(255, 200, 0) : ImColor(200, 150, 50));
         }
         currentY += trackHeight;
+
+		if (expandedObjectTracks[item.id]) {
+			const char* channelNames[] = { "Position", "Rotation", "Scale", "Color" };
+			const ImU32 channelColors[] = {
+				IM_COL32(90, 210, 255, 255), IM_COL32(255, 170, 80, 255),
+				IM_COL32(120, 235, 130, 255), IM_COL32(235, 110, 210, 255)
+			};
+			for (int channel = 0; channel < 4; ++channel) {
+				drawList->AddRectFilled(ImVec2(canvasPos.x, currentY),
+					ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_TableRowBg));
+				drawList->PushClipRect(ImVec2(canvasPos.x, currentY),
+					ImVec2(canvasPos.x + labelWidth - 6.0f, currentY + trackHeight), true);
+				drawList->AddText(ImVec2(canvasPos.x + 36.0f, currentY + 4.0f), channelColors[channel], channelNames[channel]);
+				drawList->PopClipRect();
+				drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight),
+					ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
+
+				for (int i = 0; i < static_cast<int>(item.keyframes.size()); ++i) {
+					const float kx = timeToX(item.keyframes[i].time);
+					const ImVec2 center(kx, currentY + trackHeight * 0.5f);
+					const bool hovered = std::abs(mousePos.x - center.x) <= 6.0f &&
+						std::abs(mousePos.y - center.y) <= 6.0f;
+					if (hovered && clicked && dragTarget_ == DragTarget::None) {
+						PushUndoSnapshot_();
+						dragTarget_ = DragTarget::ModelKeyframe;
+						dragObjectIndex_ = objIdx;
+						dragKeyframeIndex_ = i;
+						selectedEditorObject_ = objIdx;
+						selectedParticleNode_ = -1;
+						selectedKeyframeType_ = DragTarget::ModelKeyframe;
+						selectedKeyframeIndex_ = i;
+						selectedKeyframeObjectIndex_ = objIdx;
+						selectedModelKeyframeChannel_ = channel + 1;
+						anyKeyframeClicked = true;
+					}
+					const bool selected = selectedKeyframeType_ == DragTarget::ModelKeyframe &&
+						selectedKeyframeObjectIndex_ == objIdx && selectedKeyframeIndex_ == i &&
+						selectedModelKeyframeChannel_ == channel + 1;
+					const ImU32 keyColor = selected ? IM_COL32(255, 215, 60, 255) : channelColors[channel];
+					drawList->AddQuadFilled(
+						ImVec2(center.x, center.y - 5.0f), ImVec2(center.x + 5.0f, center.y),
+						ImVec2(center.x, center.y + 5.0f), ImVec2(center.x - 5.0f, center.y), keyColor);
+				}
+				currentY += trackHeight;
+			}
+		}
     }
 
     // Dope Sheet背景がクリックされたかつ、キーフレームがどれもクリックされていなかったら選択解除
@@ -260,9 +421,11 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
         selectedKeyframeType_ = DragTarget::None;
         selectedKeyframeIndex_ = -1;
         selectedKeyframeObjectIndex_ = -1;
+		selectedModelKeyframeChannel_ = 0;
     }
     
     // 3. Particle Nodes Tracks
+    int deleteParticleNodeIndex = -1;
     for (int nodeIdx = 0; nodeIdx < static_cast<int>(particleNodes_.size()); ++nodeIdx) {
         auto& node = particleNodes_[nodeIdx];
         bool isSelectedNode = (selectedParticleNode_ == nodeIdx);
@@ -276,8 +439,30 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
             selectedParticleNode_ = nodeIdx;
             selectedEditorObject_ = -1;
         }
+		if (ImGui::BeginPopupContextItem()) {
+			ImGui::TextUnformatted(node.name.c_str());
+			if (ImGui::MenuItem(node.isEffectNode ? "Delete Effect Track" : "Delete Particle Track")) {
+				deleteParticleNodeIndex = nodeIdx;
+			}
+			ImGui::EndPopup();
+		}
+
+		// Keep deletion available directly from the dope sheet instead of requiring
+		// the user to find the corresponding Inspector section.
+		ImGui::SetCursorScreenPos(ImVec2(canvasPos.x + labelWidth - 25.0f, currentY + 2.0f));
+		ImGui::PushID(30000 + nodeIdx);
+		if (ImGui::SmallButton("X")) {
+			deleteParticleNodeIndex = nodeIdx;
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetTooltip(node.isEffectNode ? "Delete this effect track" : "Delete this particle track");
+		}
+		ImGui::PopID();
         
-        drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), isSelectedNode ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), node.name.c_str());
+        drawList->PushClipRect(ImVec2(canvasPos.x, currentY), ImVec2(canvasPos.x + labelWidth - 6.0f, currentY + trackHeight), true);
+		const std::string nodeTrackLabel = node.name + (node.isEffectNode ? " [Effect]" : " [Particle]");
+		drawList->AddText(ImVec2(canvasPos.x + 6.0f, currentY + 4.0f), isSelectedNode ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), nodeTrackLabel.c_str());
+        drawList->PopClipRect();
         drawList->AddLine(ImVec2(canvasPos.x, currentY + trackHeight), ImVec2(timelineEndX, currentY + trackHeight), ImGui::GetColorU32(ImGuiCol_Border));
         
         float barStartX = timeToX(node.startTime);
@@ -285,7 +470,9 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
         ImVec2 barMin(barStartX, currentY + 3.0f);
         ImVec2 barMax(barEndX, currentY + trackHeight - 3.0f);
         
-        ImU32 barColor = isSelectedNode ? ImColor(100, 220, 100, 180) : ImColor(60, 160, 60, 140);
+		ImU32 barColor = node.isEffectNode
+			? (isSelectedNode ? ImColor(190, 110, 255, 210) : ImColor(130, 70, 190, 170))
+			: (isSelectedNode ? ImColor(100, 220, 100, 180) : ImColor(60, 160, 60, 140));
         drawList->AddRectFilled(barMin, barMax, barColor, 4.0f);
         drawList->AddRect(barMin, barMax, ImColor(255, 255, 255, 100), 4.0f, 0, 1.0f);
         
@@ -323,6 +510,15 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
         
         currentY += trackHeight;
     }
+
+	if (deleteParticleNodeIndex >= 0 && deleteParticleNodeIndex < static_cast<int>(particleNodes_.size())) {
+		PushUndoSnapshot_();
+		particleNodes_.erase(particleNodes_.begin() + deleteParticleNodeIndex);
+		selectedParticleNode_ = -1;
+		dragParticleNodeIndex_ = -1;
+		dragTarget_ = DragTarget::None;
+		RequestTimelineRebuild_(timelineTime_);
+	}
     
     // 再生ヘッドの縦線描画
     float curX = timeToX(timelineTime_);
@@ -334,12 +530,17 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     
     bool hoveredHead = (mousePos.x >= curX - 6.0f && mousePos.x <= curX + 6.0f && mousePos.y >= canvasPos.y && mousePos.y <= canvasPos.y + headerHeight);
     bool hoveredHeaderArea = (mousePos.x >= timelineStartX && mousePos.x <= timelineEndX && mousePos.y >= canvasPos.y && mousePos.y <= canvasPos.y + headerHeight);
+    // The time cursor can also be moved from the empty time area of any track.
+    // Keyframe and particle-node hit tests run first, so their drag operation
+    // still takes priority when the user clicks directly on them.
+    bool hoveredTrackTimeArea = (mousePos.x >= timelineStartX && mousePos.x <= timelineEndX &&
+        mousePos.y > canvasPos.y + headerHeight && mousePos.y <= canvasPos.y + totalHeight);
     
     // クリッピングを終了
     drawList->PopClipRect();
     
     if (clicked && dragTarget_ == DragTarget::None) {
-        if (hoveredHead || hoveredHeaderArea) {
+        if (hoveredHead || hoveredHeaderArea || (hoveredTrackTimeArea && !anyKeyframeClicked)) {
             dragTarget_ = DragTarget::TimelineTime;
         }
     }
@@ -359,8 +560,8 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
                 auto& item = editorObjects_[dragObjectIndex_];
                 if (dragKeyframeIndex_ >= 0 && dragKeyframeIndex_ < static_cast<int>(item.keyframes.size())) {
                     item.keyframes[dragKeyframeIndex_].time = mouseT;
-                    SortKeyframes_(item);
-                    EvaluateTimeline_(false);
+					// Do not sort while dragging. Sorting changes the vector index and
+					// previously caused the drag to jump to a different overlapping key.
                 }
             }
             break;
@@ -380,6 +581,44 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
                 EvaluateTimeline_(false);
             }
             break;
+
+        case DragTarget::PlayerSpecialHitboxKeyframe: {
+            auto& hitboxKeys = CurrentPlayerSpecialTimeline_().hitboxes;
+            if (dragKeyframeIndex_ >= 0 && dragKeyframeIndex_ < static_cast<int>(hitboxKeys.size())) {
+                hitboxKeys[dragKeyframeIndex_].time = mouseT;
+                currentSpecialHitbox_ = hitboxKeys[dragKeyframeIndex_];
+                timelineTime_ = mouseT;
+                CurrentPlayerSpecialTimeline_().totalSec = std::max(
+                    CurrentPlayerSpecialTimeline_().totalSec,
+                    mouseT + hitboxKeys[dragKeyframeIndex_].duration);
+                timelineDuration_ = std::max(timelineDuration_, CurrentPlayerSpecialTimeline_().totalSec);
+                EvaluatePlayerSpecialTimeline_();
+            }
+            break;
+        }
+
+        case DragTarget::PlayerSpecialPositionKeyframe: {
+            auto& movementKeys = CurrentPlayerSpecialTimeline_().positionKeyframes;
+            if (dragKeyframeIndex_ >= 0 && dragKeyframeIndex_ < static_cast<int>(movementKeys.size())) {
+                movementKeys[dragKeyframeIndex_].time = mouseT;
+                currentSpecialPosition_ = movementKeys[dragKeyframeIndex_];
+                timelineTime_ = mouseT;
+                CurrentPlayerSpecialTimeline_().totalSec = std::max(
+                    CurrentPlayerSpecialTimeline_().totalSec, mouseT);
+				SortCurrentPlayerSpecialTimeline_();
+				const auto& sortedKeys = CurrentPlayerSpecialTimeline_().positionKeyframes;
+				for (int i = 0; i < static_cast<int>(sortedKeys.size()); ++i) {
+					if (std::abs(sortedKeys[i].time - mouseT) < 0.001f) {
+						dragKeyframeIndex_ = i;
+						selectedPlayerSpecialPositionKey_ = i;
+						selectedKeyframeIndex_ = i;
+						break;
+					}
+				}
+                EvaluatePlayerSpecialTimeline_();
+            }
+            break;
+        }
             
         case DragTarget::ParticleNodeStart:
             if (dragParticleNodeIndex_ >= 0 && dragParticleNodeIndex_ < static_cast<int>(particleNodes_.size())) {
@@ -421,7 +660,16 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
     if (ImGui::IsMouseReleased(0) && dragTarget_ != DragTarget::None) {
         if (dragTarget_ == DragTarget::ModelKeyframe) {
             if (dragObjectIndex_ >= 0 && dragObjectIndex_ < static_cast<int>(editorObjects_.size())) {
-                SortKeyframes_(editorObjects_[dragObjectIndex_]);
+				auto& item = editorObjects_[dragObjectIndex_];
+				const float movedTime = dragKeyframeIndex_ >= 0 && dragKeyframeIndex_ < static_cast<int>(item.keyframes.size())
+					? item.keyframes[dragKeyframeIndex_].time : 0.0f;
+				SortKeyframes_(item);
+				for (int i = 0; i < static_cast<int>(item.keyframes.size()); ++i) {
+					if (std::abs(item.keyframes[i].time - movedTime) < 0.001f) {
+						selectedKeyframeIndex_ = i;
+						break;
+					}
+				}
                 EvaluateTimeline_(false);
             }
         } else if (dragTarget_ == DragTarget::CameraKeyframe) {
@@ -430,6 +678,30 @@ void ParticleTestScene::DrawDopeSheet_(GameApp& app)
         } else if (dragTarget_ == DragTarget::PlayerAttackHitboxKeyframe) {
             SortPlayerAttackHitboxKeyframes_();
             EvaluateTimeline_(false);
+		} else if (dragTarget_ == DragTarget::PlayerSpecialHitboxKeyframe) {
+			const float selectedTime = currentSpecialHitbox_.time;
+			SortCurrentPlayerSpecialTimeline_();
+			selectedKeyframeIndex_ = -1;
+			const auto& hitboxKeys = CurrentPlayerSpecialTimeline_().hitboxes;
+			for (int i = 0; i < static_cast<int>(hitboxKeys.size()); ++i) {
+				if (std::abs(hitboxKeys[i].time - selectedTime) < 0.001f) {
+					selectedKeyframeIndex_ = i;
+					break;
+				}
+			}
+			EvaluatePlayerSpecialTimeline_();
+		} else if (dragTarget_ == DragTarget::PlayerSpecialPositionKeyframe) {
+			const float selectedTime = currentSpecialPosition_.time;
+			SortCurrentPlayerSpecialTimeline_();
+			selectedPlayerSpecialPositionKey_ = -1;
+			const auto& movementKeys = CurrentPlayerSpecialTimeline_().positionKeyframes;
+			for (int i = 0; i < static_cast<int>(movementKeys.size()); ++i) {
+				if (std::abs(movementKeys[i].time - selectedTime) < 0.001f) {
+					selectedPlayerSpecialPositionKey_ = i;
+					break;
+				}
+			}
+			EvaluatePlayerSpecialTimeline_();
         }
         dragTarget_ = DragTarget::None;
     }

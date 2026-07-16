@@ -94,6 +94,10 @@ void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
     if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
         EditorObject& player = editorObjects_[playerAttackObjectIndex_];
         if (player.name == "PlayerAttack_Player" && player.modelPath == "Player/player.gltf") {
+			if (!playerSpecialPreviewOriginInitialized_) {
+				playerSpecialPreviewOrigin_ = player.position - previewSpecialPositionOffset_;
+				playerSpecialPreviewOriginInitialized_ = true;
+			}
             playerAttackEditorEnabled_ = true;
             selectedEditorObject_ = playerAttackObjectIndex_;
             EvaluatePlayerSpecialTimeline_();
@@ -126,6 +130,10 @@ void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
         selectedEditorObject_ = playerAttackObjectIndex_;
         selectedParticleNode_ = -1;
         editorObjects_[playerAttackObjectIndex_].showBones = true;
+		if (!playerSpecialPreviewOriginInitialized_) {
+			playerSpecialPreviewOrigin_ = editorObjects_[playerAttackObjectIndex_].position - previewSpecialPositionOffset_;
+			playerSpecialPreviewOriginInitialized_ = true;
+		}
         SyncEditorObjectBones_(editorObjects_[playerAttackObjectIndex_]);
         playerAttackEditorEnabled_ = true;
         EvaluatePlayerAttackHitbox_();
@@ -139,6 +147,8 @@ void ParticleTestScene::EnsurePlayerAttackEditor_(GameApp& app)
         EditorObject& player = editorObjects_[playerAttackObjectIndex_];
         player.name = "PlayerAttack_Player";
         player.position = { 0.0f, 0.0f, 0.0f };
+		playerSpecialPreviewOrigin_ = player.position;
+		playerSpecialPreviewOriginInitialized_ = true;
         player.rotation = { 0.0f, 0.0f, 0.0f };
         player.scale = { 1.0f, 1.0f, 1.0f };
         player.showBones = true;
@@ -334,6 +344,7 @@ void ParticleTestScene::CopySelectedObject_()
     }
     copiedObject_ = CaptureSelectedObject_();
     hasCopiedObject_ = true;
+	hasCopiedModelKeyframe_ = false;
 }
 
 void ParticleTestScene::RequestDeleteSelectedObject_()

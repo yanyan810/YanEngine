@@ -745,6 +745,8 @@ void Model::InitializeFromModelData(ModelCommon* modelCommon, const ModelData& m
 		indexBufferView_.SizeInBytes = static_cast<UINT>(sizeof(uint32_t) * totalIdx);
 		indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
 	}
+
+	BuildNodeRuntime_();
 }
 
 void Model::Draw(ID3D12GraphicsCommandList* cmd) {
@@ -1786,7 +1788,7 @@ Matrix4x4 Model::GetNodeWorldMatrix(int nodeIndex) const
 	int idx = nodeIndex;
 	while (idx >= 0) {
 		const auto& n = nodeRuntime_.nodes[idx];
-		world = n.localMatrix * world;
+		world = Matrix4x4::Multiply(world, n.localMatrix);
 		idx = n.parent;
 	}
 

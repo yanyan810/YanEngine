@@ -1,4 +1,4 @@
-#include "ParticleTestScene.h"
+﻿#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -13,6 +13,7 @@
 #include "ParticleManager.h"
 #include "RenderManager.h"
 #include "TextureManager.h"
+#include "Effect/EffectManager.h"
 
 #include <nlohmann/json.hpp>
 
@@ -78,6 +79,9 @@ VertexPositionKey MakeVertexPositionKey(const Vector3& pos)
 
 void ParticleTestScene::OnEnter(GameApp& app)
 {
+	playerSpecialPreviewOrigin_ = { 0.0f, 0.0f, 0.0f };
+	playerSpecialPreviewBaseRotation_ = { 0.0f, 0.0f, 0.0f };
+	playerSpecialPreviewOriginInitialized_ = false;
     if (auto* input = app.GetInput()) {
         input->SetCameraControlEnabled(false);
     }
@@ -101,6 +105,8 @@ void ParticleTestScene::OnEnter(GameApp& app)
     animationCamera_ = std::make_unique<Camera>();
     ApplyAnimationCamera_();
     app.ObjCom()->SetDefaultCamera(camera_.get());
+	EffectManager::GetInstance()->Initialize();
+	EffectManager::GetInstance()->SetGraphicsResources(app.ObjCom(), app.Dx(), camera_.get());
 
     ground_ = std::make_unique<Object3d>();
     ground_->Initialize(app.ObjCom(), app.Dx());
@@ -125,6 +131,23 @@ void ParticleTestScene::OnEnter(GameApp& app)
     playerAttackHitboxCube_->SetMaterialColor({ 0.1f, 1.0f, 0.25f, 0.35f });
     playerAttackHitboxCube_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
 
+    bossDummy_ = std::make_unique<Object3d>();
+    bossDummy_->Initialize(app.ObjCom(), app.Dx());
+    bossDummy_->SetCamera(GetSceneCamera_());
+    bossDummy_->SetModel("enemy/boss/boss.gltf");
+    bossDummy_->SetEnableLighting(0);
+    bossDummy_->SetScale({ 2.0f, 2.0f, 2.0f });
+    bossDummy_->SetMaterialColor({ 0.35f, 0.65f, 1.0f, 0.42f });
+    bossDummy_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
+
+    bossDummyHitboxCube_ = std::make_unique<Object3d>();
+    bossDummyHitboxCube_->Initialize(app.ObjCom(), app.Dx());
+    bossDummyHitboxCube_->SetCamera(GetSceneCamera_());
+    bossDummyHitboxCube_->SetModel("cube/cube.obj");
+    bossDummyHitboxCube_->SetEnableLighting(0);
+    bossDummyHitboxCube_->SetMaterialColor({ 0.15f, 0.55f, 1.0f, 0.25f });
+    bossDummyHitboxCube_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeNormal);
+
     AddEditorObject_(app, editorModelPath_);
 
 #ifdef USE_IMGUI
@@ -138,7 +161,7 @@ void ParticleTestScene::OnEnter(GameApp& app)
     if (editorMode_ == EditorMode::Blender || editorMode_ == EditorMode::PlayerAttack) {
         pm->ClearGroups();
         for (auto& node : particleNodes_) {
-            pm->LoadAdditional(node.particleFileName, "");
+			if (!node.isEffectNode) pm->LoadAdditional(node.particleFileName, "");
             node.hasEmitted = false;
         }
     } else {
@@ -149,7 +172,10 @@ void ParticleTestScene::OnEnter(GameApp& app)
 
 void ParticleTestScene::OnExit(GameApp&)
 {
+	EffectManager::GetInstance()->Finalize();
     editorObjects_.clear();
+    bossDummyHitboxCube_.reset();
+    bossDummy_.reset();
     playerAttackHitboxCube_.reset();
     editorParticle_.reset();
     ground_.reset();
@@ -201,7 +227,7 @@ void ParticleTestScene::Update(GameApp& app, float dt)
         if (editorMode_ == EditorMode::Blender || editorMode_ == EditorMode::PlayerAttack) {
             pm->ClearGroups();
             for (auto& node : particleNodes_) {
-                pm->LoadAdditional(node.particleFileName, "");
+				if (!node.isEffectNode) pm->LoadAdditional(node.particleFileName, "");
                 node.hasEmitted = false;
             }
         } else {
@@ -251,7 +277,14 @@ void ParticleTestScene::Update(GameApp& app, float dt)
     if (!timeJumped) {
         lastTimelineTime_ = (timelineTime_ == 0.0f) ? -0.001f : timelineTime_;
     }
+    KeepTimelineTimeInView_();
     previousTimelineTime_ = timelineTime_;
+
+	if (playerAttackEditorEnabled_ && playerAttackObjectIndex_ >= 0 &&
+		playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
+		editorObjects_[playerAttackObjectIndex_].visible =
+			editorMode_ != EditorMode::PlayerAttack || timelinePlaying_;
+	}
 
     if (camera_) {
         camera_->Update();
@@ -264,6 +297,7 @@ void ParticleTestScene::Update(GameApp& app, float dt)
     if (GetSceneCamera_()) {
         ParticleManager::GetInstance()->Update(particleDt, *GetSceneCamera_());
     }
+	EffectManager::GetInstance()->Update(timelinePlaying_ ? dt : 0.0f);
 
     if (ground_) {
         ground_->Update(dt);
@@ -309,12 +343,30 @@ void ParticleTestScene::Update(GameApp& app, float dt)
 
     if (playerAttackHitboxCube_) {
         Vector3 playerBase{};
-        if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
+        if (previewPlayerAttackHitbox_.followPlayerMovement &&
+            playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
             playerBase = editorObjects_[playerAttackObjectIndex_].position;
+        } else if (!previewPlayerAttackHitbox_.followPlayerMovement) {
+            playerBase = playerSpecialPreviewOrigin_;
         }
         playerAttackHitboxCube_->SetTranslate(playerBase + previewPlayerAttackHitbox_.offset);
         playerAttackHitboxCube_->SetScale(previewPlayerAttackHitbox_.halfSize);
         playerAttackHitboxCube_->Update(dt);
+    }
+
+    if (bossDummy_) {
+        bossDummy_->SetTranslate(bossDummyPosition_);
+        bossDummy_->SetScale({ 2.0f, 2.0f, 2.0f });
+        bossDummy_->Update(dt);
+    }
+    if (bossDummyHitboxCube_) {
+        bossDummyHitboxCube_->SetTranslate({
+            bossDummyPosition_.x,
+            bossDummyPosition_.y + bossDummyHalfSize_.y,
+            bossDummyPosition_.z
+        });
+        bossDummyHitboxCube_->SetScale(bossDummyHalfSize_);
+        bossDummyHitboxCube_->Update(dt);
     }
 
     if (editorMode_ == EditorMode::Particle && editorParticle_) {
@@ -353,6 +405,8 @@ void ParticleTestScene::DrawPreview(GameApp& app)
     if (playerAttackHitboxCube_) {
         playerAttackHitboxCube_->SetCamera(previewCamera);
     }
+    if (bossDummy_) bossDummy_->SetCamera(previewCamera);
+    if (bossDummyHitboxCube_) bossDummyHitboxCube_->SetCamera(previewCamera);
 
     DrawSceneContent_(app);
 
@@ -370,6 +424,8 @@ void ParticleTestScene::DrawPreview(GameApp& app)
     if (playerAttackHitboxCube_) {
         playerAttackHitboxCube_->SetCamera(sceneCamera);
     }
+    if (bossDummy_) bossDummy_->SetCamera(sceneCamera);
+    if (bossDummyHitboxCube_) bossDummyHitboxCube_->SetCamera(sceneCamera);
 }
 
 void ParticleTestScene::DrawPostEffectTargets(GameApp& app)
@@ -451,7 +507,15 @@ void ParticleTestScene::DrawSceneContent_(GameApp& app)
         }
     }
 
-    if (playerAttackEditorEnabled_ && drawPlayerAttackHitbox_ && previewPlayerAttackHitbox_.active && playerAttackHitboxCube_) {
+    if (editorMode_ == EditorMode::PlayerAttack && showBossDummy_ && bossDummy_) {
+        bossDummy_->Draw();
+        if (showBossDummyHitbox_ && bossDummyHitboxCube_) {
+            bossDummyHitboxCube_->Draw();
+        }
+    }
+
+    if (playerAttackEditorEnabled_ && drawPlayerAttackHitbox_ &&
+        previewPlayerAttackHitbox_.active && playerAttackHitboxCube_) {
         playerAttackHitboxCube_->Draw();
     }
 
@@ -461,6 +525,7 @@ void ParticleTestScene::DrawSceneContent_(GameApp& app)
     }
 
     ParticleManager::GetInstance()->Draw(app.Dx()->GetCommandList());
+	EffectManager::GetInstance()->Draw();
 }
 
 void ParticleTestScene::Draw3D(GameApp&)
@@ -892,3 +957,24 @@ void ParticleTestScene::UpdateCameraControls_(GameApp& app, float dt)
 }
 
 
+void ParticleTestScene::ApplyPlayerSpecialPreviewPosition_() {
+
+    if (playerAttackObjectIndex_ < 0 ||
+        playerAttackObjectIndex_ >= static_cast<int>(editorObjects_.size())) {
+
+
+        return;
+    }
+
+    // playerを取得
+    
+	EditorObject& player = editorObjects_[playerAttackObjectIndex_];
+
+    // 位置を設定
+    
+    player.position = playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_;
+
+    // Object3Dに設定
+
+    ApplyEditorObjectTransform_(player);
+}

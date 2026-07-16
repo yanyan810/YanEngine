@@ -52,6 +52,8 @@ void TestScene::OnEnter(GameApp& app) {
     if (std::filesystem::exists(bossTuningPath_)) {
         TestSceneBossTuning::Load(bossTuningPath_, enemyMgr_, *player_, bossTuningStatus_);
     }
+	// PlayerAttack editor movement is the single source of truth for special paths.
+	player_->LoadSpecialAttackMovementJson();
 
     enemyMgr_.Spawn(EnemyType::Boss, bossSpawnPos_);
     
@@ -512,11 +514,6 @@ void TestScene::Update(GameApp& app, float dt) {
     EffectManager::GetInstance()->Update(effectDt);
     ParticleManager::GetInstance()->Update(effectDt, *camera_);
 
-    // 必殺技プレビュー球の更新 (PathPreview.cppへ委譲)
-    UpdateAttackPathPreviews(app, dt);
-
-    // 必殺技プレビューのマウスドラッグ制御 (PathPreview.cppへ委譲)
-    HandleAttackPathMouseDrag();
 }
 
 void TestScene::DrawRender(GameApp& app) {
@@ -552,9 +549,6 @@ void TestScene::DrawRender(GameApp& app) {
 
     enemyMgr_.Draw();
 
-    // 必殺技プレビュー描画 (PathPreview.cppへ委譲)
-    DrawAttackPathPreviews();
-
 #ifdef _DEBUG
     if (player_) player_->DrawDebugHitBoxes(enemyMgr_);
 #endif
@@ -579,10 +573,6 @@ void TestScene::Draw2D(GameApp& app) {
         0, 100
     );
 
-    if (playTxst_) {
-        playTxst_->Update(view, proj);
-        playTxst_->Draw();
-    }
 }
 
 void TestScene::Draw(GameApp& /*app*/) {

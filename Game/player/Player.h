@@ -99,6 +99,9 @@ public:
         float offsetY = 0.0f;           // ボス基準 Y オフセット
         float duration = 0.2f;          // この経由地への移動時間（秒）
         std::vector<float> hits;        // 当たり判定マーカー（セグメント内 0.0〜1.0）
+        int interpolation = 0;          // 0: Linear, 1: EaseIn, 2: EaseOut, 3: EaseInOut, 4: Step
+        float offsetZ = 0.0f;
+        bool targetRelative = false;
     };
 
     // ===== 上必殺技Lv3 クロスマーク軌跡の線分 =====
@@ -126,6 +129,26 @@ public:
         float speedRate = 1.0f;
         float hitStopSec = 0.06f;
         std::vector<UpLv3Waypoint> waypoints;
+        float startOffsetZ = 0.0f;
+        bool startTargetRelative = false;
+    };
+
+    struct SpecialEffectKeyframe {
+        float time = 0.0f;
+        std::string templateName;
+        std::string jsonPath;
+        Vector3 offset{ 0.0f, 0.0f, 0.0f };
+    };
+
+    struct SpecialHitboxTiming {
+        float time = 0.0f;
+        float duration = 0.08f;
+        float hitStopSec = 0.14f;
+        Vector3 offset{ 1.0f, 1.0f, 0.0f };
+        Vector3 halfSize{ 0.6f, 0.8f, 0.5f };
+        int damage = 12;
+        bool active = true;
+        bool followPlayerMovement = true;
     };
 
     // ===== 解決済みのプレイヤー入力コマンド =====
@@ -173,6 +196,7 @@ public:
     int GetSpecialCancelSoundLevel() const { return specialCancelSoundLevel_; }
     int GetCurrentSpecialVariantLevel() const { return static_cast<int>(iSpecialVariant_); }
     float GetCurrentSpecialHitStopRate() const;
+    float GetCurrentSpecialHitStopSec() const;
     bool IsSideSpecialLv3AttackActive() const;
     int GetUComboStageDisplay() const { return lastUComboStage_ + 1; }
     bool IsUComboAccepting() const { return IsUComboAccepting_(); }
@@ -289,6 +313,7 @@ public:
     // ===== 必殺技汎用エディタ用パラメータアクセス =====
     const SpecialMoveTuning& GetSpecialMoveTuning(SpecialMoveIndex idx) const { return specialMoveTunings_[static_cast<size_t>(idx)]; }
     SpecialMoveTuning& GetSpecialMoveTuningMutable(SpecialMoveIndex idx) { return specialMoveTunings_[static_cast<size_t>(idx)]; }
+	bool LoadSpecialAttackMovementJson(const std::string& path = "resources/Data/PlayerIAttacks.json");
 
     // ===== 後方互換マッピング（上Lv3） =====
     float GetUpLv3StartOffsetX() const { return specialMoveTunings_[static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)].startOffsetX; }
@@ -353,6 +378,8 @@ private:
     void StartIAttack_(PlayerAttackType type);
     void UpdateIAttack_(float dt);
     void ChangeIAttackState_(PlayerIAttackState state);
+    void ResetSpecialAttackEffects_();
+    void UpdateSpecialAttackEffects_();
     void UpdateMove_(float dt, const Input& input);
     void UpdateMove_(float dt, const PlayerInputCommand& command);
     void ApplyPhysics_(float dt);
@@ -458,6 +485,13 @@ private:
 
     // ===== 必殺技エディタ用汎用パラメータ =====
     std::array<SpecialMoveTuning, static_cast<size_t>(SpecialMoveIndex::Count)> specialMoveTunings_;
+    std::array<std::array<std::vector<SpecialEffectKeyframe>, 4>, 4> specialEffectKeyframes_{};
+    std::array<std::array<std::vector<SpecialHitboxTiming>, 4>, 4> specialHitboxTimings_{};
+    Vector3 specialAttackStartPosition_{};
+    size_t nextSpecialEffectKey_ = 0;
+    PlayerAttackType specialEffectAttackType_ = PlayerAttackType::None;
+    int specialEffectLevel_ = -1;
+    float specialEffectLastElapsedSec_ = -1.0f;
 
     // ===== 上必殺技ジグザグ移動先固定ターゲット =====
     Vector3 upSpecialTarget_{};

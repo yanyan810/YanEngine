@@ -4,12 +4,16 @@
 #include "DirectXCommon.h"
 #include "Camera.h"
 #include "ParticleManager.h"
+#include "Effect/EffectManager.h"
 
 #include "EnemyManager.h"
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <fstream>
 
 static const char* kHumanWalk_Set[] = {
     "human/walk.gltf",
@@ -141,6 +145,8 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     for (size_t i = 0; i < static_cast<size_t>(SpecialMoveIndex::Count); ++i) {
         specialMoveTunings_[i].startOffsetX = 5.0f;
         specialMoveTunings_[i].startOffsetY = 0.0f;
+		specialMoveTunings_[i].startOffsetZ = 0.0f;
+		specialMoveTunings_[i].startTargetRelative = false;
         specialMoveTunings_[i].startFollowPlayer = (i == static_cast<size_t>(SpecialMoveIndex::UpSpecial_Lv3)) ? false : true;
         specialMoveTunings_[i].speedRate = 1.0f;
         specialMoveTunings_[i].hitStopSec = 0.06f;
@@ -154,6 +160,9 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
         { 0.0f,  4.0f, 0.18f, { 0.0f, 0.5f, 0.9f } },
         {-1.5f,  0.0f, 0.24f, { 0.0f, 0.5f, 0.9f } }
     };
+
+	// Movement authored in the PlayerAttack editor overrides the legacy defaults.
+	LoadSpecialAttackMovementJson();
 
     // ===== プレイヤーの軌跡エフェクト用パーティクルグループの作成 =====
     auto* pm = ParticleManager::GetInstance();
@@ -170,8 +179,213 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     }
 }
 
+bool Player::LoadSpecialAttackMovementJson(const std::string& path)
+{
+	using json = nlohmann::json;
+	try {
+		std::ifstream file(path);
+		if (!file.is_open()) {
+			return false;
+		}
+		json root;
+		file >> root;
+		if (!root.contains("attacks") || !root.at("attacks").is_array()) {
+			return false;
+		}
+		for (auto& attackLevels : specialEffectKeyframes_) {
+			for (auto& levelKeys : attackLevels) {
+				levelKeys.clear();
+			}
+		}
+		for (auto& attackLevels : specialHitboxTimings_) {
+			for (auto& levelKeys : attackLevels) {
+				levelKeys.clear();
+			}
+		}
+
+		auto tuningIndex = [](const std::string& type, int level, SpecialMoveIndex& out) {
+			if (level < 1 || level > 3) return false;
+			if (type == "NeutralSpecial") {
+				out = static_cast<SpecialMoveIndex>(static_cast<int>(SpecialMoveIndex::NeutralSpecial_Lv1) + level - 1);
+				return true;
+			}
+			if (type == "UpSpecial") {
+				out = static_cast<SpecialMoveIndex>(static_cast<int>(SpecialMoveIndex::UpSpecial_Lv1) + level - 1);
+				return true;
+			}
+			return false;
+		};
+
+		bool loadedAny = false;
+		for (const auto& attack : root.at("attacks")) {
+			const std::string type = attack.value("type", "");
+			int effectAttackIndex = -1;
+			if (type == "NeutralSpecial") effectAttackIndex = 0;
+			else if (type == "SideSpecial") effectAttackIndex = 1;
+			else if (type == "UpSpecial") effectAttackIndex = 2;
+			else if (type == "DownSpecial") effectAttackIndex = 3;
+			for (const auto& levelJson : attack.value("levels", json::array())) {
+				const int level = levelJson.value("level", 0);
+
+				// Effects are available for every special type and Lv0-Lv3, even when
+				// that level does not contain movement waypoints.
+				if (effectAttackIndex >= 0 && level >= 0 && level < 4) {
+					auto& hitboxTimings = specialHitboxTimings_[effectAttackIndex][level];
+					for (const auto& hitboxJson : levelJson.value("hitboxes", json::array())) {
+						SpecialHitboxTiming timing;
+						timing.time = std::max(0.0f, hitboxJson.value("time", timing.time));
+						timing.duration = std::max(0.0f, hitboxJson.value("duration", timing.duration));
+						timing.hitStopSec = std::clamp(hitboxJson.value("hitStopSec", timing.hitStopSec), 0.0f, 1.0f);
+						timing.active = hitboxJson.value("active", timing.active);
+						timing.damage = hitboxJson.value("damage", timing.damage);
+						timing.followPlayerMovement = hitboxJson.value("followPlayerMovement", timing.followPlayerMovement);
+						const auto offset = hitboxJson.value("offset", json::array({ 1.0f, 1.0f, 0.0f }));
+						if (offset.is_array() && offset.size() >= 3) {
+							timing.offset = { offset[0].get<float>(), offset[1].get<float>(), offset[2].get<float>() };
+						}
+						const auto halfSize = hitboxJson.value("halfSize", json::array({ 0.6f, 0.8f, 0.5f }));
+						if (halfSize.is_array() && halfSize.size() >= 3) {
+							timing.halfSize = { halfSize[0].get<float>(), halfSize[1].get<float>(), halfSize[2].get<float>() };
+						}
+						hitboxTimings.push_back(timing);
+					}
+					std::sort(hitboxTimings.begin(), hitboxTimings.end(),
+						[](const SpecialHitboxTiming& a, const SpecialHitboxTiming& b) {
+							return a.time < b.time;
+						});
+					loadedAny = loadedAny || !hitboxTimings.empty();
+
+					auto& effectKeys = specialEffectKeyframes_[effectAttackIndex][level];
+					int effectIndex = 0;
+					for (const auto& effectJson : levelJson.value("effectKeyframes", json::array())) {
+						const std::string jsonPath = effectJson.value("jsonPath", "");
+						if (jsonPath.empty()) continue;
+						SpecialEffectKeyframe key;
+						key.time = std::max(0.0f, effectJson.value("time", 0.0f));
+						key.jsonPath = jsonPath;
+						key.templateName = "PlayerIAttack_" + type + "_Lv" +
+							std::to_string(level) + "_Effect" + std::to_string(effectIndex++);
+						const auto offset = effectJson.value("offset", json::array({ 0.0f, 0.0f, 0.0f }));
+						if (offset.is_array() && offset.size() >= 3) {
+							key.offset = { offset[0].get<float>(), offset[1].get<float>(), offset[2].get<float>() };
+						}
+						effectKeys.push_back(std::move(key));
+					}
+					std::sort(effectKeys.begin(), effectKeys.end(), [](const SpecialEffectKeyframe& a, const SpecialEffectKeyframe& b) {
+						return a.time < b.time;
+					});
+					loadedAny = loadedAny || !effectKeys.empty();
+				}
+
+				SpecialMoveIndex index{};
+				if (!tuningIndex(type, level, index)) continue;
+				const auto positions = levelJson.value("positionKeyframes", json::array());
+				if (!positions.is_array() || positions.size() < 2) continue;
+
+				struct PositionSample { float time; Vector3 offset; int interpolation; bool targetRelative; };
+				std::vector<PositionSample> samples;
+				for (const auto& item : positions) {
+					const auto offset = item.value("offset", json::array());
+					if (!offset.is_array() || offset.size() < 3) continue;
+					const std::string interpolationName = item.value("interpolation", "linear");
+					int interpolation = 0;
+					if (interpolationName == "easeIn") interpolation = 1;
+					else if (interpolationName == "easeOut") interpolation = 2;
+					else if (interpolationName == "easeInOut") interpolation = 3;
+					else if (interpolationName == "step") interpolation = 4;
+					const bool targetRelative = item.value("space", std::string("playerStart")) == "bossTarget";
+					samples.push_back({ item.value("time", 0.0f), { offset[0].get<float>(), offset[1].get<float>(), offset[2].get<float>() }, interpolation, targetRelative });
+				}
+				if (samples.size() < 2) continue;
+				std::sort(samples.begin(), samples.end(), [](const PositionSample& a, const PositionSample& b) { return a.time < b.time; });
+
+				auto& tuning = specialMoveTunings_[static_cast<size_t>(index)];
+				tuning.startFollowPlayer = std::abs(samples.front().offset.x) < 0.001f && std::abs(samples.front().offset.y) < 0.001f;
+				tuning.startOffsetX = samples.front().offset.x;
+				tuning.startOffsetY = samples.front().offset.y;
+				tuning.startOffsetZ = samples.front().offset.z;
+				tuning.startTargetRelative = samples.front().targetRelative;
+				tuning.speedRate = 1.0f;
+				tuning.waypoints.clear();
+
+				const auto hitboxes = levelJson.value("hitboxes", json::array());
+				for (size_t i = 1; i < samples.size(); ++i) {
+					UpLv3Waypoint waypoint;
+					waypoint.offsetX = samples[i].offset.x;
+					waypoint.offsetY = samples[i].offset.y;
+					waypoint.offsetZ = samples[i].offset.z;
+					waypoint.targetRelative = samples[i].targetRelative;
+					waypoint.duration = std::max(0.02f, samples[i].time - samples[i - 1].time);
+					waypoint.interpolation = samples[i - 1].interpolation;
+					for (const auto& hitbox : hitboxes) {
+						const float hitTime = hitbox.value("time", -1.0f);
+						if (hitTime >= samples[i - 1].time && hitTime <= samples[i].time) {
+							waypoint.hits.push_back(std::clamp((hitTime - samples[i - 1].time) / waypoint.duration, 0.0f, 1.0f));
+						}
+					}
+					tuning.waypoints.push_back(std::move(waypoint));
+				}
+				loadedAny = true;
+			}
+		}
+		return loadedAny;
+	} catch (...) {
+		return false;
+	}
+}
+
 
 // ===== カメラの設定 =====
+void Player::ResetSpecialAttackEffects_()
+{
+    nextSpecialEffectKey_ = 0;
+    specialEffectAttackType_ = attackType_;
+    specialEffectLevel_ = std::clamp(static_cast<int>(iSpecialVariant_), 0, 3);
+    specialEffectLastElapsedSec_ = -1.0f;
+}
+
+void Player::UpdateSpecialAttackEffects_()
+{
+    if (action_ != PlayerAction::Attack || !IsIAttackType_(attackType_)) {
+        nextSpecialEffectKey_ = 0;
+        specialEffectAttackType_ = PlayerAttackType::None;
+        specialEffectLevel_ = -1;
+        specialEffectLastElapsedSec_ = -1.0f;
+        return;
+    }
+
+    int attackIndex = -1;
+    switch (attackType_) {
+    case PlayerAttackType::NeutralSpecial: attackIndex = 0; break;
+    case PlayerAttackType::SideSpecial: attackIndex = 1; break;
+    case PlayerAttackType::UpSpecial: attackIndex = 2; break;
+    case PlayerAttackType::DownSpecial: attackIndex = 3; break;
+    default: return;
+    }
+    const int level = std::clamp(static_cast<int>(iSpecialVariant_), 0, 3);
+    if (specialEffectAttackType_ != attackType_ || specialEffectLevel_ != level ||
+        attackElapsedSec_ + 0.0001f < specialEffectLastElapsedSec_) {
+        ResetSpecialAttackEffects_();
+    }
+
+    const auto& keys = specialEffectKeyframes_[attackIndex][level];
+    auto* effectManager = EffectManager::GetInstance();
+    while (nextSpecialEffectKey_ < keys.size() &&
+        keys[nextSpecialEffectKey_].time <= attackElapsedSec_ + 0.0001f) {
+        const SpecialEffectKeyframe& key = keys[nextSpecialEffectKey_++];
+        if (!effectManager->HasEffect(key.templateName)) {
+            effectManager->LoadEffect(key.templateName, key.jsonPath);
+        }
+        const Vector3 worldPosition = {
+            pos_.x + key.offset.x * static_cast<float>(facing_),
+            pos_.y + key.offset.y,
+            pos_.z + key.offset.z
+        };
+        effectManager->Play(key.templateName, worldPosition);
+    }
+    specialEffectLastElapsedSec_ = attackElapsedSec_;
+}
+
 void Player::SetCamera(Camera* cam) {
     cam_ = cam;
     if (model_) model_->SetCamera(cam_);
@@ -294,6 +508,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         vel_.z = 0.0f;
     }
     specialCancelDebugFlashSec_ = std::max(0.0f, specialCancelDebugFlashSec_ - dt);
+    UpdateSpecialAttackEffects_();
     UpdateIAttack_(dt);
     PlayActionAnimation_(command);
 

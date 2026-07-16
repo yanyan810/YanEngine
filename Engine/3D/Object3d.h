@@ -1,5 +1,6 @@
 #pragma once
 #include "MathStruct.h"
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <format>
@@ -183,6 +184,7 @@ public:
 	//Matrix4x4 GetJointWorldMatrix(const std::string& jointName) const;
 
 public:
+	Matrix4x4 CalculateWorldMatrix() const;
 
 	void SetUseEnvironmentMap(bool use) { useEnvironmentMap_ = use; }
 	bool GetUseEnvironmentMap() const { return useEnvironmentMap_; }
@@ -204,7 +206,6 @@ public:
 
 private:
 	void EnsureInstanceMaterial_();
-	Matrix4x4 CalculateWorldMatrix() const;
 
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
@@ -283,6 +284,17 @@ public:
 	void SetAnimationNodeName(const std::string& node) { if(animator_) animator_->SetAnimationNodeName(node); }
 
 	bool HasAnimation() const { return animator_ ? animator_->HasAnimation() : false; }
+	std::vector<std::string> GetAnimationNames() const {
+		std::vector<std::string> names;
+		if (!model_) return names;
+		names.reserve(model_->GetAnimations().size());
+		for (const auto& [name, animation] : model_->GetAnimations()) {
+			(void)animation;
+			names.push_back(name);
+		}
+		std::sort(names.begin(), names.end());
+		return names;
+	}
 
 	void SetDebugDrawBones(bool enable) { debugDrawBones_ = enable; }
 	void SetBoneMarkerModel(const std::string& path) { boneMarkerModel_ = path; }
