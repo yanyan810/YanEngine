@@ -6,6 +6,7 @@
 #include "DebugAIManager.h"
 #include "GeminiDebugActionProvider.h"
 #include "DebugJson.h"
+#include "DebugInputReplay.h"
 #include "DebugLogger.h"
 #include "DebugReplayPlayer.h"
 #include "DebugReplayRecorder.h"

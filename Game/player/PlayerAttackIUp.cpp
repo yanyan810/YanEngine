@@ -48,6 +48,30 @@ bool PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(Player& player, float dt,
         };
     };
 
+    auto canAdvanceFromPosition = [&](int positionIndex, bool advanceOnHit) {
+        if (!advanceOnHit || player.specialWaypointPassedPositionIndex_ >= positionIndex) return true;
+        if (player.specialHitConfirmSerial_ > player.specialWaypointConsumedHitSerial_) {
+            player.specialWaypointConsumedHitSerial_ = player.specialHitConfirmSerial_;
+            player.specialWaypointPassedPositionIndex_ = positionIndex;
+            return true;
+        }
+        return false;
+    };
+    auto holdAtPosition = [&](const Vector3& position, float boundaryTime) {
+        const float overshoot = std::max(0.0f, player.iAttackStateTime_ - boundaryTime);
+        player.iAttackStateTime_ = boundaryTime;
+        player.attackElapsedSec_ = std::max(0.0f, player.attackElapsedSec_ - overshoot);
+        player.actionTimer_ += overshoot;
+        player.pos_ = position;
+        player.vel_ = { 0.0f, 0.0f, 0.0f };
+        player.iAttackHitActive_ = true;
+    };
+
+    if (!canAdvanceFromPosition(0, spTuning.startAdvanceOnHit)) {
+        holdAtPosition(resolveStart(), 0.0f);
+        return false;
+    }
+
     float totalMoveDuration = 0.0f;
     for (const auto& wp : waypoints) {
         totalMoveDuration += ScaledDuration(wp.duration, tuning.moveDurationRate) * (1.0f / spTuning.speedRate);
@@ -58,6 +82,20 @@ bool PlayerIUpSpecial::UpdateUpSpecialWaypointMovement(Player& player, float dt,
 
     for (int i = 0; i < static_cast<int>(waypoints.size()); ++i) {
         const float segDuration = ScaledDuration(waypoints[i].duration, tuning.moveDurationRate) * (1.0f / spTuning.speedRate);
+        const float segmentEndTime = cumulativeTime + segDuration;
+        const int destinationPositionIndex = i + 1;
+        if (waypoints[i].advanceOnHit &&
+            player.specialWaypointPassedPositionIndex_ < destinationPositionIndex &&
+            player.iAttackStateTime_ >= cumulativeTime &&
+            player.specialWaypointActiveGatePositionIndex_ != destinationPositionIndex) {
+            player.specialWaypointActiveGatePositionIndex_ = destinationPositionIndex;
+            player.specialWaypointConsumedHitSerial_ = player.specialHitConfirmSerial_;
+        }
+        if (i + 1 < static_cast<int>(waypoints.size()) && player.iAttackStateTime_ >= segmentEndTime &&
+            !canAdvanceFromPosition(destinationPositionIndex, waypoints[i].advanceOnHit)) {
+            holdAtPosition(resolveWaypoint(waypoints[i]), segmentEndTime);
+            return false;
+        }
         if (player.iAttackStateTime_ < cumulativeTime + segDuration) {
             const int phaseBase = (i + 1) * 100;
             if (player.iSpecialPulseIndex_ < phaseBase) {

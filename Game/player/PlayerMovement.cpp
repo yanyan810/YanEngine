@@ -593,7 +593,7 @@ bool Player::ResolveObstaclesAABB(const std::vector<AABB>& obstacles) {
 void Player::UpdateModel_() {
     if (!model_) return;
 
-    model_->SetTranslate({ pos_.x, pos_.y, pos_.z });
+    model_->SetTranslate({ pos_.x, pos_.y, pos_.z + specialVisualZOffset_ });
 
     const float sx = (facing_ > 0) ? 1.0f : -1.0f;
     model_->SetScale({ sx, 1.0f, 1.0f });

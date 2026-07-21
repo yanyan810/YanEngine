@@ -270,6 +270,8 @@ void ParticleTestScene::SortCurrentPlayerSpecialTimeline_()
 	);
 	std::sort(timeline.opacityKeyframes.begin(), timeline.opacityKeyframes.end(),
 		[](const PlayerSpecialOpacityKeyframe& a, const PlayerSpecialOpacityKeyframe& b) { return a.time < b.time; });
+	std::sort(timeline.visualZKeyframes.begin(), timeline.visualZKeyframes.end(),
+		[](const PlayerSpecialVisualZKeyframe& a, const PlayerSpecialVisualZKeyframe& b) { return a.time < b.time; });
 	std::sort(timeline.rotationKeyframes.begin(), timeline.rotationKeyframes.end(),
 		[](const PlayerSpecialRotationKeyframe& a, const PlayerSpecialRotationKeyframe& b) { return a.time < b.time; });
 	std::sort(timeline.effectKeyframes.begin(), timeline.effectKeyframes.end(),
@@ -294,7 +296,17 @@ void ParticleTestScene::SyncPlayerSpecialPreviewNodes_()
 		node.startTime = key.time;
 		node.presetDuration = std::max(0.01f, timeline.totalSec - key.time);
 		node.endTime = node.startTime + node.presetDuration;
-		node.position = playerSpecialPreviewOrigin_ + key.offset;
+		node.followOwnerMovement =
+			key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer;
+		node.ownerOffset = key.offset;
+		if (key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::MovementPoint &&
+			key.movementPointIndex >= 0 &&
+			key.movementPointIndex < static_cast<int>(timeline.positionKeyframes.size())) {
+			node.position = playerSpecialPreviewOrigin_ +
+				ResolvePlayerSpecialPositionOffset_(timeline.positionKeyframes[key.movementPointIndex]) + key.offset;
+		} else {
+			node.position = playerSpecialPreviewOrigin_ + key.offset;
+		}
 		particleNodes_.push_back(std::move(node));
 	}
 
@@ -328,12 +340,14 @@ void ParticleTestScene::EvaluatePlayerSpecialTimeline_()
 	// ヒットボックスの状態に関係なく位置を評価する
 	EvaluatePlayerSpecialPosition_();
 
-	//プレイヤーの位置をうごかす
+	EvaluatePlayerSpecialVisualZ_();
+	// Gameplay position and presentation-only depth are combined only for the model.
 	ApplyPlayerSpecialPreviewPosition_();
 	EvaluatePlayerSpecialRotation_();
 	EvaluatePlayerSpecialOpacity_();
 	EvaluatePlayerSpecialAnimation_();
-	TriggerPlayerSpecialEffects_();
+	// Effect keys are restored as dope-sheet nodes and emitted by EvaluateTimeline_.
+	// Keeping a second direct trigger here produced duplicate effect instances.
 
 	const PlayerSpecialTimeline& timeline = CurrentPlayerSpecialTimeline_();
 	previewPlayerAttackHitbox_.time = timelineTime_;
@@ -373,6 +387,36 @@ void ParticleTestScene::EvaluatePlayerSpecialTimeline_()
 		previewPlayerAttackHitbox_.followPlayerMovement = nearest->followPlayerMovement;
 	}
 
+}
+
+void ParticleTestScene::EvaluatePlayerSpecialVisualZ_()
+{
+	const auto& keys = CurrentPlayerSpecialTimeline_().visualZKeyframes;
+	previewSpecialVisualZOffset_ = 0.0f;
+	if (keys.empty()) return;
+	if (timelineTime_ <= keys.front().time) {
+		previewSpecialVisualZOffset_ = keys.front().offsetZ;
+		return;
+	}
+	for (size_t i = 0; i + 1 < keys.size(); ++i) {
+		const auto& a = keys[i];
+		const auto& b = keys[i + 1];
+		if (timelineTime_ < a.time || timelineTime_ > b.time) continue;
+		const float duration = std::max(0.001f, b.time - a.time);
+		float t = std::clamp((timelineTime_ - a.time) / duration, 0.0f, 1.0f);
+		switch (a.interpolation) {
+		case ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseIn: t *= t; break;
+		case ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseOut: t = 1.0f - (1.0f - t) * (1.0f - t); break;
+		case ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseInOut:
+			t = t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) * 0.5f;
+			break;
+		case ParticleTestEditor::PlayerSpecialPositionInterpolation::Step: t = 0.0f; break;
+		default: break;
+		}
+		previewSpecialVisualZOffset_ = a.offsetZ + (b.offsetZ - a.offsetZ) * t;
+		return;
+	}
+	previewSpecialVisualZOffset_ = keys.back().offsetZ;
 }
 
 void ParticleTestScene::EvaluatePlayerSpecialOpacity_()

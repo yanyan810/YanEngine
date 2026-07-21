@@ -12,6 +12,42 @@ bool PlayerINeutralSpecial::UpdateNeutralSpecialWaypointMovement(Player& player,
     const auto& waypoints = spTuning.waypoints;
     const Vector3 origin = player.GetUpSpecialTarget();
 
+    auto resolveWaypoint = [&](const Player::UpLv3Waypoint& waypoint) {
+        return Vector3{
+            origin.x - static_cast<float>(player.facing_) * waypoint.offsetX,
+            origin.y + waypoint.offsetY,
+            origin.z
+        };
+    };
+    const Vector3 startPosition{
+        origin.x - static_cast<float>(player.facing_) * spTuning.startOffsetX,
+        origin.y + spTuning.startOffsetY,
+        origin.z
+    };
+    auto canAdvanceFromPosition = [&](int positionIndex, bool advanceOnHit) {
+        if (!advanceOnHit || player.specialWaypointPassedPositionIndex_ >= positionIndex) return true;
+        if (player.specialHitConfirmSerial_ > player.specialWaypointConsumedHitSerial_) {
+            player.specialWaypointConsumedHitSerial_ = player.specialHitConfirmSerial_;
+            player.specialWaypointPassedPositionIndex_ = positionIndex;
+            return true;
+        }
+        return false;
+    };
+    auto holdAtPosition = [&](const Vector3& position, float boundaryTime) {
+        const float overshoot = std::max(0.0f, player.iAttackStateTime_ - boundaryTime);
+        player.iAttackStateTime_ = boundaryTime;
+        player.attackElapsedSec_ = std::max(0.0f, player.attackElapsedSec_ - overshoot);
+        player.actionTimer_ += overshoot;
+        player.pos_ = position;
+        player.vel_ = { 0.0f, 0.0f, 0.0f };
+        player.iAttackHitActive_ = true;
+    };
+
+    if (!canAdvanceFromPosition(0, spTuning.startAdvanceOnHit)) {
+        holdAtPosition(startPosition, 0.0f);
+        return false;
+    }
+
     float totalMoveDuration = 0.0f;
     for (const auto& wp : waypoints) {
         totalMoveDuration += ScaledDuration(wp.duration, tuning.moveDurationRate) * (1.0f / spTuning.speedRate);
@@ -22,6 +58,20 @@ bool PlayerINeutralSpecial::UpdateNeutralSpecialWaypointMovement(Player& player,
 
     for (int i = 0; i < static_cast<int>(waypoints.size()); ++i) {
         const float segDuration = ScaledDuration(waypoints[i].duration, tuning.moveDurationRate) * (1.0f / spTuning.speedRate);
+        const float segmentEndTime = cumulativeTime + segDuration;
+        const int destinationPositionIndex = i + 1;
+        if (waypoints[i].advanceOnHit &&
+            player.specialWaypointPassedPositionIndex_ < destinationPositionIndex &&
+            player.iAttackStateTime_ >= cumulativeTime &&
+            player.specialWaypointActiveGatePositionIndex_ != destinationPositionIndex) {
+            player.specialWaypointActiveGatePositionIndex_ = destinationPositionIndex;
+            player.specialWaypointConsumedHitSerial_ = player.specialHitConfirmSerial_;
+        }
+        if (i + 1 < static_cast<int>(waypoints.size()) && player.iAttackStateTime_ >= segmentEndTime &&
+            !canAdvanceFromPosition(destinationPositionIndex, waypoints[i].advanceOnHit)) {
+            holdAtPosition(resolveWaypoint(waypoints[i]), segmentEndTime);
+            return false;
+        }
         if (player.iAttackStateTime_ < cumulativeTime + segDuration) {
             const int phaseBase = (i + 1) * 100;
             if (player.iSpecialPulseIndex_ < phaseBase) {
@@ -29,11 +79,7 @@ bool PlayerINeutralSpecial::UpdateNeutralSpecialWaypointMovement(Player& player,
                 ++player.attackSerial_;
             }
 
-            const Vector3 target = {
-                origin.x - static_cast<float>(player.facing_) * waypoints[i].offsetX,
-                origin.y + waypoints[i].offsetY,
-                origin.z
-            };
+            const Vector3 target = resolveWaypoint(waypoints[i]);
 			const Vector3 segmentStart = i > 0 ? Vector3{
 				origin.x - static_cast<float>(player.facing_) * waypoints[i - 1].offsetX,
 				origin.y + waypoints[i - 1].offsetY,

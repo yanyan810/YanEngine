@@ -932,8 +932,13 @@ void TestScene::DrawImGui(GameApp& app) {
                 ImGui::Text("Up Special:");
                 if (ImGui::Button("Up Lv1 (Rise)")) {
                     if (Enemy* boss = enemyMgr_.GetBoss()) {
-                        Vector3 bossPos = boss->GetPos3D();
-                        player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 1, &bossPos);
+                        const AABB body = boss->GetBodyAABB();
+                        const Vector3 bossCenter{
+                            (body.min.x + body.max.x) * 0.5f,
+                            (body.min.y + body.max.y) * 0.5f,
+                            (body.min.z + body.max.z) * 0.5f
+                        };
+                        player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 1, &bossCenter);
                     } else {
                         player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 1);
                     }
@@ -941,8 +946,13 @@ void TestScene::DrawImGui(GameApp& app) {
                 ImGui::SameLine();
                 if (ImGui::Button("Up Lv2 (Beam)")) {
                     if (Enemy* boss = enemyMgr_.GetBoss()) {
-                        Vector3 bossPos = boss->GetPos3D();
-                        player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 2, &bossPos);
+                        const AABB body = boss->GetBodyAABB();
+                        const Vector3 bossCenter{
+                            (body.min.x + body.max.x) * 0.5f,
+                            (body.min.y + body.max.y) * 0.5f,
+                            (body.min.z + body.max.z) * 0.5f
+                        };
+                        player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 2, &bossCenter);
                     } else {
                         player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 2);
                     }
@@ -950,8 +960,13 @@ void TestScene::DrawImGui(GameApp& app) {
                 ImGui::SameLine();
                 if (ImGui::Button("Up Lv3 (Zigzag)")) {
                     if (Enemy* boss = enemyMgr_.GetBoss()) {
-                        Vector3 bossPos = boss->GetPos3D();
-                        player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 3, &bossPos);
+                        const AABB body = boss->GetBodyAABB();
+                        const Vector3 bossCenter{
+                            (body.min.x + body.max.x) * 0.5f,
+                            (body.min.y + body.max.y) * 0.5f,
+                            (body.min.z + body.max.z) * 0.5f
+                        };
+                        player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 3, &bossCenter);
                     } else {
                         player_->DebugTriggerSpecialAttack(Player::PlayerAttackType::UpSpecial, 3);
                     }

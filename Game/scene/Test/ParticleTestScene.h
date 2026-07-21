@@ -70,7 +70,8 @@ private:
     using PlayerSpecialTimeline = ParticleTestEditor::PlayerSpecialTimeline;
     using PlayerSpecialPositionKeyframe = ParticleTestEditor::PlayerSpecialPositionKeyframe;
     using PlayerSpecialRotationKeyframe = ParticleTestEditor::PlayerSpecialRotationKeyframe;
-	using PlayerSpecialOpacityKeyframe = ParticleTestEditor::PlayerSpecialOpacityKeyframe;
+    using PlayerSpecialOpacityKeyframe = ParticleTestEditor::PlayerSpecialOpacityKeyframe;
+	using PlayerSpecialVisualZKeyframe = ParticleTestEditor::PlayerSpecialVisualZKeyframe;
 	using PlayerSpecialEffectKeyframe = ParticleTestEditor::PlayerSpecialEffectKeyframe;
 	using PlayerSpecialParticleKeyframe = ParticleTestEditor::PlayerSpecialParticleKeyframe;
 	using PlayerSpecialAttackType = ParticleTestEditor::PlayerSpecialAttackType;
@@ -152,6 +153,7 @@ private:
 	void EvaluatePlayerSpecialPosition_();//プレイヤー必殺技の位置オフセットを補完する
 	Vector3 ResolvePlayerSpecialPositionOffset_(const PlayerSpecialPositionKeyframe& key) const;
 	void EvaluatePlayerSpecialOpacity_();
+	void EvaluatePlayerSpecialVisualZ_();
 	void EvaluatePlayerSpecialRotation_();
 	void EvaluatePlayerSpecialAnimation_();
 	void TriggerPlayerSpecialEffects_();
@@ -176,6 +178,7 @@ private:
 
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Camera> animationCamera_;
+    std::unique_ptr<Camera> gamePreviewCamera_;
     std::unique_ptr<Object3d> ground_;
     std::unique_ptr<Object3d> playerAttackHitboxCube_;
     std::unique_ptr<Object3d> bossDummy_;
@@ -219,6 +222,7 @@ private:
     PlayerSpecialMotionKeyframe currentSpecialMotion_{};
     PlayerSpecialPositionKeyframe currentSpecialPosition_{};
     PlayerSpecialOpacityKeyframe currentSpecialOpacity_{};
+    PlayerSpecialVisualZKeyframe currentSpecialVisualZ_{};
     PlayerSpecialRotationKeyframe currentSpecialRotation_{};
     PlayerSpecialEffectKeyframe currentSpecialEffect_{};
     PlayerSpecialAnimationKeyframe currentSpecialAnimation_{};
@@ -234,6 +238,7 @@ private:
     Vector3 animationCameraPosition_{ 0.0f, 3.0f, -12.0f };
     Vector3 animationCameraRotation_{ 0.0f, 0.0f, 0.0f };
 	Vector3 previewSpecialPositionOffset_{ 0.0f, 0.0f, 0.0f };//プレイヤー必殺技の位置オフセット
+	float previewSpecialVisualZOffset_ = 0.0f;
 	Vector3 playerSpecialPreviewOrigin_{ 0.0f, 0.0f, 0.0f };
 	Vector3 playerSpecialPreviewBaseRotation_{ 0.0f, 0.0f, 0.0f };
 	bool playerSpecialPreviewOriginInitialized_ = false;
@@ -241,6 +246,8 @@ private:
 	bool drawPlayerSpecialPath_ = true;
 	bool showBossDummy_ = true;
 	bool showBossDummyHitbox_ = true;
+	bool matchTestSceneLayout_ = true;
+	bool useGameCameraPreview_ = false;
 	Vector3 bossDummyPosition_{ 6.0f, 0.0f, 0.0f };
 	Vector3 bossDummyHalfSize_{ 1.2f, 2.0f, 1.4f };
 	int draggedPlayerSpecialPositionKey_ = -1;

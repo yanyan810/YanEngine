@@ -409,6 +409,24 @@ void EffectManager::Play(const std::string& effectName, const Vector3& worldPosi
     activeEffects_.push_back(std::move(active));
 }
 
+void EffectManager::SetCamera(Camera* camera) {
+    camera_ = camera;
+    for (auto& effect : activeEffects_) {
+        for (auto& object : effect.objects) {
+            if (object.object) object.object->SetCamera(camera_);
+        }
+    }
+}
+
+void EffectManager::SetActiveEffectWorldPosition(
+    const std::string& effectName, const Vector3& worldPosition) {
+    for (auto& active : activeEffects_) {
+        if (active.templateName == effectName) {
+            active.worldPosition = worldPosition;
+        }
+    }
+}
+
 bool EffectManager::HasEffect(const std::string& effectName) const {
     return templates_.contains(effectName);
 }

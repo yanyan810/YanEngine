@@ -2,6 +2,7 @@
 
 #include "DebugAIConfig.h"
 #include "DebugLogger.h"
+#include "DebugInputReplay.h"
 #include "DebugReplayPlayer.h"
 #include "DebugReplayRecorder.h"
 #include "IDebugBot.h"
@@ -52,6 +53,8 @@ public:
     const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
     const DebugReplayRecorder& PlayerReplayRecorder() const { return playerReplayRecorder_; }
     const DebugReplayPlayer& ReplayPlayer() const { return replayPlayer_; }
+    DebugInputReplay& InputReplay() { return inputReplay_; }
+    const DebugInputReplay& InputReplay() const { return inputReplay_; }
     const DebugAction& LastAction() const { return lastAction_; }
     bool ShouldLogEvents() const { return config_.logActionResults || replayMode_; }
     void LogEvent(const DebugGameState& state, const std::string& eventName, const std::string& message);
@@ -75,6 +78,7 @@ private:
     DebugReplayRecorder replayRecorder_;
     DebugReplayRecorder playerReplayRecorder_;
     DebugReplayPlayer replayPlayer_;
+    DebugInputReplay inputReplay_;
     DebugAction lastAction_;
     bool replayMode_ = false;
     bool isFirstReplayFrame_ = false;

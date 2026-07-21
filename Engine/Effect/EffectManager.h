@@ -108,10 +108,12 @@ public:
     void Finalize();
 
     void SetGraphicsResources(Object3dCommon* objCommon, DirectXCommon* dxCommon, Camera* camera);
+    void SetCamera(Camera* camera);
     void Draw();
 
     void LoadEffect(const std::string& effectName, const std::string& jsonPath);
     void Play(const std::string& effectName, const Vector3& worldPosition, float initialTime = 0.0f);
+    void SetActiveEffectWorldPosition(const std::string& effectName, const Vector3& worldPosition);
     void Update(float dt);
     bool HasEffect(const std::string& effectName) const;
     void ClearActiveEffects();

@@ -2762,6 +2762,24 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
 		FocusPlayerSpecialPathCamera_();
 	}
 	ImGui::TextDisabled("Cyan points are movement keys. Drag a point in the Scene view.");
+	if (ImGui::TreeNodeEx("Boss Target Dummy", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::Checkbox("Match Test Scene Layout##Main", &matchTestSceneLayout_);
+		if (matchTestSceneLayout_) {
+			ImGui::TextDisabled("Player (-12, 0, 5) / Boss (0, 0, 5)");
+			ImGui::TextDisabled("Uses the same spawn layout as TestScene.");
+		}
+		ImGui::Checkbox("Show Boss Dummy##Main", &showBossDummy_);
+		ImGui::SameLine();
+		ImGui::Checkbox("Show Body HitBox##Main", &showBossDummyHitbox_);
+		if (matchTestSceneLayout_) ImGui::BeginDisabled();
+		ImGui::DragFloat("Boss X (Horizontal)##Main", &bossDummyPosition_.x, 0.05f, -100.0f, 100.0f, "%.2f");
+		ImGui::DragFloat("Boss Y (Feet Height)##Main", &bossDummyPosition_.y, 0.05f, -100.0f, 100.0f, "%.2f");
+		ImGui::DragFloat("Boss Z (Depth)##Main", &bossDummyPosition_.z, 0.05f, -100.0f, 100.0f, "%.2f");
+		if (ImGui::Button("Reset Boss Position##Main")) bossDummyPosition_ = { 6.0f, 0.0f, 0.0f };
+		if (matchTestSceneLayout_) ImGui::EndDisabled();
+		ImGui::TextDisabled("The target center is %.2f units above the feet.", bossDummyHalfSize_.y);
+		ImGui::TreePop();
+	}
 	if (ImGui::Checkbox("Live Edit Preview", &livePreviewSpecialEdit_)) {
 		EvaluatePlayerSpecialTimeline_();
 	}
@@ -2776,6 +2794,10 @@ void ParticleTestScene::DrawPlayerAttackEditorImGui_(GameApp& app)
 	if (ImGui::Button("Use Special Duration")) {
 		timelineDuration_ = specialTimeline.totalSec;
 		RequestTimelineRebuild_(std::min(timelineTime_, timelineDuration_));
+	}
+	ImGui::Checkbox("Freeze Boss During Attack##Main", &specialTimeline.freezeBossDuringAttack);
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Stops the target boss for this entire special attack and releases it when the attack ends.");
 	}
 
 	ImGui::SeparatorText("Special HitBox Key");
@@ -2996,6 +3018,12 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 
 	if (playerAttackInspectorPage == 4) {
 	ImGui::SeparatorText("Player Object");
+	if (ImGui::Checkbox("Game Camera Preview", &useGameCameraPreview_)) {
+		ApplyCameraToEditorObjects_();
+	}
+	ImGui::TextDisabled(useGameCameraPreview_
+		? "Using the same framing calculation as TestScene."
+		: "Using the free editor camera.");
 	ImGui::TextDisabled(timelinePlaying_ ? "Player is shown during playback." : "Player is hidden until Play. Edit the cyan movement points in Scene.");
 	if (playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
 		EditorObject& player = editorObjects_[playerAttackObjectIndex_];
@@ -3006,7 +3034,9 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 		ImGui::Text("Model: %s", player.modelPath.c_str());
 
 		bool changed = false;
+		if (matchTestSceneLayout_) ImGui::BeginDisabled();
 		bool basePositionChanged = ImGui::DragFloat3("Player Base Position", &playerSpecialPreviewOrigin_.x, 0.05f);
+		if (matchTestSceneLayout_) ImGui::EndDisabled();
 		bool baseRotationChanged = ImGui::DragFloat3("Base Rotation", &player.rotation.x, 0.01f);
 		changed |= baseRotationChanged;
 		changed |= ImGui::DragFloat3("Scale", &player.scale.x, 0.05f, 0.01f, 100.0f);
@@ -3024,9 +3054,12 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 		const Vector3 positionBeforeGizmo = player.position;
 		DrawGizmoControls_(player);
 		const Vector3 gizmoDelta = player.position - positionBeforeGizmo;
-		if (std::abs(gizmoDelta.x) > 0.0001f || std::abs(gizmoDelta.y) > 0.0001f || std::abs(gizmoDelta.z) > 0.0001f) {
+		if (!matchTestSceneLayout_ &&
+			(std::abs(gizmoDelta.x) > 0.0001f || std::abs(gizmoDelta.y) > 0.0001f || std::abs(gizmoDelta.z) > 0.0001f)) {
 			playerSpecialPreviewOrigin_ += gizmoDelta;
 			playerSpecialPreviewOriginInitialized_ = true;
+			ApplyPlayerSpecialPreviewPosition_();
+		} else if (matchTestSceneLayout_) {
 			ApplyPlayerSpecialPreviewPosition_();
 		}
 		DrawBoneControls_(player);
@@ -3138,6 +3171,7 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 		timelineDuration_ = specialTimeline.totalSec;
 		RequestTimelineRebuild_(std::min(timelineTime_, timelineDuration_));
 	}
+	ImGui::Checkbox("Freeze Boss During Attack##Inspector", &specialTimeline.freezeBossDuringAttack);
 
 	if (playerAttackInspectorPage == 0) {
 	ImGui::SeparatorText("Current Special HitBox");
@@ -3200,10 +3234,19 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 
 	if (playerAttackInspectorPage == 1) {
 	ImGui::SeparatorText("Boss Target Dummy");
+	ImGui::Checkbox("Match Test Scene Layout", &matchTestSceneLayout_);
+	if (matchTestSceneLayout_) {
+		ImGui::TextDisabled("Player Start: -12, 0, 5 / Boss Feet: 0, 0, 5");
+	}
 	ImGui::Checkbox("Show Boss Dummy", &showBossDummy_);
 	ImGui::SameLine();
 	ImGui::Checkbox("Show Body HitBox", &showBossDummyHitbox_);
-	ImGui::DragFloat3("Boss Feet Position", &bossDummyPosition_.x, 0.05f, -100.0f, 100.0f);
+	if (matchTestSceneLayout_) ImGui::BeginDisabled();
+	ImGui::DragFloat("Boss X (Horizontal)", &bossDummyPosition_.x, 0.05f, -100.0f, 100.0f, "%.2f");
+	ImGui::DragFloat("Boss Y (Feet Height)", &bossDummyPosition_.y, 0.05f, -100.0f, 100.0f, "%.2f");
+	ImGui::DragFloat("Boss Z (Depth)", &bossDummyPosition_.z, 0.05f, -100.0f, 100.0f, "%.2f");
+	if (ImGui::Button("Reset Boss Position")) bossDummyPosition_ = { 6.0f, 0.0f, 0.0f };
+	if (matchTestSceneLayout_) ImGui::EndDisabled();
 	ImGui::DragFloat3("Boss Body Half Size", &bossDummyHalfSize_.x, 0.05f, 0.05f, 20.0f);
 	const Vector3 bossTargetCenter{
 		bossDummyPosition_.x,
@@ -3264,6 +3307,10 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 	if (currentSpecialPosition_.space == ParticleTestEditor::PlayerSpecialPositionSpace::BossTarget) {
 		ImGui::TextDisabled("Offset is measured from the boss body center.");
 	}
+	if (ImGui::Checkbox("Advance To Next Point On Hit", &currentSpecialPosition_.advanceOnHit)) {
+		positionChanged = true;
+	}
+	ImGui::TextDisabled("When enabled, the player waits here until the current attack confirms a hit.");
 
 	// Speed and time express the same segment in two different ways. Editing the
 	// speed recalculates this key's arrival time from the preceding registered key.
@@ -3337,7 +3384,7 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 	//登録した位置を一覧表示する
 	if (ImGui::BeginTable(
 		"PositionKeyTable",
-		8,
+		9,
 		ImGuiTableFlags_Borders |
 		ImGuiTableFlags_RowBg)) {
 
@@ -3349,6 +3396,7 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 		ImGui::TableSetupColumn("Base");
 		ImGui::TableSetupColumn("Ease");
 		ImGui::TableSetupColumn("Speed");
+		ImGui::TableSetupColumn("Hit Next");
 		ImGui::TableSetupColumn("Delete");
 		ImGui::TableHeadersRow();
 
@@ -3409,8 +3457,11 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 				ImGui::TextUnformatted("-");
 			}
 
-			//Delete列
 			ImGui::TableSetColumnIndex(7);
+			ImGui::TextUnformatted(key.advanceOnHit && i + 1 < specialTimeline.positionKeyframes.size() ? "Wait" : "-");
+
+			//Delete列
+			ImGui::TableSetColumnIndex(8);
 
 			if (ImGui::Button("Delete")) {
 
@@ -3488,6 +3539,65 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 	}
 
 	if (playerAttackInspectorPage == 2) {
+	ImGui::SeparatorText("Visual Z Keys (Model Only)");
+	ImGui::TextDisabled("Moves only the rendered player and following effects. Physics and hitboxes stay on the gameplay lane.");
+	if (ImGui::DragFloat("Visual Z Time", &currentSpecialVisualZ_.time, 0.01f, 0.0f, 0.0f, "%.2f")) {
+		currentSpecialVisualZ_.time = std::max(0.0f, currentSpecialVisualZ_.time);
+		specialTimeline.totalSec = std::max(specialTimeline.totalSec, currentSpecialVisualZ_.time);
+		timelineDuration_ = std::max(timelineDuration_, specialTimeline.totalSec);
+	}
+	if (ImGui::DragFloat("Visual Z Offset", &currentSpecialVisualZ_.offsetZ, 0.05f, -50.0f, 50.0f, "%.2f")) {
+		EvaluatePlayerSpecialTimeline_();
+	}
+	int visualZEasing = static_cast<int>(currentSpecialVisualZ_.interpolation);
+	const char* visualZEasingNames[] = { "Linear", "Ease In", "Ease Out", "Ease In Out", "Instant / Step" };
+	if (ImGui::Combo("Visual Z Easing", &visualZEasing, visualZEasingNames, IM_ARRAYSIZE(visualZEasingNames))) {
+		currentSpecialVisualZ_.interpolation =
+			static_cast<ParticleTestEditor::PlayerSpecialPositionInterpolation>(visualZEasing);
+	}
+	if (ImGui::Button("Add / Replace Visual Z Key")) {
+		bool replaced = false;
+		for (auto& key : specialTimeline.visualZKeyframes) {
+			if (std::abs(key.time - currentSpecialVisualZ_.time) < 0.001f) {
+				key = currentSpecialVisualZ_;
+				replaced = true;
+				break;
+			}
+		}
+		if (!replaced) specialTimeline.visualZKeyframes.push_back(currentSpecialVisualZ_);
+		SortCurrentPlayerSpecialTimeline_();
+		EvaluatePlayerSpecialTimeline_();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Reset Visual Z")) {
+		currentSpecialVisualZ_.offsetZ = 0.0f;
+	}
+	if (ImGui::BeginTable("VisualZKeyTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+		ImGui::TableSetupColumn("Time"); ImGui::TableSetupColumn("Z"); ImGui::TableSetupColumn("Easing");
+		ImGui::TableSetupColumn("Use"); ImGui::TableSetupColumn("Delete"); ImGui::TableHeadersRow();
+		int deleteVisualZIndex = -1;
+		for (int i = 0; i < static_cast<int>(specialTimeline.visualZKeyframes.size()); ++i) {
+			const auto& key = specialTimeline.visualZKeyframes[i];
+			ImGui::PushID(18000 + i); ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0); ImGui::Text("%.2f", key.time);
+			ImGui::TableSetColumnIndex(1); ImGui::Text("%.2f", key.offsetZ);
+			ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(visualZEasingNames[static_cast<int>(key.interpolation)]);
+			ImGui::TableSetColumnIndex(3);
+			if (ImGui::Button("Set")) {
+				currentSpecialVisualZ_ = key;
+				timelineTime_ = key.time;
+				EvaluatePlayerSpecialTimeline_();
+			}
+			ImGui::TableSetColumnIndex(4); if (ImGui::Button("Delete")) deleteVisualZIndex = i;
+			ImGui::PopID();
+		}
+		ImGui::EndTable();
+		if (deleteVisualZIndex >= 0) {
+			specialTimeline.visualZKeyframes.erase(specialTimeline.visualZKeyframes.begin() + deleteVisualZIndex);
+			EvaluatePlayerSpecialTimeline_();
+		}
+	}
+
 	ImGui::SeparatorText("Player Opacity Keys");
 	if (ImGui::DragFloat("Opacity Time", &currentSpecialOpacity_.time, 0.01f, 0.0f, 0.0f, "%.2f")) {
 		currentSpecialOpacity_.time = std::max(0.0f, currentSpecialOpacity_.time);
@@ -3761,6 +3871,65 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 		if (OpenEffectJsonFileDialog_(false, selectedPath)) strncpy_s(playerSpecialEffectPath_, sizeof(playerSpecialEffectPath_), selectedPath.c_str(), _TRUNCATE);
 	}
 	ImGui::DragFloat3("Effect Offset", &currentSpecialEffect_.offset.x, 0.05f, -100.0f, 100.0f);
+	int effectPositionMode = static_cast<int>(currentSpecialEffect_.positionMode);
+	const char* effectPositionModeNames[] = { "Fixed At Spawn", "Follow Player", "Movement Point" };
+	if (ImGui::Combo("Effect Position Base", &effectPositionMode,
+		effectPositionModeNames, IM_ARRAYSIZE(effectPositionModeNames))) {
+		currentSpecialEffect_.positionMode =
+			static_cast<ParticleTestEditor::PlayerSpecialEffectPositionMode>(effectPositionMode);
+		currentSpecialEffect_.followPlayerMovement =
+			currentSpecialEffect_.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer;
+		for (auto& key : specialTimeline.effectKeyframes) {
+			if (std::abs(key.time - currentSpecialEffect_.time) < 0.001f) {
+				key.positionMode = currentSpecialEffect_.positionMode;
+				key.followPlayerMovement = currentSpecialEffect_.followPlayerMovement;
+				key.movementPointIndex = currentSpecialEffect_.movementPointIndex;
+			}
+		}
+		SyncPlayerSpecialPreviewNodes_();
+		RequestTimelineRebuild_(timelineTime_);
+	}
+	if (currentSpecialEffect_.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::MovementPoint) {
+		const char* movementPointPreview = "Select a movement point";
+		std::string movementPointLabel;
+		if (currentSpecialEffect_.movementPointIndex >= 0 &&
+			currentSpecialEffect_.movementPointIndex < static_cast<int>(specialTimeline.positionKeyframes.size())) {
+			const auto& point = specialTimeline.positionKeyframes[currentSpecialEffect_.movementPointIndex];
+			movementPointLabel = "Point " + std::to_string(currentSpecialEffect_.movementPointIndex) +
+				"  " + std::to_string(point.time) + "s";
+			movementPointPreview = movementPointLabel.c_str();
+		}
+		if (ImGui::BeginCombo("Movement Point For Effect", movementPointPreview)) {
+			for (int pointIndex = 0; pointIndex < static_cast<int>(specialTimeline.positionKeyframes.size()); ++pointIndex) {
+				const auto& point = specialTimeline.positionKeyframes[pointIndex];
+				char label[96]{};
+				sprintf_s(label, "Point %d  %.2fs%s", pointIndex, point.time,
+					point.space == ParticleTestEditor::PlayerSpecialPositionSpace::BossTarget ? " [Boss]" : "");
+				if (ImGui::Selectable(label, currentSpecialEffect_.movementPointIndex == pointIndex)) {
+					currentSpecialEffect_.movementPointIndex = pointIndex;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		const bool canUseSelectedPoint = selectedPlayerSpecialPositionKey_ >= 0 &&
+			selectedPlayerSpecialPositionKey_ < static_cast<int>(specialTimeline.positionKeyframes.size());
+		if (!canUseSelectedPoint) ImGui::BeginDisabled();
+		if (ImGui::Button("Use Selected Movement Point") && canUseSelectedPoint) {
+			currentSpecialEffect_.movementPointIndex = selectedPlayerSpecialPositionKey_;
+		}
+		if (!canUseSelectedPoint) ImGui::EndDisabled();
+		ImGui::TextDisabled("This changes only the spawn position. Effect Time stays unchanged.");
+	}
+	auto resolveEffectPreviewPosition = [&](const PlayerSpecialEffectKeyframe& effectKey) {
+		if (effectKey.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::MovementPoint &&
+			effectKey.movementPointIndex >= 0 &&
+			effectKey.movementPointIndex < static_cast<int>(specialTimeline.positionKeyframes.size())) {
+			return playerSpecialPreviewOrigin_ +
+				ResolvePlayerSpecialPositionOffset_(specialTimeline.positionKeyframes[effectKey.movementPointIndex]) +
+				effectKey.offset;
+		}
+		return playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_ + effectKey.offset;
+	};
 	if (ImGui::Button("Add / Replace Effect Key")) {
 		currentSpecialEffect_.jsonPath = playerSpecialEffectPath_;
 		currentSpecialEffect_.name = "I_Attack_" + std::to_string(static_cast<int>(selectedPlayerSpecialAttackType_)) + "_" + std::to_string(selectedPlayerSpecialLevel_) + "_" + std::to_string(static_cast<int>(currentSpecialEffect_.time * 1000.0f));
@@ -3770,24 +3939,39 @@ void ParticleTestScene::DrawPlayerAttackInspectorImGui_(GameApp& app)
 		}
 		if (!replaced) specialTimeline.effectKeyframes.push_back(currentSpecialEffect_);
 		SortCurrentPlayerSpecialTimeline_();
+		SyncPlayerSpecialPreviewNodes_();
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Preview Effect") && playerSpecialEffectPath_[0] != '\0') {
 		currentSpecialEffect_.jsonPath = playerSpecialEffectPath_;
 		if (currentSpecialEffect_.name.empty()) currentSpecialEffect_.name = "I_Attack_Preview";
 		EffectManager::GetInstance()->LoadEffect(currentSpecialEffect_.name, currentSpecialEffect_.jsonPath);
-		EffectManager::GetInstance()->Play(currentSpecialEffect_.name, playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_ + currentSpecialEffect_.offset);
+		EffectManager::GetInstance()->Play(currentSpecialEffect_.name, resolveEffectPreviewPosition(currentSpecialEffect_));
 	}
-	if (ImGui::BeginTable("EffectKeyTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-		ImGui::TableSetupColumn("Time"); ImGui::TableSetupColumn("JSON"); ImGui::TableSetupColumn("Use"); ImGui::TableSetupColumn("Play"); ImGui::TableSetupColumn("Delete"); ImGui::TableHeadersRow();
+	if (ImGui::BeginTable("EffectKeyTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+		ImGui::TableSetupColumn("Time"); ImGui::TableSetupColumn("JSON"); ImGui::TableSetupColumn("Base"); ImGui::TableSetupColumn("Use"); ImGui::TableSetupColumn("Play"); ImGui::TableSetupColumn("Delete"); ImGui::TableHeadersRow();
 		int deleteIndex = -1;
 		for (int i = 0; i < static_cast<int>(specialTimeline.effectKeyframes.size()); ++i) {
-			const auto& key = specialTimeline.effectKeyframes[i]; ImGui::PushID(20000 + i); ImGui::TableNextRow();
+			auto& key = specialTimeline.effectKeyframes[i]; ImGui::PushID(20000 + i); ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0); ImGui::Text("%.2f", key.time);
 			ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(std::filesystem::path(key.jsonPath).filename().string().c_str());
-			ImGui::TableSetColumnIndex(2); if (ImGui::Button("Set")) { currentSpecialEffect_ = key; strncpy_s(playerSpecialEffectPath_, sizeof(playerSpecialEffectPath_), key.jsonPath.c_str(), _TRUNCATE); }
-			ImGui::TableSetColumnIndex(3); if (ImGui::Button("Play")) { EffectManager::GetInstance()->LoadEffect(key.name, key.jsonPath); EffectManager::GetInstance()->Play(key.name, playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_ + key.offset); }
-			ImGui::TableSetColumnIndex(4); if (ImGui::Button("Delete")) deleteIndex = i;
+			ImGui::TableSetColumnIndex(2);
+			const char* shortBaseNames[] = { "Fixed", "Player", "Point" };
+			int rowPositionMode = static_cast<int>(key.positionMode);
+			ImGui::SetNextItemWidth(-FLT_MIN);
+			if (ImGui::Combo("##EffectKeyBase", &rowPositionMode, shortBaseNames, IM_ARRAYSIZE(shortBaseNames))) {
+				key.positionMode = static_cast<ParticleTestEditor::PlayerSpecialEffectPositionMode>(rowPositionMode);
+				key.followPlayerMovement = key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer;
+				if (key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::MovementPoint && key.movementPointIndex < 0) {
+					key.movementPointIndex = selectedPlayerSpecialPositionKey_ >= 0 ? selectedPlayerSpecialPositionKey_ : 0;
+				}
+				currentSpecialEffect_ = key;
+				SyncPlayerSpecialPreviewNodes_();
+				RequestTimelineRebuild_(timelineTime_);
+			}
+			ImGui::TableSetColumnIndex(3); if (ImGui::Button("Set")) { currentSpecialEffect_ = key; strncpy_s(playerSpecialEffectPath_, sizeof(playerSpecialEffectPath_), key.jsonPath.c_str(), _TRUNCATE); }
+			ImGui::TableSetColumnIndex(4); if (ImGui::Button("Play")) { EffectManager::GetInstance()->LoadEffect(key.name, key.jsonPath); EffectManager::GetInstance()->Play(key.name, resolveEffectPreviewPosition(key)); }
+			ImGui::TableSetColumnIndex(5); if (ImGui::Button("Delete")) deleteIndex = i;
 			ImGui::PopID();
 		}
 		ImGui::EndTable();

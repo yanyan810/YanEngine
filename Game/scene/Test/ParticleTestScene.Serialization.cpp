@@ -515,6 +515,7 @@ bool ParticleTestScene::SavePlayerSpecialTimelinesJson_(
 	root["editorBossTarget"] = {
 		{ "show", showBossDummy_ },
 		{ "showHitbox", showBossDummyHitbox_ },
+		{ "matchTestSceneLayout", matchTestSceneLayout_ },
 		{ "feetPosition", { bossDummyPosition_.x, bossDummyPosition_.y, bossDummyPosition_.z } },
 		{ "bodyHalfSize", { bossDummyHalfSize_.x, bossDummyHalfSize_.y, bossDummyHalfSize_.z } }
 	};
@@ -548,10 +549,12 @@ bool ParticleTestScene::SavePlayerSpecialTimelinesJson_(
 			timelineJson["level"] = level;
 			timelineJson["name"] = timeline.name;
 			timelineJson["totalSec"] = timeline.totalSec;
+			timelineJson["freezeBossDuringAttack"] = timeline.freezeBossDuringAttack;
 			timelineJson["positionKeyframes"] = json::array();
 			timelineJson["hitboxes"] = json::array();
 			timelineJson["motionKeyframes"] = json::array();
 			timelineJson["opacityKeyframes"] = json::array();
+			timelineJson["visualZKeyframes"] = json::array();
 			timelineJson["rotationKeyframes"] = json::array();
 			timelineJson["animationKeyframes"] = json::array();
 			timelineJson["effectKeyframes"] = json::array();
@@ -565,6 +568,7 @@ bool ParticleTestScene::SavePlayerSpecialTimelinesJson_(
 				timelineJson["positionKeyframes"].push_back({
 
 					{"time",key.time},
+					{"advanceOnHit", key.advanceOnHit},
 					{"space", key.space == ParticleTestEditor::PlayerSpecialPositionSpace::BossTarget
 						? "bossTarget" : "playerStart"},
 					{"interpolation", [&key]() {
@@ -629,6 +633,22 @@ bool ParticleTestScene::SavePlayerSpecialTimelinesJson_(
 				});
 			}
 
+			for (const PlayerSpecialVisualZKeyframe& key : timeline.visualZKeyframes) {
+				timelineJson["visualZKeyframes"].push_back({
+					{ "time", key.time },
+					{ "offsetZ", key.offsetZ },
+					{ "interpolation", [&key]() {
+						switch (key.interpolation) {
+						case ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseIn: return "easeIn";
+						case ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseOut: return "easeOut";
+						case ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseInOut: return "easeInOut";
+						case ParticleTestEditor::PlayerSpecialPositionInterpolation::Step: return "step";
+						default: return "linear";
+						}
+					}() }
+				});
+			}
+
 			for (const PlayerSpecialMotionKeyframe& key : timeline.motions) {
 				timelineJson["motionKeyframes"].push_back({
 					{ "time", key.time }, { "duration", key.duration },
@@ -690,7 +710,12 @@ bool ParticleTestScene::SavePlayerSpecialTimelinesJson_(
 					{ "time", key.time },
 					{ "name", key.name },
 					{ "jsonPath", key.jsonPath },
-					{ "offset", { key.offset.x, key.offset.y, key.offset.z } }
+					{ "offset", { key.offset.x, key.offset.y, key.offset.z } },
+					{ "followPlayerMovement", key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer },
+					{ "positionMode", key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::MovementPoint
+						? "movementPoint" : (key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer
+							? "followPlayer" : "fixedAtSpawn") },
+					{ "movementPointIndex", key.movementPointIndex }
 				});
 			}
 
@@ -803,6 +828,7 @@ bool ParticleTestScene::LoadPlayerSpecialTimelinesJson_(const std::string& path)
 			const json& target = root["editorBossTarget"];
 			showBossDummy_ = target.value("show", showBossDummy_);
 			showBossDummyHitbox_ = target.value("showHitbox", showBossDummyHitbox_);
+			matchTestSceneLayout_ = target.value("matchTestSceneLayout", true);
 			bossDummyPosition_ = readVector3(target, "feetPosition", bossDummyPosition_);
 			bossDummyHalfSize_ = readVector3(target, "bodyHalfSize", bossDummyHalfSize_);
 			bossDummyHalfSize_.x = std::max(0.05f, bossDummyHalfSize_.x);
@@ -820,11 +846,15 @@ bool ParticleTestScene::LoadPlayerSpecialTimelinesJson_(const std::string& path)
 				PlayerSpecialTimeline timeline;
 				timeline.name = timelineJson.value("name", std::string{});
 				timeline.totalSec = std::max(0.05f, timelineJson.value("totalSec", 0.45f));
+				const bool legacyFreezeDefault = level == 3 && (attackIndex == 1 || attackIndex == 2);
+				timeline.freezeBossDuringAttack =
+					timelineJson.value("freezeBossDuringAttack", legacyFreezeDefault);
 
 				for (const json& value : timelineJson.value("positionKeyframes", json::array())) {
 					PlayerSpecialPositionKeyframe key;
 					key.time = std::max(0.0f, value.value("time", 0.0f));
 					key.offset = readVector3(value, "offset", key.offset);
+					key.advanceOnHit = value.value("advanceOnHit", false);
 					key.space = value.value("space", std::string("playerStart")) == "bossTarget"
 						? ParticleTestEditor::PlayerSpecialPositionSpace::BossTarget
 						: ParticleTestEditor::PlayerSpecialPositionSpace::PlayerStart;
@@ -869,6 +899,18 @@ bool ParticleTestScene::LoadPlayerSpecialTimelinesJson_(const std::string& path)
 					timeline.opacityKeyframes.push_back(key);
 				}
 
+				for (const json& value : timelineJson.value("visualZKeyframes", json::array())) {
+					PlayerSpecialVisualZKeyframe key;
+					key.time = std::max(0.0f, value.value("time", key.time));
+					key.offsetZ = value.value("offsetZ", key.offsetZ);
+					const std::string interpolation = value.value("interpolation", std::string("linear"));
+					if (interpolation == "easeIn") key.interpolation = ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseIn;
+					else if (interpolation == "easeOut") key.interpolation = ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseOut;
+					else if (interpolation == "easeInOut") key.interpolation = ParticleTestEditor::PlayerSpecialPositionInterpolation::EaseInOut;
+					else if (interpolation == "step") key.interpolation = ParticleTestEditor::PlayerSpecialPositionInterpolation::Step;
+					timeline.visualZKeyframes.push_back(key);
+				}
+
 				for (const json& value : timelineJson.value("rotationKeyframes", json::array())) {
 					PlayerSpecialRotationKeyframe key;
 					key.time = std::max(0.0f, value.value("time", key.time));
@@ -894,6 +936,19 @@ bool ParticleTestScene::LoadPlayerSpecialTimelinesJson_(const std::string& path)
 					key.name = value.value("name", key.name);
 					key.jsonPath = value.value("jsonPath", key.jsonPath);
 					key.offset = readVector3(value, "offset", key.offset);
+					key.followPlayerMovement = value.value("followPlayerMovement", true);
+					const std::string positionMode = value.value("positionMode",
+						key.followPlayerMovement ? std::string("followPlayer") : std::string("fixedAtSpawn"));
+					if (positionMode == "movementPoint") {
+						key.positionMode = ParticleTestEditor::PlayerSpecialEffectPositionMode::MovementPoint;
+					} else if (positionMode == "followPlayer") {
+						key.positionMode = ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer;
+					} else {
+						key.positionMode = ParticleTestEditor::PlayerSpecialEffectPositionMode::FixedAtSpawn;
+					}
+					key.followPlayerMovement =
+						key.positionMode == ParticleTestEditor::PlayerSpecialEffectPositionMode::FollowPlayer;
+					key.movementPointIndex = value.value("movementPointIndex", -1);
 					timeline.effectKeyframes.push_back(key);
 				}
 
@@ -934,6 +989,7 @@ bool ParticleTestScene::LoadPlayerSpecialTimelinesJson_(const std::string& path)
 		if (!current.motions.empty()) currentSpecialMotion_ = current.motions.front();
 		if (!current.positionKeyframes.empty()) currentSpecialPosition_ = current.positionKeyframes.front();
 		if (!current.opacityKeyframes.empty()) currentSpecialOpacity_ = current.opacityKeyframes.front();
+		if (!current.visualZKeyframes.empty()) currentSpecialVisualZ_ = current.visualZKeyframes.front();
 		if (!current.rotationKeyframes.empty()) currentSpecialRotation_ = current.rotationKeyframes.front();
 		if (!current.animations.empty()) currentSpecialAnimation_ = current.animations.front();
 		if (!current.effectKeyframes.empty()) currentSpecialEffect_ = current.effectKeyframes.front();

@@ -6,6 +6,7 @@
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 0,
                     "motionKeyframes": [],
@@ -14,12 +15,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 1,
                     "motionKeyframes": [],
@@ -28,12 +31,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 2,
                     "motionKeyframes": [],
@@ -42,12 +47,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 3,
                     "motionKeyframes": [],
@@ -56,7 +63,8 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 }
             ],
             "type": "NeutralSpecial"
@@ -67,6 +75,7 @@
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 0,
                     "motionKeyframes": [],
@@ -75,12 +84,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 1,
                     "motionKeyframes": [],
@@ -89,12 +100,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 2,
                     "motionKeyframes": [],
@@ -103,12 +116,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": true,
                     "hitboxes": [],
                     "level": 3,
                     "motionKeyframes": [],
@@ -117,7 +132,8 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 }
             ],
             "type": "SideSpecial"
@@ -128,6 +144,7 @@
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 0,
                     "motionKeyframes": [],
@@ -136,12 +153,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 1,
                     "motionKeyframes": [],
@@ -150,12 +169,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 2,
                     "motionKeyframes": [],
@@ -164,39 +185,44 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [
                         {
+                            "followPlayerMovement": false,
                             "jsonPath": "resources/effects/slash_effect.json",
-                            "name": "slash_effect_Effect_1",
+                            "movementPointIndex": 3,
+                            "name": "I_Attack_2_3_0",
                             "offset": [
                                 0.0,
                                 0.0,
                                 0.0
                             ],
+                            "positionMode": "movementPoint",
                             "time": 0.0
                         }
                     ],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": true,
                     "hitboxes": [
                         {
                             "active": true,
                             "damage": 12,
                             "duration": 0.009999999776482582,
-                            "followPlayerMovement": false,
+                            "followPlayerMovement": true,
                             "halfSize": [
-                                3.700000047683716,
-                                3.6500000953674316,
+                                0.6000000238418579,
+                                0.800000011920929,
                                 0.5
                             ],
-                            "hitStopSec": 0.009999999776482582,
+                            "hitStopSec": 0.07999999821186066,
                             "multiHit": false,
                             "offset": [
-                                0.0,
-                                3.0,
+                                1.0,
+                                1.0,
                                 0.0
                             ],
                             "time": 0.0
@@ -214,11 +240,30 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                11.649999618530273,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.019999999552965164
+                            "time": 0.018385212868452072
+                        },
+                        {
+                            "active": true,
+                            "damage": 12,
+                            "duration": 0.009999999776482582,
+                            "followPlayerMovement": false,
+                            "halfSize": [
+                                3.700000047683716,
+                                3.6500000953674316,
+                                0.5
+                            ],
+                            "hitStopSec": 0.009999999776482582,
+                            "multiHit": false,
+                            "offset": [
+                                11.850000381469727,
+                                3.0,
+                                0.0
+                            ],
+                            "time": 0.03852139785885811
                         },
                         {
                             "active": true,
@@ -237,7 +282,7 @@
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.03999999910593033
+                            "time": 0.06040855497121811
                         },
                         {
                             "active": true,
@@ -252,11 +297,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                11.600000381469727,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.05999999865889549
+                            "time": 0.08054473996162415
                         },
                         {
                             "active": true,
@@ -271,11 +316,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                12.600000381469727,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.07999999821186066
+                            "time": 0.10068093240261078
                         },
                         {
                             "active": true,
@@ -290,11 +335,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                11.850000381469727,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.10000000149011612
+                            "time": 0.11906614154577255
                         },
                         {
                             "active": true,
@@ -309,11 +354,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                12.25,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.11999999731779099
+                            "time": 0.14007781445980072
                         },
                         {
                             "active": true,
@@ -328,11 +373,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                11.550000190734863,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.14000000059604645
+                            "time": 0.15933851897716522
                         },
                         {
                             "active": true,
@@ -347,11 +392,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                12.100000381469727,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.1599999964237213
+                            "time": 0.17947469651699066
                         },
                         {
                             "active": true,
@@ -366,11 +411,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                11.949999809265137,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.18000000715255737
+                            "time": 0.20136186480522156
                         },
                         {
                             "active": true,
@@ -385,11 +430,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                12.449999809265137,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.20000000298023224
+                            "time": 0.21974708139896393
                         },
                         {
                             "active": true,
@@ -404,30 +449,11 @@
                             "hitStopSec": 0.009999999776482582,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                11.949999809265137,
                                 3.0,
                                 0.0
                             ],
-                            "time": 0.2199999988079071
-                        },
-                        {
-                            "active": true,
-                            "damage": 12,
-                            "duration": 0.009999999776482582,
-                            "followPlayerMovement": false,
-                            "halfSize": [
-                                3.700000047683716,
-                                3.6500000953674316,
-                                0.5
-                            ],
-                            "hitStopSec": 0.009999999776482582,
-                            "multiHit": false,
-                            "offset": [
-                                0.0,
-                                3.0,
-                                0.0
-                            ],
-                            "time": 0.23999999463558197
+                            "time": 0.23988324403762817
                         },
                         {
                             "active": true,
@@ -442,7 +468,7 @@
                             "hitStopSec": 0.14000000059604645,
                             "multiHit": false,
                             "offset": [
-                                0.0,
+                                12.0,
                                 3.0,
                                 0.0
                             ],
@@ -469,53 +495,57 @@
                         {
                             "interpolation": "linear",
                             "offset": [
-                                -3.952000141143799,
-                                0.3040001392364502,
-                                0.0
+                                -6.392232894897461,
+                                -2.422640323638916,
+                                2.1815989017486572
                             ],
+                            "space": "bossTarget",
                             "time": 0.0
                         },
                         {
                             "interpolation": "linear",
                             "offset": [
-                                4.104001522064209,
-                                1.9760018587112427,
-                                0.0
+                                6.701503276824951,
+                                1.9101240634918213,
+                                4.7891058921813965
                             ],
+                            "space": "bossTarget",
                             "time": 0.10000000149011612
                         },
                         {
                             "interpolation": "linear",
                             "offset": [
-                                -4.104000091552734,
-                                3.3440024852752686,
-                                0.0
+                                -6.362281322479248,
+                                1.1605308055877686,
+                                1.9485548734664917
                             ],
+                            "space": "bossTarget",
                             "time": 0.20000000298023224
                         },
                         {
                             "interpolation": "linear",
-                            "space": "bossTarget",
                             "offset": [
                                 0.0,
                                 -3.0,
                                 0.0
                             ],
+                            "space": "bossTarget",
                             "time": 0.30000001192092896
                         },
                         {
                             "interpolation": "linear",
-                            "space": "bossTarget",
                             "offset": [
                                 0.0,
-                                3.5,
+                                7.56600284576416,
                                 0.0
                             ],
+                            "space": "bossTarget",
                             "time": 0.4000000059604645
                         }
                     ],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 }
             ],
             "type": "UpSpecial"
@@ -526,6 +556,7 @@
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 0,
                     "motionKeyframes": [],
@@ -534,12 +565,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 1,
                     "motionKeyframes": [],
@@ -548,12 +581,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 2,
                     "motionKeyframes": [],
@@ -562,12 +597,14 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 },
                 {
                     "animationKeyframes": [],
                     "effectKeyframes": [],
                     "eventKeyframes": [],
+                    "freezeBossDuringAttack": false,
                     "hitboxes": [],
                     "level": 3,
                     "motionKeyframes": [],
@@ -576,11 +613,27 @@
                     "particleKeyframes": [],
                     "positionKeyframes": [],
                     "rotationKeyframes": [],
-                    "totalSec": 0.44999998807907104
+                    "totalSec": 0.44999998807907104,
+                    "visualZKeyframes": []
                 }
             ],
             "type": "DownSpecial"
         }
     ],
+    "editorBossTarget": {
+        "bodyHalfSize": [
+            1.2000000476837158,
+            2.0,
+            1.399999976158142
+        ],
+        "feetPosition": [
+            0.0,
+            0.0,
+            5.0
+        ],
+        "matchTestSceneLayout": true,
+        "show": true,
+        "showHitbox": true
+    },
     "version": 3
 }
