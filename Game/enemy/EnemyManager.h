@@ -134,7 +134,7 @@ public:
     BattleTuning& Battle() { return battleTuning_; }
     const BattleTuning& Battle() const { return battleTuning_; }
 
-    void ApplySideSpecialLv3BossFreeze(const Player& player);
+    void ApplyPlayerSpecialBossFreeze(const Player& player);
 
     void QueueSpawn(EnemyType type, float delaySec);
     void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
@@ -172,7 +172,7 @@ private:
     BattleTuning battleTuning_{};
     float pendingHitStopSec_ = 0.0f;
     int grabHitPatternIndex_ = 0;
-    bool sideSpecialLv3BossFreezeActive_ = false;
+    bool playerSpecialBossFreezeActive_ = false;
 
     std::vector<Enemy> enemies_;
 

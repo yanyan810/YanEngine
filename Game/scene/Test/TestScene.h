@@ -1,4 +1,6 @@
 #pragma once
+
+#include "TestSceneBattleLayout.h"
 #include "IScene.h"
 #include <memory>
 #include "WinApp.h"
@@ -80,8 +82,8 @@ private:
     float battleCameraDistanceScale_ = 1.15f;
     float battleCameraHeight_ = 20.0f;
     float battleCameraFollowLerp_ = 8.0f;
-    Vector3 bossSpawnPos_{ 0.0f, 0.0f, 5.0f };
-    Vector3 playerSpawnPos_{ -12.0f, 0.0f, 5.0f };
+    Vector3 bossSpawnPos_ = TestSceneBattleLayout::kBossSpawn;
+    Vector3 playerSpawnPos_ = TestSceneBattleLayout::kPlayerSpawn;
     Vector3 dropRespawnPos_{ 0.0f, 12.0f, 5.0f };
 
     std::unique_ptr<Object3d> ground_;

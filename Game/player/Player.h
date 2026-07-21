@@ -2,6 +2,7 @@
 #include <memory>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -102,6 +103,7 @@ public:
         int interpolation = 0;          // 0: Linear, 1: EaseIn, 2: EaseOut, 3: EaseInOut, 4: Step
         float offsetZ = 0.0f;
         bool targetRelative = false;
+        bool advanceOnHit = false;
     };
 
     // ===== 上必殺技Lv3 クロスマーク軌跡の線分 =====
@@ -131,6 +133,7 @@ public:
         std::vector<UpLv3Waypoint> waypoints;
         float startOffsetZ = 0.0f;
         bool startTargetRelative = false;
+        bool startAdvanceOnHit = false;
     };
 
     struct SpecialEffectKeyframe {
@@ -138,6 +141,11 @@ public:
         std::string templateName;
         std::string jsonPath;
         Vector3 offset{ 0.0f, 0.0f, 0.0f };
+        bool followPlayerMovement = true;
+        int positionMode = 1; // 0: fixed at spawn, 1: follow player, 2: movement point
+        int movementPointIndex = -1;
+        Vector3 movementPointOffset{ 0.0f, 0.0f, 0.0f };
+        bool movementPointTargetRelative = false;
     };
 
     struct SpecialHitboxTiming {
@@ -166,12 +174,21 @@ public:
         bool specialReleased = false;
     };
 
+    struct SpecialVisualZKeyframe {
+        float time = 0.0f;
+        float offsetZ = 0.0f;
+        int interpolation = 0; // 0 linear, 1 ease-in, 2 ease-out, 3 ease-in-out, 4 step
+    };
+
+    using InputCommandFilter = std::function<void(PlayerInputCommand&)>;
+
 
     // ===== 初期化・更新・描画・デバッグ用コマンド =====
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
     void SetCamera(Camera* cam);
     void Update(float dt, const Input& input, EnemyManager& enemyMgr);
     void QueueDebugCommand(const PlayerInputCommand& command);
+    void SetInputCommandFilter(InputCommandFilter filter) { inputCommandFilter_ = std::move(filter); }
     void SetExternalInputBlocked(bool blocked) { externalInputBlocked_ = blocked; }
     void Draw();
     void DrawDebugHitBoxes(EnemyManager& enemyMgr);
@@ -198,6 +215,7 @@ public:
     float GetCurrentSpecialHitStopRate() const;
     float GetCurrentSpecialHitStopSec() const;
     bool IsSideSpecialLv3AttackActive() const;
+    bool ShouldFreezeBossForCurrentSpecial() const;
     int GetUComboStageDisplay() const { return lastUComboStage_ + 1; }
     bool IsUComboAccepting() const { return IsUComboAccepting_(); }
     float GetUComboResetTimer() const { return uComboResetTimer_; }
@@ -380,6 +398,7 @@ private:
     void ChangeIAttackState_(PlayerIAttackState state);
     void ResetSpecialAttackEffects_();
     void UpdateSpecialAttackEffects_();
+    void UpdateSpecialAttackVisual_();
     void UpdateMove_(float dt, const Input& input);
     void UpdateMove_(float dt, const PlayerInputCommand& command);
     void ApplyPhysics_(float dt);
@@ -486,12 +505,19 @@ private:
     // ===== 必殺技エディタ用汎用パラメータ =====
     std::array<SpecialMoveTuning, static_cast<size_t>(SpecialMoveIndex::Count)> specialMoveTunings_;
     std::array<std::array<std::vector<SpecialEffectKeyframe>, 4>, 4> specialEffectKeyframes_{};
+    std::array<std::array<bool, 4>, 4> specialFreezeBossDuringAttack_{};
     std::array<std::array<std::vector<SpecialHitboxTiming>, 4>, 4> specialHitboxTimings_{};
+    std::array<std::array<std::vector<SpecialVisualZKeyframe>, 4>, 4> specialVisualZKeyframes_{};
     Vector3 specialAttackStartPosition_{};
+    float specialVisualZOffset_ = 0.0f;
     size_t nextSpecialEffectKey_ = 0;
     PlayerAttackType specialEffectAttackType_ = PlayerAttackType::None;
     int specialEffectLevel_ = -1;
     float specialEffectLastElapsedSec_ = -1.0f;
+    uint32_t specialHitConfirmSerial_ = 0;
+    uint32_t specialWaypointConsumedHitSerial_ = 0;
+    int specialWaypointPassedPositionIndex_ = -1;
+    int specialWaypointActiveGatePositionIndex_ = -1;
 
     // ===== 上必殺技ジグザグ移動先固定ターゲット =====
     Vector3 upSpecialTarget_{};
@@ -556,6 +582,7 @@ private:
 
     // ===== デバッグ・その他 =====
     bool hasDebugCommand_ = false;
+    InputCommandFilter inputCommandFilter_;
     bool externalInputBlocked_ = false;
     bool isGrabbed_ = false;
     PlayerInputCommand debugCommand_{};

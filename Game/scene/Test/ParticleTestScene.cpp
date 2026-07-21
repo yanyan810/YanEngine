@@ -1,5 +1,6 @@
 ﻿#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
+#include "TestSceneBattleLayout.h"
 
 #include "Camera.h"
 #include "DirectXCommon.h"
@@ -104,6 +105,10 @@ void ParticleTestScene::OnEnter(GameApp& app)
 
     animationCamera_ = std::make_unique<Camera>();
     ApplyAnimationCamera_();
+    gamePreviewCamera_ = std::make_unique<Camera>();
+    gamePreviewCamera_->SetTranslate({ 0.0f, 20.0f, -50.0f });
+    gamePreviewCamera_->SetRotate({ 0.35f, 0.0f, 0.0f });
+    gamePreviewCamera_->Update();
     app.ObjCom()->SetDefaultCamera(camera_.get());
 	EffectManager::GetInstance()->Initialize();
 	EffectManager::GetInstance()->SetGraphicsResources(app.ObjCom(), app.Dx(), camera_.get());
@@ -180,6 +185,7 @@ void ParticleTestScene::OnExit(GameApp&)
     editorParticle_.reset();
     ground_.reset();
     animationCamera_.reset();
+    gamePreviewCamera_.reset();
     camera_.reset();
 #ifdef USE_IMGUI
     gParticleTestEditorModeSwitcherVisible = false;
@@ -297,6 +303,49 @@ void ParticleTestScene::Update(GameApp& app, float dt)
     if (GetSceneCamera_()) {
         ParticleManager::GetInstance()->Update(particleDt, *GetSceneCamera_());
     }
+
+	if (editorMode_ == EditorMode::PlayerAttack && matchTestSceneLayout_) {
+		const Vector3 expectedPlayer = TestSceneBattleLayout::kPlayerSpawn;
+		const Vector3 expectedBoss = TestSceneBattleLayout::kBossSpawn;
+		const bool layoutChanged =
+			LengthVector3(playerSpecialPreviewOrigin_ - expectedPlayer) > 0.0001f ||
+			LengthVector3(bossDummyPosition_ - expectedBoss) > 0.0001f ||
+			LengthVector3(bossDummyHalfSize_ - TestSceneBattleLayout::kBossBodyHalfSize) > 0.0001f;
+		if (layoutChanged) {
+			playerSpecialPreviewOrigin_ = expectedPlayer;
+			bossDummyPosition_ = expectedBoss;
+			bossDummyHalfSize_ = TestSceneBattleLayout::kBossBodyHalfSize;
+			playerSpecialPreviewOriginInitialized_ = true;
+			ApplyPlayerSpecialPreviewPosition_();
+			SyncPlayerSpecialPreviewNodes_();
+			RequestTimelineRebuild_(timelineTime_);
+		}
+	}
+	if (playerAttackEditorEnabled_) {
+		const Vector3 playerPosition = playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_ +
+			Vector3{ 0.0f, 0.0f, previewSpecialVisualZOffset_ };
+		auto* effectManager = EffectManager::GetInstance();
+		for (auto& node : particleNodes_) {
+			if (!node.isEffectNode || !node.followOwnerMovement) continue;
+			node.position = playerPosition + node.ownerOffset;
+			effectManager->SetActiveEffectWorldPosition(node.name, node.position);
+		}
+	}
+	if (gamePreviewCamera_) {
+		const Vector3 physicalPlayer = playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_;
+		const Vector3 target{
+			(physicalPlayer.x + bossDummyPosition_.x) * 0.5f,
+			(physicalPlayer.y + bossDummyPosition_.y) * 0.5f,
+			(physicalPlayer.z + bossDummyPosition_.z) * 0.5f
+		};
+		const float dx = physicalPlayer.x - bossDummyPosition_.x;
+		const float dz = physicalPlayer.z - bossDummyPosition_.z;
+		const float battleDistance = std::sqrt(dx * dx + dz * dz);
+		const float cameraDistance = std::clamp(42.0f + battleDistance * 1.15f, 42.0f, 70.0f);
+		gamePreviewCamera_->SetTranslate({ target.x, 20.0f, target.z - cameraDistance });
+		gamePreviewCamera_->SetRotate({ 0.35f, 0.0f, 0.0f });
+		gamePreviewCamera_->Update();
+	}
 	EffectManager::GetInstance()->Update(timelinePlaying_ ? dt : 0.0f);
 
     if (ground_) {
@@ -346,6 +395,8 @@ void ParticleTestScene::Update(GameApp& app, float dt)
         if (previewPlayerAttackHitbox_.followPlayerMovement &&
             playerAttackObjectIndex_ >= 0 && playerAttackObjectIndex_ < static_cast<int>(editorObjects_.size())) {
             playerBase = editorObjects_[playerAttackObjectIndex_].position;
+            // Visual Z belongs only to the model. Keep the hitbox on the physical lane.
+            playerBase.z -= previewSpecialVisualZOffset_;
         } else if (!previewPlayerAttackHitbox_.followPlayerMovement) {
             playerBase = playerSpecialPreviewOrigin_;
         }
@@ -972,7 +1023,8 @@ void ParticleTestScene::ApplyPlayerSpecialPreviewPosition_() {
 
     // 位置を設定
     
-    player.position = playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_;
+	player.position = playerSpecialPreviewOrigin_ + previewSpecialPositionOffset_ +
+		Vector3{ 0.0f, 0.0f, previewSpecialVisualZOffset_ };
 
     // Object3Dに設定
 

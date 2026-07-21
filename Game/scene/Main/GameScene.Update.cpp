@@ -400,6 +400,9 @@ void GameScene::Update(GameApp& app, float dt) {
         if (debugAIEnabled_ && app.DebugAI()) {
             app.DebugAI()->ProcessAfterUpdate(dt);
         }
+        if (app.DebugAI()) {
+            app.DebugAI()->InputReplay().EndFrame();
+        }
 
         if (player_->IsDead()) {
             RequestChangeScene_("GameOver");

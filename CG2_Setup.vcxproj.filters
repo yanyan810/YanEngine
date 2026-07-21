@@ -331,6 +331,9 @@
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\DebugInputReplay.cpp">
+      <Filter>ソース ファイル\Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\GeminiDebugActionProvider.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
@@ -589,6 +592,9 @@
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugLogger.h">
       <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugInputReplay.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\GeminiDebugActionProvider.h">
       <Filter>Engine\DebugAI</Filter>

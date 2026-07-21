@@ -41,11 +41,22 @@ void GameScene::SetupDebugAI_(GameApp& app) {
     if (app.DebugAI()) {
         app.DebugAI()->SetAdapter(debugAdapter_.get());
         app.DebugAI()->SetEnabled(false);
+        app.DebugAI()->InputReplay().StartRecording();
+        if (player_) {
+            DebugAIManager* debugAI = app.DebugAI();
+            player_->SetInputCommandFilter([debugAI](Player::PlayerInputCommand& command) {
+                debugAI->InputReplay().ProcessInput(command);
+            });
+        }
     }
 }
 
 void GameScene::ShutdownDebugAI_(GameApp& app) {
+    if (player_) {
+        player_->SetInputCommandFilter({});
+    }
     if (app.DebugAI()) {
+        app.DebugAI()->InputReplay().StopRecording();
         app.DebugAI()->SetEnabled(false);
         app.DebugAI()->SetAdapter(nullptr);
     }

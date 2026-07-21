@@ -24,6 +24,8 @@ struct ParticleNode {
     int emitCount = 10;
     float presetDuration = 1.0f;
     bool hasEmitted = false;
+    bool followOwnerMovement = false;
+    Vector3 ownerOffset{ 0.0f, 0.0f, 0.0f };
 };
 
 struct EditorBonePose {
@@ -102,6 +104,8 @@ struct PlayerSpecialPositionKeyframe {
     // This curve is used while moving from this key to the next key.
     PlayerSpecialPositionInterpolation interpolation = PlayerSpecialPositionInterpolation::Linear;
     PlayerSpecialPositionSpace space = PlayerSpecialPositionSpace::PlayerStart;
+    // When this point is reached, keep the attack here until a hit is confirmed.
+    bool advanceOnHit = false;
 
 };
 
@@ -127,11 +131,28 @@ struct PlayerSpecialRotationKeyframe {
     PlayerSpecialRotationInterpolation interpolation = PlayerSpecialRotationInterpolation::Linear;
 };
 
+enum class PlayerSpecialEffectPositionMode {
+    FixedAtSpawn = 0,
+    FollowPlayer,
+    MovementPoint,
+};
+
+// Presentation-only depth movement. This offset is applied to the rendered
+// player model (and effects following it), never to physics or hitboxes.
+struct PlayerSpecialVisualZKeyframe {
+    float time = 0.0f;
+    float offsetZ = 0.0f;
+    PlayerSpecialPositionInterpolation interpolation = PlayerSpecialPositionInterpolation::Linear;
+};
+
 struct PlayerSpecialEffectKeyframe {
     float time = 0.0f;
     std::string name = "AttackEffect";
     std::string jsonPath;
     Vector3 offset{ 0.0f, 0.0f, 0.0f };
+    bool followPlayerMovement = true;
+    PlayerSpecialEffectPositionMode positionMode = PlayerSpecialEffectPositionMode::FollowPlayer;
+    int movementPointIndex = -1;
 };
 
 struct PlayerSpecialParticleKeyframe {
@@ -162,12 +183,14 @@ struct PlayerSpecialEventKeyframe {
 struct PlayerSpecialTimeline {
     std::string name = "SideSpecial";
     float totalSec = 0.45f;
+    bool freezeBossDuringAttack = false;
     std::vector<PlayerSpecialHitboxKeyframe> hitboxes;
     std::vector<PlayerSpecialMotionKeyframe> motions;
     std::vector<PlayerSpecialAnimationKeyframe> animations;
     std::vector<PlayerSpecialEventKeyframe> events;
     std::vector<PlayerSpecialPositionKeyframe> positionKeyframes;
     std::vector<PlayerSpecialOpacityKeyframe> opacityKeyframes;
+    std::vector<PlayerSpecialVisualZKeyframe> visualZKeyframes;
     std::vector<PlayerSpecialRotationKeyframe> rotationKeyframes;
     std::vector<PlayerSpecialEffectKeyframe> effectKeyframes;
     std::vector<PlayerSpecialParticleKeyframe> particleKeyframes;

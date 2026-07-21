@@ -239,6 +239,7 @@ void DebugAIManager::Initialize(const DebugAIConfig& config) {
     logger_.Open(config_.logDirectory);
     replayRecorder_.Open(config_.aiLogDirectory);
     playerReplayRecorder_.Open(config_.playerLogDirectory);
+    inputReplay_.Open(config_.playerLogDirectory + "/input");
     logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
 }
 
@@ -259,6 +260,7 @@ void DebugAIManager::SetLoadingDetails(std::string status, std::vector<DebugAILo
 
 void DebugAIManager::Shutdown() {
     logger_.WriteReport();
+    inputReplay_.Close();
     replayRecorder_.Close();
     playerReplayRecorder_.Close();
     logger_.Close();

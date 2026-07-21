@@ -144,9 +144,26 @@ bool Player::IsSideSpecialLv3AttackActive() const {
         iAttackHitActive_;
 }
 
+bool Player::ShouldFreezeBossForCurrentSpecial() const {
+    if (action_ != PlayerAction::Attack || !IsIAttackType_(attackType_)) return false;
+    int attackIndex = -1;
+    switch (attackType_) {
+    case PlayerAttackType::NeutralSpecial: attackIndex = 0; break;
+    case PlayerAttackType::SideSpecial: attackIndex = 1; break;
+    case PlayerAttackType::UpSpecial: attackIndex = 2; break;
+    case PlayerAttackType::DownSpecial: attackIndex = 3; break;
+    default: return false;
+    }
+    const int level = std::clamp(static_cast<int>(iSpecialVariant_), 0, 3);
+    return specialFreezeBossDuringAttack_[attackIndex][level];
+}
+
 // ===== 必殺技（Special）の開始・更新・ステート管理（Player本体側ラッパー） =====
 void Player::StartIAttack_(PlayerAttackType type) {
     specialAttackStartPosition_ = pos_;
+    specialWaypointConsumedHitSerial_ = specialHitConfirmSerial_;
+    specialWaypointPassedPositionIndex_ = -1;
+    specialWaypointActiveGatePositionIndex_ = -1;
     if (type == PlayerAttackType::NeutralSpecial) {
         PlayerIAttack::StartNeutralSpecial(*this);
         return;

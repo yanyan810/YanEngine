@@ -13,6 +13,7 @@
 #include "ParticleManager.h"
 #include "RenderManager.h"
 #include "TextureManager.h"
+#include "Effect/EffectManager.h"
 
 #include <nlohmann/json.hpp>
 #include <regex>
@@ -399,6 +400,9 @@ void ParticleTestScene::ApplyEditorObjectTransform_(EditorObject& item)
 
 Camera* ParticleTestScene::GetSceneCamera_() const
 {
+    if (editorMode_ == EditorMode::PlayerAttack && useGameCameraPreview_ && gamePreviewCamera_) {
+        return gamePreviewCamera_.get();
+    }
     if (useAnimationCameraPreview_ && animationCameraPreviewSwapped_ && animationCamera_) {
         return animationCamera_.get();
     }
@@ -430,6 +434,10 @@ void ParticleTestScene::ApplyCameraToEditorObjects_()
             item.object->SetCamera(sceneCamera);
         }
     }
+    if (playerAttackHitboxCube_) playerAttackHitboxCube_->SetCamera(sceneCamera);
+    if (bossDummy_) bossDummy_->SetCamera(sceneCamera);
+    if (bossDummyHitboxCube_) bossDummyHitboxCube_->SetCamera(sceneCamera);
+    EffectManager::GetInstance()->SetCamera(sceneCamera);
 }
 
 void ParticleTestScene::ApplyAnimationCamera_()

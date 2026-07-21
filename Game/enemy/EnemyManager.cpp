@@ -248,6 +248,7 @@ void EnemyManager::Clear() {
 	pendingSpawns_.clear();
 	pendingHitStopSec_ = 0.0f;
 	grabHitPatternIndex_ = 0;
+	playerSpecialBossFreezeActive_ = false;
 	bossDefeated_ = false;
 	bullets_.Clear();
 }
@@ -630,7 +631,7 @@ void EnemyManager::RestoreDebugEntities(const std::vector<DebugEntityState>& ent
 }
 
 void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Player& player, bool disablePendingSpawn) {
-	ApplySideSpecialLv3BossFreeze(player);
+	ApplyPlayerSpecialBossFreeze(player);
 
 	for (auto& e : enemies_) {
 		e.Update(dt, playerXY, playerZ);
@@ -902,23 +903,23 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 	}
 }
 
-void EnemyManager::ApplySideSpecialLv3BossFreeze(const Player& player) {
+void EnemyManager::ApplyPlayerSpecialBossFreeze(const Player& player) {
 	Enemy* boss = GetBoss();
 	if (!boss) {
-		sideSpecialLv3BossFreezeActive_ = false;
+		playerSpecialBossFreezeActive_ = false;
 		return;
 	}
 
-	const bool shouldFreeze = player.IsSideSpecialLv3AttackActive();
+	const bool shouldFreeze = player.ShouldFreezeBossForCurrentSpecial();
 	if (shouldFreeze) {
 		boss->SetFrozen(true);
-		sideSpecialLv3BossFreezeActive_ = true;
+		playerSpecialBossFreezeActive_ = true;
 		return;
 	}
 
-	if (sideSpecialLv3BossFreezeActive_) {
+	if (playerSpecialBossFreezeActive_) {
 		boss->SetFrozen(false);
-		sideSpecialLv3BossFreezeActive_ = false;
+		playerSpecialBossFreezeActive_ = false;
 	}
 }
 

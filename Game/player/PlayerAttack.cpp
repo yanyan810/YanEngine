@@ -477,6 +477,7 @@ void Player::NotifyAttackHit() {
         hasSpecialCancelRight_ = true;
     }
     if (IsIAttackType_(attackType_)) {
+        ++specialHitConfirmSerial_;
         specialHitDuringAction_ = true;
         if (specialChainCancelEligible_) {
             hasSpecialChainCancelRight_ = true;
