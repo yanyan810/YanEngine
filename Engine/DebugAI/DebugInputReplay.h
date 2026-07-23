@@ -54,6 +54,7 @@ private:
     Header header_{};
     std::vector<std::byte> replayData_;
     unsigned long long currentFrame_ = 0;
+    unsigned long long pendingEmptyFrames_ = 0;
     bool inputProcessedThisFrame_ = false;
     bool recording_ = false;
     bool playing_ = false;

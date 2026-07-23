@@ -1,0 +1,264 @@
+{
+  "discoveredEnumValues": {
+    "Phase": [
+      "Battle",
+      "IntroVideo",
+      "OutroVideo",
+      "P1",
+      "P2",
+      "P3"
+    ],
+    "State": [
+      "Double_Melee_Attack_1",
+      "Double_Melee_Attack_2",
+      "Double_Melee_Dash",
+      "Double_Melee_Finish",
+      "Double_Melee_Rock",
+      "Drop_Fall",
+      "Drop_Land",
+      "Drop_Windup",
+      "EnterOpen",
+      "ExitClose",
+      "Grab_Attack",
+      "Grab_Catch",
+      "Grab_Delay",
+      "Grab_Finish",
+      "Grab_WindUp",
+      "Idle",
+      "Melee_Attack",
+      "Melee_Dash",
+      "Melee_Recover",
+      "Rush_Charge",
+      "Rush_ExitLeft",
+      "Rush_Return",
+      "Rush_ToRight",
+      "Super25",
+      "Super50",
+      "Wander"
+    ]
+  },
+  "gameId": "CG5",
+  "generatedLocally": true,
+  "lastRuntimeFrame": 701,
+  "lastRuntimeScene": "Game",
+  "mappings": [
+    {
+      "approved": false,
+      "confidence": 0.9200000166893005,
+      "genericProperty": "enemy.attackActive",
+      "runtimeObserved": true,
+      "sourceSymbol": "isAttacking",
+      "sources": [
+        "Game\\enemy\\Enemy.cpp"
+      ],
+      "valueKind": "bool"
+    },
+    {
+      "approved": false,
+      "confidence": 0.9200000166893005,
+      "genericProperty": "enemy.attackActive",
+      "runtimeObserved": true,
+      "sourceSymbol": "requestMeleeAttack_",
+      "sources": [
+        "Game\\enemy\\Enemy.cpp",
+        "Game\\enemy\\Enemy.h"
+      ],
+      "valueKind": "bool"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8399999737739563,
+      "genericProperty": "enemy.attackStartup",
+      "runtimeObserved": false,
+      "sourceSymbol": "meleeWindupTime_",
+      "sources": [
+        "Game\\enemy\\Enemy.h"
+      ],
+      "valueKind": "float"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8399999737739563,
+      "genericProperty": "enemy.attackStartup",
+      "runtimeObserved": false,
+      "sourceSymbol": "shootWindupTime_",
+      "sources": [
+        "Game\\enemy\\Enemy.h"
+      ],
+      "valueKind": "float"
+    },
+    {
+      "approved": false,
+      "confidence": 0.7799999713897705,
+      "genericProperty": "enemy.distanceToPlayer",
+      "runtimeObserved": true,
+      "sourceSymbol": "chaseStopDist_",
+      "sources": [
+        "Game\\enemy\\BossAI.cpp",
+        "Game\\enemy\\BossAI.h"
+      ],
+      "valueKind": "number"
+    },
+    {
+      "approved": false,
+      "confidence": 0.9200000166893005,
+      "genericProperty": "enemy.intent",
+      "runtimeObserved": false,
+      "sourceSymbol": "GetState",
+      "sources": [
+        "Game\\enemy\\BossAI.h"
+      ],
+      "valueKind": "State"
+    },
+    {
+      "approved": false,
+      "confidence": 0.9200000166893005,
+      "genericProperty": "enemy.intent",
+      "runtimeObserved": false,
+      "sourceSymbol": "st_",
+      "sources": [
+        "Game\\enemy\\BossAI.h"
+      ],
+      "valueKind": "State"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8999999761581421,
+      "genericProperty": "enemy.phase",
+      "runtimeObserved": false,
+      "sourceSymbol": "GetPhase",
+      "sources": [
+        "Game\\enemy\\BossAI.h"
+      ],
+      "valueKind": "Phase"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8999999761581421,
+      "genericProperty": "enemy.phase",
+      "runtimeObserved": false,
+      "sourceSymbol": "phase",
+      "sources": [
+        "Game\\enemy\\BossAI.h"
+      ],
+      "valueKind": "Phase"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8999999761581421,
+      "genericProperty": "enemy.phase",
+      "runtimeObserved": false,
+      "sourceSymbol": "phase_",
+      "sources": [
+        "Game\\enemy\\BossAI.h"
+      ],
+      "valueKind": "Phase"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8600000143051147,
+      "genericProperty": "enemy.threat",
+      "runtimeObserved": true,
+      "sourceSymbol": "IncomingAttack",
+      "sources": [
+        "Game\\enemy\\EnemyManager.cpp"
+      ],
+      "valueKind": "inferred"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8600000143051147,
+      "genericProperty": "enemy.threat",
+      "runtimeObserved": true,
+      "sourceSymbol": "IsBossIncomingAttack",
+      "sources": [
+        "Game\\enemy\\EnemyManager.cpp"
+      ],
+      "valueKind": "inferred"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8600000143051147,
+      "genericProperty": "enemy.threat",
+      "runtimeObserved": true,
+      "sourceSymbol": "threatHint",
+      "sources": [
+        "Game\\enemy\\EnemyManager.cpp"
+      ],
+      "valueKind": "inferred"
+    },
+    {
+      "approved": false,
+      "confidence": 0.9100000262260437,
+      "genericProperty": "player.action",
+      "runtimeObserved": true,
+      "sourceSymbol": "GetCurrentAction",
+      "sources": [
+        "Game\\player\\Player.h"
+      ],
+      "valueKind": "PlayerAction"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8999999761581421,
+      "genericProperty": "player.canAttack",
+      "runtimeObserved": true,
+      "sourceSymbol": "CanStartAttackCommand",
+      "sources": [
+        "Game\\player\\Player.h"
+      ],
+      "valueKind": "bool"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8999999761581421,
+      "genericProperty": "player.canAttack",
+      "runtimeObserved": true,
+      "sourceSymbol": "CanStartAttackCommand_",
+      "sources": [
+        "Game\\player\\Player.h",
+        "Game\\player\\PlayerAttack.cpp",
+        "Game\\player\\PlayerInput.cpp"
+      ],
+      "valueKind": "bool"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8399999737739563,
+      "genericProperty": "player.isAttacking",
+      "runtimeObserved": true,
+      "sourceSymbol": "GetCurrentAttackType",
+      "sources": [
+        "Game\\player\\Player.h",
+        "Game\\player\\PlayerAttackIInternal.h"
+      ],
+      "valueKind": "bool/inferred"
+    },
+    {
+      "approved": false,
+      "confidence": 0.8399999737739563,
+      "genericProperty": "player.isAttacking",
+      "runtimeObserved": true,
+      "sourceSymbol": "IsSideSpecialLv3AttackActive",
+      "sources": [
+        "Game\\player\\Player.h",
+        "Game\\player\\PlayerAttackI.cpp"
+      ],
+      "valueKind": "bool/inferred"
+    },
+    {
+      "approved": false,
+      "confidence": 0.9599999785423279,
+      "genericProperty": "player.onGround",
+      "runtimeObserved": true,
+      "sourceSymbol": "IsOnGround",
+      "sources": [
+        "Game\\player\\Player.h"
+      ],
+      "valueKind": "bool"
+    }
+  ],
+  "reviewRequired": true,
+  "scanTargets": [],
+  "schemaVersion": 1
+}

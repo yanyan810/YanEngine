@@ -47,14 +47,10 @@ int GameApp::Run() {
         imgui_->Begin();
 #endif // DEBUG
 
-        if (input_) {
-            input_->Update();
-            // F1キーでデバッグモードの切り替え
-        }
-
-
-        // Update
-        sceneMgr_->Update(*this, dt);
+        // Input, DebugAI control messages, and scene simulation must pass
+        // through the same update path. Bypassing this function leaves
+        // external DebugAI requests queued forever.
+        Update(dt);
 
 
         //描画
@@ -126,6 +122,9 @@ bool GameApp::Initialize_() {
 
     debugAI_ = std::make_unique<DebugAIManager>();
     DebugAIConfig debugAIConfig;
+    debugAIConfig.gameId = "CG5";
+    debugAIConfig.gameVersion = "0.1.0";
+    debugAIConfig.controlEndpoint = "DebugAI_CG5";
     debugAIConfig.logDirectory = "generated/debug_ai";
     debugAIConfig.playerLogDirectory = "generated/debug_ai/player";
     debugAIConfig.aiLogDirectory = "generated/debug_ai/ai";
@@ -259,6 +258,10 @@ void GameApp::Finalize_() {
 void GameApp::Update(float dt) {
 
     input_->Update();
+
+    if (debugAI_) {
+        debugAI_->ProcessControlCommands();
+    }
 
 
     sceneMgr_->Update(*this, dt); // ここがあるかが重要

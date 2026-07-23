@@ -49,6 +49,7 @@ bool DebugInputReplay::StartRecording() {
     header_ = {};
     output_.write(reinterpret_cast<const char*>(&header_), sizeof(header_));
     currentFrame_ = 0;
+    pendingEmptyFrames_ = 0;
     inputProcessedThisFrame_ = false;
     recording_ = true;
     lastError_.clear();
@@ -107,6 +108,7 @@ void DebugInputReplay::StopReplay() {
     playing_ = false;
     replayData_.clear();
     currentFrame_ = 0;
+    pendingEmptyFrames_ = 0;
     inputProcessedThisFrame_ = false;
 }
 
@@ -122,6 +124,14 @@ bool DebugInputReplay::ProcessBytes_(void* input, std::size_t size) {
 
     if (header_.commandSize == 0) {
         header_.commandSize = static_cast<std::uint32_t>(size);
+        if (recording_ && pendingEmptyFrames_ > 0) {
+            const std::vector<std::byte> emptyCommand(size);
+            for (unsigned long long i = 0; i < pendingEmptyFrames_; ++i) {
+                output_.write(reinterpret_cast<const char*>(emptyCommand.data()),
+                    static_cast<std::streamsize>(emptyCommand.size()));
+            }
+            pendingEmptyFrames_ = 0;
+        }
     }
     if (header_.commandSize != size) {
         SetError_("Input command size does not match the replay file.");
@@ -153,7 +163,18 @@ void DebugInputReplay::EndFrame() {
         return;
     }
     if (!inputProcessedThisFrame_) {
-        SetError_("EndFrame was called without ProcessInput.");
+        if (recording_) {
+            if (header_.commandSize > 0) {
+                const std::vector<std::byte> emptyCommand(header_.commandSize);
+                output_.write(reinterpret_cast<const char*>(emptyCommand.data()),
+                    static_cast<std::streamsize>(emptyCommand.size()));
+                if (!output_) SetError_("Failed to write an empty input replay frame.");
+            } else {
+                ++pendingEmptyFrames_;
+            }
+        } else {
+            SetError_("EndFrame was called without ProcessInput during replay.");
+        }
     }
     inputProcessedThisFrame_ = false;
     ++currentFrame_;
@@ -176,8 +197,28 @@ bool DebugInputReplay::Load_(const std::string& replayPath) {
         return false;
     }
 
-    const std::size_t dataSize = static_cast<std::size_t>(loadedHeader.frameCount) * loadedHeader.commandSize;
+    input.seekg(0, std::ios::end);
+    const std::streamoff fileSize = input.tellg();
+    if (fileSize < static_cast<std::streamoff>(sizeof(Header))) {
+        SetError_("Input replay is smaller than its header.");
+        return false;
+    }
+    const std::size_t payloadSize = static_cast<std::size_t>(
+        fileSize - static_cast<std::streamoff>(sizeof(Header)));
+    const std::uint64_t availableFrames = payloadSize / loadedHeader.commandSize;
+    const std::uint64_t declaredFrames = loadedHeader.frameCount;
+    const std::uint64_t recoveredFrames = declaredFrames == 0
+        ? availableFrames : (std::min)(declaredFrames, availableFrames);
+    if (recoveredFrames == 0) {
+        SetError_("Input replay contains no complete input frames.");
+        return false;
+    }
+    const bool recoveredTruncation = recoveredFrames < declaredFrames;
+    loadedHeader.frameCount = recoveredFrames;
+    const std::size_t dataSize = static_cast<std::size_t>(recoveredFrames) * loadedHeader.commandSize;
     std::vector<std::byte> data(dataSize);
+    input.clear();
+    input.seekg(static_cast<std::streamoff>(sizeof(Header)), std::ios::beg);
     input.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
     if (static_cast<std::size_t>(input.gcount()) != data.size()) {
         SetError_("Input replay data is truncated.");
@@ -187,7 +228,12 @@ bool DebugInputReplay::Load_(const std::string& replayPath) {
     header_ = loadedHeader;
     replayData_ = std::move(data);
     replayPath_ = replayPath;
-    lastError_.clear();
+    if (recoveredTruncation) {
+        lastError_ = "Recovered truncated input replay: " +
+            std::to_string(recoveredFrames) + " of " + std::to_string(declaredFrames) + " frames.";
+    } else {
+        lastError_.clear();
+    }
     return true;
 }
 

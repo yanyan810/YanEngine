@@ -125,6 +125,13 @@ bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
 
 void GameScene::Update(GameApp& app, float dt) {
     if (!input_) return;
+    if (debugExternalPaused_) {
+        if (std::chrono::steady_clock::now() < debugExternalPauseDeadline_) {
+            if (input_->IsKeyTrigger(DIK_ESCAPE)) app.RequestQuit();
+            return;
+        }
+        debugExternalPaused_ = false;
+    }
     ++debugFrameNumber_;
     const auto debugNow = std::chrono::steady_clock::now();
     if (debugHasFrameTime_) {

@@ -17,6 +17,12 @@ const char* ToDebugPhaseName(GameSceneDebugPhase phase) {
 }
 
 std::vector<DebugAction> BuildGameSceneDebugActions(GameSceneDebugPhase phase) {
+    if (phase == GameSceneDebugPhase::IntroVideo) {
+        return { { "SkipIntro" } };
+    }
+    if (phase != GameSceneDebugPhase::Battle) {
+        return { { "Wait" } };
+    }
     std::vector<DebugAction> actions = {
         { "Move" },
         { "Retreat" },
@@ -34,8 +40,15 @@ std::vector<DebugAction> BuildGameSceneDebugActions(GameSceneDebugPhase phase) {
         { "Wait" },
     };
 
-    if (phase == GameSceneDebugPhase::IntroVideo) {
-        actions.push_back({ "SkipIntro" });
+    for (DebugAction& action : actions) {
+        if (action.name == "Move") {
+            action.intParam = 1;
+            action.holdFrames = 12;
+        } else if (action.name == "Retreat" || action.name == "DodgeAway") {
+            action.holdFrames = 8;
+        } else if (action.name == "Down" || action.name == "Guard") {
+            action.holdFrames = 6;
+        }
     }
 
     return actions;

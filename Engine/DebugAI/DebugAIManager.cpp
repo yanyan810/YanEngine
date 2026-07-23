@@ -1,5 +1,7 @@
 ﻿#include "DebugAIManager.h"
 
+#include "Transport/NamedPipeDebugAITransport.h"
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -226,6 +228,45 @@ std::string BuildDriftMessage(const DebugGameState& expected, const DebugGameSta
     return message.str();
 }
 
+std::string ReadGenericString(
+    const DebugGenericAction& action,
+    const char* key,
+    const std::string& fallback = {}) {
+    const auto found = action.parameters.find(key);
+    if (found == action.parameters.end()) return fallback;
+    if (const auto* value = std::get_if<std::string>(&found->second)) return *value;
+    return fallback;
+}
+
+unsigned int ReadGenericDuration(const DebugGenericAction& action) {
+    const auto read = [&](const char* key) -> unsigned int {
+        const auto found = action.parameters.find(key);
+        if (found == action.parameters.end()) return 0;
+        if (const auto* value = std::get_if<std::int64_t>(&found->second)) {
+            return static_cast<unsigned int>(std::clamp<std::int64_t>(*value, 1, 600));
+        }
+        return 0;
+    };
+    const unsigned int semantic = read(DebugActionParameter::DurationFrames);
+    return semantic != 0 ? semantic : std::max(1u, read("holdFrames"));
+}
+
+std::string MatchingInputReplayPath(
+    const std::string& actorReplayPath,
+    const std::string& playerLogDirectory) {
+    const std::string name = std::filesystem::path(actorReplayPath).filename().string();
+    constexpr const char* prefix = "actors_";
+    constexpr const char* suffix = ".dair2.jsonl";
+    if (!name.starts_with(prefix) || !name.ends_with(suffix)) return {};
+    const std::size_t tokenBegin = std::char_traits<char>::length(prefix);
+    const std::size_t tokenLength = name.size() - tokenBegin - std::char_traits<char>::length(suffix);
+    const std::string token = name.substr(tokenBegin, tokenLength);
+    const auto inputPath = std::filesystem::path(playerLogDirectory) /
+        "input" / ("input_" + token + ".dair");
+    std::error_code error;
+    return std::filesystem::is_regular_file(inputPath, error) ? inputPath.string() : std::string{};
+}
+
 }
 
 void DebugAIManager::Initialize(const std::string& logDirectory) {
@@ -240,6 +281,12 @@ void DebugAIManager::Initialize(const DebugAIConfig& config) {
     replayRecorder_.Open(config_.aiLogDirectory);
     playerReplayRecorder_.Open(config_.playerLogDirectory);
     inputReplay_.Open(config_.playerLogDirectory + "/input");
+    genericActionReplay_.Open(config_.playerLogDirectory + "/actors");
+    eventRecorder_.Open(config_.logDirectory + "/events");
+    if (!controlTransport_) {
+        controlTransport_ = std::make_unique<NamedPipeDebugAITransport>();
+    }
+    controlTransport_->Start(config_.controlEndpoint);
     logger_.SetSessionDirectory(replayRecorder_.SessionDirectoryPath());
 }
 
@@ -259,11 +306,274 @@ void DebugAIManager::SetLoadingDetails(std::string status, std::vector<DebugAILo
 }
 
 void DebugAIManager::Shutdown() {
+    if (controlTransport_) {
+        controlTransport_->Stop();
+    }
     logger_.WriteReport();
     inputReplay_.Close();
+    genericActionReplay_.Close();
+    eventRecorder_.Close();
     replayRecorder_.Close();
     playerReplayRecorder_.Close();
     logger_.Close();
+}
+
+void DebugAIManager::ProcessControlCommands() {
+    if (!controlTransport_) {
+        return;
+    }
+    if (genericAdapter_) {
+        const DebugObservation observation = genericAdapter_->CaptureDebugObservation();
+        if (eventRecorder_.IsRecording()) {
+            eventRecorder_.Observe(observation);
+        }
+        if (genericActionReplay_.IsRecording()) {
+            RecordActorStateChanges_(observation);
+        }
+
+        for (auto it = heldExternalActions_.begin(); it != heldExternalActions_.end();) {
+            if (it->second.framesRemaining == 0) {
+                it = heldExternalActions_.erase(it);
+                continue;
+            }
+            genericAdapter_->ExecuteGenericDebugAction(it->second.action);
+            --it->second.framesRemaining;
+            ++it;
+        }
+
+        DebugGenericReplayEvent replayEvent;
+        while (genericActionReplay_.PopDue(observation.frameNumber, replayEvent)) {
+            const std::string actorId = ReadGenericString(
+                replayEvent.action, DebugActionParameter::ActorId, "player");
+            // Prefer the exact v1 player input stream if both tracks exist.
+            if (!(inputReplay_.IsPlaying() && actorId == "player")) {
+                ExecuteGenericAction_(replayEvent.action, "Replay", observation.frameNumber, false);
+            }
+        }
+
+    }
+    controlTransport_->Poll();
+    std::string jsonText;
+    while (controlTransport_->TryReceive(jsonText)) {
+        DebugProtocolMessage request;
+        DebugProtocolMessage response;
+        std::string parseError;
+        if (DebugProtocolJson::TryParse(jsonText, request, &parseError)) {
+            response = ExecuteControlCommand_(request);
+        } else {
+            response.gameId = config_.gameId;
+            response.gameVersion = config_.gameVersion;
+            response.messageType = DebugProtocolMessageType::ControlResult;
+            response.sequence = ++controlSequence_;
+            response.properties["ok"] = false;
+            response.properties["message"] = "Invalid protocol message: " + parseError;
+        }
+        controlTransport_->Send(DebugProtocolJson::Serialize(response));
+    }
+}
+
+bool DebugAIManager::ExecuteGenericAction_(
+    DebugGenericAction action,
+    const std::string& source,
+    std::uint64_t frame,
+    bool record) {
+    if (!genericAdapter_ || action.actionId.empty()) return false;
+
+    if (action.parameters.find(DebugActionParameter::ActorId) == action.parameters.end()) {
+        action.parameters[DebugActionParameter::ActorId] = std::string("player");
+    }
+    if (action.parameters.find(DebugActionParameter::Source) == action.parameters.end()) {
+        action.parameters[DebugActionParameter::Source] = source;
+    }
+    if (!genericAdapter_->ExecuteGenericDebugAction(action)) return false;
+
+    const std::string actorId = ReadGenericString(action, DebugActionParameter::ActorId, "player");
+    const unsigned int duration = ReadGenericDuration(action);
+    if (duration > 1) {
+        heldExternalActions_[actorId] = HeldExternalAction{ action, duration - 1 };
+    } else {
+        heldExternalActions_.erase(actorId);
+    }
+    if (record && genericActionReplay_.IsRecording() && !genericActionReplay_.IsPlaying()) {
+        genericActionReplay_.Record(frame, action, source);
+    }
+    if (eventRecorder_.IsRecording()) {
+        eventRecorder_.RecordAction(frame, action, source);
+    }
+    return true;
+}
+
+void DebugAIManager::RecordActorStateChanges_(const DebugObservation& observation) {
+    for (const DebugEntity& entity : observation.entities) {
+        if (entity.id.empty() || entity.category != "Enemy" || entity.type != "Boss") continue;
+        const auto stateIt = entity.properties.find("ai.state");
+        if (stateIt == entity.properties.end()) continue;
+        const auto* state = std::get_if<std::string>(&stateIt->second);
+        if (!state || state->empty()) continue;
+
+        auto& previous = lastRecordedActorStates_[entity.id];
+        if (previous == *state) continue;
+        previous = *state;
+
+        DebugGenericAction event;
+        event.actionId = "SetActorState";
+        event.parameters[DebugActionParameter::ActorId] = entity.id;
+        event.parameters[DebugActionParameter::State] = *state;
+        event.parameters[DebugActionParameter::Source] = std::string("Native");
+        event.parameters[DebugActionParameter::DurationFrames] = static_cast<std::int64_t>(1);
+        genericActionReplay_.Record(observation.frameNumber, event, "Native");
+    }
+}
+
+void DebugAIManager::SetControlTransport(std::unique_ptr<IDebugAITransport> transport) {
+    if (controlTransport_) {
+        controlTransport_->Stop();
+    }
+    controlTransport_ = std::move(transport);
+}
+
+DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolMessage& request) {
+    std::string command;
+    if (const auto it = request.properties.find("command"); it != request.properties.end()) {
+        if (const std::string* value = std::get_if<std::string>(&it->second)) {
+            command = *value;
+        }
+    }
+    bool ok = true;
+    std::string message;
+    if (request.messageType == DebugProtocolMessageType::StatusRequest) {
+        message = "status";
+    } else if (request.messageType == DebugProtocolMessageType::ExecuteAction) {
+        std::uint64_t frame = 0;
+        if (genericAdapter_) frame = genericAdapter_->CaptureDebugObservation().frameNumber;
+        const std::string source = request.action
+            ? ReadGenericString(*request.action, DebugActionParameter::Source, "External")
+            : "External";
+        ok = request.action.has_value() && ExecuteGenericAction_(*request.action, source, frame, true);
+        if (ok) {
+            const unsigned int holdFrames = ReadGenericDuration(*request.action);
+            message = "action executed: " + request.action->actionId +
+                " (durationFrames=" + std::to_string(holdFrames) + ")";
+        } else {
+            message = "action rejected for the current scene or phase";
+        }
+    } else if (request.messageType != DebugProtocolMessageType::ControlCommand) {
+        ok = false;
+        message = "unsupported messageType";
+    } else if (command == "start_recording") {
+        std::uint64_t startFrame = 0;
+        DebugObservation startObservation;
+        const bool hasStartObservation = genericAdapter_ != nullptr;
+        if (hasStartObservation) {
+            startObservation = genericAdapter_->CaptureDebugObservation();
+            startFrame = startObservation.frameNumber;
+        }
+        // Always restart both tracks so their time origins match, even when
+        // the game scene enabled automatic input recording earlier.
+        const bool inputOk = inputReplay_.StartRecording();
+        const bool actorOk = genericActionReplay_.StartRecording(startFrame);
+        const bool eventOk = eventRecorder_.StartRecording(startFrame);
+        if (eventOk && hasStartObservation) eventRecorder_.Observe(startObservation);
+        lastRecordedActorStates_.clear();
+        ok = inputOk && actorOk && eventOk;
+        message = ok ? "player input + actor actions + event timeline recording started" :
+            (!inputOk ? inputReplay_.LastError() :
+                (!actorOk ? genericActionReplay_.LastError() : eventRecorder_.LastError()));
+    } else if (command == "stop_recording") {
+        std::uint64_t endFrame = 0;
+        if (genericAdapter_) {
+            const DebugObservation endObservation = genericAdapter_->CaptureDebugObservation();
+            endFrame = endObservation.frameNumber;
+            eventRecorder_.Observe(endObservation);
+        }
+        const std::string inputPath = inputReplay_.StopRecording();
+        const std::string actorPath = genericActionReplay_.StopRecording();
+        const std::string eventPath = eventRecorder_.StopRecording(endFrame);
+        ok = !inputPath.empty() || !actorPath.empty() || !eventPath.empty();
+        message = "input=" + inputPath + " actor=" + actorPath + " events=" + eventPath;
+    } else if (command == "play_latest") {
+        std::uint64_t frame = 0;
+        bool skippedIntro = false;
+        if (genericAdapter_) {
+            DebugObservation playbackObservation = genericAdapter_->CaptureDebugObservation();
+            const auto phaseIt = playbackObservation.properties.find("game.phase");
+            const auto* phase = phaseIt == playbackObservation.properties.end()
+                ? nullptr : std::get_if<std::string>(&phaseIt->second);
+            if (phase && *phase == "IntroVideo") {
+                const auto skipIt = std::find_if(
+                    playbackObservation.availableActions.begin(),
+                    playbackObservation.availableActions.end(),
+                    [](const DebugGenericAction& action) { return action.actionId == "SkipIntro"; });
+                if (skipIt != playbackObservation.availableActions.end()) {
+                    genericAdapter_->ExecuteGenericDebugAction(*skipIt);
+                    skippedIntro = true;
+                    playbackObservation = genericAdapter_->CaptureDebugObservation();
+                }
+            }
+            frame = playbackObservation.frameNumber;
+        }
+        const bool actorOk = genericActionReplay_.StartLatestReplay(frame);
+        bool inputOk = false;
+        if (actorOk) {
+            const std::string pairedInput = MatchingInputReplayPath(
+                genericActionReplay_.ReplayPath(), config_.playerLogDirectory);
+            if (!pairedInput.empty()) {
+                inputOk = inputReplay_.StartReplay(pairedInput);
+            } else {
+                inputReplay_.StopRecording();
+                inputReplay_.StopReplay();
+            }
+        } else {
+            inputOk = inputReplay_.StartLatestReplay();
+        }
+        heldExternalActions_.clear();
+        ok = inputOk || actorOk;
+        message = ok ? std::string(skippedIntro ? "intro skipped; " : "") +
+            "input=" + inputReplay_.ReplayPath() +
+            " actor=" + genericActionReplay_.ReplayPath() :
+            "input: " + inputReplay_.LastError() + " actor: " + genericActionReplay_.LastError();
+    } else if (command == "stop_replay") {
+        inputReplay_.StopReplay();
+        genericActionReplay_.StopReplay();
+        heldExternalActions_.clear();
+        message = "replay stopped";
+    } else if (command == "pause_simulation" || command == "resume_simulation") {
+        const bool paused = command == "pause_simulation";
+        ok = genericAdapter_ != nullptr && genericAdapter_->SetDebugSimulationPaused(paused);
+        message = ok ? (paused ? "simulation paused for AI" : "simulation resumed")
+            : "simulation pause is not supported by the current adapter";
+    } else {
+        ok = false;
+        message = "unknown command";
+    }
+
+    DebugProtocolMessage response;
+    response.gameId = config_.gameId;
+    response.gameVersion = config_.gameVersion;
+    response.sessionId = request.sessionId;
+    response.messageType = request.messageType == DebugProtocolMessageType::StatusRequest
+        ? DebugProtocolMessageType::StatusResponse
+        : DebugProtocolMessageType::ControlResult;
+    response.sequence = request.sequence != 0 ? request.sequence : ++controlSequence_;
+    response.properties["ok"] = ok;
+    response.properties["recording"] = inputReplay_.IsRecording() ||
+        genericActionReplay_.IsRecording() || eventRecorder_.IsRecording();
+    response.properties["replaying"] = inputReplay_.IsPlaying() || genericActionReplay_.IsPlaying();
+    response.properties["frame"] = static_cast<std::int64_t>(inputReplay_.CurrentFrame());
+    response.properties["path"] = !genericActionReplay_.ReplayPath().empty()
+        ? genericActionReplay_.ReplayPath() : inputReplay_.ReplayPath();
+    response.properties["playerReplayPath"] = inputReplay_.ReplayPath();
+    response.properties["actorReplayPath"] = genericActionReplay_.ReplayPath();
+    response.properties["eventLogPath"] = eventRecorder_.TimelinePath();
+    response.properties["eventSummaryPath"] = eventRecorder_.SummaryPath();
+    response.properties["eventCount"] = static_cast<std::int64_t>(eventRecorder_.EventCount());
+    response.properties["lastEvent"] = eventRecorder_.LastEventSummary();
+    response.properties["message"] = message;
+    response.properties["lastError"] = inputReplay_.LastError();
+    if (genericAdapter_) {
+        response.observation = genericAdapter_->CaptureDebugObservation();
+    }
+    return response;
 }
 
 void DebugAIManager::SetEnabled(bool enabled) {
@@ -274,6 +584,7 @@ void DebugAIManager::SetEnabled(bool enabled) {
         hasPendingAction_ = false;
         waitingForAction_ = false;
         idleAfterUpdateFrames_ = 0;
+        heldExternalActions_.clear();
     }
 }
 
@@ -351,6 +662,9 @@ bool DebugAIManager::RestoreReplayInitialState_() {
 
 void DebugAIManager::StopReplay() {
     replayPlayer_.Stop();
+    inputReplay_.StopReplay();
+    genericActionReplay_.StopReplay();
+    heldExternalActions_.clear();
     replayMode_ = false;
     isFirstReplayFrame_ = false;
 }

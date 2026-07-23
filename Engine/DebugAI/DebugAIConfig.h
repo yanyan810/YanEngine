@@ -3,6 +3,9 @@
 #include <string>
 
 struct DebugAIConfig {
+    std::string gameId = "UnknownGame";
+    std::string gameVersion = "0.0.0";
+    std::string controlEndpoint = "DebugAI";
     std::string logDirectory = "generated/debug_ai";
     std::string playerLogDirectory;
     std::string aiLogDirectory;

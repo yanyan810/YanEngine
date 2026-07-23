@@ -319,6 +319,12 @@
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\Protocol\DebugProtocol.cpp">
+      <Filter>ソース ファイル\Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\Transport\NamedPipeDebugAITransport.cpp">
+      <Filter>ソース ファイル\Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
@@ -329,6 +335,12 @@
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugLogger.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\DebugGenericActionReplay.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\DebugAI\DebugObservationEventRecorder.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
     <ClCompile Include="Engine\DebugAI\DebugInputReplay.cpp">
@@ -584,6 +596,24 @@
     <ClInclude Include="Engine\DebugAI\ApiDebugBot.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\DebugAI\Protocol\DebugGenericTypes.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\Protocol\DebugProtocol.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\Protocol\IGenericGameDebugAdapter.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\Protocol\IGenericDebugActionProvider.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\Transport\IDebugAITransport.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\Transport\NamedPipeDebugAITransport.h">
+      <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\DebugAI\BasicCombatDebugBot.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
@@ -595,6 +625,12 @@
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugInputReplay.h">
       <Filter>ヘッダー ファイル\Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugGenericActionReplay.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugObservationEventRecorder.h">
+      <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\GeminiDebugActionProvider.h">
       <Filter>Engine\DebugAI</Filter>

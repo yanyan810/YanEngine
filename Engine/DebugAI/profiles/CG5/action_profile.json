@@ -1,0 +1,516 @@
+{
+  "actions": [
+    {
+      "actionId": "AttackDownSpecial",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "nearestMissRange": 0.0,
+        "runtimeMissSamples": 6,
+        "runtimeSamples": 6
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "AttackNeutralSpecial",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "nearestMissRange": 2.6227259635925293,
+        "rangeConfidence": 0.85,
+        "runtimeHitSamples": 7,
+        "runtimeMissSamples": 2,
+        "runtimeRangeVerified": true,
+        "runtimeSamples": 9,
+        "verifiedRangeMax": 2.543148060237758
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "AttackSideSpecial",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "nearestMissRange": 2.428391140129125,
+        "rangeConfidence": 0.85,
+        "runtimeHitSamples": 7,
+        "runtimeMissSamples": 1,
+        "runtimeRangeVerified": true,
+        "runtimeSamples": 8,
+        "verifiedRangeMax": 2.787137985229492
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "AttackSmash",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "nearestMissRange": 2.8514332593635063,
+        "rangeConfidence": 0.85,
+        "runtimeHitSamples": 8,
+        "runtimeMissSamples": 1,
+        "runtimeRangeVerified": true,
+        "runtimeSamples": 9,
+        "verifiedRangeMax": 2.922588744608122
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "AttackSpecial",
+      "availableNow": false,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": false,
+      "properties": {},
+      "runtimeObserved": false,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": false
+    },
+    {
+      "actionId": "AttackTilt",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "nearestMissRange": 2.400923802112973,
+        "rangeConfidence": 0.85,
+        "runtimeHitSamples": 10,
+        "runtimeMissSamples": 1,
+        "runtimeRangeVerified": true,
+        "runtimeSamples": 11,
+        "verifiedRangeMax": 2.6333296298980713
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "AttackUpSpecial",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "rangeConfidence": 0.85,
+        "runtimeHitSamples": 7,
+        "runtimeRangeVerified": true,
+        "runtimeSamples": 7,
+        "verifiedRangeMax": 2.873912709556834
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "AttackWeak",
+      "availableNow": true,
+      "category": "attack",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {
+        "nearestMissRange": 2.580310821533203,
+        "rangeConfidence": 0.85,
+        "runtimeHitSamples": 15,
+        "runtimeMissSamples": 3,
+        "runtimeRangeVerified": true,
+        "runtimeSamples": 18,
+        "verifiedRangeMax": 2.7999963760375977
+      },
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "attack",
+        "combat.attack"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "DodgeAway",
+      "availableNow": true,
+      "category": "mobility",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "mobility",
+        "defense.evade"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Down",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugReplayRecorder.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Guard",
+      "availableNow": true,
+      "category": "defense",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugReplayRecorder.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "defense",
+        "defense.evade"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Jump",
+      "availableNow": true,
+      "category": "mobility",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "mobility",
+        "mobility.jump"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Move",
+      "availableNow": true,
+      "category": "movement",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\BasicCombatDebugBot.h",
+        "Engine\\DebugAI\\DebugReplayRecorder.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "movement",
+        "movement.approach"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "MoveBack",
+      "availableNow": false,
+      "category": "movement",
+      "enabled": true,
+      "enabledForLocalAI": false,
+      "properties": {},
+      "runtimeObserved": false,
+      "sourceDiscovered": true,
+      "sources": [
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp"
+      ],
+      "tags": [
+        "movement",
+        "movement.approach"
+      ],
+      "verified": false
+    },
+    {
+      "actionId": "Retreat",
+      "availableNow": true,
+      "category": "movement",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\DebugAIManager.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "movement",
+        "movement.retreat",
+        "defense.evade"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "SkipIntro",
+      "availableNow": false,
+      "category": "flow",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "flow"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Wait",
+      "availableNow": true,
+      "category": "idle",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": true,
+      "sources": [
+        "Engine\\DebugAI\\BasicCombatDebugBot.cpp",
+        "Engine\\DebugAI\\BasicCombatDebugBot.h",
+        "Engine\\DebugAI\\DebugReplayRecorder.cpp",
+        "Game\\scene\\Main\\GameScene.DebugAI.cpp",
+        "Game\\scene\\Main\\GameSceneDebugProfile.cpp"
+      ],
+      "tags": [
+        "idle"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.DoubleMelee",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Drop",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Grab",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Melee",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Rush",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Super25",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Super50",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    },
+    {
+      "actionId": "Boss.Wander",
+      "availableNow": true,
+      "category": "generic",
+      "enabled": true,
+      "enabledForLocalAI": true,
+      "properties": {},
+      "runtimeObserved": true,
+      "sourceDiscovered": false,
+      "sources": [],
+      "tags": [
+        "generic"
+      ],
+      "verified": true
+    }
+  ],
+  "gameId": "CG5",
+  "generatedLocally": true,
+  "lastRuntimeFrame": 701,
+  "lastRuntimeScene": "Game",
+  "schemaVersion": 1,
+  "sourceFileCount": 235
+}
