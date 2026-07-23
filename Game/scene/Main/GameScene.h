@@ -54,6 +54,7 @@ private:
     bool RestoreDebugState(const DebugGameState& state);
     void SetReplaySpawnOverrides(const std::vector<DebugSpawnOverride>& overrides);
     void ExecuteDebugAction(const DebugAction& action);
+    void SetDebugExternalPaused_(bool paused);
     bool CaptureManualDebugAction_(DebugAction& outAction) const;
     void FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const;
     void EnsureHitEffectGroup_();
@@ -154,6 +155,8 @@ private:
 
     // ===== Pause UI =====
     bool isPaused_ = false;
+    bool debugExternalPaused_ = false;
+    std::chrono::steady_clock::time_point debugExternalPauseDeadline_{};
     bool prevTab_ = false;
 
     bool hitEffectEnabled_ = true;

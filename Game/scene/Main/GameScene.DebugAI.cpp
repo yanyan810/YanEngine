@@ -10,7 +10,86 @@
 #include <cstdlib>
 #include <dinput.h>
 #include <limits>
+#include <optional>
 #include <string>
+
+namespace {
+const char* DebugPlayerActionName(Player::PlayerAction action) {
+    switch (action) {
+    case Player::PlayerAction::Idle: return "Idle";
+    case Player::PlayerAction::Move: return "Move";
+    case Player::PlayerAction::Jump: return "Jump";
+    case Player::PlayerAction::Crouch: return "Crouch";
+    case Player::PlayerAction::FastFall: return "FastFall";
+    case Player::PlayerAction::Guard: return "Guard";
+    case Player::PlayerAction::Attack: return "Attack";
+    case Player::PlayerAction::Launched: return "Launched";
+    default: return "Unknown";
+    }
+}
+
+const char* DebugPlayerAttackTypeName(Player::PlayerAttackType type) {
+    switch (type) {
+    case Player::PlayerAttackType::None: return "None";
+    case Player::PlayerAttackType::Weak: return "Weak";
+    case Player::PlayerAttackType::Tilt: return "Tilt";
+    case Player::PlayerAttackType::Smash: return "Smash";
+    case Player::PlayerAttackType::NeutralSpecial: return "NeutralSpecial";
+    case Player::PlayerAttackType::SideSpecial: return "SideSpecial";
+    case Player::PlayerAttackType::UpSpecial: return "UpSpecial";
+    case Player::PlayerAttackType::DownSpecial: return "DownSpecial";
+    default: return "Unknown";
+    }
+}
+
+std::string ReadActionString(const DebugGenericAction& action, const char* key) {
+    const auto found = action.parameters.find(key);
+    if (found == action.parameters.end()) return {};
+    if (const auto* value = std::get_if<std::string>(&found->second)) return *value;
+    return {};
+}
+
+std::optional<BossAI::State> ParseBossState(const std::string& name) {
+    using State = BossAI::State;
+    if (name == "Wander") return State::Wander;
+    if (name == "Drop_Windup") return State::Drop_Windup;
+    if (name == "Drop_Fall") return State::Drop_Fall;
+    if (name == "Drop_Land") return State::Drop_Land;
+    if (name == "Melee_Dash") return State::Melee_Dash;
+    if (name == "Melee_Attack") return State::Melee_Attack;
+    if (name == "Melee_Recover") return State::Melee_Recover;
+    if (name == "Rush_ToRight") return State::Rush_ToRight;
+    if (name == "Rush_Charge") return State::Rush_Charge;
+    if (name == "Rush_ExitLeft") return State::Rush_ExitLeft;
+    if (name == "Rush_Return") return State::Rush_Return;
+    if (name == "Double_Melee_Dash") return State::Double_Melee_Dash;
+    if (name == "Double_Melee_Attack_1") return State::Double_Melee_Attack_1;
+    if (name == "Double_Melee_Rock") return State::Double_Melee_Rock;
+    if (name == "Double_Melee_Attack_2") return State::Double_Melee_Attack_2;
+    if (name == "Double_Melee_Finish") return State::Double_Melee_Finish;
+    if (name == "Grab_WindUp") return State::Grab_WindUp;
+    if (name == "Grab_Catch") return State::Grab_Catch;
+    if (name == "Grab_Delay") return State::Grab_Delay;
+    if (name == "Grab_Attack") return State::Grab_Attack;
+    if (name == "Grab_Finish") return State::Grab_Finish;
+    if (name == "Super50") return State::Super50;
+    if (name == "Super25") return State::Super25;
+    return std::nullopt;
+}
+
+std::optional<BossAI::State> BossEntryStateForAction(const std::string& actionId) {
+    using State = BossAI::State;
+    if (actionId == "Boss.Wander") return State::Wander;
+    if (actionId == "Boss.Drop") return State::Drop_Windup;
+    if (actionId == "Boss.Melee") return State::Melee_Dash;
+    if (actionId == "Boss.DoubleMelee") return State::Double_Melee_Dash;
+    if (actionId == "Boss.Rush") return State::Rush_ToRight;
+    if (actionId == "Boss.Grab") return State::Grab_WindUp;
+    if (actionId == "Boss.Super50") return State::Super50;
+    if (actionId == "Boss.Super25") return State::Super25;
+    return std::nullopt;
+}
+}
 
 GameSceneDebugAdapter::GameSceneDebugAdapter(GameScene& scene)
     : scene_(scene) {
@@ -32,6 +111,245 @@ void GameSceneDebugAdapter::ExecuteDebugAction(const DebugAction& action) {
     scene_.ExecuteDebugAction(action);
 }
 
+DebugObservation GameSceneDebugAdapter::CaptureDebugObservation() const {
+    const DebugGameState state = scene_.CaptureDebugState();
+    DebugObservation observation;
+    observation.sceneId = state.sceneName;
+    observation.frameNumber = state.frameNumber;
+    observation.properties["player.hp"] = static_cast<std::int64_t>(state.playerHp);
+    observation.properties["player.position"] = DebugVec3{
+        state.playerPosition.x, state.playerPosition.y, state.playerPosition.z };
+    observation.properties["enemy.hp"] = static_cast<std::int64_t>(state.enemyHp);
+    observation.properties["enemy.count"] = static_cast<std::int64_t>(state.enemyCount);
+    observation.properties["fps"] = static_cast<double>(state.fps);
+    observation.properties["game.phase"] = state.gamePhase;
+    observation.properties["random.seed"] = static_cast<std::int64_t>(state.randomSeed);
+    observation.properties["state.stableKey"] = state.stableStateKey;
+    observation.properties["state.progressKey"] = state.progressKey;
+
+    const bool battleActive = state.gamePhase == "Battle" && !scene_.isPaused_ && !scene_.debugExternalPaused_;
+    if (scene_.player_) {
+        const auto playerAction = scene_.player_->GetCurrentAction();
+        const auto attackType = scene_.player_->GetCurrentAttackType();
+        const bool launched = playerAction == Player::PlayerAction::Launched;
+        const bool attacking = playerAction == Player::PlayerAction::Attack &&
+            attackType != Player::PlayerAttackType::None;
+        const bool canMove = battleActive && !launched && !attacking && !scene_.player_->IsMoveLocked();
+        observation.properties["player.action"] = std::string(DebugPlayerActionName(playerAction));
+        observation.properties["player.attackType"] = std::string(DebugPlayerAttackTypeName(attackType));
+        observation.properties["player.onGround"] = scene_.player_->IsOnGround();
+        observation.properties["player.canMove"] = canMove;
+        observation.properties["player.canJump"] = canMove && scene_.player_->IsOnGround();
+        observation.properties["player.canAttack"] = battleActive && !launched && !attacking;
+        observation.properties["player.isAttacking"] = attacking;
+        observation.properties["player.forward"] = DebugVec3{
+            static_cast<double>(scene_.player_->GetFacing()), 0.0, 0.0 };
+    } else {
+        observation.properties["player.canMove"] = false;
+        observation.properties["player.canJump"] = false;
+        observation.properties["player.canAttack"] = false;
+        observation.properties["player.isAttacking"] = false;
+    }
+
+    bool enemyThreat = false;
+    bool enemyAttackActive = false;
+    double nearestEnemyDistance = std::numeric_limits<double>::max();
+    std::string nearestEnemyId;
+    for (const DebugEntityState& entity : state.entities) {
+        if (!entity.alive) continue;
+        if (!entity.threatHint.empty() || entity.category == "EnemyAttack") enemyThreat = true;
+        if (entity.category == "EnemyAttack" && !entity.pending) enemyAttackActive = true;
+        if (entity.category == "Enemy") {
+            const double dx = static_cast<double>(entity.position.x - state.playerPosition.x);
+            const double dy = static_cast<double>(entity.position.y - state.playerPosition.y);
+            const double dz = static_cast<double>(entity.position.z - state.playerPosition.z);
+            const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (distance < nearestEnemyDistance) {
+                nearestEnemyDistance = distance;
+                nearestEnemyId = entity.id;
+            }
+        }
+    }
+    observation.properties["enemy.threat"] = enemyThreat;
+    observation.properties["enemy.attackActive"] = enemyAttackActive;
+    observation.properties["enemy.distanceToPlayer"] = nearestEnemyId.empty() ? -1.0 : nearestEnemyDistance;
+    observation.properties["enemy.nearestId"] = nearestEnemyId;
+
+    observation.entities.reserve(state.entities.size());
+    for (const DebugEntityState& source : state.entities) {
+        DebugEntity entity;
+        entity.id = source.id;
+        entity.category = source.category;
+        entity.type = source.type;
+        entity.position = { source.position.x, source.position.y, source.position.z };
+        entity.velocity = { source.velocity.x, source.velocity.y, source.velocity.z };
+        entity.properties["hp"] = static_cast<std::int64_t>(source.hp);
+        entity.properties["damage"] = static_cast<std::int64_t>(source.damage);
+        entity.properties["alive"] = source.alive;
+        entity.properties["pending"] = source.pending;
+        entity.properties["delay"] = static_cast<double>(source.delay);
+        entity.properties["life"] = static_cast<double>(source.life);
+        entity.properties["ai.state"] = source.aiStateName;
+        entity.properties["ai.threat"] = source.threatHint;
+        entity.properties["ai.state1"] = static_cast<std::int64_t>(source.aiState1);
+        entity.properties["ai.state2"] = static_cast<std::int64_t>(source.aiState2);
+        entity.properties["ai.value1"] = static_cast<double>(source.aiFloat1);
+        entity.properties["ai.value2"] = static_cast<double>(source.aiFloat2);
+        entity.properties["ai.value3"] = static_cast<double>(source.aiFloat3);
+        entity.properties["boss.wanderVelocity"] = DebugVec3{
+            source.bossWanderVel.x, source.bossWanderVel.y, source.bossWanderVel.z };
+        entity.properties["boss.wanderChange"] = static_cast<double>(source.bossWanderChange);
+        entity.properties["boss.moveMultiplier"] = static_cast<double>(source.bossMoveMul);
+        entity.properties["boss.dropStartY"] = static_cast<double>(source.bossDropStartY);
+        entity.properties["boss.rushSpeed"] = static_cast<double>(source.bossRushSpeed);
+        entity.properties["boss.chaseSpeed"] = static_cast<double>(source.bossChaseSpeed);
+        entity.properties["boss.rushZMin"] = static_cast<double>(source.bossRushZMin);
+        entity.properties["boss.rushZMax"] = static_cast<double>(source.bossRushZMax);
+        observation.entities.push_back(std::move(entity));
+    }
+
+    observation.availableActions.reserve(state.availableActions.size() + 8);
+    for (const DebugAction& source : state.availableActions) {
+        DebugGenericAction action;
+        action.actionId = source.name;
+        action.parameters[DebugActionParameter::ActorId] = std::string("player");
+        action.parameters[DebugActionParameter::Source] = std::string("Game");
+        action.parameters["targetId"] = source.targetId;
+        action.parameters[DebugActionParameter::Direction] = DebugVec3{
+            static_cast<double>(source.intParam), 0.0, static_cast<double>(source.floatParam) };
+        action.parameters[DebugActionParameter::CoordinateSpace] = std::string(DebugCoordinateSpace::World);
+        action.parameters[DebugActionParameter::DurationFrames] = static_cast<std::int64_t>(source.holdFrames);
+        // Legacy compatibility for existing replay files and adapters.
+        action.parameters["intParam"] = static_cast<std::int64_t>(source.intParam);
+        action.parameters["floatParam"] = static_cast<double>(source.floatParam);
+        action.parameters["stringParam"] = source.stringParam;
+        action.parameters["holdFrames"] = static_cast<std::int64_t>(source.holdFrames);
+        observation.availableActions.push_back(std::move(action));
+    }
+
+    if (battleActive && scene_.enemyMgr_.GetBoss()) {
+        std::string bossActorId = "boss";
+        for (const DebugEntityState& entity : state.entities) {
+            if (entity.category == "Enemy" && entity.type == "Boss" && !entity.id.empty()) {
+                bossActorId = entity.id;
+                break;
+            }
+        }
+        const auto addBossAction = [&](const char* actionId) {
+            DebugGenericAction action;
+            action.actionId = actionId;
+            action.parameters[DebugActionParameter::ActorId] = bossActorId;
+            action.parameters[DebugActionParameter::Source] = std::string("Game");
+            action.parameters[DebugActionParameter::TargetId] = std::string("player");
+            action.parameters[DebugActionParameter::DurationFrames] = static_cast<std::int64_t>(1);
+            observation.availableActions.push_back(std::move(action));
+        };
+        addBossAction("Boss.Wander");
+        addBossAction("Boss.Drop");
+        addBossAction("Boss.Melee");
+        addBossAction("Boss.DoubleMelee");
+        addBossAction("Boss.Rush");
+        addBossAction("Boss.Grab");
+        addBossAction("Boss.Super50");
+        addBossAction("Boss.Super25");
+    }
+    return observation;
+}
+
+bool GameSceneDebugAdapter::ExecuteGenericDebugAction(const DebugGenericAction& action) {
+    if (action.actionId.empty()) {
+        return false;
+    }
+    const std::string actorId = ReadActionString(action, DebugActionParameter::ActorId);
+    if (!actorId.empty() && actorId != "player") {
+        Enemy* boss = scene_.enemyMgr_.GetBoss();
+        if (!boss) return false;
+
+        std::optional<BossAI::State> requestedState;
+        if (action.actionId == "SetActorState") {
+            requestedState = ParseBossState(ReadActionString(action, DebugActionParameter::State));
+        } else {
+            requestedState = BossEntryStateForAction(action.actionId);
+        }
+        if (!requestedState) return false;
+        if (boss->GetBossAI().GetState() == *requestedState) return true;
+        boss->GetBossAIMutable().ForceChangeState(*requestedState);
+        return true;
+    }
+
+    const DebugGameState current = scene_.CaptureDebugState();
+    const bool available = std::any_of(current.availableActions.begin(), current.availableActions.end(),
+        [&](const DebugAction& candidate) { return candidate.name == action.actionId; });
+    if (!available) {
+        return false;
+    }
+    DebugAction legacy;
+    legacy.name = action.actionId;
+    if (const auto it = action.parameters.find("targetId"); it != action.parameters.end()) {
+        if (const auto* value = std::get_if<std::string>(&it->second)) legacy.targetId = *value;
+    }
+    if (const auto it = action.parameters.find("intParam"); it != action.parameters.end()) {
+        if (const auto* value = std::get_if<std::int64_t>(&it->second)) legacy.intParam = static_cast<int>(*value);
+    }
+    if (const auto it = action.parameters.find("floatParam"); it != action.parameters.end()) {
+        if (const auto* value = std::get_if<double>(&it->second)) legacy.floatParam = static_cast<float>(*value);
+    }
+    if (const auto it = action.parameters.find("stringParam"); it != action.parameters.end()) {
+        if (const auto* value = std::get_if<std::string>(&it->second)) legacy.stringParam = *value;
+    }
+    if (const auto it = action.parameters.find("holdFrames"); it != action.parameters.end()) {
+        if (const auto* value = std::get_if<std::int64_t>(&it->second)) legacy.holdFrames = std::max(1u, static_cast<unsigned int>(*value));
+    }
+    if (const auto it = action.parameters.find(DebugActionParameter::DurationFrames); it != action.parameters.end()) {
+        if (const auto* value = std::get_if<std::int64_t>(&it->second)) {
+            legacy.holdFrames = std::clamp(static_cast<unsigned int>(std::max<std::int64_t>(1, *value)), 1u, 600u);
+        }
+    }
+    if (const auto it = action.parameters.find(DebugActionParameter::Direction); it != action.parameters.end()) {
+        if (const auto* direction = std::get_if<DebugVec3>(&it->second)) {
+            std::string space = DebugCoordinateSpace::World;
+            if (const auto spaceIt = action.parameters.find(DebugActionParameter::CoordinateSpace);
+                spaceIt != action.parameters.end()) {
+                if (const auto* value = std::get_if<std::string>(&spaceIt->second)) space = *value;
+            }
+            double worldX = direction->x;
+            double worldZ = direction->z;
+            if (space == DebugCoordinateSpace::ActorLocal && scene_.player_) {
+                worldX *= static_cast<double>(scene_.player_->GetFacing());
+            } else if (space == DebugCoordinateSpace::TargetRelative) {
+                const DebugEntityState* target = nullptr;
+                for (const auto& entity : current.entities) {
+                    if ((!legacy.targetId.empty() && entity.id == legacy.targetId) ||
+                        (legacy.targetId.empty() && entity.alive && entity.category == "Enemy")) {
+                        target = &entity;
+                        break;
+                    }
+                }
+                if (target) {
+                    const double dx = target->position.x - current.playerPosition.x;
+                    const double dz = target->position.z - current.playerPosition.z;
+                    const double length = std::sqrt(dx * dx + dz * dz);
+                    if (length > 0.0001) {
+                        const double forwardX = dx / length;
+                        const double forwardZ = dz / length;
+                        worldX = forwardX * direction->z + forwardZ * direction->x;
+                        worldZ = forwardZ * direction->z - forwardX * direction->x;
+                    }
+                }
+            }
+            legacy.intParam = worldX > 0.25 ? 1 : (worldX < -0.25 ? -1 : 0);
+            legacy.floatParam = worldZ > 0.25 ? 1.0f : (worldZ < -0.25 ? -1.0f : 0.0f);
+        }
+    }
+    scene_.ExecuteDebugAction(legacy);
+    return true;
+}
+
+bool GameSceneDebugAdapter::SetDebugSimulationPaused(bool paused) {
+    scene_.SetDebugExternalPaused_(paused);
+    return true;
+}
+
 void GameScene::SetupDebugAI_(GameApp& app) {
     debugFrameNumber_ = 0;
     debugAIEnabled_ = false;
@@ -40,8 +358,9 @@ void GameScene::SetupDebugAI_(GameApp& app) {
 
     if (app.DebugAI()) {
         app.DebugAI()->SetAdapter(debugAdapter_.get());
+        app.DebugAI()->SetGenericAdapter(
+            dynamic_cast<IGenericGameDebugAdapter*>(debugAdapter_.get()));
         app.DebugAI()->SetEnabled(false);
-        app.DebugAI()->InputReplay().StartRecording();
         if (player_) {
             DebugAIManager* debugAI = app.DebugAI();
             player_->SetInputCommandFilter([debugAI](Player::PlayerInputCommand& command) {
@@ -59,6 +378,7 @@ void GameScene::ShutdownDebugAI_(GameApp& app) {
         app.DebugAI()->InputReplay().StopRecording();
         app.DebugAI()->SetEnabled(false);
         app.DebugAI()->SetAdapter(nullptr);
+        app.DebugAI()->SetGenericAdapter(nullptr);
     }
     debugAIEnabled_ = false;
     debugManualRecordingActive_ = false;
@@ -298,6 +618,13 @@ void GameScene::ExecuteDebugAction(const DebugAction& action) {
     }
 
     player_->QueueDebugCommand(command);
+}
+
+void GameScene::SetDebugExternalPaused_(bool paused) {
+    debugExternalPaused_ = paused;
+    if (paused) {
+        debugExternalPauseDeadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    }
 }
 
 void GameScene::FinalizeRecordedDebugAction_(DebugAction& action, unsigned int attackSerialBefore) const {
