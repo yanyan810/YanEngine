@@ -1,4 +1,4 @@
-#include "Player.h"
+﻿#include "Player.h"
 #include "Object3d.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -101,6 +101,7 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     model_->SetCamera(cam_);
 
     currentModelSet_ = PlayerModelSet::Player2Gltf;
+    //model_->SetModel("MyGtYUhe6t/安比.pmx");
     model_->SetModel("Player/player.gltf");
     //model_->SetModel("Player/player2.gltf");
     model_->PlayAnimation("Idle", true);

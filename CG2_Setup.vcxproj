@@ -201,6 +201,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Game\scene\Test\ParticleTestScene.ImGui.cpp" />
     <ClCompile Include="Game\scene\Test\ParticleTestScene.Objects.cpp" />
     <ClCompile Include="Game\scene\Test\ParticleTestScene.cpp" />
+    <ClCompile Include="Game\scene\Test\CGTestScene.cpp" />
     <ClCompile Include="Game\scene\Test\ParticleTestScene.Serialization.cpp" />
     <ClCompile Include="Game\scene\Test\ParticleTestScene.Timeline.cpp" />
     <ClCompile Include="Game\enemy\BossAI.cpp" />
@@ -564,6 +565,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Game\player\PlayerAttackI.h" />
     <ClInclude Include="Game\player\PlayerAttackIInternal.h" />
     <ClInclude Include="Game\scene\Test\TestScene.h" />
+    <ClInclude Include="Game\scene\Test\CGTestScene.h" />
     <ClInclude Include="Game\scene\Test\TestScene.Trajectory.h" />
     <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h" />
     <ClInclude Include="Game\scene\Test\TestSceneKnockbackPreview.h" />

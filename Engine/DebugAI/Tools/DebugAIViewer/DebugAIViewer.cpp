@@ -74,6 +74,7 @@ enum ControlId {
 constexpr UINT kAIStatusMessage = WM_APP + 1;
 constexpr UINT kReplayListRefreshMessage = WM_APP + 2;
 constexpr UINT_PTR kPendingReplayStartTimerId = 1;
+constexpr UINT_PTR kGameProcessWatchTimerId = 2;
 
 HWND gStatusText = nullptr;
 HWND gReplaySessions = nullptr;
@@ -98,6 +99,7 @@ std::mutex gAIStatusMutex;
 std::string gPendingAIStatus;
 std::mutex gTransportMutex;
 std::atomic<DWORD> gGameProcessId = 0;
+std::atomic<DWORD> gWatchedGameProcessId = 0;
 ULONGLONG gAutoRefreshResumeTick = 0;
 std::function<std::string()> gPendingReplayStart;
 
@@ -1969,6 +1971,7 @@ bool SendProtocolMessage(const DebugProtocolMessage& requestMessage, std::string
     ULONG serverProcessId = 0;
     if (GetNamedPipeServerProcessId(pipe, &serverProcessId)) {
         gGameProcessId = serverProcessId;
+        gWatchedGameProcessId = serverProcessId;
     }
 
     DWORD mode = PIPE_READMODE_MESSAGE;
@@ -3593,6 +3596,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         return 0;
 
     case WM_TIMER:
+        if (wParam == kGameProcessWatchTimerId) {
+            const DWORD processId = gWatchedGameProcessId.load();
+            if (processId != 0) {
+                HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, processId);
+                const bool gameExited =
+                    process == nullptr || WaitForSingleObject(process, 0) == WAIT_OBJECT_0;
+                if (process) {
+                    CloseHandle(process);
+                }
+                if (gameExited) {
+                    DestroyWindow(window);
+                }
+            }
+            return 0;
+        }
         if (wParam == kPendingReplayStartTimerId) {
             if (!gPendingReplayStart) {
                 KillTimer(window, kPendingReplayStartTimerId);
@@ -3626,6 +3644,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
     case WM_DESTROY:
         KillTimer(window, kPendingReplayStartTimerId);
+        KillTimer(window, kGameProcessWatchTimerId);
         gPendingReplayStart = {};
         StopAIWorker();
         if (gAIWorker.joinable()) gAIWorker.join();
@@ -3698,6 +3717,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
 
     ShowWindow(window, showCommand);
     UpdateWindow(window);
+    SetTimer(window, kGameProcessWatchTimerId, 500, nullptr);
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {

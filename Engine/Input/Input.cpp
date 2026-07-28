@@ -5,6 +5,34 @@
 #include <dinput.h>
 #pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "dxguid.lib")
+#pragma comment(lib, "xinput.lib")
+
+namespace {
+
+WORD ToXInputButton(Input::GamepadButton button) {
+    switch (button) {
+    case Input::GamepadButton::A:
+        return XINPUT_GAMEPAD_A;
+    case Input::GamepadButton::B:
+        return XINPUT_GAMEPAD_B;
+    default:
+        return 0;
+    }
+}
+
+float NormalizeThumbAxis(SHORT value, SHORT deadZone) {
+    const int magnitude = value < 0 ? -static_cast<int>(value) : static_cast<int>(value);
+    if (magnitude <= deadZone) {
+        return 0.0f;
+    }
+
+    const float sign = value < 0 ? -1.0f : 1.0f;
+    const float range = static_cast<float>(32767 - deadZone);
+    const float normalized = static_cast<float>(magnitude - deadZone) / range;
+    return sign * (normalized > 1.0f ? 1.0f : normalized);
+}
+
+} // namespace
 
 
 
@@ -81,6 +109,10 @@ void Input::UpdateMouseDelta() {
 void Input::Update() {
     // 前フレームの状態を保存
     memcpy(prevKeys_, keys_, sizeof(keys_));
+    prevGamepadState_ = gamepadState_;
+    XINPUT_STATE newGamepadState{};
+    gamepadConnected_ = XInputGetState(0, &newGamepadState) == ERROR_SUCCESS;
+    gamepadState_ = gamepadConnected_ ? newGamepadState : XINPUT_STATE{};
 
     HRESULT hr = keyboardDevice_->GetDeviceState(sizeof(keys_), keys_);
     if (FAILED(hr)) {
@@ -130,6 +162,49 @@ bool Input::IsKeyPressed(BYTE keyCode) const {
 
 bool Input::IsKeyReleased(BYTE keyCode) const {
     return !(keys_[keyCode] & 0x80) && (prevKeys_[keyCode] & 0x80);
+}
+
+bool Input::IsGamepadButtonPressed(GamepadButton button) const {
+    const WORD mask = ToXInputButton(button);
+    return gamepadConnected_ && (gamepadState_.Gamepad.wButtons & mask) != 0;
+}
+
+bool Input::IsGamepadButtonTrigger(GamepadButton button) const {
+    const WORD mask = ToXInputButton(button);
+    return gamepadConnected_ &&
+        (gamepadState_.Gamepad.wButtons & mask) != 0 &&
+        (prevGamepadState_.Gamepad.wButtons & mask) == 0;
+}
+
+bool Input::IsGamepadButtonReleased(GamepadButton button) const {
+    const WORD mask = ToXInputButton(button);
+    return gamepadConnected_ &&
+        (gamepadState_.Gamepad.wButtons & mask) == 0 &&
+        (prevGamepadState_.Gamepad.wButtons & mask) != 0;
+}
+
+float Input::GetLeftStickX() const {
+    return gamepadConnected_
+        ? NormalizeThumbAxis(gamepadState_.Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE)
+        : 0.0f;
+}
+
+float Input::GetLeftStickY() const {
+    return gamepadConnected_
+        ? NormalizeThumbAxis(gamepadState_.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE)
+        : 0.0f;
+}
+
+bool Input::IsLeftStickUpTrigger(float threshold) const {
+    if (!gamepadConnected_) {
+        return false;
+    }
+
+    const float currentY =
+        NormalizeThumbAxis(gamepadState_.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+    const float previousY =
+        NormalizeThumbAxis(prevGamepadState_.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+    return currentY > threshold && previousY <= threshold;
 }
 
 //

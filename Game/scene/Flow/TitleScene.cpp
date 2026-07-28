@@ -106,6 +106,7 @@ void TitleScene::OnEnter(GameApp& app) {
 	titlePlayer->SetSpawnPos({ -12.0f, 0.0f, 5.0f }); // 好みで調整
 	titlePlayer->SetLighting(light_); // 操作禁止
 	titlePlayer->ResetTitleAttackDemo();
+	UpdateTitleBoneDebug_();
 
 	//ground
 	ground_ = std::make_unique<Object3d>();
@@ -296,6 +297,11 @@ void TitleScene::Update(GameApp& app, float dt) {
 		return;
 	}
 
+	if (input->IsKeyTrigger(DIK_M)) {
+		RequestChangeScene_("CGTest");
+		return;
+	}
+
 	if (input->IsKeyTrigger(DIK_F9)) {
 		RequestChangeScene_("DebugAITest");
 		return;
@@ -363,6 +369,7 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 	// タイトル用プレイヤーがいるならデモ再生
 	if (titlePlayer) {
+		UpdateTitleBoneDebug_();
 		titlePlayer->UpdateTitleAttackDemo(dt, 1.0f); // 1秒ごとに I/O 交互
 	}
 
@@ -481,6 +488,17 @@ void TitleScene::Update(GameApp& app, float dt) {
 
 	// GPU Particle 更新
 	// Disabled: debug GPU particle update is not required in TitleScene.
+}
+
+void TitleScene::UpdateTitleBoneDebug_()
+{
+	Object3d* playerObject = titlePlayer ? titlePlayer->GetModelObject() : nullptr;
+	if (!playerObject) {
+		return;
+	}
+
+	// タイトルシーンでは骨デバッグ描画を使用しない。
+	playerObject->SetDebugDrawBones(false);
 }
 
 //========================
@@ -638,6 +656,70 @@ void TitleScene::DrawImGui(GameApp& app) {
 	ImGui::DragFloat3("Position", &imguiCamPos_.x, 0.1f);
 	ImGui::DragFloat3("Rotation", &imguiCamRot_.x, 0.01f);
 
+	ImGui::End();
+
+	ImGui::SetNextWindowSize(ImVec2(420.0f, 260.0f), ImGuiCond_FirstUseEver);
+	if (ImGui::Begin("Title Bone Control (PMX / glTF / GLB)")) {
+		Object3d* playerObject = titlePlayer ? titlePlayer->GetModelObject() : nullptr;
+		const Model::Skeleton* skeleton =
+			playerObject && playerObject->HasSkinningModel() ? playerObject->GetSkeleton() : nullptr;
+
+		if (!skeleton || skeleton->joints.empty()) {
+			ImGui::TextUnformatted("Skinning bones are not ready.");
+		} else {
+			selectedBone_ = std::clamp(selectedBone_, 0, static_cast<int>(skeleton->joints.size()) - 1);
+			const char* preview = skeleton->joints[selectedBone_].name.c_str();
+
+			ImGui::Text("Bones: %d", static_cast<int>(skeleton->joints.size()));
+			if (ImGui::BeginCombo("Bone", preview)) {
+				for (int i = 0; i < static_cast<int>(skeleton->joints.size()); ++i) {
+					const bool selected = i == selectedBone_;
+					if (ImGui::Selectable(skeleton->joints[i].name.c_str(), selected)) {
+						selectedBone_ = i;
+						boneTranslate_ = { 0.0f, 0.0f, 0.0f };
+						boneRotate_ = { 0.0f, 0.0f, 0.0f };
+						boneScale_ = { 1.0f, 1.0f, 1.0f };
+					}
+					if (selected) {
+						ImGui::SetItemDefaultFocus();
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			bool changed = false;
+			changed |= ImGui::DragFloat3("Translate", &boneTranslate_.x, 0.01f, 0.0f, 0.0f);
+			changed |= ImGui::DragFloat3("Rotate (rad)", &boneRotate_.x, 0.01f, -6.283f, 6.283f);
+			changed |= ImGui::DragFloat3("Scale", &boneScale_.x, 0.01f, 0.01f, 10.0f);
+			if (changed) {
+				playerObject->SetManualJointTransform(
+					skeleton->joints[selectedBone_].name,
+					boneTranslate_,
+					boneRotate_,
+					boneScale_);
+			}
+
+			ImGui::TextDisabled("Bone rendering is disabled in TitleScene.");
+
+			if (ImGui::Button("Reset Selected")) {
+				boneTranslate_ = { 0.0f, 0.0f, 0.0f };
+				boneRotate_ = { 0.0f, 0.0f, 0.0f };
+				boneScale_ = { 1.0f, 1.0f, 1.0f };
+				playerObject->SetManualJointTransform(
+					skeleton->joints[selectedBone_].name,
+					boneTranslate_,
+					boneRotate_,
+					boneScale_);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Reset All")) {
+				playerObject->ResetManualJointTransforms();
+				boneTranslate_ = { 0.0f, 0.0f, 0.0f };
+				boneRotate_ = { 0.0f, 0.0f, 0.0f };
+				boneScale_ = { 1.0f, 1.0f, 1.0f };
+			}
+		}
+	}
 	ImGui::End();
 
 	ImGui::Begin("Phong Check");

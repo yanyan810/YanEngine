@@ -4,6 +4,7 @@
 #include "scene/Flow/TitleScene.h"
 #include "scene/Test/TestScene.h"
 #include "scene/Test/ParticleTestScene.h"
+#include "scene/Test/CGTestScene.h"
 #include "scene/Flow/GameOverScene.h"
 #include "scene/Flow/GameClearScene.h"
 #include "scene/Debug/DebugScene.h"
@@ -207,6 +208,7 @@ bool GameApp::Initialize_() {
     sceneMgr_->Register("Game",      [] { return std::make_unique<GameScene>();     });
     sceneMgr_->Register("Test",      [] { return std::make_unique<TestScene>();     }); 
     sceneMgr_->Register("ParticleTest", [] { return std::make_unique<ParticleTestScene>(); });
+    sceneMgr_->Register("CGTest", [] { return std::make_unique<CGTestScene>(); });
     sceneMgr_->Register("GameOver",  [] { return std::make_unique<GameOverScene>(); }); 
     sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
     sceneMgr_->Register("Debug",     [] { return std::make_unique<DebugScene>();    });

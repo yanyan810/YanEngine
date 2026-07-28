@@ -88,7 +88,8 @@ void Player::UpdateTitleAttackDemo(float dt, float intervalSec)
 }
 void Player::SetTitleTransform(const Vector3& t, const Vector3& r, const Vector3& s)
 {
-    model_->SetTranslate(t);
-    model_->SetRotate(r);
-    model_->SetScale(s);
+    model_->SetTranslate({ t.x, t.y, t.z - 3.0f });
+    model_->SetRotate({ r.x, 0.0f, r.z });
+    constexpr float kTitleScale = 0.10f;
+    model_->SetScale({ s.x * kTitleScale, s.y * kTitleScale, s.z * kTitleScale });
 }

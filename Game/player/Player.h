@@ -415,6 +415,8 @@ private:
     // ===== メンバ変数 =====
     
     // ===== グラフィックス・モデル・カメラ =====
+    static constexpr float kPmxVisualScale_ = 0.14f;
+
     ModelId currentModel_ = ModelId::Walk;
     std::unique_ptr<Object3d> model_;
     std::unique_ptr<Object3d> debugAtkCube_;

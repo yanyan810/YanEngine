@@ -39,7 +39,10 @@ void ModelManager::LoadModel(const std::string& filePath) {
 	}
 
 	namespace fs = std::filesystem;
-	fs::path p(filePath);
+	// Model paths are UTF-8 throughout the engine. Constructing a Windows
+	// filesystem::path directly from a narrow UTF-8 string uses the active
+	// ANSI code page and throws for names such as "安比.pmx".
+	fs::path p(StringUtility::ConvertString(filePath));
 
 	std::string directoryPath = "resources";
 	std::string filename = filePath;
@@ -48,8 +51,9 @@ void ModelManager::LoadModel(const std::string& filePath) {
 		// 例: filePath = "fence/fence.obj"
 		//     p.parent_path() = "fence"
 		//     p.filename()    = "fence.obj"
-		directoryPath = (fs::path("resources") / p.parent_path()).string(); // "resources/fence"
-		filename = p.filename().string();                              // "fence.obj"
+		directoryPath = StringUtility::ConvertString(
+			(fs::path(L"resources") / p.parent_path()).wstring());
+		filename = StringUtility::ConvertString(p.filename().wstring());
 	}
 
 	//モデルの生成とファイル読み込み、初期化

@@ -640,8 +640,8 @@ void Player::UpdateModel_() {
 
     model_->SetTranslate({ pos_.x, pos_.y, pos_.z + specialVisualZOffset_ });
 
-    const float sx = (facing_ > 0) ? 1.0f : -1.0f;
-    model_->SetScale({ sx, 1.0f, 1.0f });
+    const float sx = (facing_ > 0) ? kPmxVisualScale_ : -kPmxVisualScale_;
+    model_->SetScale({ sx, kPmxVisualScale_, kPmxVisualScale_ });
 
 
 }

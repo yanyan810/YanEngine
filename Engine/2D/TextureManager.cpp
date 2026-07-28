@@ -1,5 +1,7 @@
 ﻿#include "TextureManager.h"
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <filesystem>
 #include <Windows.h>
 
@@ -75,25 +77,38 @@ void TextureManager::LoadTexture(const std::string& filePath)
     }
 
     std::string resolvedPath = filePath;
-    if (!std::filesystem::exists(resolvedPath)) {
+    std::filesystem::path resolvedPathW(ConvertString(resolvedPath));
+    if (!std::filesystem::exists(resolvedPathW)) {
         resolvedPath = "resources/" + filePath;
-        if (!std::filesystem::exists(resolvedPath)) {
+        resolvedPathW = std::filesystem::path(ConvertString(resolvedPath));
+        if (!std::filesystem::exists(resolvedPathW)) {
             DebugPrintA("[Texture] file not found: " + filePath + " (tried " + resolvedPath + ")");
             return;
         }
     }
 
     DirectX::ScratchImage image{};
-    std::wstring filePathW = ConvertString(resolvedPath);
+    std::wstring filePathW = resolvedPathW.wstring();
 
     HRESULT hr = S_OK;
 
-    // 拡張子で分岐
-    if (filePath.size() >= 4 &&
-        (filePath.ends_with(".dds") || filePath.ends_with(".DDS"))) {
+    // 拡張子で分岐。PMXではTGAテクスチャがよく使われるため、
+    // WICではなくDirectXTexのTGAローダーへ明示的に振り分ける。
+    std::string extension = ConvertString(resolvedPathW.extension().wstring());
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (extension == ".dds") {
         hr = DirectX::LoadFromDDSFile(
             filePathW.c_str(),
             DirectX::DDS_FLAGS_NONE,
+            nullptr,
+            image
+        );
+    }
+    else if (extension == ".tga") {
+        hr = DirectX::LoadFromTGAFile(
+            filePathW.c_str(),
             nullptr,
             image
         );

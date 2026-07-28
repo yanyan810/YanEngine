@@ -27,7 +27,10 @@ public:
 	static_assert(offsetof(Model::VertexData, texcoord) == 16);
 	static_assert(offsetof(Model::VertexData, normal) == 24);
 
-	struct MaterialData { std::string textureFilePath; };
+	struct MaterialData {
+		std::string textureFilePath;
+		Vector4 baseColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+	};
 
 	struct Joint {
 		QuaternionTransform transform;   // bind pose
@@ -154,6 +157,7 @@ public:
 	static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
 
 	static ModelData    LoadAssimpFile(const std::string& fullPath);
+	static ModelData    LoadPmxFile(const std::string& fullPath);
 
 	Vector4& GetMaterialColor()
 	{
@@ -250,8 +254,14 @@ public:
 	D3D12_GPU_VIRTUAL_ADDRESS GetMaterialCBV() const {
 		return materialResource_ ? materialResource_->GetGPUVirtualAddress() : 0;
 	}
-	void SetMaterialCBVOverride(D3D12_GPU_VIRTUAL_ADDRESS cbv) { materialCBVOverride_ = cbv; }
-	void ClearMaterialCBVOverride() { materialCBVOverride_ = 0; }
+	void SetMaterialCBVOverride(D3D12_GPU_VIRTUAL_ADDRESS cbv, const Material* data = nullptr) {
+		materialCBVOverride_ = cbv;
+		materialDataOverride_ = data;
+	}
+	void ClearMaterialCBVOverride() {
+		materialCBVOverride_ = 0;
+		materialDataOverride_ = nullptr;
+	}
 
 	int32_t GetMeshOwnerNodeIndex(uint32_t meshIndex) const {
 		if (meshIndex >= meshOwnerNodeIndex_.size()) return -1;
@@ -293,6 +303,8 @@ private:
 	void TraverseNode_(const Node* n, int32_t parent);
 
 	void DebugValidateAnimationTracks_() const;
+	void CreatePerMaterialResources_(DirectXCommon* dx);
+	void BindMaterialForMesh_(ID3D12GraphicsCommandList* cmd, const MeshData& mesh);
 
 private:
 
@@ -310,6 +322,9 @@ private:
 	//マテリアルにデータを書き込む
 	Material* materialData_ = nullptr;
 	D3D12_GPU_VIRTUAL_ADDRESS materialCBVOverride_ = 0;
+	const Material* materialDataOverride_ = nullptr;
+	std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> perMaterialResources_;
+	std::vector<Material*> perMaterialData_;
 	D3D12_GPU_VIRTUAL_ADDRESS GetActiveMaterialCBV_() const {
 		return materialCBVOverride_ != 0
 			? materialCBVOverride_

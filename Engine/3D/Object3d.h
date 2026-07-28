@@ -277,6 +277,7 @@ public:
 	bool HasSkinningModel() const { return model_ && model_->HasSkinning(); }
 	const Model::Skeleton* GetSkeleton() const { return model_ && model_->HasSkinning() ? &model_->GetSkeleton() : nullptr; }
 	void SetManualJointTransform(int32_t jointIndex, const Vector3& translate, const Vector3& rotate, const Vector3& scale);
+	bool SetManualJointTransform(const std::string& jointName, const Vector3& translate, const Vector3& rotate, const Vector3& scale);
 	void ResetManualJointTransforms();
 
 	const std::string& GetPlayingAnimName() const { static std::string empty; return animator_ ? animator_->GetPlayingAnimName() : empty; }
@@ -297,15 +298,45 @@ public:
 	}
 
 	void SetDebugDrawBones(bool enable) { debugDrawBones_ = enable; }
+	void SetDebugDrawBoneJoints(bool enable) { debugDrawBoneJoints_ = enable; }
 	void SetBoneMarkerModel(const std::string& path) { boneMarkerModel_ = path; }
+	void SetDebugBoneViewOffset(const Vector3& offset) { debugBoneViewOffset_ = offset; }
+	void SetDebugBoneMarkerScale(float scale) {
+		debugBoneMarkerScale_ = std::max(0.001f, scale);
+		for (auto& marker : boneMarkers_) {
+			if (marker) {
+				marker->SetScale({
+					debugBoneMarkerScale_,
+					debugBoneMarkerScale_,
+					debugBoneMarkerScale_
+				});
+			}
+		}
+	}
+	void SetDebugSelectedBone(int32_t jointIndex) {
+		debugSelectedBone_ = jointIndex;
+		for (size_t i = 0; i < boneMarkers_.size(); ++i) {
+			if (boneMarkers_[i]) {
+				boneMarkers_[i]->SetMaterialColor(
+					static_cast<int32_t>(i) == debugSelectedBone_
+						? Vector4{ 1.0f, 0.9f, 0.05f, 1.0f }
+						: Vector4{ 1.0f, 0.05f, 0.05f, 1.0f });
+			}
+		}
+	}
 
 private:
 	std::unique_ptr<Animator> animator_;
 	std::unique_ptr<Object3dLight> light_;
 
 	bool debugDrawBones_ = false;
+	bool debugDrawBoneJoints_ = true;
 	std::string boneMarkerModel_ = "cube/cube.obj";
 	std::vector<std::unique_ptr<Object3d>> boneMarkers_;
+	std::vector<std::unique_ptr<Object3d>> boneLinks_;
+	Vector3 debugBoneViewOffset_{ 0.0f, 0.0f, 0.0f };
+	float debugBoneMarkerScale_ = 0.03f;
+	int32_t debugSelectedBone_ = -1;
 
 	SrvManager* srvManager_ = nullptr;
 
