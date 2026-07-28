@@ -22,7 +22,7 @@ public:
     bool Open(const std::string& directory);
     void Close();
 
-    bool StartRecording(std::uint64_t startFrame = 0);
+    bool StartRecording(std::uint64_t startFrame = 0, const std::string& sessionId = {});
     std::string StopRecording();
     bool Record(std::uint64_t frame, const DebugGenericAction& action, const std::string& source);
 

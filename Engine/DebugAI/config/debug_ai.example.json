@@ -4,5 +4,7 @@
   "model": "gemini-3.5-flash-lite",
   "goal": "Explore the game, make progress, and test available actions.",
   "intervalMilliseconds": 250,
-  "timeoutMilliseconds": 8000
+  "timeoutMilliseconds": 8000,
+  "visionEnabled": false,
+  "visionMaximumWidth": 640
 }

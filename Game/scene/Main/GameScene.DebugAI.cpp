@@ -49,6 +49,49 @@ std::string ReadActionString(const DebugGenericAction& action, const char* key) 
     return {};
 }
 
+double ReadObservationNumber(
+    const DebugPropertyMap& properties,
+    const char* key,
+    double fallback = 0.0) {
+    const auto found = properties.find(key);
+    if (found == properties.end()) return fallback;
+    if (const auto* value = std::get_if<double>(&found->second)) return *value;
+    if (const auto* value = std::get_if<std::int64_t>(&found->second)) {
+        return static_cast<double>(*value);
+    }
+    return fallback;
+}
+
+std::string ReadObservationString(
+    const DebugPropertyMap& properties,
+    const char* key,
+    std::string fallback = {}) {
+    const auto found = properties.find(key);
+    if (found == properties.end()) return fallback;
+    if (const auto* value = std::get_if<std::string>(&found->second)) return *value;
+    return fallback;
+}
+
+bool ReadObservationBool(
+    const DebugPropertyMap& properties,
+    const char* key,
+    bool fallback = false) {
+    const auto found = properties.find(key);
+    if (found == properties.end()) return fallback;
+    if (const auto* value = std::get_if<bool>(&found->second)) return *value;
+    return fallback;
+}
+
+DebugVec3 ReadObservationVec3(
+    const DebugPropertyMap& properties,
+    const char* key,
+    DebugVec3 fallback = {}) {
+    const auto found = properties.find(key);
+    if (found == properties.end()) return fallback;
+    if (const auto* value = std::get_if<DebugVec3>(&found->second)) return *value;
+    return fallback;
+}
+
 std::optional<BossAI::State> ParseBossState(const std::string& name) {
     using State = BossAI::State;
     if (name == "Wander") return State::Wander;
@@ -123,6 +166,10 @@ DebugObservation GameSceneDebugAdapter::CaptureDebugObservation() const {
     observation.properties["enemy.count"] = static_cast<std::int64_t>(state.enemyCount);
     observation.properties["fps"] = static_cast<double>(state.fps);
     observation.properties["game.phase"] = state.gamePhase;
+    observation.properties["game.phaseElapsedSeconds"] =
+        static_cast<double>(state.gamePhase == "IntroVideo"
+            ? scene_.introTime_
+            : (state.gamePhase == "OutroVideo" ? scene_.outroTime_ : 0.0f));
     observation.properties["random.seed"] = static_cast<std::int64_t>(state.randomSeed);
     observation.properties["state.stableKey"] = state.stableStateKey;
     observation.properties["state.progressKey"] = state.progressKey;
@@ -256,9 +303,121 @@ DebugObservation GameSceneDebugAdapter::CaptureDebugObservation() const {
     return observation;
 }
 
+bool GameSceneDebugAdapter::RestoreDebugObservation(const DebugObservation& observation) {
+    if (observation.sceneId != "Game") return false;
+
+    DebugGameState state;
+    state.sceneName = observation.sceneId;
+    state.frameNumber = observation.frameNumber;
+    state.playerHp = static_cast<int>(ReadObservationNumber(
+        observation.properties, "player.hp", scene_.player_ ? scene_.player_->GetHP() : 0));
+    state.enemyHp = static_cast<int>(ReadObservationNumber(
+        observation.properties, "enemy.hp", 0.0));
+    state.enemyCount = static_cast<int>(ReadObservationNumber(
+        observation.properties, "enemy.count", 0.0));
+    const DebugVec3 playerPosition = ReadObservationVec3(
+        observation.properties, "player.position");
+    state.playerPosition = {
+        static_cast<float>(playerPosition.x),
+        static_cast<float>(playerPosition.y),
+        static_cast<float>(playerPosition.z) };
+    state.fps = static_cast<float>(ReadObservationNumber(
+        observation.properties, "fps", 60.0));
+    state.gamePhase = ReadObservationString(
+        observation.properties, "game.phase", "Battle");
+    if (state.gamePhase != "Battle" &&
+        !observation.properties.contains("game.phaseElapsedSeconds")) {
+        // Older snapshots cannot reproduce a partly elapsed video phase.
+        return false;
+    }
+    state.randomSeed = static_cast<unsigned int>(std::max(
+        0.0, ReadObservationNumber(observation.properties, "random.seed", 0.0)));
+    state.stableStateKey = ReadObservationString(
+        observation.properties, "state.stableKey");
+    state.progressKey = ReadObservationString(
+        observation.properties, "state.progressKey");
+
+    state.entities.reserve(observation.entities.size());
+    for (const DebugEntity& source : observation.entities) {
+        DebugEntityState entity;
+        entity.id = source.id;
+        entity.category = source.category;
+        entity.type = source.type;
+        entity.aiStateName = ReadObservationString(source.properties, "ai.state");
+        entity.threatHint = ReadObservationString(source.properties, "ai.threat");
+        entity.hp = static_cast<int>(ReadObservationNumber(source.properties, "hp"));
+        entity.damage = static_cast<int>(ReadObservationNumber(source.properties, "damage"));
+        entity.position = {
+            static_cast<float>(source.position.x),
+            static_cast<float>(source.position.y),
+            static_cast<float>(source.position.z) };
+        entity.velocity = {
+            static_cast<float>(source.velocity.x),
+            static_cast<float>(source.velocity.y),
+            static_cast<float>(source.velocity.z) };
+        entity.alive = ReadObservationBool(source.properties, "alive", true);
+        entity.pending = ReadObservationBool(source.properties, "pending");
+        entity.delay = static_cast<float>(ReadObservationNumber(source.properties, "delay"));
+        entity.life = static_cast<float>(ReadObservationNumber(source.properties, "life"));
+        entity.aiState1 = static_cast<int>(ReadObservationNumber(source.properties, "ai.state1"));
+        entity.aiState2 = static_cast<int>(ReadObservationNumber(source.properties, "ai.state2"));
+        entity.aiFloat1 = static_cast<float>(ReadObservationNumber(source.properties, "ai.value1"));
+        entity.aiFloat2 = static_cast<float>(ReadObservationNumber(source.properties, "ai.value2"));
+        entity.aiFloat3 = static_cast<float>(ReadObservationNumber(source.properties, "ai.value3"));
+        const DebugVec3 wanderVelocity = ReadObservationVec3(
+            source.properties, "boss.wanderVelocity");
+        entity.bossWanderVel = {
+            static_cast<float>(wanderVelocity.x),
+            static_cast<float>(wanderVelocity.y),
+            static_cast<float>(wanderVelocity.z) };
+        entity.bossWanderChange = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.wanderChange"));
+        entity.bossMoveMul = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.moveMultiplier"));
+        entity.bossDropStartY = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.dropStartY"));
+        entity.bossRushSpeed = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.rushSpeed"));
+        entity.bossChaseSpeed = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.chaseSpeed"));
+        entity.bossRushZMin = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.rushZMin"));
+        entity.bossRushZMax = static_cast<float>(ReadObservationNumber(
+            source.properties, "boss.rushZMax"));
+        state.entities.push_back(std::move(entity));
+    }
+
+    if (!scene_.RestoreDebugState(state)) return false;
+    const float phaseElapsed = static_cast<float>(std::max(
+        0.0, ReadObservationNumber(
+            observation.properties, "game.phaseElapsedSeconds", 0.0)));
+    if (state.gamePhase == "IntroVideo") {
+        scene_.introTime_ = phaseElapsed;
+    } else if (state.gamePhase == "OutroVideo") {
+        scene_.outroTime_ = phaseElapsed;
+    }
+    scene_.hitStopTimer_ = 0.0f;
+    return true;
+}
+
 bool GameSceneDebugAdapter::ExecuteGenericDebugAction(const DebugGenericAction& action) {
     if (action.actionId.empty()) {
         return false;
+    }
+    if (action.actionId == "SetScenePhase") {
+        const std::string phase = ReadActionString(action, DebugActionParameter::Phase);
+        if (phase == "IntroVideo") {
+            scene_.phase_ = GameScene::Phase::IntroVideo;
+            scene_.introTime_ = 0.0f;
+        } else if (phase == "Battle") {
+            scene_.phase_ = GameScene::Phase::Battle;
+        } else if (phase == "OutroVideo") {
+            scene_.phase_ = GameScene::Phase::OutroVideo;
+            scene_.outroTime_ = 0.0f;
+        } else {
+            return false;
+        }
+        return true;
     }
     const std::string actorId = ReadActionString(action, DebugActionParameter::ActorId);
     if (!actorId.empty() && actorId != "player") {
@@ -367,18 +526,31 @@ void GameScene::SetupDebugAI_(GameApp& app) {
                 debugAI->InputReplay().ProcessInput(command);
             });
         }
+        if (app.DebugAI()->HasPendingReplay()) {
+            // A Viewer replay request from Title/GameClear owns this scene
+            // entry. Restore and start it instead of overwriting it with a new
+            // automatic recording.
+            app.DebugAI()->StartPendingReplay();
+        } else {
+            // Entering normal gameplay starts one complete replay session.
+            // The same manager path is used by the external Viewer's buttons,
+            // so duplicate recording requests remain guarded.
+            app.DebugAI()->StartReplaySessionRecording();
+        }
     }
 }
 
 void GameScene::ShutdownDebugAI_(GameApp& app) {
-    if (player_) {
-        player_->SetInputCommandFilter({});
-    }
     if (app.DebugAI()) {
-        app.DebugAI()->InputReplay().StopRecording();
+        if (app.DebugAI()->IsReplaySessionRecording()) {
+            app.DebugAI()->StopReplaySessionRecording();
+        }
         app.DebugAI()->SetEnabled(false);
         app.DebugAI()->SetAdapter(nullptr);
         app.DebugAI()->SetGenericAdapter(nullptr);
+    }
+    if (player_) {
+        player_->SetInputCommandFilter({});
     }
     debugAIEnabled_ = false;
     debugManualRecordingActive_ = false;

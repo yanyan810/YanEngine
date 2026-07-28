@@ -206,3 +206,6 @@ git push
 *.blend1
 *.mdp
 [Dd]esktop.ini
+
+# DebugAI locally generated source index (can contain source excerpts)
+Engine/DebugAI/profiles/*/project_scan.json

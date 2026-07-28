@@ -4,6 +4,7 @@
 
 #include "DebugProtocol.h"
 #include "ExternalGenericAIProvider.h"
+#include "GameWindowCapture.h"
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -41,6 +42,15 @@ enum ControlId {
     PlayLatestId,
     StopReplayId,
     RefreshId,
+    ReplaySessionId,
+    PlaySelectedReplayId,
+    ShowReplayTimelineId,
+    ReloadReplayListId,
+    PauseReplayId,
+    ResumeReplayId,
+    StepReplayId,
+    ReplaySpeedId,
+    ApplyReplaySpeedId,
     ExecuteFirstActionId,
     AIStepId,
     AIStartId,
@@ -48,6 +58,8 @@ enum ControlId {
     AIStopId,
     AIIntervalId,
     AIActorModeId,
+    AIVisionEnabledId,
+    CaptureVisionId,
     AIGoalId,
     ProjectFolderId,
     ScanTargetsId,
@@ -60,13 +72,19 @@ enum ControlId {
 };
 
 constexpr UINT kAIStatusMessage = WM_APP + 1;
+constexpr UINT kReplayListRefreshMessage = WM_APP + 2;
+constexpr UINT_PTR kPendingReplayStartTimerId = 1;
 
 HWND gStatusText = nullptr;
+HWND gReplaySessions = nullptr;
+HWND gPlaySelectedReplay = nullptr;
+HWND gReplaySpeed = nullptr;
 DebugObservation gLastObservation;
 bool gHasObservation = false;
 ExternalGenericAIProvider gAIProvider;
 HWND gAIInterval = nullptr;
 HWND gAIActorMode = nullptr;
+HWND gAIVisionEnabled = nullptr;
 HWND gAIGoal = nullptr;
 HWND gProjectFolder = nullptr;
 HWND gScanTargets = nullptr;
@@ -79,9 +97,19 @@ std::condition_variable gAIWaitCondition;
 std::mutex gAIStatusMutex;
 std::string gPendingAIStatus;
 std::mutex gTransportMutex;
+std::atomic<DWORD> gGameProcessId = 0;
 ULONGLONG gAutoRefreshResumeTick = 0;
+std::function<std::string()> gPendingReplayStart;
 
 enum class ControlledActorMode { Player, Boss, Both };
+
+struct ReplaySessionListEntry {
+    std::filesystem::path manifestPath;
+    std::wstring label;
+    std::filesystem::file_time_type modified{};
+};
+
+std::vector<ReplaySessionListEntry> gReplaySessionEntries;
 
 void PostAIStatus(HWND window, std::string text, bool preserveResult);
 bool IsPlayerActorAction(const DebugGenericAction& action);
@@ -128,9 +156,11 @@ void SaveWorkspaceSettings(const std::filesystem::path& folder, const std::wstri
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
     nlohmann::json config = {
-        { "schemaVersion", 1 },
+        { "schemaVersion", 2 },
         { "projectFolder", WideToUtf8(folder.wstring()) },
         { "scanTargets", WideToUtf8(scanTargets) },
+        { "visionEnabled", gAIVisionEnabled &&
+            SendMessageW(gAIVisionEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED },
     };
     std::ofstream output(path);
     if (output) output << config.dump(2) << '\n';
@@ -168,6 +198,22 @@ bool IsExcludedProjectPath(const std::filesystem::path& path) {
 }
 
 struct ProjectScanResult {
+    struct SourceEvidence {
+        std::string kind;
+        std::string symbol;
+        std::string source;
+        std::size_t line = 0;
+        std::string excerpt;
+        float confidence = 0.0f;
+    };
+    struct SourceFileSummary {
+        std::string path;
+        std::string category;
+        std::string language;
+        std::uint64_t bytes = 0;
+        std::size_t lines = 0;
+        std::size_t targetMatches = 0;
+    };
     std::filesystem::path root;
     std::uint64_t bytes = 0;
     std::size_t files = 0;
@@ -176,12 +222,26 @@ struct ProjectScanResult {
     std::string firstAnalysisError;
     std::map<std::string, std::size_t> categories;
     std::map<std::string, std::set<std::string>> actionSources;
+    std::map<std::string, std::vector<SourceEvidence>> actionEvidence;
+    std::map<std::string, std::set<std::string>> declaredSymbolSources;
+    std::map<std::string, std::vector<SourceEvidence>> declaredSymbolEvidence;
+    std::map<std::string, std::set<std::string>> dependencySources;
+    std::map<std::string, std::vector<SourceEvidence>> dependencyEvidence;
+    std::map<std::string, std::set<std::string>> runtimePropertySources;
+    std::map<std::string, std::vector<SourceEvidence>> runtimePropertyEvidence;
+    std::map<std::string, std::set<std::string>> sceneSources;
+    std::map<std::string, std::vector<SourceEvidence>> sceneEvidence;
+    std::map<std::string, std::set<std::string>> inputSources;
+    std::map<std::string, std::vector<SourceEvidence>> inputEvidence;
+    std::vector<SourceEvidence> targetEvidence;
+    std::vector<SourceFileSummary> sourceFiles;
     struct SignalCandidate {
         std::string genericProperty;
         std::string symbol;
         std::string valueKind;
         float confidence = 0.0f;
         std::set<std::string> sources;
+        std::vector<SourceEvidence> evidence;
     };
     std::map<std::string, SignalCandidate> signalCandidates;
     std::map<std::string, std::set<std::string>> stateValues;
@@ -191,9 +251,63 @@ struct ProjectScanResult {
         std::string source;
         double range = 0.0;
         float confidence = 0.0f;
+        std::size_t line = 0;
+        std::string excerpt;
     };
     std::vector<AttackRangeCandidate> attackRangeCandidates;
 };
+
+std::size_t SourceLineNumber(
+    const std::string& text,
+    std::size_t position) {
+    position = (std::min)(position, text.size());
+    return 1 + static_cast<std::size_t>(
+        std::count(text.begin(), text.begin() + position, '\n'));
+}
+
+bool LoadVisionEnabled(bool fallback) {
+    std::ifstream input(WorkspaceConfigPath());
+    const auto config = nlohmann::json::parse(input, nullptr, false);
+    if (config.is_discarded() || !config.is_object()) return fallback;
+    return config.value("visionEnabled", fallback);
+}
+
+std::string SourceLineExcerpt(
+    const std::string& text,
+    std::size_t position) {
+    position = (std::min)(position, text.size());
+    const std::size_t begin =
+        position == 0 ? 0 : text.rfind('\n', position - 1) + 1;
+    std::size_t end = text.find('\n', position);
+    if (end == std::string::npos) end = text.size();
+    std::string excerpt = text.substr(begin, end - begin);
+    const auto first = excerpt.find_first_not_of(" \t\r");
+    if (first == std::string::npos) return {};
+    excerpt.erase(0, first);
+    const auto last = excerpt.find_last_not_of(" \t\r");
+    if (last != std::string::npos) excerpt.resize(last + 1);
+    constexpr std::size_t kMaximumExcerptBytes = 180;
+    if (excerpt.size() > kMaximumExcerptBytes) {
+        excerpt.resize(kMaximumExcerptBytes);
+        excerpt += "...";
+    }
+    return excerpt;
+}
+
+void AddBoundedEvidence(
+    std::vector<ProjectScanResult::SourceEvidence>& destination,
+    ProjectScanResult::SourceEvidence evidence,
+    std::size_t maximum = 4) {
+    const bool duplicate = std::any_of(
+        destination.begin(), destination.end(), [&](const auto& current) {
+            return current.source == evidence.source &&
+                current.line == evidence.line &&
+                current.symbol == evidence.symbol;
+        });
+    if (!duplicate && destination.size() < maximum) {
+        destination.push_back(std::move(evidence));
+    }
+}
 
 std::string ClassifyProjectFile(const std::filesystem::path& relative) {
     std::wstring value = relative.wstring();
@@ -208,16 +322,32 @@ std::string ClassifyProjectFile(const std::filesystem::path& relative) {
     return "Other Source";
 }
 
-void ExtractActionIds(const std::string& text, const std::string& source,
-    std::map<std::string, std::set<std::string>>& actions) {
-    static const std::array<std::regex, 3> patterns = {
-        std::regex(R"re(action\.name\s*==\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"),
-        std::regex(R"re(actionId\s*[=:]\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"),
-        std::regex(R"re(\{\s*"([A-Z][A-Za-z0-9_.-]+)"\s*\})re"),
+void ExtractActionIds(
+    const std::string& text,
+    const std::string& source,
+    ProjectScanResult& result) {
+    struct Pattern {
+        std::regex expression;
+        float confidence;
+    };
+    static const std::array<Pattern, 4> patterns = {
+        Pattern{ std::regex(R"re(action\.name\s*==\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
+        Pattern{ std::regex(R"re(actionId\s*[=:]\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
+        Pattern{ std::regex(R"re(actionId"\s*:\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
+        Pattern{ std::regex(R"re(\{\s*"([A-Z][A-Za-z0-9_.-]+)"\s*\})re"), 0.60f },
     };
     for (const auto& pattern : patterns) {
-        for (std::sregex_iterator match(text.begin(), text.end(), pattern), end; match != end; ++match) {
-            actions[(*match)[1].str()].insert(source);
+        for (std::sregex_iterator match(
+            text.begin(), text.end(), pattern.expression), end;
+            match != end; ++match) {
+            const std::string actionId = (*match)[1].str();
+            result.actionSources[actionId].insert(source);
+            const std::size_t position =
+                static_cast<std::size_t>((*match).position());
+            AddBoundedEvidence(result.actionEvidence[actionId], {
+                "Action", actionId, source, SourceLineNumber(text, position),
+                SourceLineExcerpt(text, position), pattern.confidence,
+            });
         }
     }
 }
@@ -225,10 +355,13 @@ void ExtractActionIds(const std::string& text, const std::string& source,
 std::string LowerAscii(std::string value);
 
 void AddAttackRangeCandidate(ProjectScanResult& result, const std::string& symbol,
-    const std::string& label, const std::string& source, double range, float confidence) {
+    const std::string& label, const std::string& source, double range,
+    float confidence, std::size_t line = 0, std::string excerpt = {}) {
     range = std::abs(range);
     if (!std::isfinite(range) || range < 0.05 || range > 100.0) return;
-    result.attackRangeCandidates.push_back({ symbol, label, source, range, confidence });
+    result.attackRangeCandidates.push_back({
+        symbol, label, source, range, confidence, line, std::move(excerpt),
+    });
 }
 
 void ExtractAttackRangeCandidates(const std::string& text, const std::string& source,
@@ -250,8 +383,15 @@ void ExtractAttackRangeCandidates(const std::string& text, const std::string& so
             name.find("interval") != std::string::npos || name.find("count") != std::string::npos ||
             name.find("damage") != std::string::npos || name.find("scale") != std::string::npos ||
             name.find("rate") != std::string::npos;
-        if (rangeName && !unrelated)
-            AddAttackRangeCandidate(result, symbol, {}, source, std::stod((*match)[2].str()), 0.78f);
+        if (rangeName && !unrelated) {
+            const auto position =
+                static_cast<std::size_t>((*match).position());
+            AddAttackRangeCandidate(
+                result, symbol, {}, source,
+                std::stod((*match)[2].str()), 0.78f,
+                SourceLineNumber(text, position),
+                SourceLineExcerpt(text, position));
+        }
     }
 
     // Hitbox half-size vectors provide a conservative reach when no explicit
@@ -267,7 +407,12 @@ void ExtractAttackRangeCandidates(const std::string& text, const std::string& so
             name.find("range") == std::string::npos && name.find("reach") == std::string::npos) continue;
         const double x = std::abs(std::stod((*match)[2].str()));
         const double z = std::abs(std::stod((*match)[4].str()));
-        AddAttackRangeCandidate(result, symbol, {}, source, (std::max)(x, z), 0.66f);
+        const auto position =
+            static_cast<std::size_t>((*match).position());
+        AddAttackRangeCandidate(
+            result, symbol, {}, source, (std::max)(x, z), 0.66f,
+            SourceLineNumber(text, position),
+            SourceLineExcerpt(text, position));
     }
 
     // Common data-driven attack definition: label, center offset, half-size.
@@ -280,8 +425,13 @@ void ExtractAttackRangeCandidates(const std::string& text, const std::string& so
     for (std::sregex_iterator match(text.begin(), text.end(), definitionPattern), end; match != end; ++match) {
         const double offsetX = std::abs(std::stod((*match)[2].str()));
         const double halfSizeX = std::abs(std::stod((*match)[5].str()));
-        AddAttackRangeCandidate(result, "attackDefinition", (*match)[1].str(), source,
-            offsetX + halfSizeX, 0.90f);
+        const auto position =
+            static_cast<std::size_t>((*match).position());
+        AddAttackRangeCandidate(
+            result, "attackDefinition", (*match)[1].str(), source,
+            offsetX + halfSizeX, 0.90f,
+            SourceLineNumber(text, position),
+            SourceLineExcerpt(text, position));
     }
 }
 
@@ -289,6 +439,164 @@ std::string LowerAscii(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
+}
+
+std::string SourceLanguage(const std::filesystem::path& path) {
+    std::wstring extension = path.extension().wstring();
+    std::transform(
+        extension.begin(), extension.end(), extension.begin(), ::towlower);
+    if (extension == L".cpp" || extension == L".c" ||
+        extension == L".h" || extension == L".hpp") return "C/C++";
+    if (extension == L".cs") return "C#";
+    if (extension == L".json") return "JSON";
+    if (extension == L".lua") return "Lua";
+    if (extension == L".py") return "Python";
+    return "Source";
+}
+
+void ExtractSourceIndex(
+    const std::string& text,
+    const std::string& source,
+    const std::string& category,
+    const std::string& language,
+    const std::vector<std::string>& scanTargets,
+    ProjectScanResult& result,
+    ProjectScanResult::SourceFileSummary& fileSummary) {
+    static const std::regex includePattern(
+        R"re(^\s*#\s*include\s*[<"]([^>"]+)[>"])re");
+    static const std::regex typePattern(
+        R"re(\b(class|struct|enum(?:\s+class)?)\s+([A-Za-z_][A-Za-z0-9_]*))re");
+    static const std::regex qualifiedFunctionPattern(
+        R"re(\b([A-Za-z_][A-Za-z0-9_]*)::([A-Za-z_~][A-Za-z0-9_]*)\s*\()re");
+    static const std::regex functionPattern(
+        R"re(\b(?:void|bool|int|float|double|auto|std::[A-Za-z0-9_:<>]+|[A-Za-z_][A-Za-z0-9_:<>]*\s*[*&]?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;]*\)\s*(?:const\s*)?(?:\{|override\b))re");
+    static const std::regex propertyPattern(
+        R"re((?:properties|parameters)\s*\[\s*"([^"]+)")re");
+    static const std::regex scenePattern(
+        R"re((?:ChangeScene|RequestChangeScene_?|sceneId)\s*(?:\(|=|:)\s*"([A-Za-z0-9_.-]+)")re");
+    static const std::regex inputPattern(
+        R"re(\b(DIK_[A-Z0-9_]+|KeyCode::[A-Za-z0-9_]+|Keys\.[A-Za-z0-9_]+)\b)re");
+
+    std::istringstream lines(text);
+    std::string line;
+    std::size_t lineNumber = 0;
+    while (std::getline(lines, line)) {
+        ++lineNumber;
+        ++fileSummary.lines;
+        std::string excerpt = line;
+        const auto first = excerpt.find_first_not_of(" \t\r");
+        if (first == std::string::npos) excerpt.clear();
+        else excerpt.erase(0, first);
+        if (excerpt.size() > 180) {
+            excerpt.resize(180);
+            excerpt += "...";
+        }
+        const std::string lowerLine = LowerAscii(line);
+        for (const std::string& target : scanTargets) {
+            if (!target.empty() &&
+                lowerLine.find(target) != std::string::npos) {
+                ++fileSummary.targetMatches;
+                AddBoundedEvidence(result.targetEvidence, {
+                    "TargetMatch", target, source, lineNumber, excerpt, 1.0f,
+                }, 200);
+            }
+        }
+
+        std::smatch match;
+        if (std::regex_search(line, match, includePattern)) {
+            const std::string dependency = match[1].str();
+            result.dependencySources[dependency].insert(source);
+            AddBoundedEvidence(result.dependencyEvidence[dependency], {
+                "Dependency", dependency, source, lineNumber, excerpt, 1.0f,
+            });
+        }
+
+        for (std::sregex_iterator found(
+            line.begin(), line.end(), typePattern), end;
+            found != end; ++found) {
+            const std::string kind = (*found)[1].str();
+            const std::string symbol = (*found)[2].str();
+            const std::string key = kind + ":" + symbol;
+            result.declaredSymbolSources[key].insert(source);
+            AddBoundedEvidence(result.declaredSymbolEvidence[key], {
+                kind, symbol, source, lineNumber, excerpt, 0.96f,
+            });
+            if (LowerAscii(symbol).ends_with("scene")) {
+                result.sceneSources[symbol].insert(source);
+                AddBoundedEvidence(result.sceneEvidence[symbol], {
+                    "SceneType", symbol, source, lineNumber, excerpt, 0.88f,
+                });
+            }
+        }
+
+        bool foundQualifiedFunction = false;
+        for (std::sregex_iterator found(
+            line.begin(), line.end(), qualifiedFunctionPattern), end;
+            found != end; ++found) {
+            foundQualifiedFunction = true;
+            const std::string symbol =
+                (*found)[1].str() + "::" + (*found)[2].str();
+            const std::string key = "function:" + symbol;
+            result.declaredSymbolSources[key].insert(source);
+            AddBoundedEvidence(result.declaredSymbolEvidence[key], {
+                "function", symbol, source, lineNumber, excerpt, 0.98f,
+            });
+        }
+        if (!foundQualifiedFunction &&
+            std::regex_search(line, match, functionPattern)) {
+            const std::string symbol = match[1].str();
+            const std::string key = "function:" + symbol;
+            result.declaredSymbolSources[key].insert(source);
+            AddBoundedEvidence(result.declaredSymbolEvidence[key], {
+                "function", symbol, source, lineNumber, excerpt, 0.78f,
+            });
+        }
+
+        for (std::sregex_iterator found(
+            line.begin(), line.end(), propertyPattern), end;
+            found != end; ++found) {
+            const std::string property = (*found)[1].str();
+            result.runtimePropertySources[property].insert(source);
+            AddBoundedEvidence(result.runtimePropertyEvidence[property], {
+                "RuntimeProperty", property, source, lineNumber, excerpt, 0.99f,
+            });
+        }
+        for (std::sregex_iterator found(
+            line.begin(), line.end(), scenePattern), end;
+            found != end; ++found) {
+            const std::string scene = (*found)[1].str();
+            result.sceneSources[scene].insert(source);
+            AddBoundedEvidence(result.sceneEvidence[scene], {
+                "SceneId", scene, source, lineNumber, excerpt, 0.96f,
+            });
+        }
+        for (std::sregex_iterator found(
+            line.begin(), line.end(), inputPattern), end;
+            found != end; ++found) {
+            const std::string input = (*found)[1].str();
+            result.inputSources[input].insert(source);
+            AddBoundedEvidence(result.inputEvidence[input], {
+                "Input", input, source, lineNumber, excerpt,
+                category == "Input" ? 0.98f : 0.86f,
+            });
+        }
+    }
+
+    // State candidates are name-based and reviewable. Attach the first actual
+    // source occurrence so users can jump to evidence instead of approving a
+    // symbol from its name alone.
+    for (auto& [key, candidate] : result.signalCandidates) {
+        if (!candidate.sources.contains(source)) continue;
+        const std::size_t position = text.find(candidate.symbol);
+        if (position == std::string::npos) continue;
+        AddBoundedEvidence(candidate.evidence, {
+            "StateMapping", candidate.symbol, source,
+            SourceLineNumber(text, position),
+            SourceLineExcerpt(text, position), candidate.confidence,
+        });
+    }
+
+    fileSummary.language = language;
 }
 
 void AddSignalCandidate(ProjectScanResult& result, const std::string& property,
@@ -386,7 +694,10 @@ void ExtractStateSignals(const std::string& text, const std::string& source,
     }
 }
 
-bool AnalyzeProjectFolder(const std::filesystem::path& root, ProjectScanResult& result) {
+bool AnalyzeProjectFolder(
+    const std::filesystem::path& root,
+    ProjectScanResult& result,
+    const std::vector<std::string>& scanTargets = {}) {
     std::error_code rootError;
     if (!std::filesystem::is_directory(root, rootError) || rootError) return false;
     result.root = root;
@@ -409,6 +720,7 @@ bool AnalyzeProjectFolder(const std::filesystem::path& root, ProjectScanResult& 
         if (filename == L".env" || filename.ends_with(L".user") ||
             filename.find(L"secret") != std::wstring::npos ||
             filename.find(L"credential") != std::wstring::npos ||
+            filename == L"project_scan.json" ||
             filename == L"debug_ai.local.json" || filename == L"debug_ai.workspace.local.json") continue;
         std::wstring extension = entry.path().extension().wstring();
         std::transform(extension.begin(), extension.end(), extension.begin(), ::towlower);
@@ -421,14 +733,22 @@ bool AnalyzeProjectFolder(const std::filesystem::path& root, ProjectScanResult& 
         result.bytes += size;
         const std::string category = ClassifyProjectFile(relative);
         ++result.categories[category];
+        ProjectScanResult::SourceFileSummary fileSummary;
+        fileSummary.path = WideToUtf8(relative.wstring());
+        fileSummary.category = category;
+        fileSummary.language = SourceLanguage(relative);
+        fileSummary.bytes = size;
         std::ifstream input(entry.path(), std::ios::binary);
         if (input) {
             try {
                 std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-                const std::string source = WideToUtf8(relative.wstring());
-                ExtractActionIds(text, source, result.actionSources);
+                const std::string& source = fileSummary.path;
+                ExtractActionIds(text, source, result);
                 ExtractStateSignals(text, source, category, result);
                 ExtractAttackRangeCandidates(text, source, category, result);
+                ExtractSourceIndex(
+                    text, source, category, fileSummary.language,
+                    scanTargets, result, fileSummary);
             } catch (const std::exception& exception) {
                 ++result.analysisErrors;
                 if (result.firstAnalysisError.empty()) {
@@ -441,13 +761,308 @@ bool AnalyzeProjectFolder(const std::filesystem::path& root, ProjectScanResult& 
                 }
             }
         }
+        result.sourceFiles.push_back(std::move(fileSummary));
     }
     return true;
 }
 
-std::string ScanProjectFolder(const std::filesystem::path& root) {
+std::vector<std::string> ParseScanTargets(const std::string& text);
+
+std::filesystem::path ProjectScanIndexPath(
+    const std::filesystem::path& projectRoot) {
+    std::string gameId = WideToUtf8(projectRoot.filename().wstring());
+    if (gameId.empty()) gameId = "game";
+    return WorkspaceConfigPath().parent_path().parent_path() /
+        "profiles" / gameId / "project_scan.json";
+}
+
+nlohmann::json EvidenceJson(
+    const std::vector<ProjectScanResult::SourceEvidence>& evidence) {
+    nlohmann::json values = nlohmann::json::array();
+    for (const auto& item : evidence) {
+        values.push_back({
+            { "kind", item.kind },
+            { "symbol", item.symbol },
+            { "source", item.source },
+            { "line", item.line },
+            { "excerpt", item.excerpt },
+            { "confidence", item.confidence },
+        });
+    }
+    return values;
+}
+
+bool WriteProjectScanIndex(
+    const ProjectScanResult& result,
+    const std::vector<std::string>& scanTargets,
+    std::filesystem::path& outputPath,
+    std::string& errorText) {
+    outputPath = ProjectScanIndexPath(result.root);
+    std::string gameId = WideToUtf8(result.root.filename().wstring());
+    if (gameId.empty()) gameId = "game";
+
+    const auto indexedCollection = [](
+        const auto& sources,
+        const auto& evidence,
+        const char* idName) {
+        nlohmann::json collection = nlohmann::json::array();
+        for (const auto& [id, sourceFiles] : sources) {
+            nlohmann::json item = {
+                { idName, id },
+                { "sources", sourceFiles },
+            };
+            if (const auto found = evidence.find(id);
+                found != evidence.end()) {
+                item["evidence"] = EvidenceJson(found->second);
+            } else {
+                item["evidence"] = nlohmann::json::array();
+            }
+            collection.push_back(std::move(item));
+        }
+        return collection;
+    };
+
+    nlohmann::json files = nlohmann::json::array();
+    for (const auto& file : result.sourceFiles) {
+        files.push_back({
+            { "path", file.path },
+            { "category", file.category },
+            { "language", file.language },
+            { "bytes", file.bytes },
+            { "lines", file.lines },
+            { "targetMatches", file.targetMatches },
+        });
+    }
+    nlohmann::json mappings = nlohmann::json::array();
+    for (const auto& [key, candidate] : result.signalCandidates) {
+        mappings.push_back({
+            { "genericProperty", candidate.genericProperty },
+            { "sourceSymbol", candidate.symbol },
+            { "valueKind", candidate.valueKind },
+            { "confidence", candidate.confidence },
+            { "sources", candidate.sources },
+            { "evidence", EvidenceJson(candidate.evidence) },
+        });
+    }
+    nlohmann::json ranges = nlohmann::json::array();
+    for (const auto& range : result.attackRangeCandidates) {
+        ranges.push_back({
+            { "symbol", range.symbol },
+            { "label", range.label },
+            { "source", range.source },
+            { "line", range.line },
+            { "excerpt", range.excerpt },
+            { "range", range.range },
+            { "confidence", range.confidence },
+        });
+    }
+    nlohmann::json enumValues = nlohmann::json::object();
+    for (const auto& [name, values] : result.stateValues) {
+        enumValues[name] = values;
+    }
+    nlohmann::json index = {
+        { "schemaVersion", 2 },
+        { "gameId", gameId },
+        { "generatedLocally", true },
+        { "sourceFiles", std::move(files) },
+        { "scanTargets", scanTargets },
+        { "summary", {
+            { "files", result.files },
+            { "bytes", result.bytes },
+            { "analysisErrors", result.analysisErrors },
+            { "actions", result.actionSources.size() },
+            { "stateMappings", result.signalCandidates.size() },
+            { "attackRanges", result.attackRangeCandidates.size() },
+            { "symbols", result.declaredSymbolSources.size() },
+            { "dependencies", result.dependencySources.size() },
+            { "runtimeProperties", result.runtimePropertySources.size() },
+            { "scenes", result.sceneSources.size() },
+            { "inputs", result.inputSources.size() },
+            { "targetMatches", result.targetEvidence.size() },
+        } },
+        { "actions", indexedCollection(
+            result.actionSources, result.actionEvidence, "actionId") },
+        { "symbols", indexedCollection(
+            result.declaredSymbolSources,
+            result.declaredSymbolEvidence, "symbolId") },
+        { "dependencies", indexedCollection(
+            result.dependencySources,
+            result.dependencyEvidence, "dependency") },
+        { "runtimeProperties", indexedCollection(
+            result.runtimePropertySources,
+            result.runtimePropertyEvidence, "property") },
+        { "scenes", indexedCollection(
+            result.sceneSources, result.sceneEvidence, "scene") },
+        { "inputs", indexedCollection(
+            result.inputSources, result.inputEvidence, "input") },
+        { "stateMappings", std::move(mappings) },
+        { "attackRanges", std::move(ranges) },
+        { "enumValues", std::move(enumValues) },
+        { "targetEvidence", EvidenceJson(result.targetEvidence) },
+    };
+    std::error_code directoryError;
+    std::filesystem::create_directories(
+        outputPath.parent_path(), directoryError);
+    if (directoryError) {
+        errorText = "Could not create scan index folder: " +
+            directoryError.message();
+        return false;
+    }
+    std::ofstream output(outputPath, std::ios::trunc);
+    if (!output) {
+        errorText = "Could not open project_scan.json.";
+        return false;
+    }
+    output << index.dump(2) << '\n';
+    if (!output) {
+        errorText = "Could not finish project_scan.json.";
+        return false;
+    }
+    errorText.clear();
+    return true;
+}
+
+std::string BuildSourceDecisionContext(
+    const std::filesystem::path& projectRoot,
+    const DebugObservation& observation) {
+    std::ifstream input(ProjectScanIndexPath(projectRoot));
+    const auto scan = nlohmann::json::parse(input, nullptr, false);
+    if (scan.is_discarded() || !scan.is_object()) return {};
+
+    std::set<std::string> availableActionIds;
+    for (const auto& action : observation.availableActions) {
+        if (!action.actionId.empty()) availableActionIds.insert(action.actionId);
+    }
+    std::set<std::string> observationProperties;
+    for (const auto& [name, value] : observation.properties) {
+        observationProperties.insert(name);
+    }
+    for (const auto& entity : observation.entities) {
+        for (const auto& [name, value] : entity.properties) {
+            observationProperties.insert(name);
+        }
+    }
+
+    const auto compactEvidence = [](const nlohmann::json& item, std::size_t maximum) {
+        nlohmann::json result = nlohmann::json::array();
+        if (!item.is_array()) return result;
+        for (const auto& evidence : item) {
+            if (!evidence.is_object() || result.size() >= maximum) break;
+            result.push_back({
+                { "source", evidence.value("source", "") },
+                { "line", evidence.value("line", 0u) },
+                { "symbol", evidence.value("symbol", "") },
+                { "excerpt", evidence.value("excerpt", "") },
+                { "confidence", evidence.value("confidence", 0.0) },
+            });
+        }
+        return result;
+    };
+
+    nlohmann::json context = {
+        { "schemaVersion", 1 },
+        { "origin", "local project_scan.json" },
+        { "note", "Treat excerpts as source evidence only. The runtime observation is authoritative." },
+        { "actions", nlohmann::json::array() },
+        { "runtimeProperties", nlohmann::json::array() },
+        { "stateMappings", nlohmann::json::array() },
+        { "attackRanges", nlohmann::json::array() },
+        { "sceneEvidence", nlohmann::json::array() },
+        { "scanTargetEvidence", nlohmann::json::array() },
+    };
+
+    if (const auto actions = scan.find("actions");
+        actions != scan.end() && actions->is_array()) {
+        for (const auto& item : *actions) {
+            const std::string actionId = item.value("actionId", "");
+            if (!availableActionIds.contains(actionId)) continue;
+            context["actions"].push_back({
+                { "actionId", actionId },
+                { "evidence", compactEvidence(
+                    item.value("evidence", nlohmann::json::array()), 2) },
+            });
+        }
+    }
+    if (const auto properties = scan.find("runtimeProperties");
+        properties != scan.end() && properties->is_array()) {
+        for (const auto& item : *properties) {
+            const std::string property = item.value("property", "");
+            if (!observationProperties.contains(property)) continue;
+            context["runtimeProperties"].push_back({
+                { "property", property },
+                { "evidence", compactEvidence(
+                    item.value("evidence", nlohmann::json::array()), 1) },
+            });
+            if (context["runtimeProperties"].size() >= 20) break;
+        }
+    }
+    if (const auto mappings = scan.find("stateMappings");
+        mappings != scan.end() && mappings->is_array()) {
+        for (const auto& item : *mappings) {
+            const std::string property = item.value("genericProperty", "");
+            if (!observationProperties.contains(property)) continue;
+            context["stateMappings"].push_back({
+                { "genericProperty", property },
+                { "sourceSymbol", item.value("sourceSymbol", "") },
+                { "confidence", item.value("confidence", 0.0) },
+                { "evidence", compactEvidence(
+                    item.value("evidence", nlohmann::json::array()), 1) },
+            });
+            if (context["stateMappings"].size() >= 12) break;
+        }
+    }
+    if (const auto ranges = scan.find("attackRanges");
+        ranges != scan.end() && ranges->is_array()) {
+        for (const auto& item : *ranges) {
+            context["attackRanges"].push_back({
+                { "symbol", item.value("symbol", "") },
+                { "label", item.value("label", "") },
+                { "range", item.value("range", 0.0) },
+                { "source", item.value("source", "") },
+                { "line", item.value("line", 0u) },
+                { "confidence", item.value("confidence", 0.0) },
+            });
+            if (context["attackRanges"].size() >= 12) break;
+        }
+    }
+    if (const auto scenes = scan.find("scenes");
+        scenes != scan.end() && scenes->is_array()) {
+        for (const auto& item : *scenes) {
+            if (item.value("scene", "") != observation.sceneId) continue;
+            context["sceneEvidence"].push_back({
+                { "scene", observation.sceneId },
+                { "evidence", compactEvidence(
+                    item.value("evidence", nlohmann::json::array()), 3) },
+            });
+        }
+    }
+    if (const auto targets = scan.find("targetEvidence");
+        targets != scan.end() && targets->is_array()) {
+        context["scanTargetEvidence"] = compactEvidence(*targets, 12);
+    }
+
+    std::string serialized = context.dump();
+    constexpr std::size_t kMaximumContextBytes = 24 * 1024;
+    if (serialized.size() > kMaximumContextBytes) {
+        context["attackRanges"] = nlohmann::json::array();
+        context["scanTargetEvidence"] = nlohmann::json::array();
+        serialized = context.dump();
+    }
+    return serialized.size() <= kMaximumContextBytes ? serialized : std::string{};
+}
+
+std::string ScanProjectFolder(
+    const std::filesystem::path& root,
+    const std::string& scanTargetText = {}) {
+    const auto scanTargets = ParseScanTargets(scanTargetText);
     ProjectScanResult result;
-    if (!AnalyzeProjectFolder(root, result)) return "Project scan failed: folder does not exist.";
+    if (!AnalyzeProjectFolder(root, result, scanTargets)) {
+        return "Project scan failed: folder does not exist.";
+    }
+    std::filesystem::path indexPath;
+    std::string indexError;
+    const bool indexWritten =
+        WriteProjectScanIndex(result, scanTargets, indexPath, indexError);
     std::ostringstream output;
     output << "Project scan completed.\r\nFolder: " << WideToUtf8(root.wstring())
         << "\r\nSafe candidate files: " << result.files
@@ -462,7 +1077,21 @@ std::string ScanProjectFolder(const std::filesystem::path& root) {
     output << "\r\n\r\nDiscovered Action IDs: " << result.actionSources.size()
         << "\r\nState mapping candidates: " << result.signalCandidates.size()
         << "\r\nAttack range candidates: " << result.attackRangeCandidates.size()
-        << "\r\nNo source files were sent to an API.";
+        << "\r\nDeclared code symbols: " << result.declaredSymbolSources.size()
+        << "\r\nInclude dependencies: " << result.dependencySources.size()
+        << "\r\nRuntime property keys: " << result.runtimePropertySources.size()
+        << "\r\nScene IDs / types: " << result.sceneSources.size()
+        << "\r\nInput bindings: " << result.inputSources.size()
+        << "\r\nScan target evidence: " << result.targetEvidence.size();
+    if (indexWritten) {
+        output << "\r\n\r\nDetailed scan index: "
+            << WideToUtf8(indexPath.wstring());
+    } else {
+        output << "\r\n\r\nScan index warning: " << indexError;
+    }
+    output
+        << "\r\nNo source files were sent during this scan."
+        << "\r\nFuture API decisions may attach a bounded subset of the recorded evidence.";
     return output.str();
 }
 
@@ -508,28 +1137,62 @@ bool MatchesScanTargets(const ProjectScanResult::SignalCandidate& candidate,
 }
 
 std::string GenerateStateMappingProfile(const std::filesystem::path& root, const std::string& scanTargetText) {
-    ProjectScanResult result;
-    if (!AnalyzeProjectFolder(root, result)) return "State Mapping generation failed: folder does not exist.";
     const auto scanTargets = ParseScanTargets(scanTargetText);
+    ProjectScanResult result;
+    if (!AnalyzeProjectFolder(root, result, scanTargets)) {
+        return "State Mapping generation failed: folder does not exist.";
+    }
+    std::map<std::string, nlohmann::json> existingMappings;
+    {
+        std::ifstream existingInput(StateProfilePath(root));
+        const auto existing =
+            nlohmann::json::parse(existingInput, nullptr, false);
+        if (!existing.is_discarded() && existing.is_object() &&
+            existing.contains("mappings") &&
+            existing["mappings"].is_array()) {
+            for (const auto& mapping : existing["mappings"]) {
+                if (!mapping.is_object()) continue;
+                const std::string property =
+                    mapping.value("genericProperty", "");
+                const std::string symbol =
+                    mapping.value("sourceSymbol", "");
+                if (!property.empty() && !symbol.empty()) {
+                    existingMappings[property + "\n" + symbol] = mapping;
+                }
+            }
+        }
+    }
     nlohmann::json mappings = nlohmann::json::array();
     for (const auto& [key, candidate] : result.signalCandidates) {
         if (!MatchesScanTargets(candidate, scanTargets)) continue;
-        mappings.push_back({
-            { "genericProperty", candidate.genericProperty },
-            { "sourceSymbol", candidate.symbol },
-            { "valueKind", candidate.valueKind },
-            { "confidence", candidate.confidence },
-            { "sources", candidate.sources },
-            { "approved", false },
-            { "runtimeObserved", false },
-        });
+        nlohmann::json mapping = existingMappings.contains(key)
+            ? existingMappings[key] : nlohmann::json::object();
+        mapping["genericProperty"] = candidate.genericProperty;
+        mapping["sourceSymbol"] = candidate.symbol;
+        mapping["valueKind"] = candidate.valueKind;
+        mapping["confidence"] = candidate.confidence;
+        mapping["sources"] = candidate.sources;
+        mapping["evidence"] = EvidenceJson(candidate.evidence);
+        mapping["sourceDiscovered"] = true;
+        mapping["approved"] = mapping.value("approved", false);
+        mapping["runtimeObserved"] =
+            mapping.value("runtimeObserved", false);
+        mappings.push_back(std::move(mapping));
+        existingMappings.erase(key);
+    }
+    // Never erase a manually approved mapping merely because a later target
+    // filter did not rediscover it. Keep it visible and mark it as stale.
+    for (auto& [key, mapping] : existingMappings) {
+        if (!mapping.value("approved", false)) continue;
+        mapping["sourceDiscovered"] = false;
+        mappings.push_back(std::move(mapping));
     }
     nlohmann::json enumValues = nlohmann::json::object();
     for (const auto& [name, values] : result.stateValues) enumValues[name] = values;
     std::string gameId = WideToUtf8(root.filename().wstring());
     if (gameId.empty()) gameId = "game";
     nlohmann::json profile = {
-        { "schemaVersion", 1 }, { "gameId", gameId }, { "generatedLocally", true },
+        { "schemaVersion", 2 }, { "gameId", gameId }, { "generatedLocally", true },
         { "reviewRequired", true }, { "mappings", std::move(mappings) },
         { "discoveredEnumValues", std::move(enumValues) },
         { "scanTargets", scanTargets },
@@ -650,6 +1313,195 @@ std::filesystem::path ConfiguredProjectRoot() {
     return std::filesystem::path(Utf8ToWide(config.value("projectFolder", "")));
 }
 
+std::filesystem::path ResolveReplayTrackPath(
+    const std::filesystem::path& manifestPath,
+    const std::string& storedPath) {
+    if (storedPath.empty()) return {};
+    const std::filesystem::path path = Utf8ToWide(storedPath);
+    return (path.is_absolute() ? path : manifestPath.parent_path() / path)
+        .lexically_normal();
+}
+
+std::wstring FormatReplaySessionTime(const std::string& sessionId) {
+    if (sessionId.size() < 15 || sessionId[8] != '_') {
+        return Utf8ToWide(sessionId);
+    }
+    const auto digits = [](std::string_view value) {
+        return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+            return c >= '0' && c <= '9';
+        });
+    };
+    if (!digits(std::string_view(sessionId).substr(0, 8)) ||
+        !digits(std::string_view(sessionId).substr(9, 6))) {
+        return Utf8ToWide(sessionId);
+    }
+    return Utf8ToWide(
+        sessionId.substr(0, 4) + "-" + sessionId.substr(4, 2) + "-" +
+        sessionId.substr(6, 2) + " " + sessionId.substr(9, 2) + ":" +
+        sessionId.substr(11, 2) + ":" + sessionId.substr(13, 2));
+}
+
+std::uint64_t ReadInputReplayFrameCount(
+    const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return 0;
+    std::uint32_t magic = 0;
+    std::uint32_t version = 0;
+    std::uint32_t commandSize = 0;
+    std::uint32_t reserved = 0;
+    std::uint64_t declaredFrames = 0;
+    input.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    input.read(reinterpret_cast<char*>(&version), sizeof(version));
+    input.read(reinterpret_cast<char*>(&commandSize), sizeof(commandSize));
+    input.read(reinterpret_cast<char*>(&reserved), sizeof(reserved));
+    input.read(reinterpret_cast<char*>(&declaredFrames), sizeof(declaredFrames));
+    if (!input || magic != 0x52494144 || version != 1 ||
+        commandSize == 0) {
+        return 0;
+    }
+    constexpr std::uint64_t kHeaderSize =
+        sizeof(magic) + sizeof(version) + sizeof(commandSize) +
+        sizeof(reserved) + sizeof(declaredFrames);
+    input.seekg(0, std::ios::end);
+    const std::streamoff fileSize = input.tellg();
+    if (fileSize < static_cast<std::streamoff>(kHeaderSize)) return 0;
+    const std::uint64_t availableFrames =
+        (static_cast<std::uint64_t>(fileSize) - kHeaderSize) / commandSize;
+    return declaredFrames == 0
+        ? availableFrames
+        : (std::min)(declaredFrames, availableFrames);
+}
+
+std::vector<ReplaySessionListEntry> LoadReplaySessionList(
+    const std::filesystem::path& projectRoot) {
+    std::vector<ReplaySessionListEntry> sessions;
+    if (projectRoot.empty()) return sessions;
+    const auto directory = projectRoot / "generated/debug_ai/player/sessions";
+    std::error_code error;
+    if (!std::filesystem::is_directory(directory, error)) return sessions;
+
+    std::filesystem::recursive_directory_iterator iterator(
+        directory, std::filesystem::directory_options::skip_permission_denied, error);
+    const std::filesystem::recursive_directory_iterator end;
+    while (!error && iterator != end) {
+        const auto entry = *iterator;
+        iterator.increment(error);
+        if (error) {
+            error.clear();
+            continue;
+        }
+        std::error_code entryError;
+        if (!entry.is_regular_file(entryError) ||
+            entry.path().filename() != L"manifest.json") {
+            continue;
+        }
+        std::ifstream input(entry.path());
+        const auto manifest = nlohmann::json::parse(input, nullptr, false);
+        if (manifest.is_discarded() || !manifest.is_object() ||
+            manifest.value("schemaVersion", 0) != 1 ||
+            manifest.value("status", "") != "complete") {
+            continue;
+        }
+        const auto tracks = manifest.find("tracks");
+        if (tracks == manifest.end() || !tracks->is_object()) continue;
+        const auto trackPath = [&](const char* key) {
+            return ResolveReplayTrackPath(
+                entry.path(), tracks->value(key, ""));
+        };
+        const auto hasTrack = [](const std::filesystem::path& path) {
+            std::error_code trackError;
+            return !path.empty() && std::filesystem::is_regular_file(path, trackError);
+        };
+        const auto inputPath = trackPath("playerInput");
+        const auto actorPath = trackPath("actorActions");
+        const bool hasInput = hasTrack(inputPath);
+        const bool hasActors = hasTrack(actorPath);
+        if (!hasInput && !hasActors) continue;
+
+        const std::string sessionId = manifest.value(
+            "sessionId", entry.path().parent_path().filename().string());
+        const std::string scene = manifest.value("sceneId", "");
+        const std::string phase = manifest.value("phase", "");
+        std::uint64_t frameCount =
+            manifest.value("inputFrameCount", std::uint64_t{ 0 });
+        if (frameCount == 0 && hasInput) {
+            frameCount = ReadInputReplayFrameCount(inputPath);
+        }
+        std::wostringstream label;
+        label << FormatReplaySessionTime(sessionId)
+            << L" | " << Utf8ToWide(scene.empty() ? "-" : scene);
+        if (!phase.empty()) label << L" / " << Utf8ToWide(phase);
+        label << L" | " << frameCount << L" frames | ";
+        if (hasInput && hasActors) label << L"Input + Actor";
+        else if (hasInput) label << L"Input";
+        else label << L"Actor";
+
+        auto manifestPath = std::filesystem::absolute(entry.path(), entryError);
+        if (entryError) {
+            entryError.clear();
+            manifestPath = entry.path();
+        }
+        const auto modified = entry.last_write_time(entryError);
+        sessions.push_back({
+            std::move(manifestPath),
+            label.str(),
+            entryError ? std::filesystem::file_time_type{} : modified,
+        });
+    }
+    std::stable_sort(sessions.begin(), sessions.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.modified > rhs.modified;
+    });
+    constexpr std::size_t kMaximumDisplayedSessions = 200;
+    if (sessions.size() > kMaximumDisplayedSessions) {
+        sessions.resize(kMaximumDisplayedSessions);
+    }
+    return sessions;
+}
+
+void RefreshReplaySessionList(bool showResult) {
+    if (!gReplaySessions) return;
+    std::filesystem::path previousSelection;
+    const LRESULT previousIndex = SendMessageW(gReplaySessions, CB_GETCURSEL, 0, 0);
+    if (previousIndex != CB_ERR &&
+        static_cast<std::size_t>(previousIndex) < gReplaySessionEntries.size()) {
+        previousSelection =
+            gReplaySessionEntries[static_cast<std::size_t>(previousIndex)].manifestPath;
+    }
+
+    const auto projectRoot = ConfiguredProjectRoot();
+    gReplaySessionEntries = LoadReplaySessionList(projectRoot);
+    SendMessageW(gReplaySessions, CB_RESETCONTENT, 0, 0);
+    std::size_t selection = 0;
+    if (gReplaySessionEntries.empty()) {
+        const wchar_t* message = projectRoot.empty()
+            ? L"(Select a Game Project Folder)"
+            : L"(No completed replay sessions)";
+        SendMessageW(gReplaySessions, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(message));
+    } else {
+        for (std::size_t i = 0; i < gReplaySessionEntries.size(); ++i) {
+            const auto& session = gReplaySessionEntries[i];
+            SendMessageW(gReplaySessions, CB_ADDSTRING, 0,
+                reinterpret_cast<LPARAM>(session.label.c_str()));
+            if (!previousSelection.empty() &&
+                session.manifestPath == previousSelection) {
+                selection = i;
+            }
+        }
+    }
+    SendMessageW(gReplaySessions, CB_SETCURSEL,
+        static_cast<WPARAM>(selection), 0);
+    if (gPlaySelectedReplay) {
+        EnableWindow(gPlaySelectedReplay, !gReplaySessionEntries.empty());
+    }
+    if (showResult && gStatusText) {
+        std::wostringstream result;
+        result << L"Replay list refreshed.\r\nCompleted sessions: "
+            << gReplaySessionEntries.size() << L"\r\nFolder: "
+            << (projectRoot / "generated/debug_ai/player/sessions").wstring();
+        SetWindowTextW(gStatusText, result.str().c_str());
+    }
+}
+
 std::string GenerateActionProfile(const std::filesystem::path& root) {
     ProjectScanResult result;
     if (!AnalyzeProjectFolder(root, result)) return "Action Profile generation failed: folder does not exist.";
@@ -679,6 +1531,9 @@ std::string GenerateActionProfile(const std::filesystem::path& root) {
         entry["verified"] = entry.value("verified", false);
         entry["enabledForLocalAI"] = entry.value("enabledForLocalAI", false);
         entry["sources"] = sources;
+        entry["evidence"] = result.actionEvidence.contains(actionId)
+            ? EvidenceJson(result.actionEvidence.at(actionId))
+            : nlohmann::json::array();
         nlohmann::json properties = entry.value("properties", nlohmann::json::object());
         const auto estimated = EstimateActionRangeProperties(actionId, result);
         for (auto property = estimated.begin(); property != estimated.end(); ++property)
@@ -943,9 +1798,79 @@ std::string FormatProtocolResponse(const std::string& response) {
     if (message.properties.contains("recording")) {
         output << "Recording: " << PropertyText(message.properties, "recording")
             << "  Replay: " << PropertyText(message.properties, "replaying") << "\r\n";
+        if (PropertyText(message.properties, "replaying", "false") == "true") {
+            output << "Playback: "
+                << (PropertyText(message.properties, "replayPaused", "false") == "true"
+                    ? "paused" : "running")
+                << "  Speed: "
+                << PropertyText(message.properties, "replaySpeed", "1")
+                << "x  Replay frame: "
+                << PropertyText(message.properties, "frame", "0")
+                << "\r\n";
+        }
+    }
+    const std::string replaySessionId =
+        PropertyText(message.properties, "replaySessionId", "");
+    const std::string replayManifestPath =
+        PropertyText(message.properties, "replayManifestPath", "");
+    const std::string replayInitialObservationPath =
+        PropertyText(message.properties, "replayInitialObservationPath", "");
+    if (PropertyText(message.properties, "replayQueued", "false") == "true") {
+        output << "Replay queued: loading scene "
+            << PropertyText(message.properties, "replayTargetScene", "-") << "\r\n";
+    }
+    if (!replaySessionId.empty()) output << "Replay session: " << replaySessionId << "\r\n";
+    if (!replayManifestPath.empty()) output << "Replay manifest: " << replayManifestPath << "\r\n";
+    const std::string validationStatus =
+        PropertyText(message.properties, "replayValidationStatus", "");
+    if (!replayManifestPath.empty() &&
+        PropertyText(message.properties, "recording", "false") != "true" &&
+        !validationStatus.empty()) {
+        output << "Replay verification: " << validationStatus;
+        if (validationStatus != "unavailable") {
+            output << "  checked "
+                << PropertyText(message.properties, "replayValidationChecked", "0")
+                << "/"
+                << PropertyText(message.properties, "replayValidationCheckpoints", "0")
+                << "  mismatches "
+                << PropertyText(message.properties, "replayValidationMismatches", "0");
+        }
+        output << "\r\n";
+        if (validationStatus == "diverged") {
+            output << "  First mismatch: "
+                << PropertyText(
+                    message.properties,
+                    "replayValidationFirstMismatchFrame",
+                    "0")
+                << "F\r\n";
+            std::string detail = PropertyText(
+                message.properties, "replayValidationFirstDetail", "");
+            if (detail.empty()) {
+                detail = PropertyText(
+                    message.properties, "replayValidationDetail", "");
+            }
+            if (!detail.empty()) output << "  Detail: " << detail << "\r\n";
+        } else if (validationStatus == "unavailable") {
+            output << "  This replay was recorded before verification checkpoints were added.\r\n";
+        } else if (validationStatus == "interrupted") {
+            output << "  Replay ended before every verification checkpoint was reached.\r\n";
+        }
+    }
+    if (!replayInitialObservationPath.empty()) {
+        output << "Initial observation: " << replayInitialObservationPath << "\r\n";
+        if (PropertyText(message.properties, "replayInitialStateRestored", "false") == "true") {
+            output << "Initial state: restored before replay\r\n";
+        }
+        const std::string restoreWarning =
+            PropertyText(message.properties, "replayRestoreWarning", "");
+        if (!restoreWarning.empty()) {
+            output << "Initial state warning: " << restoreWarning << "\r\n";
+        }
     }
     const std::string replayPath = PropertyText(message.properties, "path", "");
-    if (!replayPath.empty()) output << "Replay file: " << replayPath << "\r\n";
+    if (!replayPath.empty() && replayManifestPath.empty()) {
+        output << "Replay file: " << replayPath << "\r\n";
+    }
     const std::string playerReplayPath = PropertyText(message.properties, "playerReplayPath", "");
     const std::string actorReplayPath = PropertyText(message.properties, "actorReplayPath", "");
     if (!playerReplayPath.empty()) output << "  Player input: " << playerReplayPath << "\r\n";
@@ -1023,6 +1948,7 @@ bool SendProtocolMessage(const DebugProtocolMessage& requestMessage, std::string
     std::lock_guard transportLock(gTransportMutex);
     response.clear();
     if (!WaitNamedPipeA(kPipeName, 250)) {
+        gGameProcessId = 0;
         response = "Game connection: disconnected\r\nStart CG2_Setup.exe to connect.";
         return false;
     }
@@ -1036,8 +1962,13 @@ bool SendProtocolMessage(const DebugProtocolMessage& requestMessage, std::string
         FILE_FLAG_OVERLAPPED,
         nullptr);
     if (pipe == INVALID_HANDLE_VALUE) {
+        gGameProcessId = 0;
         response = "Game connection: disconnected";
         return false;
+    }
+    ULONG serverProcessId = 0;
+    if (GetNamedPipeServerProcessId(pipe, &serverProcessId)) {
+        gGameProcessId = serverProcessId;
     }
 
     DWORD mode = PIPE_READMODE_MESSAGE;
@@ -1122,6 +2053,159 @@ bool SendCheckedCommand(const char* command, std::string& response) {
     const auto found = result.properties.find("ok");
     return found != result.properties.end() &&
         std::get_if<bool>(&found->second) && *std::get_if<bool>(&found->second);
+}
+
+std::string PlaySelectedReplayCore(const std::filesystem::path& manifestPath) {
+    DebugProtocolMessage request = MakeRequest("play_latest");
+    request.properties["manifestPath"] = WideToUtf8(manifestPath.wstring());
+    std::string response;
+    return SendProtocolMessage(request, response)
+        ? FormatProtocolResponse(response)
+        : response;
+}
+
+std::string SetReplaySpeedCore(double speed) {
+    DebugProtocolMessage request = MakeRequest("set_replay_speed");
+    request.properties["speed"] = speed;
+    std::string response;
+    return SendProtocolMessage(request, response)
+        ? FormatProtocolResponse(response)
+        : response;
+}
+
+std::string FormatReplayTimelineCore(
+    const std::filesystem::path& manifestPath) {
+    std::ifstream manifestInput(manifestPath);
+    const auto manifest =
+        nlohmann::json::parse(manifestInput, nullptr, false);
+    if (manifest.is_discarded() || !manifest.is_object()) {
+        return "Timeline could not be opened: invalid replay manifest.";
+    }
+    const auto tracks = manifest.find("tracks");
+    if (tracks == manifest.end() || !tracks->is_object()) {
+        return "Timeline could not be opened: manifest has no tracks.";
+    }
+    const auto timelinePath = ResolveReplayTrackPath(
+        manifestPath, tracks->value("eventTimeline", ""));
+    std::ifstream timelineInput(timelinePath);
+    if (!timelineInput) {
+        return "Timeline is not available for this replay.\r\nPath: " +
+            WideToUtf8(timelinePath.wstring());
+    }
+    std::uint64_t frameCount =
+        manifest.value("inputFrameCount", std::uint64_t{ 0 });
+    if (frameCount == 0) {
+        frameCount = ReadInputReplayFrameCount(ResolveReplayTrackPath(
+            manifestPath, tracks->value("playerInput", "")));
+    }
+
+    std::ostringstream output;
+    output << "Replay Event Timeline\r\n"
+        << "Session: " << manifest.value("sessionId", "") << "\r\n"
+        << "Scene: " << manifest.value("sceneId", "")
+        << " / " << manifest.value("phase", "") << "\r\n"
+        << "Frames: " << frameCount << "\r\n"
+        << "Manifest: " << WideToUtf8(manifestPath.wstring())
+        << "\r\n\r\n";
+
+    constexpr std::size_t kMaximumDisplayedEvents = 800;
+    std::size_t eventCount = 0;
+    std::size_t displayedCount = 0;
+    std::size_t checkpointCount = 0;
+    std::size_t invalidLineCount = 0;
+    std::string line;
+    while (std::getline(timelineInput, line)) {
+        if (line.empty()) continue;
+        DebugProtocolMessage event;
+        if (!DebugProtocolJson::TryParse(line, event)) {
+            ++invalidLineCount;
+            continue;
+        }
+        const std::string type =
+            PropertyText(event.properties, "event.type", "");
+        if (type.empty()) continue;
+        ++eventCount;
+        if (type == "ReplayCheckpoint") {
+            ++checkpointCount;
+            continue;
+        }
+        if (displayedCount >= kMaximumDisplayedEvents) continue;
+
+        const std::string actor =
+            PropertyText(event.properties, "event.actorId", "");
+        const std::string before =
+            PropertyText(event.properties, "before", "");
+        const std::string after =
+            PropertyText(event.properties, "after", "");
+        const std::string message =
+            PropertyText(event.properties, "event.message", "");
+        std::string description;
+        if (type == "PlayerStateChanged") {
+            if (after == "Attack") {
+                const std::string attackType =
+                    PropertyText(
+                        event.properties, "player.attackType", "");
+                description = "Player Attack";
+                if (!attackType.empty() && attackType != "None") {
+                    description += " " + attackType;
+                }
+            } else {
+                description = "Player " + after;
+            }
+            const std::string direction =
+                PropertyText(event.properties, "direction", "");
+            if (after == "Move" && !direction.empty()) {
+                description += " direction=" + direction;
+            }
+        } else if (type == "ActionExecuted" && event.action) {
+            description = actor + " Action " + event.action->actionId;
+            const std::string source =
+                PropertyText(event.properties, "event.source", "");
+            if (!source.empty()) description += " source=" + source;
+        } else if (type == "ActorStateChanged") {
+            description = actor + " State " + before + " -> " + after;
+        } else if (type == "ActorPhaseChanged") {
+            description = actor + " Phase " + before + " -> " + after;
+        } else if (type == "PhaseChanged" || type == "SceneChanged") {
+            description = type + " " + before + " -> " + after;
+        } else if (type == "PlayerDamaged" ||
+            type == "EntityDamaged") {
+            description = actor + " Damaged " +
+                PropertyText(event.properties, "before", "?") + " -> " +
+                PropertyText(event.properties, "after", "?") +
+                " amount=" +
+                PropertyText(event.properties, "amount", "?");
+        } else if (type == "EntitySpawned") {
+            description = actor + " Spawned " +
+                PropertyText(event.properties, "category", "") + "/" +
+                PropertyText(event.properties, "type", "");
+        } else if (type == "EntityDespawned") {
+            description = actor + " Despawned";
+        } else if (type == "SessionStarted" ||
+            type == "SessionEnded" ||
+            type == "ObservationStarted") {
+            description = type;
+        } else {
+            description = type;
+            if (!actor.empty()) description += " actor=" + actor;
+            if (!message.empty()) description += " - " + message;
+        }
+        output << std::setw(6) << event.sequence << "F  "
+            << description << "\r\n";
+        ++displayedCount;
+    }
+    output << "\r\nEvents: " << eventCount
+        << "  Displayed: " << displayedCount
+        << "  Verification checkpoints: " << checkpointCount;
+    if (eventCount - checkpointCount > displayedCount) {
+        output << "\r\n"
+            << (eventCount - checkpointCount - displayedCount)
+            << " events omitted from the Viewer display.";
+    }
+    if (invalidLineCount > 0) {
+        output << "\r\nInvalid lines skipped: " << invalidLineCount;
+    }
+    return output.str();
 }
 
 bool BuildOfflinePolicyObservation(DebugObservation& observation) {
@@ -1300,9 +2384,60 @@ const char* ControlledActorLabel(ControlledActorMode mode) {
     return "Player";
 }
 
+std::filesystem::path LatestVisionCapturePath(
+    const std::filesystem::path& projectRoot) {
+    const auto root = projectRoot.empty()
+        ? std::filesystem::current_path()
+        : projectRoot;
+    return root / "generated/debug_ai/viewer/latest_frame.png";
+}
+
+bool SaveLatestVisionCapture(
+    const std::filesystem::path& projectRoot,
+    const std::vector<unsigned char>& pngBytes,
+    std::filesystem::path& path) {
+    path = LatestVisionCapturePath(projectRoot);
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (error) return false;
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) return false;
+    output.write(
+        reinterpret_cast<const char*>(pngBytes.data()),
+        static_cast<std::streamsize>(pngBytes.size()));
+    return static_cast<bool>(output);
+}
+
+std::string CaptureVisionPreviewCore(
+    const std::filesystem::path& projectRoot) {
+    if (gGameProcessId.load() == 0) {
+        std::string response;
+        SendCommand("status", response);
+    }
+    GameWindowCaptureResult capture;
+    if (!CaptureGameProcessWindow(
+        gGameProcessId.load(),
+        gAIProvider.VisionMaximumWidth(),
+        capture)) {
+        return "Vision capture failed: " + capture.error;
+    }
+    std::filesystem::path path;
+    if (!SaveLatestVisionCapture(projectRoot, capture.pngBytes, path)) {
+        return "Vision capture succeeded, but latest_frame.png could not be saved.";
+    }
+    return "Vision capture ready.\r\nWindow: " +
+        WideToUtf8(capture.windowTitle) +
+        "\r\nSize: " + std::to_string(capture.width) + "x" +
+        std::to_string(capture.height) +
+        "\r\nPath: " + WideToUtf8(path.wstring()) +
+        "\r\nNo API was called.";
+}
+
 std::string ExecuteAIStepCore(
     HWND window,
     ControlledActorMode actorMode,
+    const std::filesystem::path& projectRoot,
+    bool visionEnabled,
     bool* outExecuted = nullptr) {
     if (outExecuted) *outExecuted = false;
     const auto startedAt = std::chrono::steady_clock::now();
@@ -1331,11 +2466,29 @@ std::string ExecuteAIStepCore(
             return "AI Step failed: the game could not be paused.\r\n" + pauseResponse;
         }
     }
+    const std::string sourceContext =
+        BuildSourceDecisionContext(projectRoot, decisionObservation);
+    GameWindowCaptureResult capture;
+    std::filesystem::path capturePath;
+    const bool captured = visionEnabled && CaptureGameProcessWindow(
+        gGameProcessId.load(),
+        gAIProvider.VisionMaximumWidth(),
+        capture);
+    if (captured) {
+        SaveLatestVisionCapture(projectRoot, capture.pngBytes, capturePath);
+    }
+    gAIProvider.SetDecisionContext(
+        sourceContext,
+        captured ? "image/png" : "",
+        captured ? Base64Encode(capture.pngBytes) : "");
     PostAIStatus(window, std::string("AI Step 2/5: ") +
         (pauseForInitialConnection ? "game paused for initial connection; calling " : "calling ") +
         gAIProvider.Name() +
         " for " + ControlledActorLabel(actorMode) + " with " +
-        std::to_string(decisionObservation.availableActions.size()) + " available actions...", true);
+        std::to_string(decisionObservation.availableActions.size()) + " available actions" +
+        (sourceContext.empty() ? "" : ", source context") +
+        (captured ? ", and one screenshot" : "") + "..." +
+        (visionEnabled && !captured ? "\r\nVision warning: " + capture.error : ""), true);
     DebugGenericAction selected;
     std::string reason;
     if (!gAIProvider.ChooseAction(decisionObservation, selected, reason)) {
@@ -1396,7 +2549,16 @@ std::string ExecuteAIStepCore(
         "\r\nParameters: direction=" + parameter(DebugActionParameter::Direction) +
         ", space=" + parameter(DebugActionParameter::CoordinateSpace) +
         ", durationFrames=" + parameter(DebugActionParameter::DurationFrames) +
-        "\r\nReason: " + reason + "\r\n\r\n" +
+        "\r\nReason: " + reason +
+        "\r\nSource scan context: " + (sourceContext.empty() ? "not available" : "attached") +
+        "\r\nVision: " + (captured
+            ? "attached " + std::to_string(capture.width) + "x" +
+                std::to_string(capture.height) +
+                (capturePath.empty()
+                    ? std::string{}
+                    : " (" + WideToUtf8(capturePath.wstring()) + ")")
+            : (visionEnabled ? "capture unavailable - " + capture.error : "disabled")) +
+        "\r\n\r\n" +
         FormatProtocolResponse(response) +
         "\r\nElapsed: " + std::to_string(elapsed) + " ms";
 }
@@ -2036,9 +3198,18 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
         ? (requestedInterval > 250 ? 250 : requestedInterval)
         : requestedInterval;
     const ControlledActorMode actorMode = ReadControlledActorMode();
+    const std::filesystem::path projectRoot(
+        gProjectFolder ? ReadWindowText(gProjectFolder) : std::wstring{});
+    const bool visionEnabled = gAIVisionEnabled &&
+        SendMessageW(gAIVisionEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    SaveWorkspaceSettings(
+        projectRoot,
+        gScanTargets ? ReadWindowText(gScanTargets) : std::wstring{});
     SetWindowTextW(gStatusText, mode == AIWorkerMode::ApiStep ? L"API Step started..."
         : (mode == AIWorkerMode::ApiContinuous ? L"API Continuous started..." : L"Local AI started (basic policy)..."));
-    gAIWorker = std::thread([window, mode, continuous, useApi, interval, actorMode] {
+    gAIWorker = std::thread([
+        window, mode, continuous, useApi, interval, actorMode,
+        projectRoot, visionEnabled] {
         constexpr auto kRateLimitCooldown = std::chrono::seconds(60);
         LocalPolicyState localPolicy;
         localPolicy.config = LoadLocalPolicyConfig();
@@ -2061,7 +3232,12 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
                         ? ControlledActorMode::Boss : ControlledActorMode::Player;
                     bothBossTurn = !bothBossTurn;
                 }
-                const std::string apiResult = ExecuteAIStepCore(window, decisionActor, &apiExecuted);
+                const std::string apiResult = ExecuteAIStepCore(
+                    window,
+                    decisionActor,
+                    projectRoot,
+                    visionEnabled,
+                    &apiExecuted);
                 if (continuous && !apiExecuted && !gAIStopRequested) {
                     const bool rateLimited = apiResult.find("HTTP error 429") != std::string::npos ||
                         apiResult.find("RESOURCE_EXHAUSTED") != std::string::npos;
@@ -2114,6 +3290,22 @@ void StartOneShotWorker(HWND window, std::function<std::string()> task,
     });
 }
 
+void StartReplayWorker(
+    HWND window,
+    std::function<std::string()> task,
+    const wchar_t* startingText) {
+    if (gAIWorkerRunning) {
+        gPendingReplayStart = std::move(task);
+        StopAIWorker();
+        SetWindowTextW(
+            gStatusText,
+            L"Stopping the active AI before starting replay...");
+        SetTimer(window, kPendingReplayStartTimerId, 50, nullptr);
+        return;
+    }
+    StartOneShotWorker(window, std::move(task), startingText);
+}
+
 void StartCommandWorker(HWND window, const char* command,
     const wchar_t* startingText = nullptr, bool preserveResult = true) {
     const std::string commandCopy = command;
@@ -2144,63 +3336,115 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         AddButton(window, L"Play Latest", PlayLatestId, 300, 55, 120);
         AddButton(window, L"Stop Replay", StopReplayId, 430, 55, 120);
         AddButton(window, L"Refresh", RefreshId, 560, 55, 90);
+        CreateWindowW(L"STATIC", L"Replay:", WS_CHILD | WS_VISIBLE,
+            20, 104, 60, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        gReplaySessions = CreateWindowW(L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            80, 96, 300, 260, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ReplaySessionId)),
+            GetModuleHandleW(nullptr), nullptr);
+        gPlaySelectedReplay = AddButton(
+            window, L"Play Selected", PlaySelectedReplayId, 390, 96, 105);
+        AddButton(window, L"Timeline", ShowReplayTimelineId, 505, 96, 75);
+        AddButton(window, L"Reload", ReloadReplayListId, 590, 96, 60);
+        CreateWindowW(L"STATIC", L"Playback:", WS_CHILD | WS_VISIBLE,
+            20, 149, 65, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Pause", PauseReplayId, 85, 141, 75);
+        AddButton(window, L"Resume", ResumeReplayId, 170, 141, 80);
+        AddButton(window, L"Step 1F", StepReplayId, 260, 141, 80);
+        CreateWindowW(L"STATIC", L"Speed:", WS_CHILD | WS_VISIBLE,
+            355, 149, 50, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        gReplaySpeed = CreateWindowW(L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            405, 145, 80, 160, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ReplaySpeedId)),
+            GetModuleHandleW(nullptr), nullptr);
+        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0.25x"));
+        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0.5x"));
+        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"1x"));
+        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"2x"));
+        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"4x"));
+        SendMessageW(gReplaySpeed, CB_SETCURSEL, 0, 2);
+        AddButton(window, L"Apply", ApplyReplaySpeedId, 495, 141, 75);
         CreateWindowW(L"STATIC", L"API:", WS_CHILD | WS_VISIBLE,
-            20, 104, 45, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"API Step", AIStepId, 65, 96, 110);
-        AddButton(window, L"Start API", AIStartId, 185, 96, 115);
+            20, 194, 45, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"API Step", AIStepId, 65, 186, 110);
+        AddButton(window, L"Start API", AIStartId, 185, 186, 115);
         CreateWindowW(L"STATIC", L"LOCAL:", WS_CHILD | WS_VISIBLE,
-            320, 104, 60, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Start Local", LocalStartId, 380, 96, 120);
-        AddButton(window, L"Stop", AIStopId, 510, 96, 80);
+            320, 194, 60, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Start Local", LocalStartId, 380, 186, 120);
+        AddButton(window, L"Stop", AIStopId, 510, 186, 80);
         CreateWindowW(L"STATIC", L"Interval ms:", WS_CHILD | WS_VISIBLE,
-            20, 137, 75, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            20, 227, 75, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIInterval = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredInterval.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_NUMBER, 95, 133, 85, 26, window,
+            WS_CHILD | WS_VISIBLE | ES_NUMBER, 95, 223, 85, 26, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIIntervalId)), GetModuleHandleW(nullptr), nullptr);
         CreateWindowW(L"STATIC", L"Actor:", WS_CHILD | WS_VISIBLE,
-            210, 137, 50, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            210, 227, 50, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIActorMode = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            260, 133, 150, 180, window,
+            260, 223, 150, 180, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIActorModeId)), GetModuleHandleW(nullptr), nullptr);
         SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Player"));
         SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Boss"));
         SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Both"));
         SendMessageW(gAIActorMode, CB_SETCURSEL, 0, 0);
+        gAIVisionEnabled = CreateWindowW(
+            L"BUTTON",
+            L"AI Vision",
+            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+            430,
+            221,
+            115,
+            28,
+            window,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(AIVisionEnabledId)),
+            GetModuleHandleW(nullptr),
+            nullptr);
+        SendMessageW(
+            gAIVisionEnabled,
+            BM_SETCHECK,
+            LoadVisionEnabled(gAIProvider.VisionEnabledByDefault())
+                ? BST_CHECKED
+                : BST_UNCHECKED,
+            0);
+        AddButton(window, L"Capture", CaptureVisionId, 555, 216, 95);
         CreateWindowW(L"STATIC", L"Game Project Folder:", WS_CHILD | WS_VISIBLE,
-            20, 168, 160, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            20, 258, 160, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         const std::wstring savedProjectFolder = LoadProjectFolder();
         gProjectFolder = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedProjectFolder.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 190, 450, 27, window,
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 280, 450, 27, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ProjectFolderId)), GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Browse...", BrowseProjectId, 480, 187, 80);
-        AddButton(window, L"Scan Project", ScanProjectId, 570, 187, 80);
-        AddButton(window, L"Generate Action Profile", GenerateProfileId, 20, 225, 190);
-        AddButton(window, L"Generate State Mapping", GenerateStateProfileId, 220, 225, 190);
-        AddButton(window, L"Generate Local Policy", GenerateLocalPolicyId, 420, 225, 190);
+        AddButton(window, L"Browse...", BrowseProjectId, 480, 277, 80);
+        AddButton(window, L"Scan Project", ScanProjectId, 570, 277, 80);
+        AddButton(window, L"Generate Action Profile", GenerateProfileId, 20, 315, 190);
+        AddButton(window, L"Generate State Mapping", GenerateStateProfileId, 220, 315, 190);
+        AddButton(window, L"Generate Local Policy", GenerateLocalPolicyId, 420, 315, 190);
         CreateWindowW(L"STATIC", L"Scan Targets (comma separated; blank = automatic):", WS_CHILD | WS_VISIBLE,
-            20, 266, 390, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            20, 356, 390, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         const std::wstring savedScanTargets = LoadScanTargets();
         gScanTargets = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedScanTargets.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 288, 630, 27, window,
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 378, 630, 27, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ScanTargetsId)), GetModuleHandleW(nullptr), nullptr);
         const std::wstring configuredGoal = Utf8ToWide(gAIProvider.Goal());
         CreateWindowW(L"STATIC", L"AI Goal / Instruction:", WS_CHILD | WS_VISIBLE,
-            20, 325, 170, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            20, 415, 170, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIGoal = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredGoal.c_str(),
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-            20, 347, 630, 58, window,
+            20, 437, 630, 58, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIGoalId)), GetModuleHandleW(nullptr), nullptr);
         gStatusText = CreateWindowExW(
             WS_EX_CLIENTEDGE,
             L"EDIT",
             L"Game connection: checking...",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
-            20, 415, 630, 205,
+            20, 505, 630, 225,
             window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(StatusTextId)),
             GetModuleHandleW(nullptr),
             nullptr);
+        RefreshReplaySessionList(false);
         StartCommandWorker(window, "status", L"Game connection: checking...", false);
         return 0;
     }
@@ -2208,29 +3452,114 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
         case StartRecordingId: StartCommandWorker(window, "start_recording", L"Starting recording..."); return 0;
-        case StopRecordingId: StartCommandWorker(window, "stop_recording", L"Stopping recording..."); return 0;
-        case PlayLatestId: StartCommandWorker(window, "play_latest", L"Starting replay..."); return 0;
+        case StopRecordingId:
+            StartOneShotWorker(window, [window] {
+                const std::string result = ExecuteCommandCore("stop_recording");
+                PostMessageW(window, kReplayListRefreshMessage, 0, 0);
+                return result;
+            }, L"Stopping recording...");
+            return 0;
+        case PlayLatestId:
+            StartReplayWorker(window, [] {
+                return ExecuteCommandCore("play_latest");
+            }, L"Starting replay...");
+            return 0;
         case StopReplayId: StartCommandWorker(window, "stop_replay", L"Stopping replay..."); return 0;
         case RefreshId: StartCommandWorker(window, "status", L"Refreshing..."); return 0;
+        case PlaySelectedReplayId: {
+            const LRESULT selected = SendMessageW(gReplaySessions, CB_GETCURSEL, 0, 0);
+            if (selected == CB_ERR ||
+                static_cast<std::size_t>(selected) >= gReplaySessionEntries.size()) {
+                SetWindowTextW(gStatusText, L"Select a completed replay session first.");
+                return 0;
+            }
+            const auto manifestPath =
+                gReplaySessionEntries[static_cast<std::size_t>(selected)].manifestPath;
+            StartReplayWorker(window, [manifestPath] {
+                return PlaySelectedReplayCore(manifestPath);
+            }, L"Starting selected replay...");
+            return 0;
+        }
+        case ShowReplayTimelineId: {
+            const LRESULT selected =
+                SendMessageW(gReplaySessions, CB_GETCURSEL, 0, 0);
+            if (selected == CB_ERR ||
+                static_cast<std::size_t>(selected) >=
+                    gReplaySessionEntries.size()) {
+                SetWindowTextW(
+                    gStatusText,
+                    L"Select a completed replay session first.");
+                return 0;
+            }
+            const auto manifestPath =
+                gReplaySessionEntries[
+                    static_cast<std::size_t>(selected)].manifestPath;
+            StartOneShotWorker(window, [manifestPath] {
+                return FormatReplayTimelineCore(manifestPath);
+            }, L"Loading replay timeline...");
+            return 0;
+        }
+        case ReloadReplayListId:
+            RefreshReplaySessionList(true);
+            return 0;
+        case PauseReplayId:
+            StartCommandWorker(window, "pause_replay", L"Pausing replay...");
+            return 0;
+        case ResumeReplayId:
+            StartCommandWorker(window, "resume_replay", L"Resuming replay...");
+            return 0;
+        case StepReplayId:
+            StartCommandWorker(window, "step_replay", L"Advancing one replay frame...");
+            return 0;
+        case ApplyReplaySpeedId: {
+            const LRESULT selected =
+                SendMessageW(gReplaySpeed, CB_GETCURSEL, 0, 0);
+            constexpr double speeds[] = { 0.25, 0.5, 1.0, 2.0, 4.0 };
+            if (selected == CB_ERR ||
+                static_cast<std::size_t>(selected) >=
+                    sizeof(speeds) / sizeof(speeds[0])) {
+                SetWindowTextW(gStatusText, L"Select a replay speed first.");
+                return 0;
+            }
+            const double speed = speeds[static_cast<std::size_t>(selected)];
+            StartOneShotWorker(window, [speed] {
+                return SetReplaySpeedCore(speed);
+            }, L"Changing replay speed...");
+            return 0;
+        }
         case ExecuteFirstActionId:
             StartOneShotWorker(window, ExecuteFirstAvailableActionCore, L"Executing first action..."); return 0;
         case AIStepId: StartAIWorker(window, AIWorkerMode::ApiStep); return 0;
         case AIStartId: StartAIWorker(window, AIWorkerMode::ApiContinuous); return 0;
         case LocalStartId: StartAIWorker(window, AIWorkerMode::LocalContinuous); return 0;
         case AIStopId: StopAIWorker(); return 0;
+        case CaptureVisionId: {
+            const std::filesystem::path projectRoot(
+                gProjectFolder ? ReadWindowText(gProjectFolder) : std::wstring{});
+            StartOneShotWorker(window, [projectRoot] {
+                return CaptureVisionPreviewCore(projectRoot);
+            }, L"Capturing the connected game window...");
+            return 0;
+        }
         case BrowseProjectId: {
             std::filesystem::path selected;
             if (BrowseForProjectFolder(window, selected)) {
                 SetWindowTextW(gProjectFolder, selected.c_str());
                 SaveProjectFolder(selected);
-                SetWindowTextW(gStatusText, L"Project folder saved locally. It is excluded from Git.");
+                RefreshReplaySessionList(false);
+                SetWindowTextW(gStatusText,
+                    L"Project folder saved locally. Replay list was refreshed.");
             }
             return 0;
         }
         case ScanProjectId: {
             const std::filesystem::path folder(ReadWindowText(gProjectFolder));
-            SaveProjectFolder(folder);
-            StartOneShotWorker(window, [folder] { return ScanProjectFolder(folder); },
+            const std::wstring targets = ReadWindowText(gScanTargets);
+            SaveWorkspaceSettings(folder, targets);
+            const std::string targetText = WideToUtf8(targets);
+            StartOneShotWorker(window, [folder, targetText] {
+                return ScanProjectFolder(folder, targetText);
+            },
                 L"Scanning project files...");
             return 0;
         }
@@ -2259,7 +3588,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         }
         break;
 
+    case kReplayListRefreshMessage:
+        RefreshReplaySessionList(false);
+        return 0;
+
     case WM_TIMER:
+        if (wParam == kPendingReplayStartTimerId) {
+            if (!gPendingReplayStart) {
+                KillTimer(window, kPendingReplayStartTimerId);
+                return 0;
+            }
+            if (!gAIWorkerRunning) {
+                KillTimer(window, kPendingReplayStartTimerId);
+                auto task = std::move(gPendingReplayStart);
+                gPendingReplayStart = {};
+                StartOneShotWorker(
+                    window, std::move(task), L"Starting queued replay...");
+            }
+            return 0;
+        }
         return 0;
 
     case kAIStatusMessage: {
@@ -2278,6 +3625,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     }
 
     case WM_DESTROY:
+        KillTimer(window, kPendingReplayStartTimerId);
+        gPendingReplayStart = {};
         StopAIWorker();
         if (gAIWorker.joinable()) gAIWorker.join();
         PostQuitMessage(0);
@@ -2341,7 +3690,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
         kWindowClass,
         L"DebugAI Viewer",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 700, 710,
+        CW_USEDEFAULT, CW_USEDEFAULT, 700, 815,
         nullptr, nullptr, instance, nullptr);
     if (!window) {
         return 1;

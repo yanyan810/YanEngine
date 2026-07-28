@@ -10,7 +10,8 @@
 
 namespace {
 
-std::string MakeReplayFileName() {
+std::string MakeReplayFileName(const std::string& sessionId) {
+    if (!sessionId.empty()) return "actors_" + sessionId + ".dair2.jsonl";
     const auto now = std::chrono::system_clock::now();
     const std::time_t time = std::chrono::system_clock::to_time_t(now);
     std::tm local{};
@@ -56,12 +57,14 @@ void DebugGenericActionReplay::Close() {
     StopReplay();
 }
 
-bool DebugGenericActionReplay::StartRecording(std::uint64_t startFrame) {
+bool DebugGenericActionReplay::StartRecording(
+    std::uint64_t startFrame,
+    const std::string& sessionId) {
     StopRecording();
     StopReplay();
     if (directory_.empty() && !Open("generated/debug_ai/player/actors")) return false;
 
-    replayPath_ = (std::filesystem::path(directory_) / MakeReplayFileName()).string();
+    replayPath_ = (std::filesystem::path(directory_) / MakeReplayFileName(sessionId)).string();
     recordingStream_.open(replayPath_, std::ios::out | std::ios::trunc);
     if (!recordingStream_) {
         lastError_ = "Failed to open actor replay for recording: " + replayPath_;

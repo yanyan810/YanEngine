@@ -7,6 +7,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <vector>
@@ -54,14 +55,26 @@ struct DebugReplayLogEntry {
 };
 
 std::vector<DebugReplayLogEntry> CollectReplayActionLogs(const std::string& directoryPath) {
+    static std::string cachedDirectory;
+    static std::vector<DebugReplayLogEntry> cachedEntries;
+    static std::chrono::steady_clock::time_point nextRefresh{};
+    const auto now = std::chrono::steady_clock::now();
+    if (directoryPath == cachedDirectory && now < nextRefresh) {
+        return cachedEntries;
+    }
+    cachedDirectory = directoryPath;
+    nextRefresh = now + std::chrono::seconds(2);
+
     std::vector<DebugReplayLogEntry> entries;
     if (directoryPath.empty()) {
+        cachedEntries.clear();
         return entries;
     }
 
     std::error_code error;
     const std::filesystem::path directory(directoryPath);
     if (!std::filesystem::exists(directory, error)) {
+        cachedEntries.clear();
         return entries;
     }
 
@@ -97,6 +110,7 @@ std::vector<DebugReplayLogEntry> CollectReplayActionLogs(const std::string& dire
     std::sort(entries.begin(), entries.end(), [](const DebugReplayLogEntry& lhs, const DebugReplayLogEntry& rhs) {
         return lhs.lastWriteTime > rhs.lastWriteTime;
     });
+    cachedEntries = entries;
     return entries;
 }
 

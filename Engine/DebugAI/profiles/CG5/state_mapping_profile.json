@@ -39,14 +39,23 @@
   },
   "gameId": "CG5",
   "generatedLocally": true,
-  "lastRuntimeFrame": 701,
-  "lastRuntimeScene": "Game",
   "mappings": [
     {
       "approved": false,
       "confidence": 0.9200000166893005,
+      "evidence": [
+        {
+          "confidence": 0.9200000166893005,
+          "excerpt": "const bool isAttacking =",
+          "kind": "StateMapping",
+          "line": 591,
+          "source": "Game\\enemy\\Enemy.cpp",
+          "symbol": "isAttacking"
+        }
+      ],
       "genericProperty": "enemy.attackActive",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "isAttacking",
       "sources": [
         "Game\\enemy\\Enemy.cpp"
@@ -56,8 +65,27 @@
     {
       "approved": false,
       "confidence": 0.9200000166893005,
+      "evidence": [
+        {
+          "confidence": 0.8799999952316284,
+          "excerpt": "requestMeleeAttack_ = false;",
+          "kind": "StateMapping",
+          "line": 88,
+          "source": "Game\\enemy\\Enemy.cpp",
+          "symbol": "requestMeleeAttack_"
+        },
+        {
+          "confidence": 0.9200000166893005,
+          "excerpt": "if (!requestMeleeAttack_) return false;",
+          "kind": "StateMapping",
+          "line": 63,
+          "source": "Game\\enemy\\Enemy.h",
+          "symbol": "requestMeleeAttack_"
+        }
+      ],
       "genericProperty": "enemy.attackActive",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "requestMeleeAttack_",
       "sources": [
         "Game\\enemy\\Enemy.cpp",
@@ -68,8 +96,19 @@
     {
       "approved": false,
       "confidence": 0.8399999737739563,
+      "evidence": [
+        {
+          "confidence": 0.8399999737739563,
+          "excerpt": "float meleeWindupTime_ = 0.0f;",
+          "kind": "StateMapping",
+          "line": 208,
+          "source": "Game\\enemy\\Enemy.h",
+          "symbol": "meleeWindupTime_"
+        }
+      ],
       "genericProperty": "enemy.attackStartup",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "meleeWindupTime_",
       "sources": [
         "Game\\enemy\\Enemy.h"
@@ -79,8 +118,19 @@
     {
       "approved": false,
       "confidence": 0.8399999737739563,
+      "evidence": [
+        {
+          "confidence": 0.8399999737739563,
+          "excerpt": "float shootWindupTime_ = 1.0f;",
+          "kind": "StateMapping",
+          "line": 218,
+          "source": "Game\\enemy\\Enemy.h",
+          "symbol": "shootWindupTime_"
+        }
+      ],
       "genericProperty": "enemy.attackStartup",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "shootWindupTime_",
       "sources": [
         "Game\\enemy\\Enemy.h"
@@ -90,8 +140,27 @@
     {
       "approved": false,
       "confidence": 0.7799999713897705,
+      "evidence": [
+        {
+          "confidence": 0.7799999713897705,
+          "excerpt": "if (dist > chaseStopDist_) {",
+          "kind": "StateMapping",
+          "line": 150,
+          "source": "Game\\enemy\\BossAI.cpp",
+          "symbol": "chaseStopDist_"
+        },
+        {
+          "confidence": 0.7799999713897705,
+          "excerpt": "float chaseStopDist_ = 5.0f; // 近づきすぎない距離",
+          "kind": "StateMapping",
+          "line": 140,
+          "source": "Game\\enemy\\BossAI.h",
+          "symbol": "chaseStopDist_"
+        }
+      ],
       "genericProperty": "enemy.distanceToPlayer",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "chaseStopDist_",
       "sources": [
         "Game\\enemy\\BossAI.cpp",
@@ -102,8 +171,19 @@
     {
       "approved": false,
       "confidence": 0.9200000166893005,
+      "evidence": [
+        {
+          "confidence": 0.9200000166893005,
+          "excerpt": "State GetState() const { return st_; }",
+          "kind": "StateMapping",
+          "line": 47,
+          "source": "Game\\enemy\\BossAI.h",
+          "symbol": "GetState"
+        }
+      ],
       "genericProperty": "enemy.intent",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "GetState",
       "sources": [
         "Game\\enemy\\BossAI.h"
@@ -113,8 +193,19 @@
     {
       "approved": false,
       "confidence": 0.9200000166893005,
+      "evidence": [
+        {
+          "confidence": 0.9200000166893005,
+          "excerpt": "State GetState() const { return st_; }",
+          "kind": "StateMapping",
+          "line": 47,
+          "source": "Game\\enemy\\BossAI.h",
+          "symbol": "st_"
+        }
+      ],
       "genericProperty": "enemy.intent",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "st_",
       "sources": [
         "Game\\enemy\\BossAI.h"
@@ -124,8 +215,19 @@
     {
       "approved": false,
       "confidence": 0.8999999761581421,
+      "evidence": [
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "Phase GetPhase() const { return phase_; } // 必要なら",
+          "kind": "StateMapping",
+          "line": 48,
+          "source": "Game\\enemy\\BossAI.h",
+          "symbol": "GetPhase"
+        }
+      ],
       "genericProperty": "enemy.phase",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "GetPhase",
       "sources": [
         "Game\\enemy\\BossAI.h"
@@ -135,8 +237,19 @@
     {
       "approved": false,
       "confidence": 0.8999999761581421,
+      "evidence": [
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "Phase GetPhase() const { return phase_; } // 必要なら",
+          "kind": "StateMapping",
+          "line": 48,
+          "source": "Game\\enemy\\BossAI.h",
+          "symbol": "phase"
+        }
+      ],
       "genericProperty": "enemy.phase",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "phase",
       "sources": [
         "Game\\enemy\\BossAI.h"
@@ -146,8 +259,19 @@
     {
       "approved": false,
       "confidence": 0.8999999761581421,
+      "evidence": [
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "Phase GetPhase() const { return phase_; } // 必要なら",
+          "kind": "StateMapping",
+          "line": 48,
+          "source": "Game\\enemy\\BossAI.h",
+          "symbol": "phase_"
+        }
+      ],
       "genericProperty": "enemy.phase",
       "runtimeObserved": false,
+      "sourceDiscovered": true,
       "sourceSymbol": "phase_",
       "sources": [
         "Game\\enemy\\BossAI.h"
@@ -157,8 +281,19 @@
     {
       "approved": false,
       "confidence": 0.8600000143051147,
+      "evidence": [
+        {
+          "confidence": 0.8600000143051147,
+          "excerpt": "bool IsBossIncomingAttack(BossAI::State state) {",
+          "kind": "StateMapping",
+          "line": 141,
+          "source": "Game\\enemy\\EnemyManager.cpp",
+          "symbol": "IncomingAttack"
+        }
+      ],
       "genericProperty": "enemy.threat",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "IncomingAttack",
       "sources": [
         "Game\\enemy\\EnemyManager.cpp"
@@ -168,8 +303,19 @@
     {
       "approved": false,
       "confidence": 0.8600000143051147,
+      "evidence": [
+        {
+          "confidence": 0.8600000143051147,
+          "excerpt": "bool IsBossIncomingAttack(BossAI::State state) {",
+          "kind": "StateMapping",
+          "line": 141,
+          "source": "Game\\enemy\\EnemyManager.cpp",
+          "symbol": "IsBossIncomingAttack"
+        }
+      ],
       "genericProperty": "enemy.threat",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "IsBossIncomingAttack",
       "sources": [
         "Game\\enemy\\EnemyManager.cpp"
@@ -179,8 +325,19 @@
     {
       "approved": false,
       "confidence": 0.8600000143051147,
+      "evidence": [
+        {
+          "confidence": 0.8600000143051147,
+          "excerpt": "state.threatHint = \"IncomingAttack\";",
+          "kind": "StateMapping",
+          "line": 488,
+          "source": "Game\\enemy\\EnemyManager.cpp",
+          "symbol": "threatHint"
+        }
+      ],
       "genericProperty": "enemy.threat",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "threatHint",
       "sources": [
         "Game\\enemy\\EnemyManager.cpp"
@@ -190,8 +347,19 @@
     {
       "approved": false,
       "confidence": 0.9100000262260437,
+      "evidence": [
+        {
+          "confidence": 0.9100000262260437,
+          "excerpt": "PlayerAction GetCurrentAction() const { return action_; }",
+          "kind": "StateMapping",
+          "line": 310,
+          "source": "Game\\player\\Player.h",
+          "symbol": "GetCurrentAction"
+        }
+      ],
       "genericProperty": "player.action",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "GetCurrentAction",
       "sources": [
         "Game\\player\\Player.h"
@@ -201,8 +369,19 @@
     {
       "approved": false,
       "confidence": 0.8999999761581421,
+      "evidence": [
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "bool CanStartAttackCommand_(const PlayerInputCommand& command) const;",
+          "kind": "StateMapping",
+          "line": 378,
+          "source": "Game\\player\\Player.h",
+          "symbol": "CanStartAttackCommand"
+        }
+      ],
       "genericProperty": "player.canAttack",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "CanStartAttackCommand",
       "sources": [
         "Game\\player\\Player.h"
@@ -212,8 +391,35 @@
     {
       "approved": false,
       "confidence": 0.8999999761581421,
+      "evidence": [
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "bool CanStartAttackCommand_(const PlayerInputCommand& command) const;",
+          "kind": "StateMapping",
+          "line": 378,
+          "source": "Game\\player\\Player.h",
+          "symbol": "CanStartAttackCommand_"
+        },
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {",
+          "kind": "StateMapping",
+          "line": 436,
+          "source": "Game\\player\\PlayerAttack.cpp",
+          "symbol": "CanStartAttackCommand_"
+        },
+        {
+          "confidence": 0.8999999761581421,
+          "excerpt": "if (CanStartAttackCommand_(command)) {",
+          "kind": "StateMapping",
+          "line": 109,
+          "source": "Game\\player\\PlayerInput.cpp",
+          "symbol": "CanStartAttackCommand_"
+        }
+      ],
       "genericProperty": "player.canAttack",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "CanStartAttackCommand_",
       "sources": [
         "Game\\player\\Player.h",
@@ -225,8 +431,27 @@
     {
       "approved": false,
       "confidence": 0.8399999737739563,
+      "evidence": [
+        {
+          "confidence": 0.8399999737739563,
+          "excerpt": "PlayerAttackType GetCurrentAttackType() const { return attackType_; }",
+          "kind": "StateMapping",
+          "line": 311,
+          "source": "Game\\player\\Player.h",
+          "symbol": "GetCurrentAttackType"
+        },
+        {
+          "confidence": 0.8399999737739563,
+          "excerpt": "return GetCancelTuning(player.GetCurrentAttackType(), player.GetSpecialCancelCount());",
+          "kind": "StateMapping",
+          "line": 175,
+          "source": "Game\\player\\PlayerAttackIInternal.h",
+          "symbol": "GetCurrentAttackType"
+        }
+      ],
       "genericProperty": "player.isAttacking",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "GetCurrentAttackType",
       "sources": [
         "Game\\player\\Player.h",
@@ -237,8 +462,27 @@
     {
       "approved": false,
       "confidence": 0.8399999737739563,
+      "evidence": [
+        {
+          "confidence": 0.8399999737739563,
+          "excerpt": "bool IsSideSpecialLv3AttackActive() const;",
+          "kind": "StateMapping",
+          "line": 217,
+          "source": "Game\\player\\Player.h",
+          "symbol": "IsSideSpecialLv3AttackActive"
+        },
+        {
+          "confidence": 0.8399999737739563,
+          "excerpt": "bool Player::IsSideSpecialLv3AttackActive() const {",
+          "kind": "StateMapping",
+          "line": 140,
+          "source": "Game\\player\\PlayerAttackI.cpp",
+          "symbol": "IsSideSpecialLv3AttackActive"
+        }
+      ],
       "genericProperty": "player.isAttacking",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "IsSideSpecialLv3AttackActive",
       "sources": [
         "Game\\player\\Player.h",
@@ -249,8 +493,19 @@
     {
       "approved": false,
       "confidence": 0.9599999785423279,
+      "evidence": [
+        {
+          "confidence": 0.9599999785423279,
+          "excerpt": "bool IsOnGround() const { return onGround_; }",
+          "kind": "StateMapping",
+          "line": 235,
+          "source": "Game\\player\\Player.h",
+          "symbol": "IsOnGround"
+        }
+      ],
       "genericProperty": "player.onGround",
       "runtimeObserved": true,
+      "sourceDiscovered": true,
       "sourceSymbol": "IsOnGround",
       "sources": [
         "Game\\player\\Player.h"
@@ -260,5 +515,5 @@
   ],
   "reviewRequired": true,
   "scanTargets": [],
-  "schemaVersion": 1
+  "schemaVersion": 2
 }
