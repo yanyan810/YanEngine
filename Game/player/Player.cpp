@@ -569,6 +569,11 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     if (inputCommandFilter_) {
         inputCommandFilter_(command);
     }
+    // ResolveInput_ normally updates these runtime values as a side effect.
+    // Replay replaces the command after physical input has been blocked, so
+    // keep charge/release driven attacks synchronized with the recorded input.
+    latestSpecialHeld_ = command.specialHeld;
+    latestSpecialReleased_ = command.specialReleased;
 
     if (command.jumpTriggered && jumpCount_ < maxJumpCount_ && actionTimer_ <= 0.0f && !command.guard) {
         onGround_ = false;
@@ -607,11 +612,10 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
         !IsMoveLocked() &&
         command.action != PlayerAction::Guard &&
         command.action != PlayerAction::Crouch) {
-        if (useDebugCommand) {
-            UpdateMove_(dt, command);
-        } else {
-            UpdateMove_(dt, input);
-        }
+        // ResolveInput_, Debug AI, and replay all converge on this command.
+        // The replay filter may replace it after useDebugCommand is decided,
+        // so reading Input directly here would discard recorded movement.
+        UpdateMove_(dt, command);
     }
     else if (!launched_ && !preserveSideSpecialBounce) {
         vel_.x = 0.0f;

@@ -8,8 +8,8 @@
       "enabledForLocalAI": true,
       "properties": {
         "nearestMissRange": 0.0,
-        "runtimeMissSamples": 6,
-        "runtimeSamples": 6
+        "runtimeMissSamples": 8,
+        "runtimeSamples": 8
       },
       "runtimeObserved": true,
       "sourceDiscovered": true,
@@ -31,12 +31,12 @@
       "enabled": true,
       "enabledForLocalAI": true,
       "properties": {
-        "nearestMissRange": 2.6227259635925293,
+        "nearestMissRange": 1.2876889371228444,
         "rangeConfidence": 0.85,
-        "runtimeHitSamples": 7,
-        "runtimeMissSamples": 2,
+        "runtimeHitSamples": 8,
+        "runtimeMissSamples": 3,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 9,
+        "runtimeSamples": 11,
         "verifiedRangeMax": 2.543148060237758
       },
       "runtimeObserved": true,
@@ -61,10 +61,10 @@
       "properties": {
         "nearestMissRange": 2.428391140129125,
         "rangeConfidence": 0.85,
-        "runtimeHitSamples": 7,
+        "runtimeHitSamples": 9,
         "runtimeMissSamples": 1,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 8,
+        "runtimeSamples": 10,
         "verifiedRangeMax": 2.787137985229492
       },
       "runtimeObserved": true,
@@ -89,10 +89,10 @@
       "properties": {
         "nearestMissRange": 2.8514332593635063,
         "rangeConfidence": 0.85,
-        "runtimeHitSamples": 8,
+        "runtimeHitSamples": 10,
         "runtimeMissSamples": 1,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 9,
+        "runtimeSamples": 11,
         "verifiedRangeMax": 2.922588744608122
       },
       "runtimeObserved": true,
@@ -136,11 +136,11 @@
       "properties": {
         "nearestMissRange": 2.400923802112973,
         "rangeConfidence": 0.85,
-        "runtimeHitSamples": 10,
+        "runtimeHitSamples": 12,
         "runtimeMissSamples": 1,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 11,
-        "verifiedRangeMax": 2.6333296298980713
+        "runtimeSamples": 13,
+        "verifiedRangeMax": 2.783329725265503
       },
       "runtimeObserved": true,
       "sourceDiscovered": true,
@@ -163,9 +163,9 @@
       "enabledForLocalAI": true,
       "properties": {
         "rangeConfidence": 0.85,
-        "runtimeHitSamples": 7,
+        "runtimeHitSamples": 9,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 7,
+        "runtimeSamples": 9,
         "verifiedRangeMax": 2.873912709556834
       },
       "runtimeObserved": true,
@@ -190,10 +190,10 @@
       "properties": {
         "nearestMissRange": 2.580310821533203,
         "rangeConfidence": 0.85,
-        "runtimeHitSamples": 15,
-        "runtimeMissSamples": 3,
+        "runtimeHitSamples": 16,
+        "runtimeMissSamples": 4,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 18,
+        "runtimeSamples": 20,
         "verifiedRangeMax": 2.7999963760375977
       },
       "runtimeObserved": true,
@@ -509,7 +509,7 @@
   ],
   "gameId": "CG5",
   "generatedLocally": true,
-  "lastRuntimeFrame": 701,
+  "lastRuntimeFrame": 2059,
   "lastRuntimeScene": "Game",
   "schemaVersion": 1,
   "sourceFileCount": 235

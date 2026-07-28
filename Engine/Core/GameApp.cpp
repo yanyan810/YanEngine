@@ -259,12 +259,31 @@ void GameApp::Update(float dt) {
 
     input_->Update();
 
+    unsigned int simulationUpdates = 1;
     if (debugAI_) {
         debugAI_->ProcessControlCommands();
+        std::string replayScene;
+        if (debugAI_->ConsumeReplaySceneLoadRequest(replayScene) &&
+            !replayScene.empty()) {
+            if (sceneMgr_->CurrentName() == replayScene) {
+                debugAI_->StartPendingReplay();
+            } else {
+                sceneMgr_->Change(*this, replayScene);
+            }
+        }
+        simulationUpdates = debugAI_->ReplaySimulationUpdatesForHostFrame();
     }
 
-
-    sceneMgr_->Update(*this, dt); // ここがあるかが重要
+    for (unsigned int update = 0; update < simulationUpdates; ++update) {
+        if (debugAI_) {
+            debugAI_->PrepareSimulationFrame();
+        }
+        sceneMgr_->Update(*this, dt);
+        if (debugAI_ && update + 1 < simulationUpdates &&
+            !debugAI_->IsReplayPlaying()) {
+            break;
+        }
+    }
 }
 
 void GameApp::Draw() {

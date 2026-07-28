@@ -71,6 +71,37 @@ mode uses the configured interval (250 to 60000 milliseconds) between completed 
 and can be interrupted with **Stop AI**. Requests are serialized inside the Viewer so that
 manual controls and the AI worker cannot mix Named Pipe messages.
 
+## Source scan context
+
+**Scan Project** creates a local `profiles/<gameId>/project_scan.json` index. The index
+contains file classifications and bounded evidence records (`source`, `line`, `excerpt`,
+and `confidence`) for actions, state mappings, attack ranges, scene IDs, input bindings,
+runtime property keys, symbols, and include dependencies. The generated index is ignored
+by Git because it may contain source excerpts.
+
+API decisions do not upload the full index or arbitrary project files. The Viewer builds
+a bounded context containing only evidence related to the current observation and its
+available actions. Runtime observation values remain authoritative when source evidence
+is incomplete or stale. Scan targets also support literal UTF-8 Japanese text found in
+identifiers, strings, or comments; they do not perform automatic synonym translation.
+
+## Optional AI vision
+
+The external Viewer can capture the largest visible client window owned by the connected
+Named Pipe server process. This avoids an engine-specific screenshot adapter and works
+with other Windows engines that expose a normal top-level game window. The image is
+downscaled to `visionMaximumWidth` (640 by default), encoded as PNG, and attached only to
+an API decision when **AI Vision** is enabled. **Capture** saves
+`generated/debug_ai/viewer/latest_frame.png` without calling an API, so the capture can
+be checked first.
+
+The game window must be visible and not minimized. Some exclusive-fullscreen or
+protected rendering paths may return a black image; those engines can later provide an
+optional adapter-based capture source without changing the provider request format.
+Vision is disabled by default because every attached image adds API cost and latency.
+Set `visionEnabled` and `visionMaximumWidth` in the per-PC local configuration to change
+the defaults.
+
 ## Local policy generation
 
 The Viewer separates API execution from local execution. **Generate Local Policy** sends
@@ -109,6 +140,53 @@ Protocol logic depends only on `IDebugAITransport`. Named Pipe is the current Wi
 ## Replay
 
 Exact input replay runs locally in the game runtime. The external tool manages replay files and commands, but complete frame input data should be transferred before playback instead of being requested once per frame.
+
+Replay pause, single-frame stepping, and playback speed are driven by the host update
+loop. The host must continue calling `ProcessControlCommands()` once per rendered frame
+so the external tool remains responsive while playback is paused. It then asks
+`ReplaySimulationUpdatesForHostFrame()` how many fixed simulation updates to run. Before
+each returned update it calls `PrepareSimulationFrame()`, followed by the normal game
+update:
+
+```cpp
+debugAI.ProcessControlCommands();
+const unsigned int updates = debugAI.ReplaySimulationUpdatesForHostFrame();
+for (unsigned int i = 0; i < updates; ++i) {
+    debugAI.PrepareSimulationFrame();
+    game.Update(fixedDeltaTime);
+}
+```
+
+At `0.25x` and `0.5x`, some rendered frames perform zero simulation updates. At `2x`
+and `4x`, multiple fixed updates run before one render. Paused playback also performs
+zero updates, while `Step 1F` permits exactly one update and then remains paused. This
+keeps player input, actor actions, event checkpoints, and game simulation on the same
+replay frame.
+
+Each Viewer recording is identified by one shared replay session ID. The player-input,
+semantic actor-action, event-timeline, event-summary, and initial-observation tracks use
+that same ID. A versioned manifest is written to:
+
+```txt
+generated/debug_ai/player/sessions/<session-id>/manifest.json
+```
+
+The manifest stores the protocol/game versions, original scene and phase, frame range,
+and relative paths to every track. `Play Latest` resolves tracks from the latest complete
+manifest instead of pairing independently created files by modification time. Incomplete
+sessions are ignored, mismatched game IDs are rejected, and recordings created before
+manifests were introduced remain playable through the legacy filename fallback.
+
+The initial generic observation is also offered to the game adapter before playback.
+Adapters may implement the optional `RestoreDebugObservation()` hook to translate that
+engine-independent snapshot into native scene state. Unsupported adapters continue with
+a visible warning; the external Viewer never writes directly into game memory.
+
+If `Play Latest` is requested while the recorded scene is not loaded, DebugAI keeps the
+manifest as a pending replay and exposes a scene-load request to the host application.
+The host changes to the manifest's `sceneId`; after the new adapter is registered, it
+calls `StartPendingReplay()`. Normal automatic recording must not start on that scene
+entry, because the pending replay owns the lifecycle.
 
 ## Migration rule
 

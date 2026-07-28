@@ -12,7 +12,7 @@ public:
     bool Open(const std::string& directoryPath);
     void Close();
 
-    bool StartRecording();
+    bool StartRecording(const std::string& sessionId = {});
     std::string StopRecording();
     bool StartReplay(const std::string& replayPath);
     bool StartLatestReplay();
@@ -44,7 +44,7 @@ private:
 
     bool ProcessBytes_(void* input, std::size_t size);
     bool Load_(const std::string& replayPath);
-    std::string CreateSessionPath_() const;
+    std::string CreateSessionPath_(const std::string& sessionId) const;
     void SetError_(std::string message);
 
     std::string directoryPath_;

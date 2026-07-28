@@ -77,6 +77,35 @@ generated/debug_ai
   共通の入口、互換用ログ、リプレイ一覧の検索ルート
 ```
 
+Viewer の `Start Recording` では、入力・Actor Action・イベントに共通の
+セッション ID が付与されます。対応関係は次の Manifest に保存されます。
+
+```txt
+generated/debug_ai/player/sessions/<session-id>/manifest.json
+```
+
+`Play Latest` は最新の `status: complete` の Manifest を読み、同じ記録に属する
+プレイヤー入力と Actor Action だけを組み合わせます。記録途中でゲームが終了した
+未完了セッションは自動再生対象から除外されます。Manifest 導入前のファイルは、
+従来のファイル名対応によるフォールバックで再生できます。
+
+Viewer の `Replay` 一覧には、Game Project Folder 内の完了済みセッションだけが
+新しい順に表示されます。日時・記録Scene・フレーム数・利用可能Trackを確認して
+`Play Selected` で任意のセッションを再生できます。`Reload List` は一覧を再読込し、
+`Stop Recording` の完了後は自動でも更新されます。別Sceneで再生を開始した場合は、
+`Play Latest` と同じく記録Sceneへ自動遷移してから再生します。
+
+新しく記録するセッションには、汎用 `DebugObservation` の検証チェックポイントが
+60フレーム間隔と記録終了時に保存されます。再生中はScene、Phase、HP、位置、
+Entityの生存・AI Stateなどを許容誤差付きで比較し、Viewerの
+`Replay verification` に `checking` / `passed` / `diverged` を表示します。
+チェックポイント導入前のリプレイは引き続き再生でき、検証だけ
+`unavailable` になります。
+
+Viewerでリプレイを選択して `Timeline` を押すと、プレイヤー状態、攻撃、
+Actor State、Phase、ダメージ、Spawn/Despawnなどをフレーム順に確認できます。
+検証用チェックポイントは一覧を読みやすくするためTimeline表示から除外されます。
+
 `F7` の最新リプレイは、まず `player` 側、次に `ai` 側を探します。  
 ImGuiのReplay一覧は `generated/debug_ai` 以下を再帰検索するため、両方のログを表示できます。
 

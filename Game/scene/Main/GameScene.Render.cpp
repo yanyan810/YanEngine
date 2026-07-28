@@ -234,9 +234,10 @@ void GameScene::DrawImGui(GameApp& app) {
         ImGui::End();
     }
 
-    const bool drawDebugAIDetails =
-        debugAIImGuiPanelState_.showDetails ||
-        (app.DebugAI() && app.DebugAI()->IsReplayPlaying());
+    // The external Viewer owns replay controls. Do not force the legacy ImGui
+    // detail panel open during replay: it captures the full debug state and
+    // recursively scans replay logs every rendered frame.
+    const bool drawDebugAIDetails = debugAIImGuiPanelState_.showDetails;
     if (drawDebugAIDetails) {
         const DebugAIImGuiPanelRequests debugAIRequests =
             DrawDebugAIImGuiPanel(app.DebugAI(), CaptureDebugState(), debugAIImGuiPanelState_);

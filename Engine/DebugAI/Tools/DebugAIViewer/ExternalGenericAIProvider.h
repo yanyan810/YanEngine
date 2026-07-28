@@ -21,6 +21,12 @@ public:
     const std::string& ConfigPath() const { return configPath_; }
     const std::string& Goal() const { return goal_; }
     void SetGoal(const std::string& goal) { if (!goal.empty()) goal_ = goal; }
+    bool VisionEnabledByDefault() const { return visionEnabledByDefault_; }
+    unsigned int VisionMaximumWidth() const { return visionMaximumWidth_; }
+    void SetDecisionContext(
+        std::string sourceContext,
+        std::string imageMimeType,
+        std::string imageBase64);
 
 private:
     enum class Provider { None, OpenAI, Gemini };
@@ -40,6 +46,11 @@ private:
     std::string goal_ = "Explore the game, make progress, and choose one safe available action.";
     unsigned int timeoutMilliseconds_ = 8000;
     unsigned int intervalMilliseconds_ = 2000;
+    bool visionEnabledByDefault_ = false;
+    unsigned int visionMaximumWidth_ = 640;
     std::string configPath_;
     std::string lastStatus_;
+    std::string sourceContext_;
+    std::string imageMimeType_;
+    std::string imageBase64_;
 };

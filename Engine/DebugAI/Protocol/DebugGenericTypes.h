@@ -42,6 +42,7 @@ namespace DebugActionParameter {
 inline constexpr char ActorId[] = "actorId";
 inline constexpr char Source[] = "source";
 inline constexpr char State[] = "state";
+inline constexpr char Phase[] = "phase";
 inline constexpr char Direction[] = "direction";
 inline constexpr char CoordinateSpace[] = "coordinateSpace";
 inline constexpr char DurationFrames[] = "durationFrames";

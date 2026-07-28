@@ -30,15 +30,17 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile><WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><AdditionalIncludeDirectories>..\..\Protocol;..\..\..\..\externals;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>winhttp.lib;ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>winhttp.lib;ole32.lib;uuid.lib;windowscodecs.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="DebugAIViewer.cpp" />
     <ClCompile Include="ExternalGenericAIProvider.cpp" />
+    <ClCompile Include="GameWindowCapture.cpp" />
     <ClCompile Include="..\..\Protocol\DebugProtocol.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ExternalGenericAIProvider.h" />
+    <ClInclude Include="GameWindowCapture.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

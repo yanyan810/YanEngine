@@ -14,7 +14,8 @@
 
 namespace {
 
-std::string MakeSessionName() {
+std::string MakeSessionName(const std::string& sessionId) {
+    if (!sessionId.empty()) return "session_" + sessionId;
     const auto now = std::chrono::system_clock::now();
     const std::time_t time = std::chrono::system_clock::to_time_t(now);
     std::tm local{};
@@ -85,11 +86,13 @@ void DebugObservationEventRecorder::Close() {
     StopRecording(lastFrame_);
 }
 
-bool DebugObservationEventRecorder::StartRecording(std::uint64_t startFrame) {
+bool DebugObservationEventRecorder::StartRecording(
+    std::uint64_t startFrame,
+    const std::string& sessionId) {
     StopRecording(lastFrame_);
     if (directory_.empty() && !Open("generated/debug_ai/events")) return false;
 
-    const std::string session = MakeSessionName();
+    const std::string session = MakeSessionName(sessionId);
     timelinePath_ = (std::filesystem::path(directory_) / (session + ".events.jsonl")).string();
     summaryPath_ = (std::filesystem::path(directory_) / (session + ".summary.json")).string();
     stream_.open(timelinePath_, std::ios::out | std::ios::trunc);
@@ -103,7 +106,9 @@ bool DebugObservationEventRecorder::StartRecording(std::uint64_t startFrame) {
     hasPrevious_ = false;
     startFrame_ = startFrame;
     lastFrame_ = startFrame;
+    lastCheckpointFrame_ = startFrame;
     eventCount_ = 0;
+    checkpointCount_ = 0;
     previous_ = {};
     eventCounts_.clear();
     recentActions_.clear();
@@ -116,6 +121,9 @@ bool DebugObservationEventRecorder::StartRecording(std::uint64_t startFrame) {
 std::string DebugObservationEventRecorder::StopRecording(std::uint64_t endFrame) {
     if (!recording_) return timelinePath_;
     lastFrame_ = (std::max)(lastFrame_, endFrame);
+    if (hasPrevious_ && lastCheckpointFrame_ != previous_.frameNumber) {
+        EmitCheckpoint_(previous_);
+    }
     Emit_(lastFrame_, "SessionEnded", "system", {}, "event timeline recording stopped");
     recording_ = false;
     if (stream_.is_open()) stream_.close();
@@ -161,6 +169,34 @@ void DebugObservationEventRecorder::Emit_(
     if (!message.empty()) lastEventSummary_ += " - " + message;
 }
 
+void DebugObservationEventRecorder::EmitCheckpoint_(
+    const DebugObservation& observation) {
+    if (!recording_ || !stream_) return;
+    DebugProtocolMessage event;
+    event.messageType = DebugProtocolMessageType::TimelineEvent;
+    event.sequence = observation.frameNumber;
+    event.properties["event.type"] = std::string("ReplayCheckpoint");
+    event.properties["event.frame"] =
+        static_cast<std::int64_t>(observation.frameNumber);
+    event.properties["event.inferred"] = false;
+    event.properties["event.message"] =
+        std::string("periodic replay verification checkpoint");
+    DebugObservation checkpoint = observation;
+    checkpoint.availableActions.clear();
+    event.observation = std::move(checkpoint);
+    stream_ << DebugProtocolJson::Serialize(event) << '\n';
+    if (!stream_) {
+        lastError_ = "Failed to write replay checkpoint: " + timelinePath_;
+        return;
+    }
+    lastCheckpointFrame_ = observation.frameNumber;
+    lastFrame_ = (std::max)(lastFrame_, observation.frameNumber);
+    ++eventCount_;
+    ++checkpointCount_;
+    ++eventCounts_["ReplayCheckpoint"];
+    if ((eventCount_ % 64) == 0) stream_.flush();
+}
+
 void DebugObservationEventRecorder::RecordAction(
     std::uint64_t frame,
     const DebugGenericAction& action,
@@ -203,6 +239,7 @@ void DebugObservationEventRecorder::Observe(const DebugObservation& observation)
         properties["phase"] = StringValue(observation.properties, "game.phase");
         Emit_(observation.frameNumber, "ObservationStarted", "system", {},
             "initial observation captured", std::move(properties));
+        EmitCheckpoint_(observation);
         return;
     }
 
@@ -252,6 +289,12 @@ void DebugObservationEventRecorder::Observe(const DebugObservation& observation)
         DebugPropertyMap properties;
         properties["before"] = oldPlayerAction;
         properties["after"] = newPlayerAction;
+        properties["player.attackType"] =
+            StringValue(observation.properties, "player.attackType");
+        if (const DebugValue* forward =
+            FindValue(observation.properties, "player.forward")) {
+            properties["direction"] = *forward;
+        }
         Emit_(observation.frameNumber, "PlayerStateChanged", "player", {},
             oldPlayerAction + " -> " + newPlayerAction, std::move(properties));
     }
@@ -328,6 +371,12 @@ void DebugObservationEventRecorder::Observe(const DebugObservation& observation)
                 entity->category + "/" + entity->type + " disappeared", std::move(properties));
         }
     }
+    constexpr std::uint64_t kCheckpointIntervalFrames = 60;
+    if (observation.frameNumber < lastCheckpointFrame_ ||
+        observation.frameNumber - lastCheckpointFrame_ >=
+            kCheckpointIntervalFrames) {
+        EmitCheckpoint_(observation);
+    }
     previous_ = observation;
 }
 
@@ -340,6 +389,7 @@ void DebugObservationEventRecorder::WriteSummary_() {
         { "startFrame", startFrame_ },
         { "endFrame", lastFrame_ },
         { "eventCount", eventCount_ },
+        { "checkpointCount", checkpointCount_ },
         { "timelinePath", timelinePath_ },
         { "eventCounts", std::move(counts) },
         { "lastEvent", lastEventSummary_ },

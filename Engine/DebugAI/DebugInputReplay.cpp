@@ -31,7 +31,7 @@ void DebugInputReplay::Close() {
     directoryPath_.clear();
 }
 
-bool DebugInputReplay::StartRecording() {
+bool DebugInputReplay::StartRecording(const std::string& sessionId) {
     StopReplay();
     StopRecording();
     if (directoryPath_.empty()) {
@@ -39,7 +39,7 @@ bool DebugInputReplay::StartRecording() {
         return false;
     }
 
-    replayPath_ = CreateSessionPath_();
+    replayPath_ = CreateSessionPath_(sessionId);
     output_.open(replayPath_, std::ios::binary | std::ios::trunc);
     if (!output_.is_open()) {
         SetError_("Failed to open input replay for writing: " + replayPath_);
@@ -173,7 +173,24 @@ void DebugInputReplay::EndFrame() {
                 ++pendingEmptyFrames_;
             }
         } else {
-            SetError_("EndFrame was called without ProcessInput during replay.");
+            // Recording writes an all-zero command on frames where the game
+            // intentionally skips player input (for example, hit stop). The
+            // same skipped frame is valid during replay. Warn only when a
+            // non-empty recorded command would actually be lost.
+            const std::size_t size = header_.commandSize;
+            const std::size_t offset =
+                static_cast<std::size_t>(currentFrame_) * size;
+            if (size > 0 && offset + size <= replayData_.size()) {
+                const bool hasRecordedInput = std::any_of(
+                    replayData_.begin() + offset,
+                    replayData_.begin() + offset + size,
+                    [](std::byte value) { return value != std::byte{ 0 }; });
+                if (hasRecordedInput) {
+                    SetError_(
+                        "A recorded input command was skipped at replay frame " +
+                        std::to_string(currentFrame_) + ".");
+                }
+            }
         }
     }
     inputProcessedThisFrame_ = false;
@@ -237,7 +254,10 @@ bool DebugInputReplay::Load_(const std::string& replayPath) {
     return true;
 }
 
-std::string DebugInputReplay::CreateSessionPath_() const {
+std::string DebugInputReplay::CreateSessionPath_(const std::string& sessionId) const {
+    if (!sessionId.empty()) {
+        return (std::filesystem::path(directoryPath_) / ("input_" + sessionId + ".dair")).string();
+    }
     const auto now = std::chrono::system_clock::now();
     const std::time_t time = std::chrono::system_clock::to_time_t(now);
     std::tm local{};

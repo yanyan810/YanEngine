@@ -15,6 +15,7 @@ public:
     void ExecuteDebugAction(const DebugAction& action) override;
     DebugObservation CaptureDebugObservation() const override;
     bool ExecuteGenericDebugAction(const DebugGenericAction& action) override;
+    bool RestoreDebugObservation(const DebugObservation& observation) override;
     bool SetDebugSimulationPaused(bool paused) override;
 
 private:

@@ -19,6 +19,11 @@
 #include <unordered_map>
 #include <vector>
 
+struct DebugReplayObservationCheckpoint {
+    std::uint64_t recordedFrame = 0;
+    DebugObservation observation;
+};
+
 class DebugAIManager {
 public:
     void Initialize(const std::string& logDirectory = "generated/debug_ai");
@@ -43,6 +48,8 @@ public:
     void InjectAction();
     void ProcessAfterUpdate(float dt);
     void ProcessControlCommands();
+    void PrepareSimulationFrame();
+    unsigned int ReplaySimulationUpdatesForHostFrame();
     void SetControlTransport(std::unique_ptr<IDebugAITransport> transport);
     void RecordExternalAction(
         const DebugGameState& stateBefore,
@@ -54,11 +61,24 @@ public:
     bool StartReplay(const std::string& replayPath);
     bool RestoreReplayInitialState();
     void StopReplay();
+    bool StartReplaySessionRecording(std::string* outMessage = nullptr);
+    bool StopReplaySessionRecording(std::string* outMessage = nullptr);
+    bool IsReplaySessionRecording() const { return replaySessionRecording_; }
+    bool HasPendingReplay() const { return !pendingReplayManifestPath_.empty(); }
+    bool ConsumeReplaySceneLoadRequest(std::string& outSceneId);
+    bool StartPendingReplay(std::string* outMessage = nullptr);
     bool IsReplayPlaying() const {
         return (replayMode_ && replayPlayer_.IsPlaying()) ||
-            inputReplay_.IsPlaying() || genericActionReplay_.IsPlaying();
+            inputReplay_.IsPlaying() || genericActionReplay_.IsPlaying() ||
+            replayTimelineActionIndex_ < replayTimelineActions_.size() ||
+            (replayValidationActive_ &&
+                replayCheckpointIndex_ < replayCheckpoints_.size());
     }
     bool IsFirstReplayFrame() const { return isFirstReplayFrame_; }
+    bool IsReplayPlaybackPaused() const {
+        return IsReplayPlaying() && replayPlaybackPaused_;
+    }
+    double ReplayPlaybackSpeed() const { return replayPlaybackSpeed_; }
 
     const DebugLogger& Logger() const { return logger_; }
     const DebugReplayRecorder& ReplayRecorder() const { return replayRecorder_; }
@@ -85,6 +105,12 @@ private:
         const std::string& source,
         std::uint64_t frame,
         bool record);
+    void ProcessGenericReplayFrame_(std::uint64_t frame);
+    bool HasReplayCheckpointDue_(std::uint64_t frame) const;
+    void ValidateReplayObservation_(
+        const DebugObservation& actual,
+        std::uint64_t replayFrame);
+    void ResetReplayValidation_();
     void RecordActorStateChanges_(const DebugObservation& observation);
 
 private:
@@ -119,6 +145,36 @@ private:
     };
     std::unordered_map<std::string, HeldExternalAction> heldExternalActions_;
     std::unordered_map<std::string, std::string> lastRecordedActorStates_;
+    std::string replaySessionId_;
+    std::string replayManifestPath_;
+    std::string replayInitialObservationPath_;
+    std::uint64_t replayRecordingStartFrame_ = 0;
+    std::string replayRecordingSceneId_;
+    std::string replayRecordingPhase_;
+    bool replaySessionRecording_ = false;
+    bool replayInitialStateRestored_ = false;
+    std::string replayRestoreWarning_;
+    std::string pendingReplayManifestPath_;
+    std::string pendingReplaySceneId_;
+    bool replaySceneLoadRequested_ = false;
+    std::vector<DebugGenericReplayEvent> replayTimelineActions_;
+    std::size_t replayTimelineActionIndex_ = 0;
+    std::vector<DebugReplayObservationCheckpoint> replayCheckpoints_;
+    std::size_t replayCheckpointIndex_ = 0;
+    std::size_t replayCheckpointMismatchCount_ = 0;
+    std::uint64_t replayFirstMismatchFrame_ = 0;
+    std::string replayFirstMismatch_;
+    std::string replayLastMismatch_;
+    bool replayValidationAvailable_ = false;
+    bool replayValidationActive_ = false;
+    bool replayValidationInterrupted_ = false;
+    std::uint64_t replayTimelineOriginFrame_ = 0;
+    std::uint64_t replayTimelineStartFrame_ = 0;
+    std::uint64_t genericReplayClockFrame_ = 0;
+    bool replayPlaybackPaused_ = false;
+    unsigned int replayStepFramesPending_ = 0;
+    double replayPlaybackSpeed_ = 1.0;
+    double replayPlaybackAccumulator_ = 0.0;
     unsigned int idleAfterUpdateFrames_ = 0;
     unsigned int frameLogSampleFrames_ = 0;
 

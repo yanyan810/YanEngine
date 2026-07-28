@@ -3,9 +3,11 @@
   <ItemGroup>
     <ClCompile Include="DebugAIViewer.cpp" />
     <ClCompile Include="ExternalGenericAIProvider.cpp" />
+    <ClCompile Include="GameWindowCapture.cpp" />
     <ClCompile Include="..\..\Protocol\DebugProtocol.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ExternalGenericAIProvider.h" />
+    <ClInclude Include="GameWindowCapture.h" />
   </ItemGroup>
 </Project>
