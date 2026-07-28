@@ -49,7 +49,7 @@ bool ParticleTestScene::OpenModelFileDialog_(std::string& outModelPath)
     openFileName.lStructSize = sizeof(openFileName);
     openFileName.hwndOwner = GetActiveWindow();
     openFileName.lpstrFilter =
-        "Model Files (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0"
+        "Model Files (*.obj;*.gltf;*.glb;*.fbx;*.pmx;*.pmd)\0*.obj;*.gltf;*.glb;*.fbx;*.pmx;*.pmd\0"
         "All Files (*.*)\0*.*\0";
     openFileName.lpstrFile = filePath;
     openFileName.nMaxFile = MAX_PATH;

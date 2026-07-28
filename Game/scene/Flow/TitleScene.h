@@ -42,6 +42,7 @@ private:
 		int count,
 		const char* const* labels,
 		int labelCount);
+	void UpdateTitleBoneDebug_();
 
 
 	bool prevSpace_ = false;
@@ -179,6 +180,13 @@ private:
 
 	SRT srtGround_{};
 	SRT srtPlayer_{};
+
+	// Title player bone editor (PMX / glTF / GLB 共通)
+	int selectedBone_ = 0;
+	Vector3 boneTranslate_{ 0.0f, 0.0f, 0.0f };
+	Vector3 boneRotate_{ 0.0f, 0.0f, 0.0f };
+	Vector3 boneScale_{ 1.0f, 1.0f, 1.0f };
+	bool showBones_ = false;
 
 public:
 	//パーティクル用

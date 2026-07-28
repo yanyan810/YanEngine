@@ -18,7 +18,13 @@ static void BuildMaterials(Model::ModelData& out,
 	for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
 		const aiMaterial* mtl = scene->mMaterials[i];
 		aiString texPath;
-
+		aiColor4D baseColor(1.0f, 1.0f, 1.0f, 1.0f);
+		if (aiGetMaterialColor(mtl, AI_MATKEY_BASE_COLOR, &baseColor) != AI_SUCCESS) {
+			aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &baseColor);
+		}
+		out.materials[i].baseColor = {
+			baseColor.r, baseColor.g, baseColor.b, baseColor.a
+		};
 		if (mtl->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
 			out.materials[i].textureFilePath = directoryPath + "/" + texPath.C_Str();
 		}
@@ -421,19 +427,51 @@ void Model::Initialize(ModelCommon* modelCommon,
 	DirectXCommon* dx = modelCommon_->GetDxCommon();
 
 	// ===== ここで拡張子判定 =====
-	std::filesystem::path p(filename);
-	std::string ext = p.extension().string();
+	std::filesystem::path p(StringUtility::ConvertString(filename));
+	std::string ext = StringUtility::ConvertString(p.extension().wstring());
 	for (auto& c : ext) c = (char)std::tolower(c);
 
 	std::string fullPath = directoryPath + "/" + filename;
 
 	// assimpで読む形式を増やす（fbx/gltf/glb/obj など）
+	const bool usePmx = (ext == ".pmx");
 	const bool useAssimp =
-		(ext == ".fbx" || ext == ".gltf" || ext == ".glb" || ext == ".obj");
+		(ext == ".fbx" || ext == ".gltf" || ext == ".glb" || ext == ".obj" ||
+		 ext == ".pmd");
 
-	if (useAssimp) {
+	if (usePmx) {
+		OutputDebugStringA(("[Model] LoadPmxFile: " + fullPath + "\n").c_str());
+		modelData_ = LoadPmxFile(fullPath);
+		BuildNodeRuntime_();
+		skeleton_ = CreateSkeleton(modelData_.rootNode);
+		UpdateSkeleton(skeleton_);
+	}
+	else if (useAssimp) {
 		OutputDebugStringA(("[Model] LoadAssimpFile: " + fullPath + "\n").c_str());
 		modelData_ = LoadAssimpFile(fullPath);
+
+		// The converted GLB has the correct skeleton/physics geometry but no
+		// images. Slots 5..32 correspond exactly to 安比.pmx's 28 materials.
+		if (filename == "anbi.glb") {
+			ModelData pmxMaterials = LoadPmxFile(directoryPath + "/安比.pmx");
+			constexpr size_t kPmxMaterialOffset = 5;
+			for (size_t i = 0;
+				i < pmxMaterials.materials.size() &&
+				kPmxMaterialOffset + i < modelData_.materials.size();
+				++i) {
+				modelData_.materials[kPmxMaterialOffset + i] =
+					pmxMaterials.materials[i];
+			}
+
+			// Slots 0..4 are Blender mmd_tools' rigid-body visualization
+			// materials. Keep their nodes/bones available, but submit no
+			// triangles for those helper meshes.
+			for (auto& mesh : modelData_.meshes) {
+				if (mesh.materialIndex < kPmxMaterialOffset) {
+					mesh.indexCount = 0;
+				}
+			}
+		}
 
 		// ★ノード→描画インスタンス表を作る
 		BuildNodeRuntime_();
@@ -639,6 +677,7 @@ void Model::Initialize(ModelCommon* modelCommon,
 	materialData_->enableLighting = 1;
 	materialData_->uvTransform = Matrix4x4::MakeIdentity4x4();
 	materialData_->shininess = 64.0f;
+	CreatePerMaterialResources_(dx);
 
 	// ======================
 	// Texture load（materials 全部）
@@ -675,7 +714,7 @@ void Model::InitializeFromModelData(ModelCommon* modelCommon, const ModelData& m
 
 	// マテリアルが空なら最低1個作る
 	if (modelData_.materials.empty()) {
-		modelData_.materials.push_back({ "" });
+		modelData_.materials.push_back({});
 	}
 
 	// meshes が空なら何もしない
@@ -696,6 +735,8 @@ void Model::InitializeFromModelData(ModelCommon* modelCommon, const ModelData& m
 	materialData_->color = { 1,1,1,1 };
 	materialData_->enableLighting = 1;
 	materialData_->uvTransform = Matrix4x4::MakeIdentity4x4();
+	materialData_->shininess = 64.0f;
+	CreatePerMaterialResources_(dx);
 
 	// VB
 	vertexResource_ = dx->CreateBufferResource(sizeof(VertexData) * totalVtx);
@@ -749,6 +790,46 @@ void Model::InitializeFromModelData(ModelCommon* modelCommon, const ModelData& m
 	BuildNodeRuntime_();
 }
 
+void Model::CreatePerMaterialResources_(DirectXCommon* dx) {
+	perMaterialResources_.clear();
+	perMaterialData_.clear();
+	perMaterialResources_.reserve(modelData_.materials.size());
+	perMaterialData_.reserve(modelData_.materials.size());
+
+	for (const auto& material : modelData_.materials) {
+		auto resource = dx->CreateBufferResource(sizeof(Material));
+		Material* mapped = nullptr;
+		resource->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+		*mapped = *materialData_;
+		mapped->color = material.baseColor;
+		perMaterialResources_.push_back(std::move(resource));
+		perMaterialData_.push_back(mapped);
+	}
+}
+
+void Model::BindMaterialForMesh_(ID3D12GraphicsCommandList* cmd, const MeshData& mesh) {
+	if (mesh.materialIndex >= perMaterialResources_.size() ||
+		mesh.materialIndex >= perMaterialData_.size()) {
+		cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
+		return;
+	}
+
+	const Material* source = materialDataOverride_ ? materialDataOverride_ : materialData_;
+	Material* destination = perMaterialData_[mesh.materialIndex];
+	if (source && destination) {
+		*destination = *source;
+		const Vector4& base = modelData_.materials[mesh.materialIndex].baseColor;
+		destination->color = {
+			source->color.x * base.x,
+			source->color.y * base.y,
+			source->color.z * base.z,
+			source->color.w * base.w
+		};
+	}
+	cmd->SetGraphicsRootConstantBufferView(
+		0, perMaterialResources_[mesh.materialIndex]->GetGPUVirtualAddress());
+}
+
 void Model::Draw(ID3D12GraphicsCommandList* cmd) {
 	if (!vertexResource_ || !materialResource_ || !materialData_) {
 		OutputDebugStringA("[Model] Draw skipped: resources not initialized\n");
@@ -765,6 +846,7 @@ void Model::Draw(ID3D12GraphicsCommandList* cmd) {
 	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
 	for (const auto& mesh : modelData_.meshes) {
+		BindMaterialForMesh_(cmd, mesh);
 
 		std::string texPath;
 		if (mesh.materialIndex < modelData_.materials.size()) {
@@ -822,6 +904,7 @@ void Model::Draw(ID3D12GraphicsCommandList* cmd, uint32_t instanceCount) {
 		0, materialResource_->GetGPUVirtualAddress());
 
 	for (const auto& mesh : modelData_.meshes) {
+		BindMaterialForMesh_(cmd, mesh);
 
 		// ---- texture ----
 		std::string texPath;
@@ -889,6 +972,7 @@ void Model::Draw(ID3D12GraphicsCommandList* cmd,
 	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
 
 	for (const auto& mesh : modelData_.meshes) {
+		BindMaterialForMesh_(cmd, mesh);
 
 		D3D12_GPU_DESCRIPTOR_HANDLE handle{};
 
@@ -951,6 +1035,7 @@ void Model::DrawSkinned(ID3D12GraphicsCommandList* cmd, const SkinCluster& sc)
 		if (!mesh.skinned) {
 			continue; // ★剣などスキン無しはここでは描かない
 		}
+		BindMaterialForMesh_(cmd, mesh);
 
 		// ---- texture path ----
 		std::string texPath;
@@ -997,6 +1082,7 @@ void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster
 		if (!mesh.skinned) {
 			continue; // 剣などスキン無しはここでは描かない
 		}
+		BindMaterialForMesh_(cmd, mesh);
 
 		D3D12_GPU_DESCRIPTOR_HANDLE handle{};
 		if (overrideSrv) {
@@ -1031,6 +1117,7 @@ void Model::DrawSkinnedCompute(ID3D12GraphicsCommandList* cmd, const SkinCluster
 void Model::DrawMeshIndexed(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint32_t instanceCount)
 {
 	const auto& mesh = modelData_.meshes[meshIndex];
+	BindMaterialForMesh_(cmd, mesh);
 
 	// ---- texture ----
 	std::string texPath;
@@ -1073,6 +1160,7 @@ void Model::DrawSkinnedOneMesh(ID3D12GraphicsCommandList* cmd, const SkinCluster
 	cmd->IASetIndexBuffer(&indexBufferView_);
 
 	cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());
+	BindMaterialForMesh_(cmd, mesh);
 
 	std::string texPath;
 	if (mesh.materialIndex < modelData_.materials.size()) {
@@ -1145,6 +1233,452 @@ static void DebugAssimpSupport_(Assimp::Importer& importer)
 	OutputDebugStringA(buf);
 }
 
+
+namespace {
+class PmxReader {
+public:
+	explicit PmxReader(const std::string& path) {
+		std::ifstream file(
+			std::filesystem::path(StringUtility::ConvertString(path)),
+			std::ios::binary);
+		if (!file) {
+			error_ = "file open failed";
+			return;
+		}
+		data_ = std::vector<uint8_t>(
+			std::istreambuf_iterator<char>(file),
+			std::istreambuf_iterator<char>());
+	}
+
+	template<class T>
+	T Read() {
+		T value{};
+		if (!ReadBytes(&value, sizeof(value))) {
+			return {};
+		}
+		return value;
+	}
+
+	bool ReadBytes(void* destination, size_t size) {
+		if (size > data_.size() - std::min(offset_, data_.size())) {
+			error_ = "unexpected end of file";
+			offset_ = data_.size();
+			return false;
+		}
+		std::memcpy(destination, data_.data() + offset_, size);
+		offset_ += size;
+		return true;
+	}
+
+	void Skip(size_t size) {
+		if (size > data_.size() - std::min(offset_, data_.size())) {
+			error_ = "unexpected end of file";
+			offset_ = data_.size();
+			return;
+		}
+		offset_ += size;
+	}
+
+	uint32_t ReadUnsignedIndex(uint8_t size) {
+		switch (size) {
+		case 1: return Read<uint8_t>();
+		case 2: return Read<uint16_t>();
+		case 4: return Read<uint32_t>();
+		default:
+			error_ = "invalid PMX index size";
+			return 0;
+		}
+	}
+
+	int32_t ReadSignedIndex(uint8_t size) {
+		switch (size) {
+		case 1: return Read<int8_t>();
+		case 2: return Read<int16_t>();
+		case 4: return Read<int32_t>();
+		default:
+			error_ = "invalid PMX index size";
+			return -1;
+		}
+	}
+
+	std::string ReadText(uint8_t encoding) {
+		const int32_t byteLength = Read<int32_t>();
+		if (byteLength < 0 || static_cast<size_t>(byteLength) > Remaining()) {
+			error_ = "invalid PMX text length";
+			return {};
+		}
+		if (byteLength == 0) {
+			return {};
+		}
+
+		if (encoding == 1) {
+			std::string text(static_cast<size_t>(byteLength), '\0');
+			ReadBytes(text.data(), text.size());
+			return text;
+		}
+
+		if ((byteLength & 1) != 0) {
+			error_ = "invalid UTF-16 PMX text length";
+			return {};
+		}
+		std::wstring text(static_cast<size_t>(byteLength) / sizeof(wchar_t), L'\0');
+		ReadBytes(text.data(), static_cast<size_t>(byteLength));
+		return StringUtility::ConvertString(text);
+	}
+
+	bool Good() const { return error_.empty(); }
+	size_t Remaining() const { return data_.size() - std::min(offset_, data_.size()); }
+	const std::string& Error() const { return error_; }
+
+private:
+	std::vector<uint8_t> data_;
+	size_t offset_ = 0;
+	std::string error_;
+};
+
+struct PmxMaterialRecord {
+	std::string name;
+	Vector4 diffuse{ 1.0f, 1.0f, 1.0f, 1.0f };
+	int32_t textureIndex = -1;
+	uint32_t indexCount = 0;
+};
+
+struct PmxVertexSkin {
+	std::array<int32_t, 4> bones{ -1, -1, -1, -1 };
+	std::array<float, 4> weights{ 0.0f, 0.0f, 0.0f, 0.0f };
+};
+
+struct PmxBoneRecord {
+	std::string name;
+	Vector3 position{};
+	int32_t parent = -1;
+};
+}
+
+Model::ModelData Model::LoadPmxFile(const std::string& fullPath)
+{
+	ModelData out{};
+	PmxReader reader(fullPath);
+
+	char signature[4]{};
+	reader.ReadBytes(signature, sizeof(signature));
+	const float version = reader.Read<float>();
+	const uint8_t headerSize = reader.Read<uint8_t>();
+	if (!reader.Good() || std::memcmp(signature, "PMX ", 4) != 0 ||
+		version < 2.0f || version >= 3.0f || headerSize < 8) {
+		OutputDebugStringA(("[PMX] Invalid header: " + fullPath + "\n").c_str());
+		return out;
+	}
+
+	std::vector<uint8_t> globals(headerSize);
+	reader.ReadBytes(globals.data(), globals.size());
+	if (!reader.Good()) {
+		OutputDebugStringA("[PMX] Failed to read globals\n");
+		return out;
+	}
+	const uint8_t encoding = globals[0];
+	const uint8_t additionalUvCount = globals[1];
+	const uint8_t vertexIndexSize = globals[2];
+	const uint8_t textureIndexSize = globals[3];
+	const uint8_t boneIndexSize = globals[5];
+
+	// Model name/comment fields (Japanese and English).
+	for (int i = 0; i < 4; ++i) {
+		reader.ReadText(encoding);
+	}
+
+	const int32_t vertexCount = reader.Read<int32_t>();
+	if (vertexCount <= 0 || vertexCount > 10'000'000) {
+		OutputDebugStringA("[PMX] Invalid vertex count\n");
+		return out;
+	}
+
+	std::vector<VertexData> vertices(static_cast<size_t>(vertexCount));
+	std::vector<PmxVertexSkin> vertexSkins(static_cast<size_t>(vertexCount));
+	for (int32_t i = 0; i < vertexCount && reader.Good(); ++i) {
+		VertexData vertex{};
+		vertex.position = {
+			reader.Read<float>(), reader.Read<float>(), reader.Read<float>(), 1.0f
+		};
+		vertex.normal = {
+			reader.Read<float>(), reader.Read<float>(), reader.Read<float>()
+		};
+		vertex.texcoord = { reader.Read<float>(), reader.Read<float>() };
+		reader.Skip(static_cast<size_t>(additionalUvCount) * sizeof(float) * 4);
+
+		const uint8_t deform = reader.Read<uint8_t>();
+		PmxVertexSkin skin{};
+		switch (deform) {
+		case 0: // BDEF1
+			skin.bones[0] = reader.ReadSignedIndex(boneIndexSize);
+			skin.weights[0] = 1.0f;
+			break;
+		case 1: // BDEF2
+			skin.bones[0] = reader.ReadSignedIndex(boneIndexSize);
+			skin.bones[1] = reader.ReadSignedIndex(boneIndexSize);
+			skin.weights[0] = reader.Read<float>();
+			skin.weights[1] = 1.0f - skin.weights[0];
+			break;
+		case 2: // BDEF4
+		case 4: // QDEF
+			for (int j = 0; j < 4; ++j) skin.bones[j] = reader.ReadSignedIndex(boneIndexSize);
+			for (int j = 0; j < 4; ++j) skin.weights[j] = reader.Read<float>();
+			break;
+		case 3: // SDEF
+			skin.bones[0] = reader.ReadSignedIndex(boneIndexSize);
+			skin.bones[1] = reader.ReadSignedIndex(boneIndexSize);
+			skin.weights[0] = reader.Read<float>();
+			skin.weights[1] = 1.0f - skin.weights[0];
+			reader.Skip(sizeof(float) * 9);
+			break;
+		default:
+			OutputDebugStringA("[PMX] Unsupported vertex deform type\n");
+			return {};
+		}
+		reader.Skip(sizeof(float)); // edge scale
+		vertices[static_cast<size_t>(i)] = vertex;
+		vertexSkins[static_cast<size_t>(i)] = skin;
+	}
+
+	const int32_t indexCount = reader.Read<int32_t>();
+	if (indexCount <= 0 || indexCount > 100'000'000) {
+		OutputDebugStringA("[PMX] Invalid index count\n");
+		return {};
+	}
+	out.indices.resize(static_cast<size_t>(indexCount));
+	for (int32_t i = 0; i < indexCount; ++i) {
+		out.indices[static_cast<size_t>(i)] = reader.ReadUnsignedIndex(vertexIndexSize);
+	}
+
+	const int32_t textureCount = reader.Read<int32_t>();
+	if (textureCount < 0 || textureCount > 100'000) return {};
+	std::vector<std::string> textures(static_cast<size_t>(textureCount));
+	const std::filesystem::path modelDirectory =
+		std::filesystem::path(StringUtility::ConvertString(fullPath)).parent_path();
+	for (int32_t i = 0; i < textureCount; ++i) {
+		std::string relative = reader.ReadText(encoding);
+		std::replace(relative.begin(), relative.end(), '\\', '/');
+		if (!relative.empty()) {
+			const std::filesystem::path resolved =
+				(modelDirectory / std::filesystem::path(StringUtility::ConvertString(relative))).lexically_normal();
+			textures[static_cast<size_t>(i)] =
+				StringUtility::ConvertString(resolved.wstring());
+		}
+	}
+
+	const int32_t materialCount = reader.Read<int32_t>();
+	if (materialCount <= 0 || materialCount > 100'000) return {};
+	std::vector<PmxMaterialRecord> materials;
+	materials.reserve(static_cast<size_t>(materialCount));
+	for (int32_t i = 0; i < materialCount && reader.Good(); ++i) {
+		PmxMaterialRecord material{};
+		material.name = reader.ReadText(encoding);
+		reader.ReadText(encoding); // English name
+		material.diffuse = {
+			reader.Read<float>(), reader.Read<float>(),
+			reader.Read<float>(), reader.Read<float>()
+		};
+		reader.Skip(sizeof(float) * 3); // specular
+		reader.Skip(sizeof(float));     // specular strength
+		reader.Skip(sizeof(float) * 3); // ambient
+		reader.Skip(sizeof(uint8_t));   // draw flags
+		reader.Skip(sizeof(float) * 4); // edge color
+		reader.Skip(sizeof(float));     // edge size
+		material.textureIndex = reader.ReadSignedIndex(textureIndexSize);
+		reader.ReadSignedIndex(textureIndexSize); // sphere texture
+		reader.Skip(sizeof(uint8_t));             // sphere mode
+		const uint8_t sharedToon = reader.Read<uint8_t>();
+		if (sharedToon == 0) {
+			reader.ReadSignedIndex(textureIndexSize);
+		}
+		else {
+			reader.Skip(sizeof(uint8_t));
+		}
+		reader.ReadText(encoding); // memo
+		const int32_t materialIndexCount = reader.Read<int32_t>();
+		if (materialIndexCount < 0) return {};
+		material.indexCount = static_cast<uint32_t>(materialIndexCount);
+		materials.push_back(std::move(material));
+	}
+
+	const int32_t boneCount = reader.Read<int32_t>();
+	if (boneCount <= 0 || boneCount > 1'000'000) {
+		OutputDebugStringA("[PMX] Invalid bone count\n");
+		return {};
+	}
+	std::vector<PmxBoneRecord> bones(static_cast<size_t>(boneCount));
+	for (int32_t i = 0; i < boneCount && reader.Good(); ++i) {
+		PmxBoneRecord bone{};
+		bone.name = reader.ReadText(encoding);
+		reader.ReadText(encoding); // English name
+		bone.position = {
+			reader.Read<float>(), reader.Read<float>(), reader.Read<float>()
+		};
+		bone.parent = reader.ReadSignedIndex(boneIndexSize);
+		reader.Read<int32_t>(); // transform layer
+		const uint16_t flags = reader.Read<uint16_t>();
+
+		if ((flags & 0x0001u) != 0) reader.ReadSignedIndex(boneIndexSize);
+		else reader.Skip(sizeof(float) * 3);
+		if ((flags & (0x0100u | 0x0200u)) != 0) {
+			reader.ReadSignedIndex(boneIndexSize);
+			reader.Skip(sizeof(float));
+		}
+		if ((flags & 0x0400u) != 0) reader.Skip(sizeof(float) * 3);
+		if ((flags & 0x0800u) != 0) reader.Skip(sizeof(float) * 6);
+		if ((flags & 0x2000u) != 0) reader.Skip(sizeof(int32_t));
+		if ((flags & 0x0020u) != 0) {
+			reader.ReadSignedIndex(boneIndexSize); // IK target
+			reader.Skip(sizeof(int32_t) + sizeof(float));
+			const int32_t linkCount = reader.Read<int32_t>();
+			if (linkCount < 0 || linkCount > 1'000'000) return {};
+			for (int32_t link = 0; link < linkCount; ++link) {
+				reader.ReadSignedIndex(boneIndexSize);
+				const uint8_t hasLimit = reader.Read<uint8_t>();
+				if (hasLimit != 0) reader.Skip(sizeof(float) * 6);
+			}
+		}
+		if (bone.name.empty()) bone.name = "PMXBone_" + std::to_string(i);
+		bones[static_cast<size_t>(i)] = std::move(bone);
+	}
+
+	if (!reader.Good()) {
+		OutputDebugStringA(("[PMX] Parse failed: " + reader.Error() + "\n").c_str());
+		return {};
+	}
+
+	out.materials.reserve(materials.size());
+	out.meshes.reserve(materials.size());
+	const std::vector<uint32_t> sourceIndices = std::move(out.indices);
+	out.indices.clear();
+	out.indices.reserve(sourceIndices.size());
+	uint32_t firstIndex = 0;
+	uint32_t globalVertex = 0;
+	for (size_t i = 0; i < materials.size(); ++i) {
+		const auto& source = materials[i];
+		if (firstIndex + source.indexCount > sourceIndices.size()) {
+			OutputDebugStringA("[PMX] Material index range is invalid\n");
+			return {};
+		}
+
+		MaterialData material{};
+		material.baseColor = source.diffuse;
+		if (source.textureIndex >= 0 &&
+			static_cast<size_t>(source.textureIndex) < textures.size()) {
+			material.textureFilePath = textures[static_cast<size_t>(source.textureIndex)];
+		}
+		/*
+		// This model's skin material points at the clothing atlas even though
+		// the package includes a dedicated skin texture. The atlas samples
+		// nearly the same cyan as the title background on the body UVs.
+		if (source.name == "肌" && textures.size() > 1 && !textures[1].empty()) {
+			material.textureFilePath = textures[1]; // skin.bmp
+		}
+		*/
+		out.materials.push_back(std::move(material));
+
+		MeshData mesh{};
+		mesh.name = source.name.empty() ? ("material_" + std::to_string(i)) : source.name;
+		mesh.materialIndex = static_cast<uint32_t>(i);
+		mesh.startVertex = globalVertex;
+		mesh.vertices.reserve(source.indexCount);
+		mesh.startIndex = static_cast<uint32_t>(out.indices.size());
+		mesh.indexCount = source.indexCount;
+		mesh.skinned = false;
+
+		// The renderer treats every material mesh as an independent vertex
+		// range and adds mesh.startVertex while constructing the GPU index
+		// buffer. Expand PMX's shared vertices here, but keep each mesh's
+		// indices local to that expanded range.
+		for (uint32_t localIndex = 0; localIndex < source.indexCount; ++localIndex) {
+			const uint32_t sourceVertex =
+				sourceIndices[static_cast<size_t>(firstIndex + localIndex)];
+			if (sourceVertex >= vertices.size()) {
+				OutputDebugStringA("[PMX] Vertex index is out of range\n");
+				return {};
+			}
+			mesh.vertices.push_back(vertices[sourceVertex]);
+			out.indices.push_back(localIndex);
+
+			const PmxVertexSkin& skin = vertexSkins[sourceVertex];
+			for (size_t influence = 0; influence < skin.bones.size(); ++influence) {
+				const int32_t boneIndex = skin.bones[influence];
+				const float weight = skin.weights[influence];
+				if (boneIndex < 0 || boneIndex >= boneCount || weight <= 0.0f) continue;
+				JointWeightData& joint =
+					out.skinClusterData[bones[static_cast<size_t>(boneIndex)].name];
+				joint.vertexWeights.push_back({ weight, globalVertex + localIndex });
+			}
+		}
+		mesh.vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+		mesh.skinned = true;
+		globalVertex += mesh.vertexCount;
+		out.meshes.push_back(std::move(mesh));
+		firstIndex += source.indexCount;
+	}
+
+	out.rootNode.name = "PMXRoot";
+	out.rootNode.localMatrix = Matrix4x4::MakeIdentity4x4();
+	out.rootNode.transform.scale = { 1.0f, 1.0f, 1.0f };
+	out.rootNode.transform.rotate = { 0.0f, 0.0f, 0.0f, 1.0f };
+	out.rootNode.transform.translate = { 0.0f, 0.0f, 0.0f };
+	for (uint32_t i = 0; i < out.meshes.size(); ++i) {
+		out.rootNode.meshIndices.push_back(i);
+		out.instances.push_back({ i, Matrix4x4::MakeIdentity4x4() });
+	}
+
+	std::vector<std::vector<int32_t>> boneChildren(static_cast<size_t>(boneCount));
+	std::vector<int32_t> rootBones;
+	for (int32_t i = 0; i < boneCount; ++i) {
+		const int32_t parent = bones[static_cast<size_t>(i)].parent;
+		if (parent >= 0 && parent < boneCount && parent != i) {
+			boneChildren[static_cast<size_t>(parent)].push_back(i);
+		}
+		else {
+			rootBones.push_back(i);
+		}
+	}
+
+	std::function<Node(int32_t)> makeBoneNode = [&](int32_t boneIndex) {
+		const PmxBoneRecord& bone = bones[static_cast<size_t>(boneIndex)];
+		Node node{};
+		node.name = bone.name;
+		node.transform.scale = { 1.0f, 1.0f, 1.0f };
+		node.transform.rotate = { 0.0f, 0.0f, 0.0f, 1.0f };
+		Vector3 localPosition = bone.position;
+		if (bone.parent >= 0 && bone.parent < boneCount) {
+			const Vector3& parentPosition = bones[static_cast<size_t>(bone.parent)].position;
+			localPosition = {
+				bone.position.x - parentPosition.x,
+				bone.position.y - parentPosition.y,
+				bone.position.z - parentPosition.z
+			};
+		}
+		node.transform.translate = localPosition;
+		node.localMatrix = MakeAffineMatrix(
+			node.transform.scale, node.transform.rotate, node.transform.translate);
+		for (int32_t child : boneChildren[static_cast<size_t>(boneIndex)]) {
+			node.children.push_back(makeBoneNode(child));
+		}
+		return node;
+	};
+	for (int32_t rootBone : rootBones) {
+		out.rootNode.children.push_back(makeBoneNode(rootBone));
+	}
+
+	for (const PmxBoneRecord& bone : bones) {
+		JointWeightData& joint = out.skinClusterData[bone.name];
+		joint.inverseBindPoseMatrix =
+			Matrix4x4::Translation({ -bone.position.x, -bone.position.y, -bone.position.z });
+	}
+	out.hasSkinning = true;
+
+	OutputDebugStringA(
+		("[PMX] Loaded vertices=" + std::to_string(vertices.size()) +
+		 " indices=" + std::to_string(out.indices.size()) +
+		 " materials=" + std::to_string(out.materials.size()) + "\n").c_str());
+	return out;
+}
 
 Model::ModelData Model::LoadAssimpFile(const std::string& fullPath)
 {
@@ -1279,6 +1813,13 @@ Model::ModelData Model::LoadAssimpFile(const std::string& fullPath)
 	for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
 		const aiMaterial* mtl = scene->mMaterials[i];
 		aiString texPath;
+		aiColor4D baseColor(1.0f, 1.0f, 1.0f, 1.0f);
+		if (aiGetMaterialColor(mtl, AI_MATKEY_BASE_COLOR, &baseColor) != AI_SUCCESS) {
+			aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &baseColor);
+		}
+		out.materials[i].baseColor = {
+			baseColor.r, baseColor.g, baseColor.b, baseColor.a
+		};
 
 		if (mtl->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
 
@@ -1674,6 +2215,7 @@ void Model::DrawOneMesh(ID3D12GraphicsCommandList* cmd, uint32_t meshIndex, uint
 	if (meshIndex >= modelData_.meshes.size()) return;
 
 	const auto& mesh = modelData_.meshes[meshIndex];
+	BindMaterialForMesh_(cmd, mesh);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE handle{};
 	if (overrideSrv) {

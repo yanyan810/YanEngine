@@ -9,8 +9,18 @@ namespace StringUtility {
 		}
 
 		int size_needed = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), -1, nullptr, 0, nullptr, nullptr);
-		std::string result(size_needed - 1, 0); // -1 to exclude null terminator
-		WideCharToMultiByte(CP_UTF8, 0, str.c_str(), -1, &result[0], size_needed, nullptr, nullptr);
+		if (size_needed <= 0) {
+			return {};
+		}
+		// The Win32 conversion writes the null terminator as part of
+		// size_needed, so reserve that byte and remove it afterwards.
+		std::string result(static_cast<size_t>(size_needed), '\0');
+		if (WideCharToMultiByte(
+			CP_UTF8, 0, str.c_str(), -1,
+			result.data(), size_needed, nullptr, nullptr) == 0) {
+			return {};
+		}
+		result.pop_back();
 		return result;
 	}
 
@@ -21,8 +31,17 @@ namespace StringUtility {
 		}
 
 		int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-		std::wstring result(size_needed - 1, 0); // -1 to exclude null terminator
-		MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &result[0], size_needed);
+		if (size_needed <= 0) {
+			return {};
+		}
+		// As above, include space for the null terminator written by Win32.
+		std::wstring result(static_cast<size_t>(size_needed), L'\0');
+		if (MultiByteToWideChar(
+			CP_UTF8, 0, str.c_str(), -1,
+			result.data(), size_needed) == 0) {
+			return {};
+		}
+		result.pop_back();
 		return result;
 	}
 

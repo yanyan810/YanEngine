@@ -1,3 +1,137 @@
-[![DebugBuild](https://github.com/yanyan810/CG2/actions/workflows/DebugBuild.yml/badge.svg)](https://github.com/yanyan810/CG2/actions/workflows/DebugBuild.yml)
-[![ReleaseBuild](https://github.com/yanyan810/CG2/actions/workflows/ReleaseByild.yml/badge.svg)](https://github.com/yanyan810/CG2/actions/workflows/ReleaseByild.yml)
-[![DevelopmentBuild](https://github.com/yanyan810/CG2/actions/workflows/DevelopmentBuild.yml/badge.svg)](https://github.com/yanyan810/CG2/actions/workflows/DevelopmentBuild.yml)
+# CG5 制作課題
+
+DirectX 12を使用した対戦アクションゲームと、ゲーム内で使用するモデル・パーティクルを編集するためのエディターです。
+
+## 確認するシーン
+
+タイトル画面から、次の2か所で実装内容を確認できます。
+
+| タイトルでの入力 | 移動先 | 確認できる内容 |
+|---|---|---|
+| Space | ゲームシーン | プレイヤー操作、攻撃、アニメーション、当たり判定、GPU Particle |
+| P | Particleエディター | モデル、マテリアル、アニメーション、ボーン、パーティクルの編集 |
+
+本READMEでは、この2か所で確認できる実装だけを説明します。
+
+## ゲームシーン
+
+### Xboxコントローラー
+
+| 入力 | 操作 |
+|---|---|
+| 左スティック左右 | 移動 |
+| 左スティック上 | ジャンプ |
+| Bボタン | 弱攻撃 |
+| Aボタン | 必殺技 |
+
+XInputに対応しており、左スティックにはデッドゾーンを設定しています。
+
+### キーボード
+
+| 入力 | 操作 |
+|---|---|
+| A / D、左右キー | 移動 |
+| W、Space | ジャンプ |
+| U | 弱攻撃 |
+| I | 必殺技 |
+| S、下キー | しゃがみ／空中で急降下 |
+| H | ガード |
+| Esc | ゲーム終了 |
+
+### ゲームで確認できる実装
+
+#### Skinned Meshとアニメーション
+
+プレイヤーと敵キャラクターにSkinned Meshを使用しています。移動、ジャンプ、通常攻撃、必殺技、被弾など、状態に応じてアニメーションが切り替わります。
+
+平行移動と拡縮は線形補間、回転はQuaternion補間を使用しています。アニメーションのループ、クリップ切り替え、クロスフェードにも対応しています。
+
+#### Compute Shaderによるスキニング
+
+Jointパレット、入力頂点、頂点ウェイトをCompute Shaderへ渡し、変形後の頂点バッファをGPU上で生成しています。頂点数に応じて`Dispatch`し、描画前後にUAVリソースバリアを設定しています。
+
+#### 攻撃と当たり判定
+
+プレイヤーの弱攻撃と必殺技、敵の攻撃、ダメージ、吹き飛ばし、着地、ガードなどを実装しています。攻撃の種類や進行段階に応じて判定と移動が変化します。
+
+#### GPU Particle
+
+攻撃ヒット、落下攻撃、必殺技の軌跡などにParticleを使用しています。Particleの生成、更新、描画にはCompute Shaderを利用しています。
+
+#### ボーン位置へのParticle配置
+
+モデルのボーン名からワールド座標を取得し、指定したボーン位置へParticleを発生させられます。Developmentビルドでは`Bone Attach`ウィンドウからボーン名、オフセット、発生数を確認・変更できます。
+
+#### ゲームパッド
+
+共通Inputクラスに、Xboxコントローラーの接続確認、ボタンの押下・トリガー・リリース、左スティック入力、デッドゾーン処理を実装しています。
+
+## Particleエディター
+
+タイトル画面で`P`キーを押すと開きます。DevelopmentビルドのImGuiから編集します。
+
+### モデル編集
+
+- OBJ、glTF、GLBモデルの読み込み
+- モデルの追加と削除
+- 位置、回転、拡縮の編集
+- テクスチャの選択と差し替え
+- MultiMesh / MultiMaterialモデルの表示
+- Skinned Meshモデルの表示
+
+### アニメーション編集
+
+- アニメーションクリップの選択と再生
+- 再生、停止、ループ
+- モデルのTransformキーフレーム
+- タイムラインとドープシート
+- キーフレーム間の補間
+- カメラアニメーション
+
+### ボーン編集
+
+- Skeletonとボーン階層の取得
+- ボーン名と親子関係の表示
+- ボーンの選択
+- 選択ボーンの移動、回転、拡縮
+- ボーンを指定したオブジェクトやParticleのアタッチ
+
+ボーンの3Dデバッグ形状は描画崩れを避けるため通常シーンでは使用していません。階層情報と編集機能はエディター上で確認できます。
+
+### Particle編集
+
+- Particle Groupの作成と削除
+- 発生位置、速度、寿命、色、サイズの編集
+- 使用テクスチャの変更
+- Blend設定
+- Particle Node / Effect Nodeの作成
+- タイムラインへの配置
+- JSONへの保存と読み込み
+- 編集したParticleをゲームシーンで使用
+
+## 加点要素と確認場所
+
+| 加点要素 | 確認場所 |
+|---|---|
+| Skinned Meshモデルの表示 | ゲームシーン、Particleエディター |
+| Compute Shaderによるスキニング | ゲームシーン |
+| MultiMesh / MultiMaterial | Particleエディター |
+| Animation補間 | ゲームシーン、Particleエディター |
+| 骨情報の取得・編集 | Particleエディター |
+| ボーンへのParticleアタッチ | ゲームシーン、Particleエディター |
+| GPU Particle | ゲームシーン、Particleエディター |
+| Xboxコントローラー対応 | ゲームシーン |
+
+## 提出物
+
+### 実行ファイルセット
+
+実行ファイルセットには、ゲーム本体の`CG2_Setup.exe`だけでなく、同じ出力フォルダに生成されたDLLと`resources`フォルダも含めます。フォルダ構成を変えず、そのまま実行できる状態で提出します。
+
+### 提出フォルダの内容
+
+- 実行ファイルセット
+- ビルド可能なプロジェクトフォルダ
+- 本`README.md`
+
+上記を指定されたアカウント名のフォルダへまとめ、ZIP形式で提出します。

@@ -198,6 +198,7 @@ void Object3d::Update(float dt)
 
 	if (debugDrawBones_ && model_ && model_->HasSkinning() && animator_ && animator_->IsPoseReady()) {
 		const auto& poseSkeleton = animator_->GetPoseSkeleton();
+		size_t linkIndex = 0;
 		for (size_t i = 0; i < poseSkeleton.joints.size() && i < boneMarkers_.size(); ++i) {
 
 			const auto& j = poseSkeleton.joints[i];
@@ -206,13 +207,51 @@ void Object3d::Update(float dt)
 				Matrix4x4::Multiply(j.skeletonSpaceMatrix, worldMatrixModel);
 
 			Vector3 pos{
-				jointWorld.m[3][0],
-				jointWorld.m[3][1],
-				jointWorld.m[3][2]
+				jointWorld.m[3][0] + debugBoneViewOffset_.x,
+				jointWorld.m[3][1] + debugBoneViewOffset_.y,
+				jointWorld.m[3][2] + debugBoneViewOffset_.z
 			};
 
 			boneMarkers_[i]->SetTranslate(pos);
 			boneMarkers_[i]->Update(0.0f);
+
+			if (j.parent && *j.parent >= 0 &&
+				static_cast<size_t>(*j.parent) < poseSkeleton.joints.size() &&
+				linkIndex < boneLinks_.size()) {
+				const auto& parent = poseSkeleton.joints[*j.parent];
+				const Matrix4x4 parentWorld =
+					Matrix4x4::Multiply(parent.skeletonSpaceMatrix, worldMatrixModel);
+				const Vector3 parentPos{
+					parentWorld.m[3][0] + debugBoneViewOffset_.x,
+					parentWorld.m[3][1] + debugBoneViewOffset_.y,
+					parentWorld.m[3][2] + debugBoneViewOffset_.z
+				};
+
+				const Vector3 delta{
+					pos.x - parentPos.x,
+					pos.y - parentPos.y,
+					pos.z - parentPos.z
+				};
+				const float length = std::sqrt(
+					delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+				if (length > 0.0001f) {
+					const float horizontal = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+					const float rotateX = std::atan2(delta.z, horizontal);
+					const float rotateZ = -std::atan2(delta.x, delta.y);
+					const float thickness = debugBoneMarkerScale_ * 0.42f;
+
+					auto& link = boneLinks_[linkIndex];
+					link->SetTranslate({
+						(parentPos.x + pos.x) * 0.5f,
+						(parentPos.y + pos.y) * 0.5f,
+						(parentPos.z + pos.z) * 0.5f
+					});
+					link->SetScale({ thickness, length * 0.5f, thickness });
+					link->SetRotate({ rotateX, 0.0f, rotateZ });
+					link->Update(0.0f);
+				}
+				++linkIndex;
+			}
 		}
 	}
 
@@ -307,7 +346,7 @@ void Object3d::Draw()
 	if (model_->HasSkinning()) {
 		EnsureInstanceMaterial_();
 		if (instanceMaterialResource_) {
-			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress());
+			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_);
 		}
 		// =====================================================
 		// =====================================================
@@ -501,7 +540,7 @@ void Object3d::Draw()
 	} else {
 		EnsureInstanceMaterial_();
 		if (instanceMaterialResource_) {
-			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress());
+			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_);
 		}
 		auto SetNormalPipelineState = [&]() {
 			if (primitiveCommon_) {
@@ -638,8 +677,13 @@ void Object3d::Draw()
 
 	// debug bones
 	if (debugDrawBones_ && !boneMarkers_.empty()) {
-		for (auto& m : boneMarkers_) {
-			m->Draw();
+		for (auto& link : boneLinks_) {
+			link->Draw();
+		}
+		if (debugDrawBoneJoints_) {
+			for (auto& m : boneMarkers_) {
+				m->Draw();
+			}
 		}
 	}
 }
@@ -695,7 +739,7 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 	cmd->IASetIndexBuffer(&model_->GetIBV());
 	EnsureInstanceMaterial_();
 	if (instanceMaterialResource_) {
-		model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress());
+			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_);
 	}
 	cmd->SetGraphicsRootConstantBufferView(
 		0,
@@ -731,6 +775,7 @@ void Object3d::SetModel(const std::string& filePath) {
 	model_ = m;
 
 	boneMarkers_.clear();
+	boneLinks_.clear();
 
 	if (!model_) { return; }
 
@@ -750,15 +795,32 @@ void Object3d::SetModel(const std::string& filePath) {
 	if (model_->HasSkinning() && animator_) {
 		const auto& skel = animator_->GetPoseSkeleton();
 		boneMarkers_.reserve(skel.joints.size());
+		boneLinks_.reserve(skel.joints.size());
 
 		for (size_t i = 0; i < skel.joints.size(); ++i) {
 			auto marker = std::make_unique<Object3d>();
 			marker->Initialize(object3dCommon, dx_, srvManager_,skinningCommon_);
 			marker->SetModel(boneMarkerModel_);
-			marker->SetScale({ 0.03f, 0.03f, 0.03f });
+			marker->SetScale({
+				debugBoneMarkerScale_,
+				debugBoneMarkerScale_,
+				debugBoneMarkerScale_
+			});
 			marker->SetRotate({ 0,0,0 });
 			marker->SetEnableLighting(0);
+			marker->SetMaterialColor({ 1.0f, 0.05f, 0.05f, 1.0f });
 			boneMarkers_.push_back(std::move(marker));
+
+			if (skel.joints[i].parent) {
+				auto link = std::make_unique<Object3d>();
+				link->Initialize(object3dCommon, dx_, srvManager_, skinningCommon_);
+				link->SetModel(boneMarkerModel_);
+				link->SetScale({ 0.01f, 0.01f, 0.01f });
+				link->SetRotate({ 0,0,0 });
+				link->SetEnableLighting(0);
+				link->SetMaterialColor({ 0.15f, 0.9f, 0.3f, 1.0f });
+				boneLinks_.push_back(std::move(link));
+			}
 		}
 	}
 
@@ -851,6 +913,22 @@ void Object3d::SetManualJointTransform(int32_t jointIndex, const Vector3& transl
 	transform.rotate = rotate;
 	transform.scale = scale;
 	animator_->SetManualJointTransform(jointIndex, transform);
+}
+
+bool Object3d::SetManualJointTransform(const std::string& jointName, const Vector3& translate, const Vector3& rotate, const Vector3& scale)
+{
+	if (!animator_ || !animator_->IsPoseReady()) {
+		return false;
+	}
+
+	const auto& poseSkeleton = animator_->GetPoseSkeleton();
+	const auto joint = poseSkeleton.jointMap.find(jointName);
+	if (joint == poseSkeleton.jointMap.end()) {
+		return false;
+	}
+
+	SetManualJointTransform(joint->second, translate, rotate, scale);
+	return true;
 }
 
 void Object3d::ResetManualJointTransforms()

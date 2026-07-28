@@ -30,11 +30,19 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
 
     PlayerInputCommand command{};
 
-    const bool left = input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A);
-    const bool right = input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D);
-    const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S);
-    const bool specialHeld = input.IsKeyPressed(DIK_I);
-    const bool specialReleased = input.IsKeyReleased(DIK_I);
+    constexpr float kStickDirectionThreshold = 0.25f;
+    const float leftStickX = input.GetLeftStickX();
+    const float leftStickY = input.GetLeftStickY();
+    const bool left = input.IsKeyPressed(DIK_LEFT) || input.IsKeyPressed(DIK_A) ||
+        leftStickX < -kStickDirectionThreshold;
+    const bool right = input.IsKeyPressed(DIK_RIGHT) || input.IsKeyPressed(DIK_D) ||
+        leftStickX > kStickDirectionThreshold;
+    const bool down = input.IsKeyPressed(DIK_DOWN) || input.IsKeyPressed(DIK_S) ||
+        leftStickY < -kStickDirectionThreshold;
+    const bool gamepadSpecialHeld = input.IsGamepadButtonPressed(Input::GamepadButton::A);
+    const bool specialHeld = input.IsKeyPressed(DIK_I) || gamepadSpecialHeld;
+    const bool specialReleased = input.IsKeyReleased(DIK_I) ||
+        input.IsGamepadButtonReleased(Input::GamepadButton::A);
     // Uターゲットコンボ3段目中は、Iを押しっぱなしでもキャンセル入力として扱う。
     const bool finalUComboCancelRoute =
         action_ == PlayerAction::Attack &&
@@ -43,8 +51,11 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     const bool finalUComboSpecialHeld =
         specialHeld &&
         finalUComboCancelRoute;
-    const bool specialTriggered = input.IsKeyTrigger(DIK_I) || finalUComboSpecialHeld;
-    const bool up = input.IsKeyPressed(DIK_UP) || (specialHeld && input.IsKeyPressed(DIK_W));
+    const bool specialTriggered = input.IsKeyTrigger(DIK_I) ||
+        input.IsGamepadButtonTrigger(Input::GamepadButton::A) ||
+        finalUComboSpecialHeld;
+    const bool up = input.IsKeyPressed(DIK_UP) ||
+        (specialHeld && input.IsKeyPressed(DIK_W));
 
     if (left != right) {
         command.horizontal = right ? +1 : -1;
@@ -56,14 +67,17 @@ Player::PlayerInputCommand Player::ResolveInput_(const Input& input) {
     // U3キャンセル中の W+I は上必殺技入力を優先し、ジャンプ暴発を防ぐ。
     command.jumpTriggered =
         !finalUComboCancelRoute &&
-        (input.IsKeyTrigger(DIK_SPACE) || (!specialHeld && input.IsKeyTrigger(DIK_W)));
+        (input.IsKeyTrigger(DIK_SPACE) ||
+            (!specialHeld && input.IsKeyTrigger(DIK_W)) ||
+            input.IsLeftStickUpTrigger(kStickDirectionThreshold));
     command.guard = input.IsKeyPressed(DIK_H);
     command.specialHeld = specialHeld;
     command.specialReleased = specialReleased;
     latestSpecialHeld_ = command.specialHeld;
     latestSpecialReleased_ = command.specialReleased;
 
-    const bool weakTriggered = input.IsKeyTrigger(DIK_U);
+    const bool weakTriggered = input.IsKeyTrigger(DIK_U) ||
+        input.IsGamepadButtonTrigger(Input::GamepadButton::B);
 
     if (command.guard) {
         command.action = PlayerAction::Guard;
