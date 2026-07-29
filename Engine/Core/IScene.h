@@ -21,6 +21,9 @@ public:
     // 2D
     virtual void Draw2D(GameApp& app) {}
 
+    // ポストエフェクト適用後に重ねる2D
+    virtual void DrawOverlay2D(GameApp& app) {}
+
     // 最終描画
     virtual void Draw(GameApp& app) = 0;
 
@@ -32,6 +35,7 @@ public:
     virtual void DrawPostEffectTargets(GameApp& app) {}
     virtual bool HasObjectBloomTargets() const { return false; }
     virtual bool HasObjectOutlineBloomTargets() const { return false; }
+    virtual bool HasObjectLuminanceOutlineTargets() const { return false; }
 
     void RequestChangeScene_(const std::string& next) {
         nextScene_ = next;

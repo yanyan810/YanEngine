@@ -24,6 +24,8 @@ enum class PostEffectMode {
     Dissolve,
     Random,
     OutlineBloom,
+    LuminanceBasedOutline,
+    LuminanceOutlineMask,
 
     Count
 };
@@ -49,12 +51,14 @@ public:
     void BeginParticlePostLayer(bool bloom, bool outlineBloom);
     void EndParticlePostLayer();
     void ClearParticlePostLayer();
-    void BeginObjectPostLayer(bool bloom, bool outlineBloom);
+    void BeginObjectPostLayer(bool bloom, bool outlineBloom, bool luminanceOutline = false);
     void EndObjectPostLayer();
     void ClearObjectPostLayer();
 
     void DrawOffscreenToBackBuffer();
     uint32_t RenderPostEffectsForSceneTexture();
+    bool BeginSceneTextureOverlay();
+    void EndSceneTextureOverlay();
 
     void DrawImGui();
 
@@ -63,6 +67,8 @@ public:
     void SetEffectEnabled(PostEffectMode mode, bool enabled);
     bool IsEffectEnabled(PostEffectMode mode) const;
     void ClearEffects();
+    void SetRadialBlurParameters(const Vector2& center, int32_t numSamples, float blurWidth);
+    void SetDissolveTransition(float threshold, const Vector4& color, float edgeWidth = 0.0f);
     void SetObjectLayerBloomColor(const Vector4& color) { objectLayerBloomColor_ = color; }
     void SetObjectLayerOutlineBloomColor(const Vector4& color) { objectLayerOutlineBloomColor_ = color; }
     void SetParticleLayerBloomColor(const Vector4& color) { particleLayerBloomColor_ = color; }
@@ -95,6 +101,7 @@ private:
         const Vector4& outlineBloomColor,
         ID3D12Resource* outlineBloomCB,
         BloomParameter* outlineBloomCBData,
+        bool luminanceOutline,
         OffscreenPass* tempCompositeBuffer = nullptr);
     uint32_t CompositeParticlePostToBuffer_(uint32_t baseSrvIndex);
     void CompositeParticlePostToBackBuffer_(uint32_t baseSrvIndex);
@@ -207,4 +214,6 @@ private:
     bool hasObjectPostLayer_ = false;
     bool objectPostBloom_ = false;
     bool objectPostOutlineBloom_ = false;
+    bool objectPostLuminanceOutline_ = false;
+    OffscreenPass* sceneTextureOverlayTarget_ = nullptr;
 };

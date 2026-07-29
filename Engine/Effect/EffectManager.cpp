@@ -476,6 +476,18 @@ void EffectManager::Update(float dt) {
         // 3Dオブジェクトのキーフレームアニメーション更新
         for (auto& obj : active.objects) {
             if (!obj.keyframes.empty()) {
+                const EffectObjectKeyframe* activePostKey = &obj.keyframes.front();
+                for (const auto& key : obj.keyframes) {
+                    if (key.time > active.currentTime) {
+                        break;
+                    }
+                    activePostKey = &key;
+                }
+                obj.bloomPostEffect = activePostKey->bloomPostEffect;
+                obj.outlineBloomPostEffect = activePostKey->outlineBloomPostEffect;
+                obj.bloomColor = activePostKey->bloomColor;
+                obj.outlineBloomColor = activePostKey->outlineBloomColor;
+
                 if (active.currentTime < obj.keyframes.front().time) {
                     obj.object->SetIsVisible(false);
                 } else {
@@ -555,9 +567,57 @@ void EffectManager::Draw() {
     if (!objCommon_) return;
     for (auto& active : activeEffects_) {
         for (auto& obj : active.objects) {
-            if (obj.object) {
+            if (obj.object && !obj.bloomPostEffect && !obj.outlineBloomPostEffect) {
                 obj.object->Draw();
             }
         }
     }
+}
+
+void EffectManager::DrawPostEffectTargets() {
+    if (!objCommon_) return;
+    for (auto& active : activeEffects_) {
+        for (auto& obj : active.objects) {
+            if (obj.object && (obj.bloomPostEffect || obj.outlineBloomPostEffect)) {
+                obj.object->SetEnableOutline(false);
+                obj.object->Draw();
+            }
+        }
+    }
+}
+
+bool EffectManager::HasBloomPostEffectTargets() const {
+    for (const auto& active : activeEffects_) {
+        for (const auto& obj : active.objects) {
+            if (obj.object && obj.bloomPostEffect) return true;
+        }
+    }
+    return false;
+}
+
+bool EffectManager::HasOutlineBloomPostEffectTargets() const {
+    for (const auto& active : activeEffects_) {
+        for (const auto& obj : active.objects) {
+            if (obj.object && obj.outlineBloomPostEffect) return true;
+        }
+    }
+    return false;
+}
+
+Vector4 EffectManager::GetPrimaryBloomColor() const {
+    for (const auto& active : activeEffects_) {
+        for (const auto& obj : active.objects) {
+            if (obj.object && obj.bloomPostEffect) return obj.bloomColor;
+        }
+    }
+    return { 1.0f, 0.72f, 0.22f, 1.0f };
+}
+
+Vector4 EffectManager::GetPrimaryOutlineBloomColor() const {
+    for (const auto& active : activeEffects_) {
+        for (const auto& obj : active.objects) {
+            if (obj.object && obj.outlineBloomPostEffect) return obj.outlineBloomColor;
+        }
+    }
+    return { 1.0f, 0.72f, 0.22f, 1.0f };
 }

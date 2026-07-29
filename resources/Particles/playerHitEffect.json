@@ -4,8 +4,8 @@
         "blendMode": 2,
         "bloomColor": [
             1.0,
-            1.0,
-            1.0,
+            0.7843137383460999,
+            0.0,
             1.0
         ],
         "bloomPostEffect": true,

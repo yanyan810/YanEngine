@@ -652,6 +652,10 @@ void Player::Draw() {
     if (model_) model_->Draw();
 }
 
+void Player::DrawPostEffectTarget() {
+    if (model_) model_->Draw();
+}
+
 bool Player::GetAttackDebugVisualBox(Vector3& outCenter, Vector3& outHalfSize, bool& outIsActive) const {
     outIsActive = GetAttackDebugHitBox_(outCenter, outHalfSize);
     if (outIsActive) {

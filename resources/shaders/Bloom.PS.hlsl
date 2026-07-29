@@ -21,7 +21,8 @@ float3 ExtractBright(float3 color)
 {
     float brightness = max(color.r, max(color.g, color.b));
     float threshold = saturate(bloomThreshold);
-    float factor = saturate((brightness - threshold) / max(1.0f - threshold, 0.001f));
+    float factor = saturate((brightness - threshold) /
+        max(1.0f - threshold, 0.001f));
     return color * factor;
 }
 
@@ -31,8 +32,9 @@ PixelShaderOutput main(VertexShaderOutput input)
     gTexture.GetDimensions(width, height);
 
     float2 texel = float2(rcp((float)width), rcp((float)height));
-    float bloomMaskSum = 0.0f;
+    float3 bloomSum = float3(0.0f, 0.0f, 0.0f);
     float totalWeight = 0.0f;
+    float4 sourceColor = gTexture.Sample(gSampler, input.texcoord);
 
     [unroll]
     for (int y = -4; y <= 4; ++y) {
@@ -41,27 +43,26 @@ PixelShaderOutput main(VertexShaderOutput input)
             float2 offset = float2((float)x, (float)y);
             float dist2 = dot(offset, offset);
             float weight = exp(-dist2 / 16.0f);
-            
-            float4 sampleColor = gTexture.Sample(gSampler, input.texcoord + offset * texel * 4.0f);
-            
-            // アルファ値（オブジェクトの存在）と輝度値を考慮したマスク
-            float brightness = max(sampleColor.r, max(sampleColor.g, sampleColor.b));
-            float mask = sampleColor.a * (0.5f + 0.5f * brightness);
-            
-            bloomMaskSum += mask * weight;
+            float4 sampleColor =
+                gTexture.Sample(gSampler, input.texcoord + offset * texel * 4.0f);
+
+            // 通常画面では輝度抽出、透明な個別レイヤーの外側では
+            // アルファ形状も発光源にする。暗い素材でも外周だけは光る。
+            float3 brightColor = ExtractBright(sampleColor.rgb) * sampleColor.a;
+            float silhouetteGlow =
+                sampleColor.a * saturate(1.0f - sourceColor.a);
+            brightColor = max(brightColor, silhouetteGlow.xxx);
+            bloomSum += brightColor * weight;
             totalWeight += weight;
         }
     }
 
-    float blurredMask = bloomMaskSum / max(totalWeight, 0.001f);
-
-    // ぼかしたマスク値にブルームカラーと強度を乗算して発光色を決定
-    float3 glow = bloomColor.rgb * blurredMask * bloomIntensity * bloomAlpha * bloomColor.a;
-    
-    // アルファマスク
-    float outAlpha = saturate(blurredMask * bloomAlpha * bloomColor.a);
+    float3 blurredBright = bloomSum / max(totalWeight, 0.001f);
+    float3 glow = blurredBright * bloomColor.rgb *
+        bloomIntensity * bloomAlpha * bloomColor.a;
 
     PixelShaderOutput output;
-    output.color = float4(glow, outAlpha);
+    // Bloom preserves the source and adds light around it.
+    output.color = float4(sourceColor.rgb + glow, sourceColor.a);
     return output;
 }

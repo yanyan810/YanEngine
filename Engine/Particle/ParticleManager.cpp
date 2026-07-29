@@ -767,7 +767,7 @@ std::vector<std::string> ParticleManager::GetGroupNames() const {
 bool ParticleManager::HasPostEffectTargets() const {
     for (const auto& [name, group] : particleGroups_) {
         const bool active = group.isAutoEmit || group.isEmitRequested || group.activeTimeRemaining > 0.0f;
-        if (active && group.postEffectMode != PostEffectMode::FullScreen) {
+        if (active && (group.bloomPostEffect || group.outlineBloomPostEffect)) {
             return true;
         }
     }
@@ -1013,7 +1013,7 @@ void ParticleManager::Draw(ID3D12GraphicsCommandList* cmd, bool drawPostEffectTa
         if (!group.isAutoEmit && !group.isEmitRequested && group.activeTimeRemaining <= 0.0f) {
             continue;
         }
-        const bool isPostEffectTarget = group.postEffectMode != PostEffectMode::FullScreen;
+        const bool isPostEffectTarget = group.bloomPostEffect || group.outlineBloomPostEffect;
         if (drawPostEffectTargets && !isPostEffectTarget) {
             continue;
         }
@@ -1077,38 +1077,63 @@ void ParticleManager::ScanResources() {
     modelFiles_.clear();
     textureFiles_.clear();
     particleJsonFiles_.clear();
+
+    // filesystem::path::string() はWindowsのANSIコードページへ変換するため、
+    // 日本語を含むリソース名でstd::system_errorを送出する。常にUTF-8で保持する。
+    const auto pathToUtf8 = [](const std::filesystem::path& value) {
+        const auto utf8 = value.generic_u8string();
+        return std::string(utf8.begin(), utf8.end());
+    };
     
-    std::string targetDir = "Resources";
-    if (!std::filesystem::exists(targetDir)) {
+    const std::filesystem::path targetDir("Resources");
+    std::error_code scanError;
+    if (!std::filesystem::exists(targetDir, scanError) || scanError) {
         isResourcesScanned_ = true;
         return;
     }
 
     std::filesystem::path particleDir("Resources/Particles");
-    if (std::filesystem::exists(particleDir)) {
-        for (const auto& entry : std::filesystem::directory_iterator(particleDir)) {
-            if (!entry.is_regular_file()) {
+    scanError.clear();
+    if (std::filesystem::exists(particleDir, scanError) && !scanError) {
+        std::filesystem::directory_iterator it(
+            particleDir, std::filesystem::directory_options::skip_permission_denied, scanError);
+        const std::filesystem::directory_iterator end;
+        while (it != end) {
+            const auto& entry = *it;
+            scanError.clear();
+            if (!entry.is_regular_file(scanError) || scanError) {
+                it.increment(scanError);
                 continue;
             }
-            std::string ext = entry.path().extension().string();
+            std::string ext = pathToUtf8(entry.path().extension());
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
             if (ext == ".json") {
-                particleJsonFiles_.push_back(entry.path().filename().string());
+                particleJsonFiles_.push_back(pathToUtf8(entry.path().filename()));
             }
+            it.increment(scanError);
         }
         std::sort(particleJsonFiles_.begin(), particleJsonFiles_.end());
     }
 
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(targetDir)) {
-        if (!entry.is_regular_file()) continue;
+    scanError.clear();
+    std::filesystem::recursive_directory_iterator it(
+        targetDir, std::filesystem::directory_options::skip_permission_denied, scanError);
+    const std::filesystem::recursive_directory_iterator end;
+    while (it != end) {
+        const auto& entry = *it;
+        scanError.clear();
+        if (!entry.is_regular_file(scanError) || scanError) {
+            it.increment(scanError);
+            continue;
+        }
         
-        std::string ext = entry.path().extension().string();
+        std::string ext = pathToUtf8(entry.path().extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         
-        std::string path = entry.path().string();
-        std::replace(path.begin(), path.end(), '\\', '/'); 
+        std::string path = pathToUtf8(entry.path());
         
-        if (ext == ".obj" || ext == ".gltf" || ext == ".glb") {
+        if (ext == ".obj" || ext == ".gltf" || ext == ".glb" ||
+            ext == ".pmx" || ext == ".pmd") {
             // 繝｢繝・Ν隱ｭ縺ｿ霎ｼ縺ｿ譎ゅ・蜀・Κ縺ｧ "resources/" 縺御ｻ倅ｸ弱＆繧後ｋ縺溘ａ縲∝・鬆ｭ縺ｮ "resources/" 繧貞炎髯､縺吶ｋ
             std::string lowerPath = path;
             std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
@@ -1119,6 +1144,7 @@ void ParticleManager::ScanResources() {
         } else if (ext == ".png" || ext == ".jpg" || ext == ".dds") {
             textureFiles_.push_back(path);
         }
+        it.increment(scanError);
     }
     isResourcesScanned_ = true;
 }
@@ -1525,6 +1551,10 @@ void ParticleManager::LoadInternal_(const std::string& filename, bool clearExist
                 group.outlineBloomPostEffect = false;
             }
         }
+        // Bloomのチェック値を正として内部モードも同期する。
+        group.postEffectMode = group.outlineBloomPostEffect ? PostEffectMode::OutlineBloom :
+            group.bloomPostEffect ? PostEffectMode::BoxFilter :
+            PostEffectMode::FullScreen;
 
         if (g.contains("emitter") && group.mappedEmitter) {
             auto e = g["emitter"];
@@ -1703,7 +1733,7 @@ bool ParticleManager::OpenModelFileDialog_(std::string& outModelPath)
     openFileName.lStructSize = sizeof(openFileName);
     openFileName.hwndOwner = GetActiveWindow();
     openFileName.lpstrFilter =
-        "Model Files (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0"
+        "Model Files (*.obj;*.gltf;*.glb;*.fbx;*.pmx;*.pmd)\0*.obj;*.gltf;*.glb;*.fbx;*.pmx;*.pmd\0"
         "All Files (*.*)\0*.*\0";
     openFileName.lpstrFile = filePath;
     openFileName.nMaxFile = MAX_PATH;
