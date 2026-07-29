@@ -136,10 +136,9 @@ void GameOverScene::OnEnter(GameApp& app) {
     skyDome_->SetCamera(camera_.get());
     videoPlane_->SetCamera(camera_.get());
 
-    // ★ このシーンではVignetteを適用
+    // Bloomは初期状態では無効にして、ImGuiのEnable Bloomも未チェックにする。
     app.Render()->SetMode(PostEffectMode::FullScreen);
     app.Render()->SetEffectEnabled(PostEffectMode::Vignette, true);
-    app.Render()->SetEffectEnabled(PostEffectMode::BoxFilter, true);
 }
 
 void GameOverScene::OnExit(GameApp& app) {

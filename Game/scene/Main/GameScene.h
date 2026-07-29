@@ -34,14 +34,21 @@ public:
     void DrawRender(GameApp& app) override; // オフスクリーン（ポストエフェクト対象）
     void Draw3D(GameApp& app) override;     // バックバッファへ直接描く3D
     void Draw2D(GameApp& app) override;     // 2D / Sprite
+    void DrawOverlay2D(GameApp& app) override;
     void Draw(GameApp& app) override;       // その他（空でOK）
     void DrawImGui(GameApp& app) override;
+    void DrawPostEffectTargets(GameApp& app) override;
+    bool HasObjectBloomTargets() const override;
+    bool HasObjectOutlineBloomTargets() const override;
+    bool HasObjectLuminanceOutlineTargets() const override;
 
     void SpawnEnemyFromOutside_(EnemyType type);
 
     void  UpdateHPDigits_(int hp);
 
     void UpdateBossHPDigits_(int hp);
+    void StartBlackDissolveTransition_(GameApp& app, const std::string& nextScene);
+    bool UpdateBlackDissolveTransition_(GameApp& app, float dt);
 
 private:
     friend class GameSceneDebugAdapter;
@@ -72,6 +79,18 @@ private:
 
     //player
     std::unique_ptr<Player> player_;
+    int wallHitCount_ = 0;
+    static constexpr int kWallHitsToGameOver_ = 3;
+    static constexpr float kArenaWallMinX_ = -28.0f;
+    static constexpr float kArenaWallMaxX_ = 28.0f;
+    static constexpr float kArenaWallMinZ_ = -14.5f;
+    static constexpr float kArenaWallMaxZ_ = 19.5f;
+    Vector3 wallRespawnPosition_{ 0.0f, 6.0f, 5.0f };
+
+    bool blackDissolveActive_ = false;
+    float blackDissolveTime_ = 0.0f;
+    static constexpr float kBlackDissolveDuration_ = 0.75f;
+    std::string blackDissolveNextScene_;
 
     std::unique_ptr<Sprite> hpBack_;
     std::unique_ptr<Sprite> hpFill_;
@@ -165,6 +184,8 @@ private:
     Vector3 hitEffectTestPosition_{ 0.0f, 1.0f, 5.0f };
     bool fallAttackEffectEnabled_ = true;
     char fallAttackEffectGroupName_[64] = "fallAttak_HitEffect";
+    float fallAttackRadialBlurTimer_ = 0.0f;
+    static constexpr float kFallAttackRadialBlurDuration_ = 0.22f;
     bool pendingBattleParticleSetup_ = false;
     bool showParticleManager_ = false;
 

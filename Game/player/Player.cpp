@@ -99,6 +99,8 @@ void Player::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* ca
     model_ = std::make_unique<Object3d>();
     model_->Initialize(objCommon, dx);
     model_->SetCamera(cam_);
+    model_->SetOutlineColor({ 1.0f, 0.0f, 0.0f, 1.0f });
+    model_->SetOutlineThickness(0.05f);
 
     currentModelSet_ = PlayerModelSet::Player2Gltf;
     //model_->SetModel("MyGtYUhe6t/安比.pmx");
@@ -678,6 +680,7 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     if (model_) {
         model_->SetMaterialColor((hitFlashSec_ > 0.0f) ? hitColor_ : normalColor_);
+        model_->SetEnableOutline(IsLaunched());
     }
 
 

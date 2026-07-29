@@ -72,6 +72,8 @@ void Enemy::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam
 	model_ = std::make_unique<Object3d>();
 	model_->Initialize(objCommon, dx);
 	model_->SetCamera(cam);
+	model_->SetOutlineColor({ 1.0f, 0.0f, 0.0f, 1.0f });
+	model_->SetOutlineThickness(0.05f);
 
 	//model_->SetModel("cube/cube.obj");
 
@@ -218,6 +220,7 @@ void Enemy::Update(float dt, const Vector2& playerXY, float playerZ) {
 	if (model_) {
 		if (hitFlashSec_ > 0.0f) model_->SetMaterialColor(hitColor_);
 		else                      model_->SetMaterialColor(normalColor_);
+		model_->SetEnableOutline(hitFlashSec_ > 0.0f);
 	}
 
 
@@ -241,6 +244,7 @@ void Enemy::Draw() {
 
 	if (hitFlashSec_ > 0.0f) model_->SetMaterialColor(hitColor_);
 	else                      model_->SetMaterialColor(normalColor_);
+	model_->SetEnableOutline(hitFlashSec_ > 0.0f);
 
 	model_->Draw();
 }

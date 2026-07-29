@@ -191,6 +191,7 @@ public:
     void SetInputCommandFilter(InputCommandFilter filter) { inputCommandFilter_ = std::move(filter); }
     void SetExternalInputBlocked(bool blocked) { externalInputBlocked_ = blocked; }
     void Draw();
+    void DrawPostEffectTarget();
     void DrawDebugHitBoxes(EnemyManager& enemyMgr);
 
     // ===== 攻撃・判定・キャンセル関連のクエリ・通知 =====
@@ -415,7 +416,8 @@ private:
     // ===== メンバ変数 =====
     
     // ===== グラフィックス・モデル・カメラ =====
-    static constexpr float kPmxVisualScale_ = 0.14f;
+    // player.gltfは従来1.0倍で表示していたため、評価用に追加されたPMX向け縮小率を戻す。
+    static constexpr float kPmxVisualScale_ = 1.0f;
 
     ModelId currentModel_ = ModelId::Walk;
     std::unique_ptr<Object3d> model_;

@@ -8,7 +8,7 @@
             0.2199999988079071,
             1.0
         ],
-        "bloomPostEffect": false,
+        "bloomPostEffect": true,
         "depthTestEnabled": false,
         "emitter": {
             "acceleration": [

@@ -52,6 +52,11 @@ void SceneManager::Draw2D(GameApp& app) {
     current_->Draw2D(app);
 }
 
+void SceneManager::DrawOverlay2D(GameApp& app) {
+    if (!current_) return;
+    current_->DrawOverlay2D(app);
+}
+
 void SceneManager::Draw(GameApp& app) {
     if (!current_) return;
     current_->Draw(app);
@@ -78,4 +83,8 @@ bool SceneManager::HasObjectBloomTargets() const {
 
 bool SceneManager::HasObjectOutlineBloomTargets() const {
     return current_ && current_->HasObjectOutlineBloomTargets();
+}
+
+bool SceneManager::HasObjectLuminanceOutlineTargets() const {
+    return current_ && current_->HasObjectLuminanceOutlineTargets();
 }

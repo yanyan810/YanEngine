@@ -110,6 +110,11 @@ public:
     void SetGraphicsResources(Object3dCommon* objCommon, DirectXCommon* dxCommon, Camera* camera);
     void SetCamera(Camera* camera);
     void Draw();
+    void DrawPostEffectTargets();
+    bool HasBloomPostEffectTargets() const;
+    bool HasOutlineBloomPostEffectTargets() const;
+    Vector4 GetPrimaryBloomColor() const;
+    Vector4 GetPrimaryOutlineBloomColor() const;
 
     void LoadEffect(const std::string& effectName, const std::string& jsonPath);
     void Play(const std::string& effectName, const Vector3& worldPosition, float initialTime = 0.0f);

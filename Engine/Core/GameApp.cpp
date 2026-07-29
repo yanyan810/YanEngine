@@ -299,8 +299,13 @@ void GameApp::Draw() {
     sceneMgr_->Draw2D(*this);
     sceneMgr_->Draw(*this);
 
-    if (sceneMgr_->HasObjectBloomTargets() || sceneMgr_->HasObjectOutlineBloomTargets()) {
-        render_->BeginObjectPostLayer(sceneMgr_->HasObjectBloomTargets(), sceneMgr_->HasObjectOutlineBloomTargets());
+    if (sceneMgr_->HasObjectBloomTargets() ||
+        sceneMgr_->HasObjectOutlineBloomTargets() ||
+        sceneMgr_->HasObjectLuminanceOutlineTargets()) {
+        render_->BeginObjectPostLayer(
+            sceneMgr_->HasObjectBloomTargets(),
+            sceneMgr_->HasObjectOutlineBloomTargets(),
+            sceneMgr_->HasObjectLuminanceOutlineTargets());
         sceneMgr_->DrawPostEffectTargets(*this);
         render_->EndObjectPostLayer();
     } else {
@@ -333,6 +338,7 @@ void GameApp::Draw() {
     ParticleManager::GetInstance()->UpdateCompute(dx_->GetComputeCommandList());
 #ifndef USE_IMGUI
     render_->DrawOffscreenToBackBuffer();
+    sceneMgr_->DrawOverlay2D(*this);
 #endif
 
     // ③ Offscreenの中身を画面へ貼る
@@ -342,6 +348,10 @@ void GameApp::Draw() {
 #ifdef USE_IMGUI
     if (imgui_) {
         imgui_->SetSceneTexture(render_->RenderPostEffectsForSceneTexture());
+        if (render_->BeginSceneTextureOverlay()) {
+            sceneMgr_->DrawOverlay2D(*this);
+            render_->EndSceneTextureOverlay();
+        }
         imgui_->SetPreviewTexture(render_->GetPreviewSrvIndex());
             sceneMgr_->DrawImGui(*this);
             render_->DrawImGui(); // ポストエフェクト切り替えUI

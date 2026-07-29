@@ -84,14 +84,59 @@ void GameScene::Draw2D(GameApp& app) {
             bossHpDigits_[i]->Draw();
         }
 
-        if (isPaused_) {
-            if (pauseClose_) { pauseClose_->Update(view, proj); pauseClose_->Draw(); }
-            if (pauseToTitle_) { pauseToTitle_->Update(view, proj); pauseToTitle_->Draw(); }
-        }
+    }
+}
+
+void GameScene::DrawOverlay2D(GameApp& app) {
+    if (phase_ != Phase::Battle || !isPaused_) {
+        return;
+    }
+
+    app.SpriteCom()->SetGraphicsPipelineState();
+    Matrix4x4 view = Matrix4x4::MakeIdentity4x4();
+    Matrix4x4 proj = Matrix4x4::MakeOrthographicMatrix(
+        0, 0, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0, 100);
+
+    if (pauseClose_) {
+        pauseClose_->Update(view, proj);
+        pauseClose_->Draw();
+    }
+    if (pauseToTitle_) {
+        pauseToTitle_->Update(view, proj);
+        pauseToTitle_->Draw();
     }
 }
 
 void GameScene::Draw(GameApp& app) {
+}
+
+void GameScene::DrawPostEffectTargets(GameApp& app) {
+    auto* effectManager = EffectManager::GetInstance();
+    if (effectManager->HasBloomPostEffectTargets() ||
+        effectManager->HasOutlineBloomPostEffectTargets()) {
+        app.Render()->SetObjectLayerBloomColor(effectManager->GetPrimaryBloomColor());
+        app.Render()->SetObjectLayerOutlineBloomColor(effectManager->GetPrimaryOutlineBloomColor());
+        effectManager->DrawPostEffectTargets();
+    }
+    if (HasObjectLuminanceOutlineTargets() && player_) {
+        player_->DrawPostEffectTarget();
+    }
+}
+
+bool GameScene::HasObjectBloomTargets() const {
+    return EffectManager::GetInstance()->HasBloomPostEffectTargets();
+}
+
+bool GameScene::HasObjectOutlineBloomTargets() const {
+    return EffectManager::GetInstance()->HasOutlineBloomPostEffectTargets();
+}
+
+bool GameScene::HasObjectLuminanceOutlineTargets() const {
+    if (!player_ || phase_ != Phase::Battle) {
+        return false;
+    }
+    const int specialLevel = player_->GetCurrentSpecialVariantLevel();
+    return specialLevel >= 1 && specialLevel <= 3;
 }
 
 void GameScene::DrawImGui(GameApp& app) {

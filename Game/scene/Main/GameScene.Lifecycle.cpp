@@ -135,6 +135,9 @@ void GameScene::OnEnter(GameApp& app) {
     ground_->SetRotate({ 0.0f, 0.0f, 0.0f });
     //ground_->Update(0.0f);
     ground_->SetEnableLighting(0);
+    ground_->SetEnableOutline(true);
+    ground_->SetOutlineColor({ 1.0f, 0.0f, 0.0f, 1.0f });
+    ground_->SetOutlineThickness(0.05f);
 
     skyDome_ = std::make_unique<Object3d>();
     skyDome_->Initialize(app.ObjCom(), app.Dx());
@@ -241,6 +244,11 @@ void GameScene::OnEnter(GameApp& app) {
      isPaused_ = false;
      prevTab_ = false;
      pauseSel_ = PauseSel::Close;
+     wallHitCount_ = 0;
+     blackDissolveActive_ = false;
+     blackDissolveTime_ = 0.0f;
+     blackDissolveNextScene_.clear();
+     fallAttackRadialBlurTimer_ = 0.0f;
 
      pendingBattleParticleSetup_ = true;
 
@@ -261,6 +269,8 @@ void GameScene::OnExit(GameApp& app) {
     }
     app.Render()->SetMode(PostEffectMode::FullScreen);
     isPaused_ = false;
+    blackDissolveActive_ = false;
+    blackDissolveNextScene_.clear();
 
     player_.reset();
     particle_.reset();

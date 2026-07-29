@@ -99,7 +99,9 @@ std::mutex gAIStatusMutex;
 std::string gPendingAIStatus;
 std::mutex gTransportMutex;
 std::atomic<DWORD> gGameProcessId = 0;
-std::atomic<DWORD> gWatchedGameProcessId = 0;
+std::mutex gGameProcessWatchMutex;
+DWORD gWatchedGameProcessId = 0;
+HANDLE gWatchedGameProcessHandle = nullptr;
 ULONGLONG gAutoRefreshResumeTick = 0;
 std::function<std::string()> gPendingReplayStart;
 
@@ -115,6 +117,38 @@ std::vector<ReplaySessionListEntry> gReplaySessionEntries;
 
 void PostAIStatus(HWND window, std::string text, bool preserveResult);
 bool IsPlayerActorAction(const DebugGenericAction& action);
+
+void WatchGameProcess(DWORD processId) {
+    if (processId == 0) return;
+    std::lock_guard lock(gGameProcessWatchMutex);
+    if (gWatchedGameProcessId == processId &&
+        gWatchedGameProcessHandle != nullptr) {
+        return;
+    }
+    HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, processId);
+    if (!process) return;
+    if (gWatchedGameProcessHandle) {
+        CloseHandle(gWatchedGameProcessHandle);
+    }
+    gWatchedGameProcessId = processId;
+    gWatchedGameProcessHandle = process;
+}
+
+bool WatchedGameProcessExited() {
+    std::lock_guard lock(gGameProcessWatchMutex);
+    return gWatchedGameProcessHandle &&
+        WaitForSingleObject(gWatchedGameProcessHandle, 0) ==
+            WAIT_OBJECT_0;
+}
+
+void StopWatchingGameProcess() {
+    std::lock_guard lock(gGameProcessWatchMutex);
+    if (gWatchedGameProcessHandle) {
+        CloseHandle(gWatchedGameProcessHandle);
+        gWatchedGameProcessHandle = nullptr;
+    }
+    gWatchedGameProcessId = 0;
+}
 
 std::wstring Utf8ToWide(const std::string& text) {
     if (text.empty()) {
@@ -1971,7 +2005,7 @@ bool SendProtocolMessage(const DebugProtocolMessage& requestMessage, std::string
     ULONG serverProcessId = 0;
     if (GetNamedPipeServerProcessId(pipe, &serverProcessId)) {
         gGameProcessId = serverProcessId;
-        gWatchedGameProcessId = serverProcessId;
+        WatchGameProcess(serverProcessId);
     }
 
     DWORD mode = PIPE_READMODE_MESSAGE;
@@ -3597,17 +3631,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
     case WM_TIMER:
         if (wParam == kGameProcessWatchTimerId) {
-            const DWORD processId = gWatchedGameProcessId.load();
-            if (processId != 0) {
-                HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, processId);
-                const bool gameExited =
-                    process == nullptr || WaitForSingleObject(process, 0) == WAIT_OBJECT_0;
-                if (process) {
-                    CloseHandle(process);
-                }
-                if (gameExited) {
-                    DestroyWindow(window);
-                }
+            if (WatchedGameProcessExited()) {
+                DestroyWindow(window);
             }
             return 0;
         }
@@ -3645,6 +3670,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     case WM_DESTROY:
         KillTimer(window, kPendingReplayStartTimerId);
         KillTimer(window, kGameProcessWatchTimerId);
+        StopWatchingGameProcess();
         gPendingReplayStart = {};
         StopAIWorker();
         if (gAIWorker.joinable()) gAIWorker.join();

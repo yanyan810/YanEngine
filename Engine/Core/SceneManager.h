@@ -20,12 +20,14 @@ public:
     void DrawRender(GameApp& app);
     void Draw3D(GameApp& app);
     void Draw2D(GameApp& app);
+    void DrawOverlay2D(GameApp& app);
     void Draw(GameApp& app);
     void DrawImGui(GameApp& app);
     void DrawPreview(GameApp& app);
     void DrawPostEffectTargets(GameApp& app);
     bool HasObjectBloomTargets() const;
     bool HasObjectOutlineBloomTargets() const;
+    bool HasObjectLuminanceOutlineTargets() const;
 
     IScene* Current() { return current_.get(); }
     const std::string& CurrentName() const { return currentName_; }

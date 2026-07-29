@@ -70,6 +70,59 @@ std::string BuildPlayerAttackHitMessage(
     return message.str();
 }
 
+Vector2 ProjectWorldToUv(const Camera& camera, const Vector3& world) {
+    const Matrix4x4& vp = camera.GetViewProjectionMatrix();
+    const float x = world.x * vp.m[0][0] + world.y * vp.m[1][0] +
+        world.z * vp.m[2][0] + vp.m[3][0];
+    const float y = world.x * vp.m[0][1] + world.y * vp.m[1][1] +
+        world.z * vp.m[2][1] + vp.m[3][1];
+    const float w = world.x * vp.m[0][3] + world.y * vp.m[1][3] +
+        world.z * vp.m[2][3] + vp.m[3][3];
+    if (w <= 0.001f) {
+        return { 0.5f, 0.5f };
+    }
+
+    return {
+        std::clamp(x / w * 0.5f + 0.5f, 0.0f, 1.0f),
+        std::clamp(0.5f - y / w * 0.5f, 0.0f, 1.0f)
+    };
+}
+
+}
+
+void GameScene::StartBlackDissolveTransition_(GameApp& app, const std::string& nextScene) {
+    if (blackDissolveActive_) {
+        return;
+    }
+
+    blackDissolveActive_ = true;
+    blackDissolveTime_ = 0.0f;
+    blackDissolveNextScene_ = nextScene;
+    isPaused_ = false;
+
+    app.Render()->SetMode(PostEffectMode::Dissolve);
+    app.Render()->SetDissolveTransition(0.0f, { 0.0f, 0.0f, 0.0f, 1.0f });
+}
+
+bool GameScene::UpdateBlackDissolveTransition_(GameApp& app, float dt) {
+    if (!blackDissolveActive_) {
+        return false;
+    }
+
+    blackDissolveTime_ += std::max(0.0f, dt);
+    const float progress = std::clamp(
+        blackDissolveTime_ / kBlackDissolveDuration_,
+        0.0f,
+        1.0f);
+    app.Render()->SetDissolveTransition(progress, { 0.0f, 0.0f, 0.0f, 1.0f });
+
+    if (progress >= 1.0f) {
+        const std::string nextScene = blackDissolveNextScene_;
+        blackDissolveActive_ = false;
+        blackDissolveNextScene_.clear();
+        RequestChangeScene_(nextScene);
+    }
+    return true;
 }
 
 bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
@@ -125,6 +178,9 @@ bool GameScene::ProcessDebugAIRequests_(GameApp& app) {
 
 void GameScene::Update(GameApp& app, float dt) {
     if (!input_) return;
+    if (UpdateBlackDissolveTransition_(app, dt)) {
+        return;
+    }
     if (debugExternalPaused_) {
         if (std::chrono::steady_clock::now() < debugExternalPauseDeadline_) {
             if (input_->IsKeyTrigger(DIK_ESCAPE)) app.RequestQuit();
@@ -183,6 +239,13 @@ void GameScene::Update(GameApp& app, float dt) {
 
     camera_->Update();
 
+    if (fallAttackRadialBlurTimer_ > 0.0f) {
+        fallAttackRadialBlurTimer_ = std::max(0.0f, fallAttackRadialBlurTimer_ - dt);
+        if (fallAttackRadialBlurTimer_ <= 0.0f) {
+            app.Render()->SetEffectEnabled(PostEffectMode::RadialBlur, false);
+        }
+    }
+
     ground_->Update(dt);
 
     skyDome_->Update(dt);
@@ -227,9 +290,12 @@ void GameScene::Update(GameApp& app, float dt) {
         if (tabTrig) {
             isPaused_ = !isPaused_;
 
-            app.Render()->SetMode(isPaused_
-                ? PostEffectMode::Grayscale
-                : PostEffectMode::FullScreen);
+            if (isPaused_) {
+                app.Render()->SetMode(PostEffectMode::Grayscale);
+                app.Render()->SetEffectEnabled(PostEffectMode::GaussianBlur, true);
+            } else {
+                app.Render()->SetMode(PostEffectMode::FullScreen);
+            }
 
             if (isPaused_) pauseSel_ = PauseSel::Close;
         }
@@ -258,8 +324,10 @@ void GameScene::Update(GameApp& app, float dt) {
             if (enterTrig || spaceTrig) {
                 if (pauseSel_ == PauseSel::Close) {
                     isPaused_ = false;
+                    app.Render()->SetMode(PostEffectMode::FullScreen);
                 } else {
-                    RequestChangeScene_("Title");
+                    app.Render()->SetMode(PostEffectMode::FullScreen);
+                    StartBlackDissolveTransition_(app, "Title");
                     return;
                 }
             }
@@ -295,6 +363,25 @@ void GameScene::Update(GameApp& app, float dt) {
         if (!hitStopActive && player_) {
             player_->SetExternalInputBlocked(blockExternalGameInput);
             player_->Update(dt, *input_, enemyMgr_);
+
+            const Vector3 playerPosition = player_->GetPos3D();
+            const bool touchedArenaWall =
+                playerPosition.x <= kArenaWallMinX_ ||
+                playerPosition.x >= kArenaWallMaxX_ ||
+                playerPosition.z <= kArenaWallMinZ_ ||
+                playerPosition.z >= kArenaWallMaxZ_;
+            if (touchedArenaWall) {
+                ++wallHitCount_;
+                player_->Damage(34);
+
+                if (wallHitCount_ >= kWallHitsToGameOver_) {
+                    StartBlackDissolveTransition_(app, "GameOver");
+                    return;
+                }
+
+                player_->SetDropRespawnPos(wallRespawnPosition_);
+            }
+
             const auto playerAttackHits = enemyMgr_.ApplyPlayerAttack(*player_);
             if (!playerAttackHits.empty()) {
                 player_->NotifyAttackHit();
@@ -354,6 +441,10 @@ void GameScene::Update(GameApp& app, float dt) {
         for (const auto& event : enemyMgr_.ConsumeBossAttackEffectEvents()) {
             if (event.kind == MeleeKind::Land) {
                 SpawnFallAttackEffect_(event.position);
+                const Vector2 blurCenter = ProjectWorldToUv(*camera_, event.position);
+                app.Render()->SetRadialBlurParameters(blurCenter, 12, 0.012f);
+                app.Render()->SetEffectEnabled(PostEffectMode::RadialBlur, true);
+                fallAttackRadialBlurTimer_ = kFallAttackRadialBlurDuration_;
             }
         }
 
@@ -412,7 +503,7 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
         if (player_->IsDead()) {
-            RequestChangeScene_("GameOver");
+            StartBlackDissolveTransition_(app, "GameOver");
             return;
         }
 
@@ -451,12 +542,12 @@ void GameScene::Update(GameApp& app, float dt) {
 
         outroTime_ += dt;
         if (outroTime_ >= kOutroSeconds_) {
-            RequestChangeScene_("GameClear");
+            StartBlackDissolveTransition_(app, "GameClear");
             return;
         }
 
          if (!blockExternalGameInput && input_->IsKeyTrigger(DIK_SPACE)) {
-             RequestChangeScene_("GameClear");
+             StartBlackDissolveTransition_(app, "GameClear");
              return;
          }
     }
