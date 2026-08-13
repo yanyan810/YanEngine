@@ -1,6 +1,7 @@
 ﻿#include "SceneManager.h"
 #include "IScene.h"
 #include "GameApp.h"
+#include "ParticleManager.h"
 #include <cassert>
 
 void SceneManager::Register(const std::string& name, Factory factory) {
@@ -13,6 +14,9 @@ void SceneManager::Change(GameApp& app, const std::string& name) {
 
     if (current_) {
         current_->OnExit(app);
+        // ParticleManager is shared across scenes. Clear its CPU/GPU particle
+        // state so an outgoing scene's effects cannot remain in the next one.
+        ParticleManager::GetInstance()->ClearAllParticles();
         retiredScenes_.push_back(std::move(current_));
     }
 

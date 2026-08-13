@@ -375,6 +375,7 @@ void GameScene::Update(GameApp& app, float dt) {
                 player_->Damage(34);
 
                 if (wallHitCount_ >= kWallHitsToGameOver_) {
+                    
                     StartBlackDissolveTransition_(app, "GameOver");
                     return;
                 }
@@ -533,6 +534,8 @@ void GameScene::Update(GameApp& app, float dt) {
 
 
     } else if (phase_ == Phase::OutroVideo) {
+
+        ParticleManager::GetInstance()->ClearAllParticles();
 
         if (enableVideo_ && video_) {
             videoPlane_->Update(dt);

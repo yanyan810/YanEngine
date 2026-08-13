@@ -115,6 +115,10 @@ private:
     float previewLineThickness_ = 0.08f;
     char newBossAttackName_[64] = "Custom Attack";
     char bossTuningPath_[256] = "resources/tuning/boss_hit_tuning.json";
+    char customBossAttackDirectory_[256] = "resources/Data/BossAttacks";
+    int selectedBossMovementKey_ = 0;
+    int selectedBossTimelineHitbox_ = 0;
+    int selectedBossProjectile_ = 0;
     std::string bossTuningStatus_;
 
     // ===== Lighting params =====

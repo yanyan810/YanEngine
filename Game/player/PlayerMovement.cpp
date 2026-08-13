@@ -1,4 +1,4 @@
-#include "Player.h"
+﻿#include "Player.h"
 #include "Object3d.h"
 #include "Object3dCommon.h"
 #include "DirectXCommon.h"
@@ -275,6 +275,8 @@ void Player::ApplyBossHit(float damagePercent, float baseKnockback, float knockb
     AddDamagePercent(damagePercent);
 
     Vector3 dir = knockbackDir;
+    // Enemy hits must not push the player away from the current depth lane.
+    dir.z = 0.0f;
     const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
     if (len > 1.0e-6f) {
         dir.x /= len;

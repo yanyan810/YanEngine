@@ -141,6 +141,11 @@ bool WatchedGameProcessExited() {
             WAIT_OBJECT_0;
 }
 
+bool HasWatchedGameProcess() {
+    std::lock_guard lock(gGameProcessWatchMutex);
+    return gWatchedGameProcessHandle != nullptr;
+}
+
 void StopWatchingGameProcess() {
     std::lock_guard lock(gGameProcessWatchMutex);
     if (gWatchedGameProcessHandle) {
@@ -3632,7 +3637,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     case WM_TIMER:
         if (wParam == kGameProcessWatchTimerId) {
             if (WatchedGameProcessExited()) {
+                ShowWindow(window, SW_HIDE);
                 DestroyWindow(window);
+            } else if (!HasWatchedGameProcess() &&
+                !gAIWorkerRunning.load() &&
+                WaitNamedPipeA(kPipeName, 0)) {
+                StartCommandWorker(
+                    window,
+                    "status",
+                    nullptr,
+                    false);
             }
             return 0;
         }
@@ -3686,6 +3700,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
     std::wstring arguments = commandLine ? commandLine : L"";
+#if defined(DEBUGAI_VIEWER_DISABLED)
+    if (arguments.empty()) {
+        return 0;
+    }
+#endif
     constexpr std::wstring_view diagnosticPrefix = L"--scan-diagnostic";
     if (arguments.starts_with(diagnosticPrefix)) {
         arguments.erase(0, diagnosticPrefix.size());

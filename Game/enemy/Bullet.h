@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include <memory>
+#include <string>
 #include <vector>
 #include <algorithm>
 
@@ -15,10 +16,28 @@ class Player;
 
 class BulletManager {
 public:
+    struct SpawnDesc {
+        Vector3 position{};
+        Vector3 velocity{};
+        Vector3 halfSize{ 0.25f, 0.25f, 0.6f };
+        int damage = 1;
+        float damagePercent = 5.0f;
+        float baseKnockback = 5.0f;
+        float knockbackScale = 0.03f;
+        Vector3 knockbackDir{ 1.0f, 0.2f, 0.0f };
+        float hitStunSec = 0.2f;
+        float lifeSec = 5.0f;
+        float gravity = 0.0f;
+        float homingStrength = 0.0f;
+        bool homing = false;
+        std::string modelPath = "enemy/shooter/bullet/bullet.obj";
+    };
+
     void Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Camera* cam);
 
     // dir: +1 右, -1 左
     void Spawn(const Vector3& pos, int dir,int damage);
+    void Spawn(const SpawnDesc& desc);
 
     // プレイヤー当たり判定もここでやる（EnemyManager から呼ぶ）
     void Update(float dt, Player& player);
@@ -43,6 +62,15 @@ private:
         float life = 2.0f;          // 消えるまでの秒数
         float radius = 0.20f;       // 当たり（簡易）
         float hitRadiusZ = 0.6f;    // Z方向の当たり幅（見た目だけ運用なので少し厚め推奨）
+        Vector3 halfSize{ 0.20f, 0.20f, 0.6f };
+        float gravity = 0.0f;
+        float homingStrength = 0.0f;
+        bool homing = false;
+        float damagePercent = 5.0f;
+        float baseKnockback = 5.0f;
+        float knockbackScale = 0.03f;
+        Vector3 knockbackDir{ 1.0f, 0.2f, 0.0f };
+        float hitStunSec = 0.2f;
 
         AABB body{};                // 3D AABB（判定は実質XYZ）
 

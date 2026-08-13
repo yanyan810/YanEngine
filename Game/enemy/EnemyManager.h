@@ -23,18 +23,6 @@ public:
         float hx = 0.5f, hy = 0.5f, hz = 0.5f;
     };
 
-    struct MeleeHitbox {
-        AABB3 box;
-        float life;
-        int damage = 5;
-        bool fromBoss = false;
-        MeleeKind kind = MeleeKind::Normal;
-        size_t attackIndex = 0;
-        Vector3 attackerPos = {};
-        int facing = 1;
-        float hitStopSec = -1.0f;
-    };
-
     struct BossAttackHitboxTuning {
         Vector3 offset = { 1.2f, 0.0f, 0.0f };
         Vector3 halfSize = { 0.6f, 0.5f, 0.5f };
@@ -54,11 +42,94 @@ public:
         float actionSpeedRatio = 0.35f;
     };
 
+    struct MeleeHitbox {
+        AABB3 box;
+        float life;
+        int damage = 5;
+        bool fromBoss = false;
+        MeleeKind kind = MeleeKind::Normal;
+        size_t attackIndex = 0;
+        Vector3 attackerPos = {};
+        int facing = 1;
+        float hitStopSec = -1.0f;
+        bool useHitOverride = false;
+        BossHitTuning hitOverride{};
+        bool followBoss = false;
+        Vector3 followOffset{};
+    };
+
+    enum class BossTargetSpace : int {
+        AttackStart,
+        Player,
+        StageLeft,
+        StageRight,
+        StageCenter,
+        World,
+    };
+
+    enum class BossInterpolation : int {
+        Linear,
+        EaseIn,
+        EaseOut,
+        EaseInOut,
+        Step,
+    };
+
+    struct BossMovementKey {
+        float time = 0.0f;
+        Vector3 offset{};
+        BossTargetSpace space = BossTargetSpace::AttackStart;
+        BossInterpolation interpolation = BossInterpolation::Linear;
+        bool followTarget = false;
+        bool mirrorXByFacing = true;
+        bool useGravity = false;
+        bool collideWithStage = true;
+    };
+
+    struct BossTimelineHitbox {
+        float time = 0.0f;
+        float duration = 0.10f;
+        Vector3 offset{ 1.2f, 0.0f, 0.0f };
+        Vector3 halfSize{ 0.6f, 0.5f, 0.5f };
+        bool followBoss = true;
+        BossTargetSpace space = BossTargetSpace::AttackStart;
+        BossHitTuning hit{};
+    };
+
+    enum class BossProjectileAim : int {
+        Direction,
+        PlayerAtSpawn,
+        Homing,
+    };
+
+    struct BossProjectileEvent {
+        float time = 0.0f;
+        Vector3 offset{ 1.0f, 0.5f, 0.0f };
+        Vector3 direction{ 1.0f, 0.0f, 0.0f };
+        float speed = 8.0f;
+        float homingStrength = 4.0f;
+        float gravity = 0.0f;
+        float lifeSec = 5.0f;
+        Vector3 halfSize{ 0.25f, 0.25f, 0.6f };
+        int count = 1;
+        float intervalSec = 0.10f;
+        bool mirrorXByFacing = true;
+        BossProjectileAim aim = BossProjectileAim::PlayerAtSpawn;
+        BossHitTuning hit{};
+        std::string modelPath = "enemy/shooter/bullet/bullet.obj";
+    };
+
     struct BossAttackDefinition {
         std::string name;
         BossHitTuning hit;
         BossAttackHitboxTuning hitbox;
         bool custom = false;
+        float durationSec = 1.0f;
+        std::string animationName = "Melee_Attack";
+        bool loopAnimation = false;
+        std::vector<BossMovementKey> movement;
+        std::vector<BossTimelineHitbox> timelineHitboxes;
+        std::vector<BossProjectileEvent> projectiles;
     };
 
     struct PlayerAttackHitEvent {
@@ -127,6 +198,17 @@ public:
     bool RemoveCustomBossAttack(size_t index);
     void ClearCustomBossAttacks();
     void QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, float targetX);
+    bool StartCustomBossAttack(size_t attackIndex, const Vector3& playerPos,
+        float stageLeft, float stageRight, float stageCenter);
+    void StopCustomBossAttack();
+    bool IsCustomBossAttackPlaying() const { return customAttackRuntime_.playing; }
+    float CustomBossAttackTime() const { return customAttackRuntime_.time; }
+    size_t CustomBossAttackIndex() const { return customAttackRuntime_.attackIndex; }
+    void SetCustomBossAttackStageBounds(float left, float right, float center) {
+        customAttackRuntime_.stageLeft = left;
+        customAttackRuntime_.stageRight = right;
+        customAttackRuntime_.stageCenter = center;
+    }
     HitStopTuning& HitStop() { return hitStopTuning_; }
     const HitStopTuning& HitStop() const { return hitStopTuning_; }
     GrabHoldTuning& GrabHold() { return grabHoldTuning_; }
@@ -167,6 +249,20 @@ private:
     std::vector<MeleeHitbox> pendingMeleeHitboxes_;
     std::vector<BossAttackEffectEvent> bossAttackEffectEvents_;
     std::vector<BossAttackDefinition> bossAttacks_;
+    struct CustomAttackRuntime {
+        bool playing = false;
+        size_t attackIndex = 0;
+        float time = 0.0f;
+        Vector3 attackStart{};
+        Vector3 playerAtStart{};
+        int facing = 1;
+        float stageLeft = -26.0f;
+        float stageRight = 26.0f;
+        float stageCenter = 0.0f;
+        std::vector<bool> firedHitboxes;
+        std::vector<int> projectileShots;
+        std::vector<float> nextProjectileTimes;
+    } customAttackRuntime_;
     HitStopTuning hitStopTuning_{};
     GrabHoldTuning grabHoldTuning_{};
     BattleTuning battleTuning_{};
@@ -211,6 +307,8 @@ private:
     size_t maxAlive_ = 6;
 
     Vector3 MakeOutsideSpawnPos_(const Vector2& playerXY, float playerZ);
+    void UpdateCustomBossAttack_(float dt, const Vector3& playerPos);
+    Vector3 ResolveBossTarget_(const BossMovementKey& key, const Vector3& livePlayer) const;
     void UpdatePendingSpawns_(float dt, const Vector2& playerXY, float playerZ);
     float RandRange_(float a, float b);
 

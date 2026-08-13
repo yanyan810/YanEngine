@@ -103,7 +103,7 @@ void TitleScene::OnEnter(GameApp& app) {
 	titlePlayer = std::make_unique<Player>();
 	titlePlayer->Initialize(app.ObjCom(), app.Dx(), camera_.get());
 	titlePlayer->ChangeModelSet_(Player::PlayerModelSet::Player2Gltf);
-	titlePlayer->SetSpawnPos({ -12.0f, 0.0f, 5.0f }); // 好みで調整
+	titlePlayer->SetSpawnPos({ 0.1f, 2.6f, -14.0f }); // 好みで調整
 	titlePlayer->SetLighting(light_); // 操作禁止
 	titlePlayer->ResetTitleAttackDemo();
 	UpdateTitleBoneDebug_();
@@ -250,9 +250,9 @@ void TitleScene::OnEnter(GameApp& app) {
 	srtGround_.scale = { 1.0f,  1.0f, 1.0f };
 
 	// Player（SetSpawnPos の値を反映。回転/スケールはとりあえず既定）
-	srtPlayer_.pos = { -0.2f, 0.2f, -5.1f };
+	srtPlayer_.pos = { 0.1f, 2.6f, -14.0f };
 	srtPlayer_.rot = { 0.0f, 1.14f, 0.0f };
-	srtPlayer_.scale = { 2.0f, 2.0f, 2.0f };
+	srtPlayer_.scale = { 4.0f, 4.0f, 4.0f };
 
 	// 切替初期化（最初はプレイヤー表示）
 	showVideo_ = false;     // ← 最初は titlePlayer を出す
@@ -552,16 +552,16 @@ void TitleScene::Draw3D(GameApp& app)
 //	if (titlePlayer) titlePlayer->Draw();
 	////}
 
-	if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
-		auto* cmd = app.Dx()->GetCommandList();
+	//if (enableVideo_ && videoPlane_ && video_ && showVideo_) {
+	//	auto* cmd = app.Dx()->GetCommandList();
 
-		video_->UploadToGpu(cmd);
+	//	video_->UploadToGpu(cmd);
 
-		D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
-		videoPlane_->DrawWithOverrideSrv(vh);
+	//	D3D12_GPU_DESCRIPTOR_HANDLE vh = video_->SrvGpu();
+	//	videoPlane_->DrawWithOverrideSrv(vh);
 
-		video_->EndFrame(cmd);
-	}
+	//	video_->EndFrame(cmd);
+	//}
 
 	//if (primitiveObj_) primitiveObj_->Draw();
 

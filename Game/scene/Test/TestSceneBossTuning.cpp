@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 
@@ -62,12 +63,49 @@ json ToJson(const EnemyManager::BossAttackHitboxTuning& tuning) {
 }
 
 json ToJson(const EnemyManager::BossAttackDefinition& attack) {
-    return {
+    json value = {
         { "name", attack.name },
         { "custom", attack.custom },
+        { "durationSec", attack.durationSec },
+        { "animationName", attack.animationName },
+        { "loopAnimation", attack.loopAnimation },
         { "hit", ToJson(attack.hit) },
         { "hitbox", ToJson(attack.hitbox) },
     };
+    value["movement"] = json::array();
+    for (const auto& key : attack.movement) {
+        value["movement"].push_back({
+            { "time", key.time }, { "offset", ToJson(key.offset) },
+            { "space", static_cast<int>(key.space) },
+            { "interpolation", static_cast<int>(key.interpolation) },
+            { "followTarget", key.followTarget },
+            { "mirrorXByFacing", key.mirrorXByFacing },
+            { "useGravity", key.useGravity },
+            { "collideWithStage", key.collideWithStage },
+        });
+    }
+    value["hitboxes"] = json::array();
+    for (const auto& event : attack.timelineHitboxes) {
+        value["hitboxes"].push_back({
+            { "time", event.time }, { "duration", event.duration },
+            { "offset", ToJson(event.offset) }, { "halfSize", ToJson(event.halfSize) },
+            { "followBoss", event.followBoss }, { "space", static_cast<int>(event.space) },
+            { "hit", ToJson(event.hit) },
+        });
+    }
+    value["projectiles"] = json::array();
+    for (const auto& event : attack.projectiles) {
+        value["projectiles"].push_back({
+            { "time", event.time }, { "offset", ToJson(event.offset) },
+            { "direction", ToJson(event.direction) }, { "speed", event.speed },
+            { "homingStrength", event.homingStrength }, { "gravity", event.gravity },
+            { "lifeSec", event.lifeSec }, { "halfSize", ToJson(event.halfSize) },
+            { "count", event.count }, { "intervalSec", event.intervalSec },
+            { "mirrorXByFacing", event.mirrorXByFacing }, { "aim", static_cast<int>(event.aim) },
+            { "hit", ToJson(event.hit) }, { "modelPath", event.modelPath },
+        });
+    }
+    return value;
 }
 
 json ToJson(const Player::PlayerAttackDefinition& attack) {
@@ -133,6 +171,70 @@ void ApplyJsonToHitboxTuning(const json& value, EnemyManager::BossAttackHitboxTu
     tuning.startDelaySec = value.value("startDelaySec", tuning.startDelaySec);
     tuning.activeSec = value.value("activeSec", tuning.activeSec);
     tuning.damage = value.value("damage", tuning.damage);
+}
+
+void ApplyJsonToBossAttack(const json& value, EnemyManager::BossAttackDefinition& attack) {
+    if (!value.is_object()) return;
+    attack.name = value.value("name", attack.name);
+    attack.durationSec = std::max(0.01f, value.value("durationSec", attack.durationSec));
+    attack.animationName = value.value("animationName", attack.animationName);
+    attack.loopAnimation = value.value("loopAnimation", attack.loopAnimation);
+    if (value.contains("hit")) ApplyJsonToTuning(value.at("hit"), attack.hit);
+    if (value.contains("hitbox")) ApplyJsonToHitboxTuning(value.at("hitbox"), attack.hitbox);
+    attack.movement.clear();
+    if (value.contains("movement") && value.at("movement").is_array()) {
+        for (const auto& item : value.at("movement")) {
+            EnemyManager::BossMovementKey key{};
+            key.time = std::max(0.0f, item.value("time", key.time));
+            if (item.contains("offset")) key.offset = Vector3FromJson(item.at("offset"), key.offset);
+            key.space = static_cast<EnemyManager::BossTargetSpace>(std::clamp(item.value("space", 0), 0, 5));
+            key.interpolation = static_cast<EnemyManager::BossInterpolation>(std::clamp(item.value("interpolation", 0), 0, 4));
+            key.followTarget = item.value("followTarget", key.followTarget);
+            key.mirrorXByFacing = item.value("mirrorXByFacing", key.mirrorXByFacing);
+            key.useGravity = item.value("useGravity", key.useGravity);
+            key.collideWithStage = item.value("collideWithStage", key.collideWithStage);
+            attack.movement.push_back(key);
+        }
+    }
+    attack.timelineHitboxes.clear();
+    if (value.contains("hitboxes") && value.at("hitboxes").is_array()) {
+        for (const auto& item : value.at("hitboxes")) {
+            EnemyManager::BossTimelineHitbox event{};
+            event.time = std::max(0.0f, item.value("time", event.time));
+            event.duration = std::max(0.01f, item.value("duration", event.duration));
+            if (item.contains("offset")) event.offset = Vector3FromJson(item.at("offset"), event.offset);
+            if (item.contains("halfSize")) event.halfSize = Vector3FromJson(item.at("halfSize"), event.halfSize);
+            event.followBoss = item.value("followBoss", event.followBoss);
+            event.space = static_cast<EnemyManager::BossTargetSpace>(std::clamp(item.value("space", 0), 0, 5));
+            if (item.contains("hit")) ApplyJsonToTuning(item.at("hit"), event.hit);
+            attack.timelineHitboxes.push_back(event);
+        }
+    }
+    attack.projectiles.clear();
+    if (value.contains("projectiles") && value.at("projectiles").is_array()) {
+        for (const auto& item : value.at("projectiles")) {
+            EnemyManager::BossProjectileEvent event{};
+            event.time = std::max(0.0f, item.value("time", event.time));
+            if (item.contains("offset")) event.offset = Vector3FromJson(item.at("offset"), event.offset);
+            if (item.contains("direction")) event.direction = Vector3FromJson(item.at("direction"), event.direction);
+            event.speed = item.value("speed", event.speed);
+            event.homingStrength = item.value("homingStrength", event.homingStrength);
+            event.gravity = item.value("gravity", event.gravity);
+            event.lifeSec = std::max(0.01f, item.value("lifeSec", event.lifeSec));
+            if (item.contains("halfSize")) event.halfSize = Vector3FromJson(item.at("halfSize"), event.halfSize);
+            event.count = std::max(1, item.value("count", event.count));
+            event.intervalSec = std::max(0.001f, item.value("intervalSec", event.intervalSec));
+            event.mirrorXByFacing = item.value("mirrorXByFacing", event.mirrorXByFacing);
+            event.aim = static_cast<EnemyManager::BossProjectileAim>(std::clamp(item.value("aim", 1), 0, 2));
+            if (item.contains("hit")) ApplyJsonToTuning(item.at("hit"), event.hit);
+            event.modelPath = item.value("modelPath", event.modelPath);
+            attack.projectiles.push_back(event);
+        }
+    }
+    auto byTime = [](const auto& a, const auto& b) { return a.time < b.time; };
+    std::sort(attack.movement.begin(), attack.movement.end(), byTime);
+    std::sort(attack.timelineHitboxes.begin(), attack.timelineHitboxes.end(), byTime);
+    std::sort(attack.projectiles.begin(), attack.projectiles.end(), byTime);
 }
 
 void ApplyJsonToPlayerAttack(const json& value, Player::PlayerAttackDefinition& attack) {
@@ -280,15 +382,13 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
                     // カスタム攻撃: 新規追加して値を適用
                     const size_t idx = enemyManager.AddCustomBossAttack(name);
                     EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(idx);
-                    if (attackJson.contains("hit"))    ApplyJsonToTuning(attackJson.at("hit"), attack.hit);
-                    if (attackJson.contains("hitbox")) ApplyJsonToHitboxTuning(attackJson.at("hitbox"), attack.hitbox);
+                    ApplyJsonToBossAttack(attackJson, attack);
                 } else {
                     // 組み込み攻撃: 名前で一致するものを探して値を適用
                     for (size_t i = 0; i < enemyManager.BossAttackCount(); ++i) {
                         EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(i);
                         if (!attack.custom && attack.name == name) {
-                            if (attackJson.contains("hit"))    ApplyJsonToTuning(attackJson.at("hit"), attack.hit);
-                            if (attackJson.contains("hitbox")) ApplyJsonToHitboxTuning(attackJson.at("hitbox"), attack.hitbox);
+                            ApplyJsonToBossAttack(attackJson, attack);
                             break;
                         }
                     }
@@ -340,8 +440,7 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
                     const std::string name = value.value("name", "Custom Attack");
                     const size_t attackIndex = enemyManager.AddCustomBossAttack(name);
                     EnemyManager::BossAttackDefinition& attack = enemyManager.BossAttackAt(attackIndex);
-                    if (value.contains("hit"))    ApplyJsonToTuning(value.at("hit"), attack.hit);
-                    if (value.contains("hitbox")) ApplyJsonToHitboxTuning(value.at("hitbox"), attack.hitbox);
+                    ApplyJsonToBossAttack(value, attack);
                 }
             }
         }
@@ -480,6 +579,67 @@ bool TestSceneBossTuning::Load(const std::string& path, EnemyManager& enemyManag
         }
 
         status = "Loaded: " + path;
+        return true;
+    } catch (const std::exception& e) {
+        status = std::string("Load failed: ") + e.what();
+        return false;
+    }
+}
+
+bool TestSceneBossTuning::SaveCustomAttack(
+    const std::string& directory, const EnemyManager& enemyManager, size_t attackIndex, std::string& status) {
+    try {
+        if (attackIndex >= enemyManager.BossAttackCount() || !enemyManager.BossAttackAt(attackIndex).custom) {
+            status = "Save failed: select a custom attack";
+            return false;
+        }
+        std::filesystem::create_directories(directory);
+        std::string fileName = enemyManager.BossAttackAt(attackIndex).name;
+        for (char& c : fileName) {
+            const unsigned char uc = static_cast<unsigned char>(c);
+            if (!(std::isalnum(uc) || c == '_' || c == '-')) c = '_';
+        }
+        if (fileName.empty()) fileName = "CustomAttack";
+        const std::filesystem::path path = std::filesystem::path(directory) / (fileName + ".json");
+        json root = ToJson(enemyManager.BossAttackAt(attackIndex));
+        root["version"] = 1;
+        std::ofstream file(path);
+        if (!file) {
+            status = "Save failed: cannot open " + path.string();
+            return false;
+        }
+        file << root.dump(4);
+        status = "Saved custom attack: " + path.string();
+        return true;
+    } catch (const std::exception& e) {
+        status = std::string("Save failed: ") + e.what();
+        return false;
+    }
+}
+
+bool TestSceneBossTuning::LoadCustomAttacks(
+    const std::string& directory, EnemyManager& enemyManager, std::string& status) {
+    try {
+        const std::filesystem::path dir(directory);
+        if (!std::filesystem::exists(dir)) {
+            std::filesystem::create_directories(dir);
+            status = "Created custom attack directory: " + dir.string();
+            return true;
+        }
+        enemyManager.ClearCustomBossAttacks();
+        size_t loaded = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+            std::ifstream file(entry.path());
+            json value;
+            file >> value;
+            const size_t index = enemyManager.AddCustomBossAttack(value.value("name", entry.path().stem().string()));
+            auto& attack = enemyManager.BossAttackAt(index);
+            ApplyJsonToBossAttack(value, attack);
+            attack.custom = true;
+            ++loaded;
+        }
+        status = "Loaded custom attacks: " + std::to_string(loaded);
         return true;
     } catch (const std::exception& e) {
         status = std::string("Load failed: ") + e.what();

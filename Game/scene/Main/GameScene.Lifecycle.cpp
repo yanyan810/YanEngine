@@ -267,6 +267,7 @@ void GameScene::OnExit(GameApp& app) {
     if (auto* input = app.GetInput()) {
         input->SetCameraControlEnabled(false);
     }
+    app.Render()->ClearEffects();
     app.Render()->SetMode(PostEffectMode::FullScreen);
     isPaused_ = false;
     blackDissolveActive_ = false;

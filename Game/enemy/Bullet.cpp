@@ -15,27 +15,42 @@ void BulletManager::Initialize(Object3dCommon* objCommon, DirectXCommon* dx, Cam
 }
 
 void BulletManager::Spawn(const Vector3& pos, int dir, int damage) {
+    SpawnDesc desc{};
+    desc.position = pos;
+    desc.velocity = { 6.0f * float(dir), 0.0f, 0.0f };
+    desc.damage = damage;
+    desc.lifeSec = 20.0f;
+    Spawn(desc);
+}
+
+void BulletManager::Spawn(const SpawnDesc& desc) {
     Bullet b{};
     b.alive = true;
-    b.pos = pos;
-    b.damage = damage;
-
-    const float speed = 6.0f;
-    b.vel = { speed * float(dir), 0.0f, 0.0f };
-    b.life = 20.0f;
+    b.pos = desc.position;
+    b.vel = desc.velocity;
+    b.damage = desc.damage;
+    b.life = desc.lifeSec;
+    b.halfSize = desc.halfSize;
+    b.gravity = desc.gravity;
+    b.homingStrength = desc.homingStrength;
+    b.homing = desc.homing;
+    b.damagePercent = desc.damagePercent;
+    b.baseKnockback = desc.baseKnockback;
+    b.knockbackScale = desc.knockbackScale;
+    b.knockbackDir = desc.knockbackDir;
+    b.hitStunSec = desc.hitStunSec;
 
     b.model = std::make_unique<Object3d>();
     b.model->Initialize(objCommon_, dx_);
     b.model->SetCamera(cam_);
-    b.model->SetModel("enemy/shooter/bullet/bullet.obj");
+    b.model->SetModel(desc.modelPath.empty() ? "enemy/shooter/bullet/bullet.obj" : desc.modelPath);
     b.model->SetUseEnvironmentMap(true);
     b.model->SetEnvironmentTexturePath("resources/skybox/skybox.dds");
     b.model->SetEnvironmentCoefficient(1.0f);
 
     // ★ここで初期見た目を確定（push_backの前！）
-    const float s = 0.25f;
     b.model->SetTranslate(b.pos);
-    b.model->SetScale({ s, s, s });
+    b.model->SetScale(b.halfSize);
     b.model->Update(0.0f);
 
     UpdateBody_(b);
@@ -118,6 +133,23 @@ void BulletManager::Update(float dt, Player& player) {
             continue;
         }
 
+        if (b.homing) {
+            const Vector3 target = player.GetPos3D();
+            Vector3 desired{ target.x - b.pos.x, target.y - b.pos.y, target.z - b.pos.z };
+            const float desiredLength = std::sqrt(desired.x * desired.x + desired.y * desired.y + desired.z * desired.z);
+            const float speed = std::sqrt(b.vel.x * b.vel.x + b.vel.y * b.vel.y + b.vel.z * b.vel.z);
+            if (desiredLength > 1.0e-5f && speed > 1.0e-5f) {
+                desired.x = desired.x / desiredLength * speed;
+                desired.y = desired.y / desiredLength * speed;
+                desired.z = desired.z / desiredLength * speed;
+                const float blend = std::clamp(b.homingStrength * dt, 0.0f, 1.0f);
+                b.vel.x += (desired.x - b.vel.x) * blend;
+                b.vel.y += (desired.y - b.vel.y) * blend;
+                b.vel.z += (desired.z - b.vel.z) * blend;
+            }
+        }
+        b.vel.y -= b.gravity * dt;
+
         // 移動
         b.pos.x += b.vel.x * dt;
         b.pos.y += b.vel.y * dt;
@@ -127,8 +159,7 @@ void BulletManager::Update(float dt, Player& player) {
 
         if (b.model) {
             b.model->SetTranslate(b.pos);
-            const float s = 0.25f;
-            b.model->SetScale({ s, s, s });
+            b.model->SetScale(b.halfSize);
             b.model->Update(dt);
         }
 
@@ -136,7 +167,18 @@ void BulletManager::Update(float dt, Player& player) {
         // Player 側に GetBodyAABB() がある前提（Enemy.cppでも使ってるのでOK）
         if (IntersectAABB_(b.body, player.GetBodyAABB())) {
             player.TriggerHitFlash(0.25f);
-            player.Damage(b.damage);   // ★ここで弾ごとのダメージ
+            player.Damage(b.damage);
+            Vector3 dir = b.knockbackDir;
+            // The projectile may move in Z, but its knockback stays in X/Y.
+            dir.z = 0.0f;
+            const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+            if (len > 1.0e-5f) {
+                dir.x /= len;
+                dir.y /= len;
+                dir.z /= len;
+                const float power = b.baseKnockback + player.GetDamagePercent() * b.knockbackScale;
+                player.ApplyLaunch({ dir.x * power, dir.y * power, dir.z * power }, b.hitStunSec);
+            }
             b.alive = false;
         }
     }
@@ -159,11 +201,8 @@ void BulletManager::Draw() {
 
 void BulletManager::UpdateBody_(Bullet& b) {
     // 足元基準ではなく弾の中心基準でAABB作る
-    const float r = b.radius;
-    const float rz = b.hitRadiusZ;
-
-    b.body.min = { b.pos.x - r,  b.pos.y - r,  b.pos.z - rz };
-    b.body.max = { b.pos.x + r,  b.pos.y + r,  b.pos.z + rz };
+    b.body.min = { b.pos.x - b.halfSize.x, b.pos.y - b.halfSize.y, b.pos.z - b.halfSize.z };
+    b.body.max = { b.pos.x + b.halfSize.x, b.pos.y + b.halfSize.y, b.pos.z + b.halfSize.z };
 }
 
 bool BulletManager::IntersectAABB_(const AABB& a, const AABB& b) const {

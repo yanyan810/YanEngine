@@ -577,6 +577,177 @@ void TestScene::DrawImGui(GameApp& app) {
         }
     }
 
+    if (ImGui::CollapsingHeader("Custom Boss Attack Timeline", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputText("Attack Name", newBossAttackName_, IM_ARRAYSIZE(newBossAttackName_));
+        if (ImGui::Button("New Custom Attack")) {
+            previewAttackKind_ = static_cast<int>(enemyMgr_.AddCustomBossAttack(newBossAttackName_));
+            auto& attack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+            attack.movement.push_back({});
+            EnemyManager::BossMovementKey end{};
+            end.time = 1.0f;
+            end.offset = { 3.0f, 0.0f, 0.0f };
+            attack.movement.push_back(end);
+            selectedBossMovementKey_ = 0;
+        }
+
+        std::vector<const char*> attackLabels = makeAttackLabels();
+        if (!attackLabels.empty()) {
+            ImGui::Combo("Attack", &previewAttackKind_, attackLabels.data(), static_cast<int>(attackLabels.size()));
+            clampPreviewAttackIndex();
+        }
+        auto& attack = enemyMgr_.BossAttackAt(static_cast<size_t>(previewAttackKind_));
+        if (!attack.custom) {
+            ImGui::TextDisabled("Built-in attacks are read-only here. Create or select a custom attack.");
+        } else {
+            ImGui::DragFloat("Duration", &attack.durationSec, 0.01f, 0.01f, 60.0f, "%.3f sec");
+            ImGui::Text("Animation: %s", attack.animationName.c_str());
+            ImGui::Checkbox("Loop Animation", &attack.loopAnimation);
+            ImGui::Text("Playback: %.3f / %.3f", enemyMgr_.CustomBossAttackTime(), attack.durationSec);
+            if (!enemyMgr_.IsCustomBossAttackPlaying()) {
+                if (ImGui::Button("Play Attack") && player_) {
+                    enemyMgr_.StartCustomBossAttack(
+                        static_cast<size_t>(previewAttackKind_), player_->GetPos3D(),
+                        std::min(outLeftX_, outRightX_), std::max(outLeftX_, outRightX_),
+                        (outLeftX_ + outRightX_) * 0.5f);
+                }
+            } else if (ImGui::Button("Stop Attack")) {
+                enemyMgr_.StopCustomBossAttack();
+            }
+
+            ImGui::InputText("Attack Directory", customBossAttackDirectory_, IM_ARRAYSIZE(customBossAttackDirectory_));
+            if (ImGui::Button("Save This JSON")) {
+                TestSceneBossTuning::SaveCustomAttack(
+                    customBossAttackDirectory_, enemyMgr_, static_cast<size_t>(previewAttackKind_), bossTuningStatus_);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Reload JSON Files")) {
+                TestSceneBossTuning::LoadCustomAttacks(customBossAttackDirectory_, enemyMgr_, bossTuningStatus_);
+                clampPreviewAttackIndex();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Delete Attack")) {
+                enemyMgr_.RemoveCustomBossAttack(static_cast<size_t>(previewAttackKind_));
+                clampPreviewAttackIndex();
+            }
+
+            static const char* spaces[] = { "Attack Start", "Player", "Stage Left", "Stage Right", "Stage Center", "World" };
+            static const char* interpolations[] = { "Linear", "Ease In", "Ease Out", "Ease In Out", "Step" };
+
+            if (ImGui::TreeNodeEx("Movement Track", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (ImGui::Button("Add Movement Key")) {
+                    EnemyManager::BossMovementKey key{};
+                    key.time = std::min(attack.durationSec, enemyMgr_.CustomBossAttackTime());
+                    attack.movement.push_back(key);
+                    selectedBossMovementKey_ = static_cast<int>(attack.movement.size()) - 1;
+                }
+                if (!attack.movement.empty()) {
+                    selectedBossMovementKey_ = std::clamp(selectedBossMovementKey_, 0, static_cast<int>(attack.movement.size()) - 1);
+                    std::vector<std::string> labels;
+                    std::vector<const char*> labelPtrs;
+                    for (size_t i = 0; i < attack.movement.size(); ++i) {
+                        labels.push_back(std::to_string(i) + ": " + std::to_string(attack.movement[i].time) + " sec");
+                    }
+                    for (auto& label : labels) labelPtrs.push_back(label.c_str());
+                    ImGui::Combo("Movement Key", &selectedBossMovementKey_, labelPtrs.data(), static_cast<int>(labelPtrs.size()));
+                    auto& key = attack.movement[static_cast<size_t>(selectedBossMovementKey_)];
+                    bool changed = ImGui::DragFloat("Key Time", &key.time, 0.01f, 0.0f, attack.durationSec, "%.3f");
+                    changed |= ImGui::DragFloat3("Target Offset", &key.offset.x, 0.05f);
+                    int space = static_cast<int>(key.space);
+                    if (ImGui::Combo("Target Space", &space, spaces, IM_ARRAYSIZE(spaces))) {
+                        key.space = static_cast<EnemyManager::BossTargetSpace>(space);
+                        changed = true;
+                    }
+                    int interpolation = static_cast<int>(key.interpolation);
+                    if (ImGui::Combo("Interpolation", &interpolation, interpolations, IM_ARRAYSIZE(interpolations))) {
+                        key.interpolation = static_cast<EnemyManager::BossInterpolation>(interpolation);
+                        changed = true;
+                    }
+                    changed |= ImGui::Checkbox("Follow Live Target", &key.followTarget);
+                    changed |= ImGui::Checkbox("Mirror X By Facing", &key.mirrorXByFacing);
+                    changed |= ImGui::Checkbox("Use Gravity", &key.useGravity);
+                    changed |= ImGui::Checkbox("Collide With Stage", &key.collideWithStage);
+                    if (ImGui::Button("Remove Movement Key")) {
+                        attack.movement.erase(attack.movement.begin() + selectedBossMovementKey_);
+                        selectedBossMovementKey_ = std::max(0, selectedBossMovementKey_ - 1);
+                    } else if (changed) {
+                        std::stable_sort(attack.movement.begin(), attack.movement.end(),
+                            [](const auto& a, const auto& b) { return a.time < b.time; });
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNodeEx("Hitbox Track", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (ImGui::Button("Add Hitbox")) {
+                    EnemyManager::BossTimelineHitbox event{};
+                    event.time = std::min(attack.durationSec, enemyMgr_.CustomBossAttackTime());
+                    event.hit = attack.hit;
+                    attack.timelineHitboxes.push_back(event);
+                    selectedBossTimelineHitbox_ = static_cast<int>(attack.timelineHitboxes.size()) - 1;
+                }
+                if (!attack.timelineHitboxes.empty()) {
+                    selectedBossTimelineHitbox_ = std::clamp(selectedBossTimelineHitbox_, 0, static_cast<int>(attack.timelineHitboxes.size()) - 1);
+                    ImGui::SliderInt("Hitbox Index", &selectedBossTimelineHitbox_, 0, static_cast<int>(attack.timelineHitboxes.size()) - 1);
+                    auto& event = attack.timelineHitboxes[static_cast<size_t>(selectedBossTimelineHitbox_)];
+                    ImGui::DragFloat("Hit Time", &event.time, 0.01f, 0.0f, attack.durationSec);
+                    ImGui::DragFloat("Active Duration", &event.duration, 0.01f, 0.01f, 10.0f);
+                    ImGui::DragFloat3("Hitbox Offset", &event.offset.x, 0.05f);
+                    ImGui::DragFloat3("Hitbox Half Size", &event.halfSize.x, 0.05f, 0.01f, 100.0f);
+                    ImGui::Checkbox("Follow Boss", &event.followBoss);
+                    int hitSpace = static_cast<int>(event.space);
+                    if (ImGui::Combo("Hitbox Space", &hitSpace, spaces, IM_ARRAYSIZE(spaces))) event.space = static_cast<EnemyManager::BossTargetSpace>(hitSpace);
+                    ImGui::DragFloat("Damage Percent", &event.hit.damagePercent, 0.5f, 0.0f, 999.0f);
+                    ImGui::DragInt("HP Damage", &event.hit.hpDamage, 1, 0, 999);
+                    ImGui::DragFloat("Base Knockback", &event.hit.baseKnockback, 0.1f, 0.0f, 999.0f);
+                    ImGui::DragFloat3("Knockback Direction", &event.hit.knockbackDir.x, 0.05f);
+                    if (ImGui::Button("Remove Hitbox")) {
+                        attack.timelineHitboxes.erase(attack.timelineHitboxes.begin() + selectedBossTimelineHitbox_);
+                        selectedBossTimelineHitbox_ = std::max(0, selectedBossTimelineHitbox_ - 1);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNodeEx("Projectile Track", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (ImGui::Button("Add Projectile")) {
+                    EnemyManager::BossProjectileEvent event{};
+                    event.time = std::min(attack.durationSec, enemyMgr_.CustomBossAttackTime());
+                    event.hit = attack.hit;
+                    attack.projectiles.push_back(event);
+                    selectedBossProjectile_ = static_cast<int>(attack.projectiles.size()) - 1;
+                }
+                if (!attack.projectiles.empty()) {
+                    static const char* aimModes[] = { "Direction", "Player At Spawn", "Homing" };
+                    selectedBossProjectile_ = std::clamp(selectedBossProjectile_, 0, static_cast<int>(attack.projectiles.size()) - 1);
+                    ImGui::SliderInt("Projectile Index", &selectedBossProjectile_, 0, static_cast<int>(attack.projectiles.size()) - 1);
+                    auto& event = attack.projectiles[static_cast<size_t>(selectedBossProjectile_)];
+                    ImGui::DragFloat("Spawn Time", &event.time, 0.01f, 0.0f, attack.durationSec);
+                    ImGui::DragFloat3("Spawn Offset", &event.offset.x, 0.05f);
+                    int aim = static_cast<int>(event.aim);
+                    if (ImGui::Combo("Aim Mode", &aim, aimModes, IM_ARRAYSIZE(aimModes))) event.aim = static_cast<EnemyManager::BossProjectileAim>(aim);
+                    ImGui::DragFloat3("Direction", &event.direction.x, 0.05f);
+                    ImGui::DragFloat("Speed", &event.speed, 0.1f, 0.0f, 200.0f);
+                    ImGui::DragFloat("Homing Strength", &event.homingStrength, 0.1f, 0.0f, 100.0f);
+                    ImGui::DragFloat("Gravity", &event.gravity, 0.1f, -100.0f, 100.0f);
+                    ImGui::DragFloat("Life", &event.lifeSec, 0.1f, 0.01f, 60.0f);
+                    ImGui::DragFloat3("Projectile Half Size", &event.halfSize.x, 0.05f, 0.01f, 100.0f);
+                    ImGui::DragInt("Shot Count", &event.count, 1, 1, 100);
+                    ImGui::DragFloat("Shot Interval", &event.intervalSec, 0.01f, 0.001f, 10.0f);
+                    ImGui::Checkbox("Mirror Projectile X", &event.mirrorXByFacing);
+                    ImGui::Text("Projectile Model: %s", event.modelPath.c_str());
+                    ImGui::DragInt("Projectile HP Damage", &event.hit.hpDamage, 1, 0, 999);
+                    ImGui::DragFloat("Projectile Knockback", &event.hit.baseKnockback, 0.1f, 0.0f, 999.0f);
+                    if (ImGui::Button("Remove Projectile")) {
+                        attack.projectiles.erase(attack.projectiles.begin() + selectedBossProjectile_);
+                        selectedBossProjectile_ = std::max(0, selectedBossProjectile_ - 1);
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+        if (!bossTuningStatus_.empty()) ImGui::TextWrapped("%s", bossTuningStatus_.c_str());
+    }
+
     // ==========================================
     // 4. Environment & Game Rules
     // ==========================================

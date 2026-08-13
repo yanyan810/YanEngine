@@ -1,0 +1,104 @@
+{
+    "version": 1,
+    "name": "Edge Chase Shot",
+    "custom": true,
+    "durationSec": 2.5,
+    "animationName": "Melee_Attack",
+    "loopAnimation": false,
+    "hit": {
+        "damagePercent": 10.0,
+        "hpDamage": 10,
+        "baseKnockback": 10.0,
+        "knockbackScale": 0.08,
+        "knockbackDir": [1.0, 0.35, 0.0],
+        "hitStunSec": 0.35,
+        "useFixedKnockback": false,
+        "actionSpeedRatio": 0.35
+    },
+    "hitbox": {
+        "offset": [1.2, 0.0, 0.0],
+        "halfSize": [0.6, 0.5, 0.5],
+        "startDelaySec": 0.0,
+        "activeSec": 0.1,
+        "damage": 5
+    },
+    "movement": [
+        {
+            "time": 0.0,
+            "offset": [0.0, 0.0, 0.0],
+            "space": 0,
+            "interpolation": 0,
+            "followTarget": false,
+            "mirrorXByFacing": false,
+            "useGravity": false,
+            "collideWithStage": true
+        },
+        {
+            "time": 0.65,
+            "offset": [-1.0, 0.0, 0.0],
+            "space": 3,
+            "interpolation": 3,
+            "followTarget": false,
+            "mirrorXByFacing": false,
+            "useGravity": false,
+            "collideWithStage": true
+        },
+        {
+            "time": 1.8,
+            "offset": [-1.5, 0.0, 0.0],
+            "space": 1,
+            "interpolation": 2,
+            "followTarget": true,
+            "mirrorXByFacing": true,
+            "useGravity": false,
+            "collideWithStage": true
+        }
+    ],
+    "hitboxes": [
+        {
+            "time": 1.75,
+            "duration": 0.18,
+            "offset": [1.0, 0.4, 0.0],
+            "halfSize": [0.8, 0.7, 0.7],
+            "followBoss": true,
+            "space": 0,
+            "hit": {
+                "damagePercent": 8.0,
+                "hpDamage": 8,
+                "baseKnockback": 8.0,
+                "knockbackScale": 0.06,
+                "knockbackDir": [1.0, 0.3, 0.0],
+                "hitStunSec": 0.3,
+                "useFixedKnockback": false,
+                "actionSpeedRatio": 0.35
+            }
+        }
+    ],
+    "projectiles": [
+        {
+            "time": 0.8,
+            "offset": [1.0, 0.8, 0.0],
+            "direction": [1.0, 0.0, 0.0],
+            "speed": 8.0,
+            "homingStrength": 3.0,
+            "gravity": 0.0,
+            "lifeSec": 5.0,
+            "halfSize": [0.25, 0.25, 0.6],
+            "count": 3,
+            "intervalSec": 0.15,
+            "mirrorXByFacing": true,
+            "aim": 2,
+            "hit": {
+                "damagePercent": 5.0,
+                "hpDamage": 5,
+                "baseKnockback": 5.0,
+                "knockbackScale": 0.03,
+                "knockbackDir": [1.0, 0.2, 0.0],
+                "hitStunSec": 0.2,
+                "useFixedKnockback": false,
+                "actionSpeedRatio": 0.35
+            },
+            "modelPath": "enemy/shooter/bullet/bullet.obj"
+        }
+    ]
+}

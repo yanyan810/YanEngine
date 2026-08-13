@@ -136,6 +136,11 @@ public:
 
     const BossAI& GetBossAI() const { return bossAI_; }
     BossAI& GetBossAIMutable() { return bossAI_; }
+    void PlayAnimation(const std::string& name, bool loop) {
+        if (model_ && !name.empty()) {
+            model_->PlayAnimation(name, loop);
+        }
+    }
 
 private:
     void UpdateAI_Melee_(float dt, const Vector2& playerXY, float playerZ);

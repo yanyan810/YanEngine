@@ -589,26 +589,21 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
 
     if (launched_ && launchControlUnlocked_) {
         const float airControlAccelX = moveSpeed_ * 3.0f;
-        const float airControlAccelZ = depthSpeed_ * 3.0f;
         const float airControlBrakeMul = 1.35f;
 
         const float inputX = static_cast<float>(command.horizontal);
-        const float inputZ = static_cast<float>(command.depth);
         const float accelX = (inputX != 0.0f && vel_.x * inputX < 0.0f)
             ? airControlAccelX * airControlBrakeMul
             : airControlAccelX;
-        const float accelZ = (inputZ != 0.0f && vel_.z * inputZ < 0.0f)
-            ? airControlAccelZ * airControlBrakeMul
-            : airControlAccelZ;
 
         vel_.x += inputX * accelX * dt;
-        vel_.z += inputZ * accelZ * dt;
+        // A launched player stays on the current depth lane. In particular,
+        // W/S input must not add Z velocity while being knocked upward.
+        vel_.z = 0.0f;
 
         const float maxHorizontalSpeed = std::max(launchInitialSpeed_ * 1.15f, moveSpeed_);
-        const float maxDepthSpeed = std::max(launchInitialSpeed_ * 0.80f, depthSpeed_);
         vel_.x = std::clamp(vel_.x, -maxHorizontalSpeed, maxHorizontalSpeed);
-        vel_.z = std::clamp(vel_.z, -maxDepthSpeed, maxDepthSpeed);
-        isMoving = command.horizontal != 0 || command.depth != 0;
+        isMoving = command.horizontal != 0;
     }
     else if (!preserveSideSpecialBounce &&
         !inputBlockedByLaunch &&

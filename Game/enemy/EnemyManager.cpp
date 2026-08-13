@@ -354,10 +354,194 @@ bool EnemyManager::RemoveCustomBossAttack(size_t index) {
 }
 
 void EnemyManager::ClearCustomBossAttacks() {
+	StopCustomBossAttack();
 	bossAttacks_.erase(
 		std::remove_if(bossAttacks_.begin(), bossAttacks_.end(),
 			[](const BossAttackDefinition& attack) { return attack.custom; }),
 		bossAttacks_.end());
+}
+
+bool EnemyManager::StartCustomBossAttack(
+	size_t attackIndex, const Vector3& playerPos, float stageLeft, float stageRight, float stageCenter) {
+	if (attackIndex >= bossAttacks_.size() || !bossAttacks_[attackIndex].custom || !GetBoss()) {
+		return false;
+	}
+	const BossAttackDefinition& attack = bossAttacks_[attackIndex];
+	Enemy* boss = GetBoss();
+	customAttackRuntime_ = {};
+	customAttackRuntime_.playing = true;
+	customAttackRuntime_.attackIndex = attackIndex;
+	customAttackRuntime_.attackStart = boss->GetPos3D();
+	customAttackRuntime_.playerAtStart = playerPos;
+	customAttackRuntime_.facing = playerPos.x < customAttackRuntime_.attackStart.x ? -1 : 1;
+	customAttackRuntime_.stageLeft = stageLeft;
+	customAttackRuntime_.stageRight = stageRight;
+	customAttackRuntime_.stageCenter = stageCenter;
+	customAttackRuntime_.firedHitboxes.assign(attack.timelineHitboxes.size(), false);
+	customAttackRuntime_.projectileShots.assign(attack.projectiles.size(), 0);
+	customAttackRuntime_.nextProjectileTimes.resize(attack.projectiles.size());
+	for (size_t i = 0; i < attack.projectiles.size(); ++i) {
+		customAttackRuntime_.nextProjectileTimes[i] = attack.projectiles[i].time;
+	}
+	boss->SetAIDisabled(true);
+	boss->SetVel({});
+	boss->PlayAnimation(attack.animationName, attack.loopAnimation);
+	return true;
+}
+
+void EnemyManager::StopCustomBossAttack() {
+	if (Enemy* boss = GetBoss()) {
+		if (customAttackRuntime_.playing) {
+			boss->SetVel({});
+		}
+	}
+	customAttackRuntime_ = {};
+}
+
+Vector3 EnemyManager::ResolveBossTarget_(const BossMovementKey& key, const Vector3& livePlayer) const {
+	const Vector3 playerBase = key.followTarget ? livePlayer : customAttackRuntime_.playerAtStart;
+	Vector3 base{};
+	switch (key.space) {
+	case BossTargetSpace::AttackStart: base = customAttackRuntime_.attackStart; break;
+	case BossTargetSpace::Player: base = playerBase; break;
+	case BossTargetSpace::StageLeft: base = { customAttackRuntime_.stageLeft, customAttackRuntime_.attackStart.y, customAttackRuntime_.attackStart.z }; break;
+	case BossTargetSpace::StageRight: base = { customAttackRuntime_.stageRight, customAttackRuntime_.attackStart.y, customAttackRuntime_.attackStart.z }; break;
+	case BossTargetSpace::StageCenter: base = { customAttackRuntime_.stageCenter, customAttackRuntime_.attackStart.y, customAttackRuntime_.attackStart.z }; break;
+	case BossTargetSpace::World: base = {}; break;
+	}
+	Vector3 offset = key.offset;
+	if (key.mirrorXByFacing) {
+		offset.x *= static_cast<float>(customAttackRuntime_.facing);
+	}
+	return { base.x + offset.x, base.y + offset.y, base.z + offset.z };
+}
+
+void EnemyManager::UpdateCustomBossAttack_(float dt, const Vector3& playerPos) {
+	if (!customAttackRuntime_.playing || customAttackRuntime_.attackIndex >= bossAttacks_.size()) {
+		return;
+	}
+	Enemy* boss = GetBoss();
+	if (!boss) {
+		StopCustomBossAttack();
+		return;
+	}
+	BossAttackDefinition& attack = bossAttacks_[customAttackRuntime_.attackIndex];
+	const float previousTime = customAttackRuntime_.time;
+	customAttackRuntime_.time += dt;
+
+	if (!attack.movement.empty()) {
+		const BossMovementKey* previous = nullptr;
+		const BossMovementKey* next = nullptr;
+		for (const auto& key : attack.movement) {
+			if (key.time <= customAttackRuntime_.time) previous = &key;
+			if (key.time > customAttackRuntime_.time) { next = &key; break; }
+		}
+		Vector3 from = previous ? ResolveBossTarget_(*previous, playerPos) : customAttackRuntime_.attackStart;
+		Vector3 target = next ? ResolveBossTarget_(*next, playerPos) : from;
+		float t = 1.0f;
+		if (next) {
+			const float fromTime = previous ? previous->time : 0.0f;
+			t = std::clamp((customAttackRuntime_.time - fromTime) / std::max(0.0001f, next->time - fromTime), 0.0f, 1.0f);
+			switch (next->interpolation) {
+			case BossInterpolation::EaseIn: t *= t; break;
+			case BossInterpolation::EaseOut: t = 1.0f - (1.0f - t) * (1.0f - t); break;
+			case BossInterpolation::EaseInOut: t = t * t * (3.0f - 2.0f * t); break;
+			case BossInterpolation::Step: t = 0.0f; break;
+			default: break;
+			}
+		}
+		const BossMovementKey& rules = next ? *next : (previous ? *previous : attack.movement.front());
+		Vector3 position{
+			from.x + (target.x - from.x) * t,
+			from.y + (target.y - from.y) * t,
+			from.z + (target.z - from.z) * t,
+		};
+		// Attack movement may use Z for authored targets, but the boss itself
+		// remains on the lane where the attack started.
+		position.z = customAttackRuntime_.attackStart.z;
+		if (rules.useGravity) {
+			const float segmentStart = previous ? previous->time : 0.0f;
+			const float gravityTime = std::max(0.0f, customAttackRuntime_.time - segmentStart);
+			position.y -= 0.5f * 25.0f * gravityTime * gravityTime;
+		}
+		if (rules.collideWithStage) {
+			position.x = std::clamp(position.x, customAttackRuntime_.stageLeft, customAttackRuntime_.stageRight);
+		}
+		boss->SetPos(position);
+		boss->SetVel({});
+	}
+
+	for (size_t i = 0; i < attack.timelineHitboxes.size(); ++i) {
+		const auto& event = attack.timelineHitboxes[i];
+		if (customAttackRuntime_.firedHitboxes[i] || event.time > customAttackRuntime_.time) continue;
+		customAttackRuntime_.firedHitboxes[i] = true;
+		Vector3 base = customAttackRuntime_.attackStart;
+		if (event.followBoss) base = boss->GetPos3D();
+		else if (event.space == BossTargetSpace::Player) base = playerPos;
+		else if (event.space == BossTargetSpace::World) base = {};
+		else if (event.space == BossTargetSpace::StageLeft) base.x = customAttackRuntime_.stageLeft;
+		else if (event.space == BossTargetSpace::StageRight) base.x = customAttackRuntime_.stageRight;
+		else if (event.space == BossTargetSpace::StageCenter) base.x = customAttackRuntime_.stageCenter;
+		Vector3 offset = event.offset;
+		offset.x *= static_cast<float>(customAttackRuntime_.facing);
+		MeleeHitbox hitbox{};
+		hitbox.box = { base.x + offset.x, base.y + offset.y, base.z + offset.z,
+			event.halfSize.x, event.halfSize.y, event.halfSize.z };
+		hitbox.life = std::max(0.01f, event.duration);
+		hitbox.damage = event.hit.hpDamage;
+		hitbox.fromBoss = true;
+		hitbox.attackIndex = customAttackRuntime_.attackIndex;
+		hitbox.attackerPos = boss->GetPos3D();
+		hitbox.facing = customAttackRuntime_.facing;
+		hitbox.useHitOverride = true;
+		hitbox.hitOverride = event.hit;
+		hitbox.followBoss = event.followBoss;
+		hitbox.followOffset = offset;
+		meleeHitboxes_.push_back(hitbox);
+	}
+
+	for (size_t i = 0; i < attack.projectiles.size(); ++i) {
+		const auto& event = attack.projectiles[i];
+		while (customAttackRuntime_.projectileShots[i] < std::max(1, event.count) &&
+			customAttackRuntime_.nextProjectileTimes[i] <= customAttackRuntime_.time) {
+			Vector3 offset = event.offset;
+			if (event.mirrorXByFacing) offset.x *= static_cast<float>(customAttackRuntime_.facing);
+			const Vector3 spawn{ boss->GetPos3D().x + offset.x, boss->GetPos3D().y + offset.y, boss->GetPos3D().z + offset.z };
+			Vector3 direction = event.direction;
+			if (event.aim != BossProjectileAim::Direction) {
+				direction = { playerPos.x - spawn.x, playerPos.y - spawn.y, playerPos.z - spawn.z };
+			} else if (event.mirrorXByFacing) {
+				direction.x *= static_cast<float>(customAttackRuntime_.facing);
+			}
+			const float len = std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+			if (len > 1.0e-5f) {
+				direction.x /= len; direction.y /= len; direction.z /= len;
+			}
+			BulletManager::SpawnDesc desc{};
+			desc.position = spawn;
+			desc.velocity = { direction.x * event.speed, direction.y * event.speed, direction.z * event.speed };
+			desc.halfSize = event.halfSize;
+			desc.damage = event.hit.hpDamage;
+			desc.damagePercent = event.hit.damagePercent;
+			desc.baseKnockback = event.hit.baseKnockback;
+			desc.knockbackScale = event.hit.knockbackScale;
+			desc.knockbackDir = event.hit.knockbackDir;
+			desc.hitStunSec = event.hit.hitStunSec;
+			desc.lifeSec = event.lifeSec;
+			desc.gravity = event.gravity;
+			desc.homing = event.aim == BossProjectileAim::Homing;
+			desc.homingStrength = event.homingStrength;
+			desc.modelPath = event.modelPath;
+			bullets_.Spawn(desc);
+			++customAttackRuntime_.projectileShots[i];
+			customAttackRuntime_.nextProjectileTimes[i] += std::max(0.001f, event.intervalSec);
+		}
+	}
+
+	if (customAttackRuntime_.time >= std::max(0.01f, attack.durationSec)) {
+		StopCustomBossAttack();
+	}
+	(void)previousTime;
 }
 
 void EnemyManager::QueueBossAttackHitbox(const Enemy& boss, size_t attackIndex, float targetX) {
@@ -637,6 +821,18 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 		e.Update(dt, playerXY, playerZ);
 		e.SetLighting(light_);
 	}
+	UpdateCustomBossAttack_(dt, { playerXY.x, playerXY.y, playerZ });
+	if (Enemy* boss = GetBoss()) {
+		for (auto& h : meleeHitboxes_) {
+			if (h.followBoss) {
+				const Vector3 p = boss->GetPos3D();
+				h.box.x = p.x + h.followOffset.x;
+				h.box.y = p.y + h.followOffset.y;
+				h.box.z = p.z + h.followOffset.z;
+				h.attackerPos = p;
+			}
+		}
+	}
 
 	for (auto& h : pendingMeleeHitboxes_) h.life -= dt;
 	for (size_t i = 0; i < pendingMeleeHitboxes_.size();) {
@@ -673,10 +869,11 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			}
 			player.TriggerHitFlash(0.25f);
 			if (h.fromBoss) {
-				BossHitTuning tuning = BossAttackAt(h.attackIndex).hit;
+				BossHitTuning tuning = h.useHitOverride ? h.hitOverride : BossAttackAt(h.attackIndex).hit;
 				Vector3 dir = tuning.knockbackDir;
 				const float dirX = (player.GetX() >= h.attackerPos.x) ? 1.0f : -1.0f;
 				dir.x = std::abs(dir.x) * dirX;
+				dir.z = 0.0f;
 				if (battleTuning_.useHpDamage) {
 					player.Damage(tuning.hpDamage);
 					const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
@@ -891,7 +1088,8 @@ void EnemyManager::Update(float dt, const Vector2& playerXY, float playerZ, Play
 			Vector3 targetPlayerPos = bossPos;
 			targetPlayerPos.x += grabHoldTuning_.offset.x * facingMul;
 			targetPlayerPos.y += grabHoldTuning_.offset.y;
-			targetPlayerPos.z += grabHoldTuning_.offset.z;
+			// A grab can reposition X/Y while preserving the player's depth lane.
+			targetPlayerPos.z = player.GetZ();
 
 			player.SetGrabbed(true);
 			player.SetPos(targetPlayerPos);

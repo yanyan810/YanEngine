@@ -52,6 +52,7 @@ void TestScene::OnEnter(GameApp& app) {
     if (std::filesystem::exists(bossTuningPath_)) {
         TestSceneBossTuning::Load(bossTuningPath_, enemyMgr_, *player_, bossTuningStatus_);
     }
+    TestSceneBossTuning::LoadCustomAttacks(customBossAttackDirectory_, enemyMgr_, bossTuningStatus_);
 	// PlayerAttack editor movement is the single source of truth for special paths.
 	player_->LoadSpecialAttackMovementJson();
 
@@ -282,6 +283,10 @@ void TestScene::Update(GameApp& app, float dt) {
     }
 
     if (!hitStopActive && hitStopTimer_ <= 0.0f) {
+        enemyMgr_.SetCustomBossAttackStageBounds(
+            std::min(outLeftX_, outRightX_),
+            std::max(outLeftX_, outRightX_),
+            (outLeftX_ + outRightX_) * 0.5f);
         enemyMgr_.Update(dt, playerPos2D, playerZ, *player_);
         hitStopTimer_ = std::max(hitStopTimer_, enemyMgr_.ConsumeHitStopRequest());
     }
