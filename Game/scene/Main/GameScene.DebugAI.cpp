@@ -632,6 +632,11 @@ bool GameScene::RestoreDebugState(const DebugGameState& state) {
     }
     isPaused_ = false;
     pauseSel_ = PauseSel::Close;
+    wallHitCount_ = 0;
+    blackDissolveActive_ = false;
+    blackDissolveTime_ = 0.0f;
+    blackDissolveNextScene_.clear();
+    hitStopTimer_ = 0.0f;
     introTime_ = 0.0f;
     outroTime_ = 0.0f;
 

@@ -3,8 +3,10 @@
 #include <ShObjIdl.h>
 
 #include "DebugProtocol.h"
+#include "CoverageTracker.h"
 #include "ExternalGenericAIProvider.h"
 #include "GameWindowCapture.h"
+#include "ScenarioRunner.h"
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -33,6 +35,8 @@
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"DebugAIViewerWindow";
+constexpr wchar_t kProjectToolsWindowClass[] = L"DebugAIProjectToolsWindow";
+constexpr wchar_t kSemanticReviewWindowClass[] = L"DebugAISemanticReviewWindow";
 constexpr char kPipeName[] = "\\\\.\\pipe\\DebugAI_CG5";
 constexpr DWORD kPipeIoTimeoutMilliseconds = 10000;
 
@@ -57,6 +61,7 @@ enum ControlId {
     LocalStartId,
     AIStopId,
     AIIntervalId,
+    LocalAIIntervalId,
     AIActorModeId,
     AIVisionEnabledId,
     CaptureVisionId,
@@ -68,7 +73,22 @@ enum ControlId {
     GenerateProfileId,
     GenerateStateProfileId,
     GenerateLocalPolicyId,
+    CoverageSummaryId,
+    ResetCoverageId,
     StatusTextId,
+    OpenProjectToolsId,
+    OpenSemanticReviewId,
+    SemanticReviewListId,
+    SemanticReviewCategoryId,
+    SemanticReviewApproveId,
+    SemanticReviewIgnoreId,
+    SemanticReviewReloadId,
+    SemanticReviewDetailsId,
+    ScenarioListId,
+    ReloadScenarioListId,
+    StartScenarioId,
+    RunAllScenariosId,
+    StopScenarioId,
 };
 
 constexpr UINT kAIStatusMessage = WM_APP + 1;
@@ -77,21 +97,37 @@ constexpr UINT_PTR kPendingReplayStartTimerId = 1;
 constexpr UINT_PTR kGameProcessWatchTimerId = 2;
 
 HWND gStatusText = nullptr;
+HWND gMainWindow = nullptr;
+HWND gProjectToolsWindow = nullptr;
+HWND gSemanticReviewWindow = nullptr;
 HWND gReplaySessions = nullptr;
 HWND gPlaySelectedReplay = nullptr;
 HWND gReplaySpeed = nullptr;
 DebugObservation gLastObservation;
 bool gHasObservation = false;
 ExternalGenericAIProvider gAIProvider;
+CoverageTracker gCoverageTracker;
+ScenarioRunner gScenarioRunner;
 HWND gAIInterval = nullptr;
+HWND gLocalAIInterval = nullptr;
 HWND gAIActorMode = nullptr;
 HWND gAIVisionEnabled = nullptr;
 HWND gAIGoal = nullptr;
 HWND gProjectFolder = nullptr;
 HWND gScanTargets = nullptr;
+HWND gScenarioList = nullptr;
+HWND gSemanticReviewList = nullptr;
+HWND gSemanticReviewCategory = nullptr;
+HWND gSemanticReviewDetails = nullptr;
 std::thread gAIWorker;
 std::atomic_bool gAIWorkerRunning = false;
 std::atomic_bool gAIStopRequested = false;
+std::thread gConnectionWorker;
+std::atomic_bool gConnectionWorkerRunning = false;
+std::atomic_bool gConnectionStatusReady = false;
+std::atomic_bool gConnectionInitialResultPending = true;
+std::mutex gConnectionStatusMutex;
+std::string gPendingConnectionStatus;
 std::atomic_bool gAIConnectionVerified = false;
 std::mutex gAIWaitMutex;
 std::condition_variable gAIWaitCondition;
@@ -99,11 +135,28 @@ std::mutex gAIStatusMutex;
 std::string gPendingAIStatus;
 std::mutex gTransportMutex;
 std::atomic<DWORD> gGameProcessId = 0;
+std::atomic_bool gGameConnectionEstablished = false;
 std::mutex gGameProcessWatchMutex;
 DWORD gWatchedGameProcessId = 0;
 HANDLE gWatchedGameProcessHandle = nullptr;
 ULONGLONG gAutoRefreshResumeTick = 0;
+ULONGLONG gNextConnectionAttemptTick = 0;
 std::function<std::string()> gPendingReplayStart;
+
+enum class SemanticReviewKind { Action, StateMapping };
+
+struct SemanticReviewEntry {
+    SemanticReviewKind kind = SemanticReviewKind::Action;
+    std::string actionId;
+    std::string category;
+    std::string genericProperty;
+    std::string sourceSymbol;
+    float confidence = 0.0f;
+    std::vector<std::string> evidence;
+};
+
+std::vector<SemanticReviewEntry> gSemanticReviewEntries;
+std::size_t gSemanticReviewHiddenDuplicates = 0;
 
 enum class ControlledActorMode { Player, Boss, Both };
 
@@ -114,6 +167,24 @@ struct ReplaySessionListEntry {
 };
 
 std::vector<ReplaySessionListEntry> gReplaySessionEntries;
+
+struct ScenarioListEntry {
+    std::filesystem::path path;
+    std::wstring label;
+};
+
+std::vector<ScenarioListEntry> gScenarioEntries;
+
+struct ScenarioBatchItemResult {
+    std::filesystem::path scenarioPath;
+    std::filesystem::path resultPath;
+    std::string label;
+    std::string status;
+    std::string detail;
+    std::size_t anomalyCount = 0;
+    std::size_t anomalyErrorCount = 0;
+    double elapsedSeconds = 0.0;
+};
 
 void PostAIStatus(HWND window, std::string text, bool preserveResult);
 bool IsPlayerActorAction(const DebugGenericAction& action);
@@ -139,6 +210,11 @@ bool WatchedGameProcessExited() {
     return gWatchedGameProcessHandle &&
         WaitForSingleObject(gWatchedGameProcessHandle, 0) ==
             WAIT_OBJECT_0;
+}
+
+bool HasWatchedGameProcess() {
+    std::lock_guard lock(gGameProcessWatchMutex);
+    return gWatchedGameProcessHandle != nullptr;
 }
 
 void StopWatchingGameProcess() {
@@ -191,10 +267,21 @@ void SaveWorkspaceSettings(const std::filesystem::path& folder, const std::wstri
     const auto path = WorkspaceConfigPath();
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
+    const auto readInterval = [](HWND control, unsigned int fallback) {
+        if (!control) return fallback;
+        wchar_t text[32]{};
+        GetWindowTextW(control, text, static_cast<int>(std::size(text)));
+        wchar_t* end = nullptr;
+        const unsigned long value = wcstoul(text, &end, 10);
+        return end == text ? fallback
+            : static_cast<unsigned int>(std::clamp(value, 60ul, 5000ul));
+    };
     nlohmann::json config = {
-        { "schemaVersion", 2 },
+        { "schemaVersion", 3 },
         { "projectFolder", WideToUtf8(folder.wstring()) },
         { "scanTargets", WideToUtf8(scanTargets) },
+        { "apiIntervalMs", readInterval(gAIInterval, 2000) },
+        { "localIntervalMs", readInterval(gLocalAIInterval, 250) },
         { "visionEnabled", gAIVisionEnabled &&
             SendMessageW(gAIVisionEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED },
     };
@@ -293,6 +380,17 @@ struct ProjectScanResult {
     std::vector<AttackRangeCandidate> attackRangeCandidates;
 };
 
+struct ActionSemanticInference {
+    std::string category = "generic";
+    std::vector<std::string> tags;
+    std::vector<std::string> evidence;
+    float confidence = 0.25f;
+};
+
+ActionSemanticInference InferActionSemantics(
+    const std::string& actionId,
+    const ProjectScanResult& scan);
+
 std::size_t SourceLineNumber(
     const std::string& text,
     std::size_t position) {
@@ -366,10 +464,12 @@ void ExtractActionIds(
         std::regex expression;
         float confidence;
     };
-    static const std::array<Pattern, 4> patterns = {
+    static const std::array<Pattern, 6> patterns = {
         Pattern{ std::regex(R"re(action\.name\s*==\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
+        Pattern{ std::regex(R"re((?:[A-Za-z_][A-Za-z0-9_]*\.)*actionId\s*==\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
         Pattern{ std::regex(R"re(actionId\s*[=:]\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
         Pattern{ std::regex(R"re(actionId"\s*:\s*"([A-Za-z][A-Za-z0-9_.-]+)")re"), 0.98f },
+        Pattern{ std::regex(R"re((?:add|register|execute)[A-Za-z0-9_]*Action\s*\(\s*"([A-Za-z][A-Za-z0-9_.-]+)")re", std::regex::icase), 0.88f },
         Pattern{ std::regex(R"re(\{\s*"([A-Z][A-Za-z0-9_.-]+)"\s*\})re"), 0.60f },
     };
     for (const auto& pattern : patterns) {
@@ -490,6 +590,44 @@ std::string SourceLanguage(const std::filesystem::path& path) {
     return "Source";
 }
 
+unsigned int LoadWorkspaceInterval(const char* name, unsigned int fallback) {
+    std::ifstream input(WorkspaceConfigPath());
+    const auto config = nlohmann::json::parse(input, nullptr, false);
+    if (config.is_discarded() || !config.is_object()) return fallback;
+    const auto value = config.value(name, fallback);
+    return static_cast<unsigned int>(std::clamp<std::uint64_t>(value, 60, 5000));
+}
+
+void AddSignalCandidate(
+    ProjectScanResult& result,
+    const std::string& property,
+    const std::string& symbol,
+    const std::string& kind,
+    float confidence,
+    const std::string& source);
+
+bool IsSemanticRuntimeProperty(const std::string& property) {
+    const std::string name = LowerAscii(property);
+    static const std::set<std::string> exact = {
+        "game.phase", "game.state", "game.mode",
+        "player.hp", "player.health", "player.maxhp", "player.action",
+        "player.attacktype", "player.isattacking", "player.canmove",
+        "player.canjump", "player.canattack", "player.onground",
+        "enemy.hp", "enemy.health", "enemy.maxhp", "enemy.phase",
+        "enemy.state", "enemy.intent", "enemy.threat",
+        "enemy.attackactive", "enemy.attackstartup",
+        "enemy.attackrange", "enemy.distancetoplayer",
+    };
+    if (exact.contains(name)) return true;
+    const auto semanticSuffix = [&](std::string_view suffix) {
+        return name.size() > suffix.size() && name.ends_with(suffix);
+    };
+    return semanticSuffix(".hp") || semanticSuffix(".health") ||
+        semanticSuffix(".phase") || semanticSuffix(".state") ||
+        semanticSuffix(".action") || semanticSuffix(".threat") ||
+        semanticSuffix(".attackactive");
+}
+
 void ExtractSourceIndex(
     const std::string& text,
     const std::string& source,
@@ -596,6 +734,11 @@ void ExtractSourceIndex(
             AddBoundedEvidence(result.runtimePropertyEvidence[property], {
                 "RuntimeProperty", property, source, lineNumber, excerpt, 0.99f,
             });
+            if (IsSemanticRuntimeProperty(property)) {
+                AddSignalCandidate(
+                    result, property, property, "runtimeProperty",
+                    0.995f, source);
+            }
         }
         for (std::sregex_iterator found(
             line.begin(), line.end(), scenePattern), end;
@@ -651,14 +794,32 @@ void ExtractStateSignals(const std::string& text, const std::string& source,
     // Extract declared fields and zero-argument getters. This intentionally uses names only;
     // generated mappings remain reviewable candidates and never execute source code.
     static const std::regex symbolPattern(
-        R"re(\b(bool|float|double|int|uint\w*|size_t|State|Phase|PlayerAction)\s+((?:Get|Is|Can|Has|Did)?[A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\)\s*const|[_{=;]))re");
+        R"re(\b(bool|float|double|int|uint\w*|size_t|[A-Za-z_][A-Za-z0-9_]*(?:State|Phase|Action|Mode))\s+((?:Get|Is|Can|Has|Did)?[A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\)\s*const|[_{=;]))re");
     const bool bossSource = category == "Enemy/Boss";
     const bool playerSource = category == "Player/Action" || category == "Input";
+    const bool sceneSource = category == "Scene";
+    const auto healthName = [](const std::string& name) {
+        return name == "hp" || name == "hp_" || name == "health" ||
+            name == "health_" || name == "gethp" || name == "gethealth" ||
+            name.find("currenthp") != std::string::npos ||
+            name.find("currenthealth") != std::string::npos ||
+            name.find("hitpoints") != std::string::npos;
+    };
+    const auto maxHealthName = [](const std::string& name) {
+        return name.find("maxhp") != std::string::npos ||
+            name.find("maxhealth") != std::string::npos ||
+            name.find("maximumhealth") != std::string::npos;
+    };
     for (std::sregex_iterator match(text.begin(), text.end(), symbolPattern), end; match != end; ++match) {
         const std::string kind = (*match)[1].str();
         const std::string symbol = (*match)[2].str();
         const std::string name = LowerAscii(symbol);
+        const std::string kindName = LowerAscii(kind);
         if (bossSource) {
+            if (healthName(name))
+                AddSignalCandidate(result, "enemy.hp", symbol, kind, 0.95f, source);
+            if (maxHealthName(name))
+                AddSignalCandidate(result, "enemy.maxHp", symbol, kind, 0.93f, source);
             if (name == "getstate" || name == "state" || name == "state_" || name == "st_")
                 AddSignalCandidate(result, "enemy.intent", symbol, kind, 0.92f, source);
             if (name.find("attackactive") != std::string::npos || name.find("isattacking") != std::string::npos ||
@@ -673,10 +834,15 @@ void ExtractStateSignals(const std::string& text, const std::string& source,
             if (name.find("dist") != std::string::npos &&
                 (name.find("player") != std::string::npos || name.find("target") != std::string::npos || name.find("chase") != std::string::npos))
                 AddSignalCandidate(result, "enemy.distanceToPlayer", symbol, kind, 0.72f, source);
-            if (name == "getphase" || name == "phase" || name == "phase_")
+            if (name == "getphase" || name == "phase" || name == "phase_" ||
+                kindName.find("phase") != std::string::npos)
                 AddSignalCandidate(result, "enemy.phase", symbol, kind, 0.90f, source);
         }
         if (playerSource) {
+            if (healthName(name))
+                AddSignalCandidate(result, "player.hp", symbol, kind, 0.95f, source);
+            if (maxHealthName(name))
+                AddSignalCandidate(result, "player.maxHp", symbol, kind, 0.93f, source);
             if (name.find("isonground") != std::string::npos || name == "onground")
                 AddSignalCandidate(result, "player.onGround", symbol, kind, 0.96f, source);
             if (name.find("canstartattack") != std::string::npos || name.find("canattack") != std::string::npos)
@@ -685,6 +851,21 @@ void ExtractStateSignals(const std::string& text, const std::string& source,
                 AddSignalCandidate(result, "player.action", symbol, kind, 0.91f, source);
             if (name.find("currentattacktype") != std::string::npos || name == "attacktype_")
                 AddSignalCandidate(result, "player.attackType", symbol, kind, 0.91f, source);
+        }
+        if (sceneSource) {
+            if (name.find("phase") != std::string::npos ||
+                kindName.find("phase") != std::string::npos)
+                AddSignalCandidate(result, "game.phase", symbol, kind, 0.88f, source);
+            if (name.find("gamestate") != std::string::npos ||
+                kindName.find("gamestate") != std::string::npos)
+                AddSignalCandidate(result, "game.state", symbol, kind, 0.84f, source);
+            if (name.find("playerhp") != std::string::npos ||
+                name.find("playerhealth") != std::string::npos)
+                AddSignalCandidate(result, "player.hp", symbol, kind, 0.88f, source);
+            if (name.find("enemyhp") != std::string::npos ||
+                name.find("bosshealth") != std::string::npos ||
+                name.find("bosshp") != std::string::npos)
+                AddSignalCandidate(result, "enemy.hp", symbol, kind, 0.88f, source);
         }
     }
 
@@ -719,7 +900,8 @@ void ExtractStateSignals(const std::string& text, const std::string& source,
         }
     }
 
-    static const std::regex enumPattern(R"re(enum\s+class\s+(State|Phase)\s*(?::[^\{]+)?\{([^\}]+)\})re");
+    static const std::regex enumPattern(
+        R"re(enum\s+class\s+([A-Za-z_][A-Za-z0-9_]*(?:State|Phase|Action|Mode))\s*(?::[^\{]+)?\{([^\}]+)\})re");
     static const std::regex valuePattern(R"re(\b([A-Za-z][A-Za-z0-9_]*)\b\s*(?:=[^,]+)?(?:,|$))re");
     for (std::sregex_iterator match(text.begin(), text.end(), enumPattern), end; match != end; ++match) {
         const std::string enumName = (*match)[1].str();
@@ -757,6 +939,9 @@ bool AnalyzeProjectFolder(
             filename.find(L"secret") != std::wstring::npos ||
             filename.find(L"credential") != std::wstring::npos ||
             filename == L"project_scan.json" ||
+            filename == L"action_profile.json" ||
+            filename == L"state_mapping_profile.json" ||
+            filename == L"local_policy.json" ||
             filename == L"debug_ai.local.json" || filename == L"debug_ai.workspace.local.json") continue;
         std::wstring extension = entry.path().extension().wstring();
         std::transform(extension.begin(), extension.end(), extension.begin(), ::towlower);
@@ -896,8 +1081,26 @@ bool WriteProjectScanIndex(
     for (const auto& [name, values] : result.stateValues) {
         enumValues[name] = values;
     }
+    nlohmann::json actionSemantics = nlohmann::json::array();
+    std::size_t semanticAutoApproved = 0;
+    std::size_t semanticReviewRequired = 0;
+    for (const auto& [actionId, ignored] : result.actionSources) {
+        const auto semantic = InferActionSemantics(actionId, result);
+        const bool autoApproved = semantic.confidence >= 0.90f;
+        if (autoApproved) ++semanticAutoApproved;
+        else ++semanticReviewRequired;
+        actionSemantics.push_back({
+            { "actionId", actionId },
+            { "category", semantic.category },
+            { "tags", semantic.tags },
+            { "confidence", semantic.confidence },
+            { "evidence", semantic.evidence },
+            { "autoApproved", autoApproved },
+            { "reviewRequired", !autoApproved },
+        });
+    }
     nlohmann::json index = {
-        { "schemaVersion", 2 },
+        { "schemaVersion", 3 },
         { "gameId", gameId },
         { "generatedLocally", true },
         { "sourceFiles", std::move(files) },
@@ -907,6 +1110,8 @@ bool WriteProjectScanIndex(
             { "bytes", result.bytes },
             { "analysisErrors", result.analysisErrors },
             { "actions", result.actionSources.size() },
+            { "semanticActionsAutoApproved", semanticAutoApproved },
+            { "semanticActionsReviewRequired", semanticReviewRequired },
             { "stateMappings", result.signalCandidates.size() },
             { "attackRanges", result.attackRangeCandidates.size() },
             { "symbols", result.declaredSymbolSources.size() },
@@ -918,6 +1123,7 @@ bool WriteProjectScanIndex(
         } },
         { "actions", indexedCollection(
             result.actionSources, result.actionEvidence, "actionId") },
+        { "actionSemantics", std::move(actionSemantics) },
         { "symbols", indexedCollection(
             result.declaredSymbolSources,
             result.declaredSymbolEvidence, "symbolId") },
@@ -1099,6 +1305,14 @@ std::string ScanProjectFolder(
     std::string indexError;
     const bool indexWritten =
         WriteProjectScanIndex(result, scanTargets, indexPath, indexError);
+    std::size_t semanticAutoApproved = 0;
+    std::size_t semanticReviewRequired = 0;
+    for (const auto& [actionId, ignored] : result.actionSources) {
+        if (InferActionSemantics(actionId, result).confidence >= 0.90f)
+            ++semanticAutoApproved;
+        else
+            ++semanticReviewRequired;
+    }
     std::ostringstream output;
     output << "Project scan completed.\r\nFolder: " << WideToUtf8(root.wstring())
         << "\r\nSafe candidate files: " << result.files
@@ -1111,6 +1325,8 @@ std::string ScanProjectFolder(
     output << "\r\n\r\nClassification:";
     for (const auto& [category, count] : result.categories) output << "\r\n  " << category << ": " << count;
     output << "\r\n\r\nDiscovered Action IDs: " << result.actionSources.size()
+        << "\r\nSemantic Actions auto-approved: " << semanticAutoApproved
+        << "\r\nSemantic Actions needing review: " << semanticReviewRequired
         << "\r\nState mapping candidates: " << result.signalCandidates.size()
         << "\r\nAttack range candidates: " << result.attackRangeCandidates.size()
         << "\r\nDeclared code symbols: " << result.declaredSymbolSources.size()
@@ -1199,6 +1415,10 @@ std::string GenerateStateMappingProfile(const std::filesystem::path& root, const
         }
     }
     nlohmann::json mappings = nlohmann::json::array();
+    std::size_t autoApprovedMappings = 0;
+    std::size_t manuallyApprovedMappings = 0;
+    std::size_t manuallyIgnoredMappings = 0;
+    std::size_t reviewRequiredMappings = 0;
     for (const auto& [key, candidate] : result.signalCandidates) {
         if (!MatchesScanTargets(candidate, scanTargets)) continue;
         nlohmann::json mapping = existingMappings.contains(key)
@@ -1210,7 +1430,28 @@ std::string GenerateStateMappingProfile(const std::filesystem::path& root, const
         mapping["sources"] = candidate.sources;
         mapping["evidence"] = EvidenceJson(candidate.evidence);
         mapping["sourceDiscovered"] = true;
-        mapping["approved"] = mapping.value("approved", false);
+        const bool previouslyApproved = mapping.value("approved", false);
+        const std::string previousApprovalSource =
+            mapping.value("approvalSource", std::string{});
+        const bool manuallyApproved = previouslyApproved &&
+            previousApprovalSource != "source_scan_high_confidence" &&
+            previousApprovalSource != "pending_review";
+        const bool manuallyIgnored = mapping.value("ignored", false) ||
+            previousApprovalSource == "manual_ignored";
+        const bool highConfidence = candidate.confidence >= 0.98f;
+        mapping["approved"] = !manuallyIgnored && (manuallyApproved || highConfidence);
+        mapping["autoApproved"] = !manuallyIgnored && !manuallyApproved && highConfidence;
+        mapping["ignored"] = manuallyIgnored;
+        mapping["approvalSource"] = manuallyIgnored
+            ? "manual_ignored"
+            : (manuallyApproved
+            ? (previousApprovalSource.empty() ? "manual_legacy" : previousApprovalSource)
+            : (highConfidence ? "source_scan_high_confidence" : "pending_review"));
+        mapping["reviewRequired"] = !manuallyIgnored && !(manuallyApproved || highConfidence);
+        if (mapping["reviewRequired"].get<bool>()) ++reviewRequiredMappings;
+        else if (manuallyIgnored) ++manuallyIgnoredMappings;
+        else if (manuallyApproved) ++manuallyApprovedMappings;
+        else ++autoApprovedMappings;
         mapping["runtimeObserved"] =
             mapping.value("runtimeObserved", false);
         mappings.push_back(std::move(mapping));
@@ -1219,8 +1460,17 @@ std::string GenerateStateMappingProfile(const std::filesystem::path& root, const
     // Never erase a manually approved mapping merely because a later target
     // filter did not rediscover it. Keep it visible and mark it as stale.
     for (auto& [key, mapping] : existingMappings) {
-        if (!mapping.value("approved", false)) continue;
+        const std::string approvalSource = mapping.value("approvalSource", std::string{});
+        const bool manuallyApproved = mapping.value("approved", false) &&
+            approvalSource != "source_scan_high_confidence" &&
+            approvalSource != "pending_review";
+        const bool manuallyIgnored = mapping.value("ignored", false) ||
+            approvalSource == "manual_ignored";
+        if (!manuallyApproved && !manuallyIgnored) continue;
         mapping["sourceDiscovered"] = false;
+        mapping["reviewRequired"] = false;
+        if (manuallyIgnored) ++manuallyIgnoredMappings;
+        else ++manuallyApprovedMappings;
         mappings.push_back(std::move(mapping));
     }
     nlohmann::json enumValues = nlohmann::json::object();
@@ -1228,8 +1478,17 @@ std::string GenerateStateMappingProfile(const std::filesystem::path& root, const
     std::string gameId = WideToUtf8(root.filename().wstring());
     if (gameId.empty()) gameId = "game";
     nlohmann::json profile = {
-        { "schemaVersion", 2 }, { "gameId", gameId }, { "generatedLocally", true },
-        { "reviewRequired", true }, { "mappings", std::move(mappings) },
+        { "schemaVersion", 3 }, { "gameId", gameId }, { "generatedLocally", true },
+        { "reviewRequired", reviewRequiredMappings > 0 },
+        { "semanticSummary", {
+            { "autoApproved", autoApprovedMappings },
+            { "manuallyApproved", manuallyApprovedMappings },
+            { "manuallyIgnored", manuallyIgnoredMappings },
+            { "reviewRequired", reviewRequiredMappings },
+            { "autoApprovalThreshold", 0.98 },
+            { "method", "local_source_scan" },
+        } },
+        { "mappings", std::move(mappings) },
         { "discoveredEnumValues", std::move(enumValues) },
         { "scanTargets", scanTargets },
     };
@@ -1241,23 +1500,33 @@ std::string GenerateStateMappingProfile(const std::filesystem::path& root, const
     output << profile.dump(2) << '\n';
     return "State Mapping Profile generated locally.\r\nPath: " + WideToUtf8(outputPath.wstring()) +
         "\r\nMapping candidates: " + std::to_string(profile["mappings"].size()) +
+        "\r\nHigh-confidence auto-approved: " + std::to_string(autoApprovedMappings) +
+        "\r\nManually approved: " + std::to_string(manuallyApprovedMappings) +
+        "\r\nManually ignored: " + std::to_string(manuallyIgnoredMappings) +
+        "\r\nReview required: " + std::to_string(reviewRequiredMappings) +
         "\r\nFiles skipped after analysis error: " + std::to_string(result.analysisErrors) +
         (result.firstAnalysisError.empty() ? std::string{} :
             "\r\nFirst analysis error: " + result.firstAnalysisError) +
         "\r\nScan targets: " + (scanTargets.empty() ? std::string("automatic (all)") : scanTargetText) +
-        "\r\nSet approved=true only after checking each mapping.\r\nNo source files were sent to an API.";
+        "\r\nReview only mappings with reviewRequired=true."
+        "\r\nNo source files were sent to an API.";
 }
 
 std::string GuessActionCategory(const std::string& actionId) {
     std::string value = actionId;
     std::transform(value.begin(), value.end(), value.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (value.find("attack") != std::string::npos) return "attack";
-    if (value.find("guard") != std::string::npos) return "defense";
-    if (value.find("move") != std::string::npos || value.find("retreat") != std::string::npos) return "movement";
-    if (value.find("jump") != std::string::npos || value.find("dodge") != std::string::npos) return "mobility";
-    if (value.find("wait") != std::string::npos) return "idle";
-    if (value.find("skip") != std::string::npos) return "flow";
+    const auto containsAny = [&](std::initializer_list<std::string_view> terms) {
+        return std::any_of(terms.begin(), terms.end(), [&](std::string_view term) {
+            return value.find(term) != std::string::npos;
+        });
+    };
+    if (containsAny({ "attack", "strike", "melee", "shoot", "fire", "punch", "kick", "spell", "grab", "super" })) return "attack";
+    if (containsAny({ "guard", "block", "parry", "shield", "defend" })) return "defense";
+    if (containsAny({ "jump", "dodge", "dash", "evade", "roll", "teleport" })) return "mobility";
+    if (containsAny({ "move", "walk", "run", "retreat", "approach", "chase", "wander", "strafe" })) return "movement";
+    if (containsAny({ "wait", "idle", "noop" })) return "idle";
+    if (containsAny({ "skip", "confirm", "start", "pause", "menu", "phase", "setactorstate", "restore" })) return "flow";
     return "generic";
 }
 
@@ -1272,6 +1541,107 @@ std::vector<std::string> GuessActionTags(const std::string& actionId) {
         name.find("guard") != std::string::npos) tags.push_back("defense.evade");
     if (name.find("jump") != std::string::npos) tags.push_back("mobility.jump");
     return tags;
+}
+
+ActionSemanticInference InferActionSemantics(
+    const std::string& actionId,
+    const ProjectScanResult& scan) {
+    ActionSemanticInference result;
+    const std::string name = LowerAscii(actionId);
+    std::map<std::string, int> scores;
+    const auto addEvidence = [&](std::string value) {
+        if (value.empty() || result.evidence.size() >= 12 ||
+            std::find(result.evidence.begin(), result.evidence.end(), value) !=
+                result.evidence.end()) return;
+        result.evidence.push_back(std::move(value));
+    };
+    const auto scoreTerms = [&](
+        const std::string& text,
+        const std::string& category,
+        std::initializer_list<std::string_view> terms,
+        int score,
+        const char* origin) {
+        for (const std::string_view term : terms) {
+            if (text.find(term) == std::string::npos) continue;
+            scores[category] += score;
+            addEvidence(std::string(origin) + " contains '" +
+                std::string(term) + "'");
+            break;
+        }
+    };
+    const auto scoreCorpus = [&](const std::string& text, int score, const char* origin) {
+        scoreTerms(text, "attack", { "attack", "hitbox", "damage", "strike", "melee", "shoot", "projectile", "punch", "kick", "spell", "grab", "super", "windup" }, score, origin);
+        scoreTerms(text, "defense", { "guard", "block", "parry", "shield", "defend", "invincible" }, score, origin);
+        scoreTerms(text, "mobility", { "jump", "dodge", "dash", "evade", "roll", "teleport" }, score, origin);
+        scoreTerms(text, "movement", { "move", "walk", "run", "retreat", "approach", "chase", "wander", "strafe" }, score, origin);
+        scoreTerms(text, "idle", { "wait", "idle", "noop" }, score, origin);
+        scoreTerms(text, "flow", { "skip", "confirm", "start", "pause", "menu", "phase", "setactorstate", "restore" }, score, origin);
+        scoreTerms(text, "interaction", { "interact", "use", "talk", "pickup", "open" }, score, origin);
+    };
+
+    scoreCorpus(name, 8, "actionId");
+    if (const auto sources = scan.actionSources.find(actionId);
+        sources != scan.actionSources.end()) {
+        for (const auto& source : sources->second) {
+            scoreCorpus(LowerAscii(source), 2, "source path");
+        }
+    }
+    if (const auto evidence = scan.actionEvidence.find(actionId);
+        evidence != scan.actionEvidence.end()) {
+        for (const auto& item : evidence->second) {
+            scoreCorpus(LowerAscii(item.excerpt), 1, "source excerpt");
+        }
+    }
+
+    int bestScore = 0;
+    int secondScore = 0;
+    for (const auto& [category, score] : scores) {
+        if (score > bestScore) {
+            secondScore = bestScore;
+            bestScore = score;
+            result.category = category;
+        } else if (score > secondScore) {
+            secondScore = score;
+        }
+    }
+    if (bestScore == 0) {
+        result.category = GuessActionCategory(actionId);
+        result.confidence = result.category == "generic" ? 0.25f : 0.72f;
+    } else {
+        const int gap = bestScore - secondScore;
+        result.confidence = std::clamp(
+            0.55f + static_cast<float>(bestScore) * 0.04f +
+                static_cast<float>((std::min)(gap, 4)) * 0.01f,
+            0.25f, 0.99f);
+    }
+
+    result.tags.push_back(result.category);
+    const auto addTag = [&](const std::string& tag) {
+        if (std::find(result.tags.begin(), result.tags.end(), tag) == result.tags.end())
+            result.tags.push_back(tag);
+    };
+    if (result.category == "attack") addTag("combat.attack");
+    if (name.find("melee") != std::string::npos ||
+        name.find("punch") != std::string::npos ||
+        name.find("kick") != std::string::npos) addTag("combat.melee");
+    if (name.find("shoot") != std::string::npos ||
+        name.find("fire") != std::string::npos ||
+        name.find("projectile") != std::string::npos) addTag("combat.ranged");
+    if (result.category == "movement") {
+        if (name.find("retreat") != std::string::npos ||
+            name.find("back") != std::string::npos ||
+            name.find("away") != std::string::npos) addTag("movement.retreat");
+        else addTag("movement.approach");
+    }
+    if (name.find("jump") != std::string::npos) addTag("mobility.jump");
+    if (name.find("dodge") != std::string::npos ||
+        name.find("evade") != std::string::npos ||
+        name.find("roll") != std::string::npos ||
+        name.find("retreat") != std::string::npos) addTag("defense.evade");
+    if (name.find("guard") != std::string::npos ||
+        name.find("block") != std::string::npos ||
+        name.find("parry") != std::string::npos) addTag("defense.guard");
+    return result;
 }
 
 nlohmann::json EstimateActionRangeProperties(const std::string& actionId,
@@ -1356,6 +1726,32 @@ std::filesystem::path ResolveReplayTrackPath(
     const std::filesystem::path path = Utf8ToWide(storedPath);
     return (path.is_absolute() ? path : manifestPath.parent_path() / path)
         .lexically_normal();
+}
+
+std::int64_t RecordedReplayCheckpointCount(
+    const std::string& manifestPathText) {
+    if (manifestPathText.empty()) return -1;
+    std::filesystem::path manifestPath(Utf8ToWide(manifestPathText));
+    if (!manifestPath.is_absolute()) {
+        const auto projectRoot = ConfiguredProjectRoot();
+        if (!projectRoot.empty()) manifestPath = projectRoot / manifestPath;
+    }
+    std::ifstream manifestInput(manifestPath);
+    const auto manifest = nlohmann::json::parse(
+        manifestInput, nullptr, false);
+    if (manifest.is_discarded() || !manifest.is_object() ||
+        !manifest.contains("tracks") || !manifest["tracks"].is_object()) {
+        return -1;
+    }
+    const std::string storedSummaryPath =
+        manifest["tracks"].value("eventSummary", "");
+    if (storedSummaryPath.empty()) return -1;
+    std::ifstream summaryInput(
+        ResolveReplayTrackPath(manifestPath, storedSummaryPath));
+    const auto summary = nlohmann::json::parse(
+        summaryInput, nullptr, false);
+    if (summary.is_discarded() || !summary.is_object()) return -1;
+    return summary.value("checkpointCount", std::int64_t{-1});
 }
 
 std::wstring FormatReplaySessionTime(const std::string& sessionId) {
@@ -1471,6 +1867,13 @@ std::vector<ReplaySessionListEntry> LoadReplaySessionList(
         if (hasInput && hasActors) label << L"Input + Actor";
         else if (hasInput) label << L"Input";
         else label << L"Actor";
+        std::string coverageStoredPath = manifest.value("coveragePath", "");
+        if (coverageStoredPath.empty()) {
+            coverageStoredPath = tracks->value("coverage", "");
+        }
+        if (hasTrack(ResolveReplayTrackPath(entry.path(), coverageStoredPath))) {
+            label << L" + Coverage";
+        }
 
         auto manifestPath = std::filesystem::absolute(entry.path(), entryError);
         if (entryError) {
@@ -1554,12 +1957,43 @@ std::string GenerateActionProfile(const std::filesystem::path& root) {
         }
     }
     nlohmann::json actions = nlohmann::json::array();
+    std::size_t semanticAutoApproved = 0;
+    std::size_t semanticManuallyApproved = 0;
+    std::size_t semanticManuallyIgnored = 0;
+    std::size_t semanticReviewRequired = 0;
     for (const auto& [actionId, sources] : result.actionSources) {
         nlohmann::json entry = existingActions.contains(actionId)
             ? existingActions[actionId] : nlohmann::json::object();
+        const ActionSemanticInference semantic =
+            InferActionSemantics(actionId, result);
+        const bool manuallyApproved =
+            entry.value("semanticApprovalSource", std::string{}) == "manual" &&
+            entry.value("semanticApproved", false);
+        const bool manuallyIgnored = entry.value("semanticIgnored", false) ||
+            entry.value("semanticApprovalSource", std::string{}) == "manual_ignored";
         entry["actionId"] = actionId;
-        entry["category"] = GuessActionCategory(actionId);
-        entry["tags"] = GuessActionTags(actionId);
+        if (!manuallyApproved && !manuallyIgnored) {
+            entry["category"] = semantic.category;
+            entry["tags"] = semantic.tags;
+        }
+        const bool autoApproved = !manuallyApproved && !manuallyIgnored && semantic.confidence >= 0.90f;
+        entry["semanticApproved"] = !manuallyIgnored && (manuallyApproved || autoApproved);
+        entry["semanticIgnored"] = manuallyIgnored;
+        entry["semanticApprovalSource"] = manuallyIgnored
+            ? "manual_ignored"
+            : (manuallyApproved ? "manual" : (autoApproved ? "source_scan_high_confidence" : "pending_review"));
+        entry["semanticReviewRequired"] = !manuallyIgnored && !(manuallyApproved || autoApproved);
+        entry["semanticInference"] = {
+            { "category", semantic.category },
+            { "tags", semantic.tags },
+            { "confidence", semantic.confidence },
+            { "evidence", semantic.evidence },
+            { "method", "local_source_scan" },
+        };
+        if (entry["semanticReviewRequired"].get<bool>()) ++semanticReviewRequired;
+        else if (manuallyIgnored) ++semanticManuallyIgnored;
+        else if (manuallyApproved) ++semanticManuallyApproved;
+        else ++semanticAutoApproved;
         entry["enabled"] = entry.value("enabled", true);
         entry["sourceDiscovered"] = true;
         entry["runtimeObserved"] = entry.value("runtimeObserved", false);
@@ -1578,17 +2012,56 @@ std::string GenerateActionProfile(const std::filesystem::path& root) {
         actions.push_back(std::move(entry));
         existingActions.erase(actionId);
     }
-    for (auto& [actionId, entry] : existingActions) actions.push_back(std::move(entry));
+    for (auto& [actionId, entry] : existingActions) {
+        const ActionSemanticInference semantic =
+            InferActionSemantics(actionId, result);
+        const bool manuallyApproved =
+            entry.value("semanticApprovalSource", std::string{}) == "manual" &&
+            entry.value("semanticApproved", false);
+        const bool manuallyIgnored = entry.value("semanticIgnored", false) ||
+            entry.value("semanticApprovalSource", std::string{}) == "manual_ignored";
+        if (!manuallyApproved && !manuallyIgnored) {
+            entry["category"] = semantic.category;
+            entry["tags"] = semantic.tags;
+        }
+        const bool autoApproved = !manuallyApproved && !manuallyIgnored && semantic.confidence >= 0.90f;
+        entry["semanticApproved"] = !manuallyIgnored && (manuallyApproved || autoApproved);
+        entry["semanticIgnored"] = manuallyIgnored;
+        entry["semanticApprovalSource"] = manuallyIgnored
+            ? "manual_ignored"
+            : (manuallyApproved ? "manual" : (autoApproved ? "source_scan_high_confidence" : "pending_review"));
+        entry["semanticReviewRequired"] = !manuallyIgnored && !(manuallyApproved || autoApproved);
+        entry["semanticInference"] = {
+            { "category", semantic.category },
+            { "tags", semantic.tags },
+            { "confidence", semantic.confidence },
+            { "evidence", semantic.evidence },
+            { "method", "local_source_scan" },
+        };
+        if (entry["semanticReviewRequired"].get<bool>()) ++semanticReviewRequired;
+        else if (manuallyIgnored) ++semanticManuallyIgnored;
+        else if (manuallyApproved) ++semanticManuallyApproved;
+        else ++semanticAutoApproved;
+        actions.push_back(std::move(entry));
+    }
     std::string gameId = WideToUtf8(root.filename().wstring());
     if (gameId.empty()) gameId = "game";
     const auto outputPath = ActionProfilePath(root);
     std::error_code error;
     std::filesystem::create_directories(outputPath.parent_path(), error);
     nlohmann::json profile = {
-        { "schemaVersion", 1 },
+        { "schemaVersion", 2 },
         { "gameId", gameId },
         { "generatedLocally", true },
         { "sourceFileCount", result.files },
+        { "semanticSummary", {
+            { "autoApproved", semanticAutoApproved },
+            { "manuallyApproved", semanticManuallyApproved },
+            { "manuallyIgnored", semanticManuallyIgnored },
+            { "reviewRequired", semanticReviewRequired },
+            { "autoApprovalThreshold", 0.90 },
+            { "method", "local_source_scan" },
+        } },
         { "actions", std::move(actions) },
     };
     std::ofstream output(outputPath);
@@ -1596,8 +2069,69 @@ std::string GenerateActionProfile(const std::filesystem::path& root) {
     output << profile.dump(2) << '\n';
     return "Action Profile generated locally.\r\nPath: " + WideToUtf8(outputPath.wstring()) +
         "\r\nActions discovered: " + std::to_string(result.actionSources.size()) +
+        "\r\nSemantic auto-approved: " + std::to_string(semanticAutoApproved) +
+        "\r\nSemantic manually approved: " + std::to_string(semanticManuallyApproved) +
+        "\r\nSemantic manually ignored: " + std::to_string(semanticManuallyIgnored) +
+        "\r\nSemantic review required: " + std::to_string(semanticReviewRequired) +
         "\r\nAttack range candidates: " + std::to_string(result.attackRangeCandidates.size()) +
-        "\r\nReview categories and properties before using the profile.\r\nNo source files were sent to an API.";
+        "\r\nReview only entries with semanticReviewRequired=true."
+        "\r\nNo source files were sent to an API.";
+}
+
+std::filesystem::path ScenarioDirectory(const std::filesystem::path& projectRoot) {
+    std::string gameId = WideToUtf8(projectRoot.filename().wstring());
+    if (gameId.empty()) gameId = "game";
+    return WorkspaceConfigPath().parent_path().parent_path() /
+        "scenarios" / Utf8ToWide(gameId);
+}
+
+void RefreshScenarioList(bool showResult) {
+    if (!gScenarioList) return;
+    std::filesystem::path selectedPath;
+    const LRESULT previous = SendMessageW(gScenarioList, CB_GETCURSEL, 0, 0);
+    if (previous != CB_ERR && static_cast<std::size_t>(previous) < gScenarioEntries.size())
+        selectedPath = gScenarioEntries[static_cast<std::size_t>(previous)].path;
+    gScenarioEntries.clear();
+    SendMessageW(gScenarioList, CB_RESETCONTENT, 0, 0);
+    const auto projectRoot = ConfiguredProjectRoot();
+    const auto directory = ScenarioDirectory(projectRoot);
+    std::error_code error;
+    if (!projectRoot.empty() && std::filesystem::is_directory(directory, error)) {
+        for (std::filesystem::directory_iterator iterator(directory,
+            std::filesystem::directory_options::skip_permission_denied, error), end;
+            iterator != end; iterator.increment(error)) {
+            if (error) { error.clear(); continue; }
+            if (!iterator->is_regular_file(error) || iterator->path().extension() != L".json") continue;
+            std::ifstream input(iterator->path());
+            const auto scenario = nlohmann::json::parse(input, nullptr, false);
+            if (scenario.is_discarded() || !scenario.is_object()) continue;
+            const std::string name = scenario.value("name", WideToUtf8(iterator->path().stem().wstring()));
+            const std::string actor = scenario.value("actor", "Player");
+            ScenarioListEntry entry;
+            entry.path = iterator->path();
+            entry.label = Utf8ToWide(name + " | " + actor);
+            gScenarioEntries.push_back(std::move(entry));
+        }
+    }
+    std::sort(gScenarioEntries.begin(), gScenarioEntries.end(),
+        [](const ScenarioListEntry& left, const ScenarioListEntry& right) {
+            return left.label < right.label;
+        });
+    LRESULT selected = CB_ERR;
+    for (std::size_t index = 0; index < gScenarioEntries.size(); ++index) {
+        SendMessageW(gScenarioList, CB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(gScenarioEntries[index].label.c_str()));
+        if (!selectedPath.empty() && gScenarioEntries[index].path == selectedPath)
+            selected = static_cast<LRESULT>(index);
+    }
+    if (selected == CB_ERR && !gScenarioEntries.empty()) selected = 0;
+    if (selected != CB_ERR) SendMessageW(gScenarioList, CB_SETCURSEL, selected, 0);
+    if (showResult && gStatusText) {
+        std::ostringstream result;
+        result << "Scenario list reloaded.\r\nFolder: " << WideToUtf8(directory.wstring())
+            << "\r\nScenarios: " << gScenarioEntries.size();
+        SetWindowTextW(gStatusText, Utf8ToWide(result.str()).c_str());
+    }
 }
 
 bool UpdateActionProfileFromRuntime(const DebugObservation& observation) {
@@ -1887,7 +2421,26 @@ std::string FormatProtocolResponse(const std::string& response) {
             }
             if (!detail.empty()) output << "  Detail: " << detail << "\r\n";
         } else if (validationStatus == "unavailable") {
-            output << "  This replay was recorded before verification checkpoints were added.\r\n";
+            std::int64_t recordedCheckpointCount = -1;
+            const auto checkpointProperty =
+                message.properties.find("eventCheckpointCount");
+            if (checkpointProperty != message.properties.end()) {
+                if (const auto* value = std::get_if<std::int64_t>(
+                    &checkpointProperty->second)) {
+                    recordedCheckpointCount = *value;
+                }
+            }
+            const std::int64_t manifestCheckpointCount =
+                RecordedReplayCheckpointCount(replayManifestPath);
+            if (manifestCheckpointCount >= 0) {
+                recordedCheckpointCount = manifestCheckpointCount;
+            }
+            if (recordedCheckpointCount > 0) {
+                output << "  Not verified yet. Play this replay to check its "
+                    << recordedCheckpointCount << " recorded checkpoints.\r\n";
+            } else {
+                output << "  No verification checkpoints were recorded.\r\n";
+            }
         } else if (validationStatus == "interrupted") {
             output << "  Replay ended before every verification checkpoint was reached.\r\n";
         }
@@ -1920,6 +2473,23 @@ std::string FormatProtocolResponse(const std::string& response) {
     if (!eventSummaryPath.empty()) output << "Event summary: " << eventSummaryPath << "\r\n";
     const std::string lastEvent = PropertyText(message.properties, "lastEvent", "");
     if (!lastEvent.empty()) output << "Latest event: " << lastEvent << "\r\n";
+    if (message.properties.contains("anomalyRulesLoaded")) {
+        output << "Anomaly rules: "
+            << (PropertyText(message.properties, "anomalyRulesLoaded", "false") == "true"
+                ? "loaded" : "unavailable")
+            << " (" << PropertyText(message.properties, "anomalyRuleCount", "0") << ")"
+            << "  Detections: " << PropertyText(message.properties, "anomalyCount", "0")
+            << "  Errors: " << PropertyText(message.properties, "anomalyErrorCount", "0")
+            << "\r\n";
+        const std::string anomalyLast =
+            PropertyText(message.properties, "anomalyLast", "");
+        if (!anomalyLast.empty()) output << "Latest anomaly: " << anomalyLast << "\r\n";
+        const std::string anomalyRuleError =
+            PropertyText(message.properties, "anomalyRuleError", "");
+        if (!anomalyRuleError.empty()) {
+            output << "Anomaly rule warning: " << anomalyRuleError << "\r\n";
+        }
+    }
     if (message.observation) {
         const auto& observation = *message.observation;
         output << "\r\nGame State\r\n"
@@ -2060,6 +2630,46 @@ bool SendProtocolMessage(const DebugProtocolMessage& requestMessage, std::string
         return false;
     }
     response.assign(buffer.data(), read);
+    gGameConnectionEstablished = true;
+    DebugProtocolMessage responseMessage;
+    if (DebugProtocolJson::TryParse(response, responseMessage)) {
+        gCoverageTracker.Configure(ConfiguredProjectRoot(), responseMessage.gameId);
+        const auto countProperty = [&](const char* name) -> std::size_t {
+            const auto found = responseMessage.properties.find(name);
+            if (found == responseMessage.properties.end()) return 0;
+            if (const auto* value = std::get_if<std::int64_t>(&found->second)) {
+                return *value > 0 ? static_cast<std::size_t>(*value) : 0;
+            }
+            if (const auto* value = std::get_if<double>(&found->second)) {
+                return *value > 0.0 ? static_cast<std::size_t>(*value) : 0;
+            }
+            return 0;
+        };
+        const auto anomalyLast = responseMessage.properties.find("anomalyLast");
+        const auto* anomalyLastText = anomalyLast == responseMessage.properties.end()
+            ? nullptr : std::get_if<std::string>(&anomalyLast->second);
+        gScenarioRunner.RecordAnomalyStatus(
+            countProperty("anomalyCount"),
+            countProperty("anomalyErrorCount"),
+            anomalyLastText ? *anomalyLastText : std::string{});
+        if (responseMessage.observation) {
+            gCoverageTracker.Observe(*responseMessage.observation);
+            gScenarioRunner.Observe(*responseMessage.observation);
+        }
+        bool actionAccepted = true;
+        if (const auto found = responseMessage.properties.find("ok");
+            found != responseMessage.properties.end()) {
+            if (const auto* ok = std::get_if<bool>(&found->second)) actionAccepted = *ok;
+        }
+        if (actionAccepted &&
+            requestMessage.messageType == DebugProtocolMessageType::ExecuteAction &&
+            requestMessage.action) {
+            const std::uint64_t frameNumber = responseMessage.observation
+                ? responseMessage.observation->frameNumber : 0;
+            gCoverageTracker.RecordExecutedAction(*requestMessage.action, frameNumber);
+            gScenarioRunner.RecordExecutedAction(*requestMessage.action, frameNumber);
+        }
+    }
     return true;
 }
 
@@ -2446,7 +3056,8 @@ bool SaveLatestVisionCapture(
 }
 
 std::string CaptureVisionPreviewCore(
-    const std::filesystem::path& projectRoot) {
+    const std::filesystem::path& projectRoot,
+    HWND viewerWindow) {
     if (gGameProcessId.load() == 0) {
         std::string response;
         SendCommand("status", response);
@@ -2455,7 +3066,8 @@ std::string CaptureVisionPreviewCore(
     if (!CaptureGameProcessWindow(
         gGameProcessId.load(),
         gAIProvider.VisionMaximumWidth(),
-        capture)) {
+        capture,
+        viewerWindow)) {
         return "Vision capture failed: " + capture.error;
     }
     std::filesystem::path path;
@@ -2468,6 +3080,349 @@ std::string CaptureVisionPreviewCore(
         std::to_string(capture.height) +
         "\r\nPath: " + WideToUtf8(path.wstring()) +
         "\r\nNo API was called.";
+}
+
+bool ConfigureCoverageFromCurrentProject() {
+    const auto projectRoot = ConfiguredProjectRoot();
+    if (projectRoot.empty()) return false;
+    return gCoverageTracker.Configure(
+        projectRoot,
+        WideToUtf8(projectRoot.filename().wstring()));
+}
+
+std::string FormatCoverageSummaryCore() {
+    if (!ConfigureCoverageFromCurrentProject()) {
+        return "Coverage is not configured. Select a Game Project Folder first.";
+    }
+    gCoverageTracker.ReloadProfiles();
+    return gCoverageTracker.FormatSummary();
+}
+
+std::string ResetCoverageCore() {
+    if (!ConfigureCoverageFromCurrentProject()) {
+        return "Coverage reset failed: select a Game Project Folder first.";
+    }
+    gCoverageTracker.ReloadProfiles();
+    return gCoverageTracker.Reset();
+}
+
+bool ProtocolResultOk(const DebugProtocolMessage& message) {
+    const auto found = message.properties.find("ok");
+    if (found == message.properties.end()) return true;
+    const auto* value = std::get_if<bool>(&found->second);
+    return value != nullptr && *value;
+}
+
+std::filesystem::path ResolveProjectOutputPath(const std::string& pathText) {
+    if (pathText.empty()) return {};
+    const std::filesystem::path path(Utf8ToWide(pathText));
+    if (path.is_absolute()) return path.lexically_normal();
+    const auto root = ConfiguredProjectRoot();
+    return (root.empty() ? path : root / path).lexically_normal();
+}
+
+std::string StartRecordingWithCoverageCore() {
+    std::string response;
+    if (!SendCommand("start_recording", response)) return response;
+    DebugProtocolMessage message;
+    if (!DebugProtocolJson::TryParse(response, message)) return response;
+    const std::string formatted = FormatProtocolResponse(response);
+    if (!ProtocolResultOk(message)) return formatted;
+
+    gCoverageTracker.Configure(ConfiguredProjectRoot(), message.gameId);
+    const std::string sessionId =
+        PropertyText(message.properties, "replaySessionId", "");
+    std::string coverage = gCoverageTracker.BeginReplaySession(sessionId);
+    if (message.observation) gCoverageTracker.Observe(*message.observation);
+    return formatted + "\r\n" + coverage;
+}
+
+std::string StopRecordingWithCoverageCore() {
+    std::string response;
+    if (!SendCommand("stop_recording", response)) return response;
+    DebugProtocolMessage message;
+    if (!DebugProtocolJson::TryParse(response, message)) return response;
+    const std::string formatted = FormatProtocolResponse(response);
+    const auto manifestPath = ResolveProjectOutputPath(
+        PropertyText(message.properties, "replayManifestPath", ""));
+    if (manifestPath.empty()) {
+        return ProtocolResultOk(message)
+            ? formatted + "\r\nCoverage finalization skipped: replay manifest path is missing."
+            : formatted;
+    }
+
+    std::ifstream manifestInput(manifestPath);
+    const auto manifest = nlohmann::json::parse(manifestInput, nullptr, false);
+    const bool completedReplay = manifest.is_object() &&
+        manifest.value("status", std::string{}) == "complete";
+    if (!ProtocolResultOk(message) && !completedReplay) return formatted;
+
+    gCoverageTracker.Configure(ConfiguredProjectRoot(), message.gameId);
+    if (!ProtocolResultOk(message)) {
+        const std::string existingCoverage =
+            CoverageTracker::FormatReplaySummary(manifestPath);
+        if (existingCoverage.find("unavailable for this session") == std::string::npos) {
+            return formatted +
+                "\r\nThe replay had already stopped automatically. "
+                "Its completed coverage was found.\r\n" + existingCoverage;
+        }
+    }
+    const std::string automaticStopNote = ProtocolResultOk(message)
+        ? std::string{}
+        : std::string(
+            "\r\nThe replay had already stopped automatically at the scene end. "
+            "The saved session was found, so coverage finalization continued.\r\n");
+    return formatted + automaticStopNote + "\r\n" +
+        gCoverageTracker.FinalizeReplaySession(manifestPath);
+}
+
+bool StopScenarioRuntimeActivity(
+    DebugProtocolMessage& status,
+    std::string& error) {
+    std::string response;
+    if (!SendCommand("status", response)) {
+        error = response;
+        return false;
+    }
+    if (!DebugProtocolJson::TryParse(response, status) ||
+        !ProtocolResultOk(status)) {
+        error = "Scenario preparation could not read the current game status.";
+        return false;
+    }
+    const auto boolProperty = [&](const char* name) {
+        const auto found = status.properties.find(name);
+        const auto* value = found == status.properties.end()
+            ? nullptr : std::get_if<bool>(&found->second);
+        return value && *value;
+    };
+    // Game scenes may start an automatic replay recording before a scenario
+    // batch begins. The batch owns separate recordings for each scenario, so
+    // close any pre-existing session before restoring the shared baseline.
+    if (boolProperty("replaying")) {
+        std::string stopResponse;
+        if (!SendCheckedCommand("stop_replay", stopResponse)) {
+            error = "Scenario batch could not stop the active replay.\r\n" + stopResponse;
+            return false;
+        }
+    }
+    if (boolProperty("recording")) {
+        std::string stopResponse;
+        if (!SendCheckedCommand("stop_recording", stopResponse)) {
+            error = "Scenario batch could not stop the existing automatic recording.\r\n" +
+                stopResponse;
+            return false;
+        }
+    }
+    error.clear();
+    return true;
+}
+
+bool CaptureScenarioBaseline(
+    DebugObservation& observation,
+    std::string& error) {
+    DebugProtocolMessage status;
+    if (!StopScenarioRuntimeActivity(status, error)) return false;
+    if (!status.observation) {
+        error = "The current scene does not expose a DebugObservation. "
+            "Add sceneId to the scenario so the Viewer can load its target scene.";
+        return false;
+    }
+    observation = *status.observation;
+    error.clear();
+    return true;
+}
+
+bool EnsureScenarioSceneLoaded(
+    const std::string& targetSceneId,
+    std::string& error) {
+    DebugProtocolMessage status;
+    if (!StopScenarioRuntimeActivity(status, error)) return false;
+    if (targetSceneId.empty()) {
+        if (status.observation) return true;
+        error = "Scenario has no sceneId and the current scene has no DebugObservation.";
+        return false;
+    }
+    if (status.observation && status.observation->sceneId == targetSceneId) {
+        return true;
+    }
+
+    DebugProtocolMessage request = MakeRequest("load_scene");
+    request.properties["sceneId"] = targetSceneId;
+    std::string response;
+    if (!SendProtocolMessage(request, response)) {
+        error = response;
+        return false;
+    }
+    DebugProtocolMessage loadResult;
+    if (!DebugProtocolJson::TryParse(response, loadResult) ||
+        !ProtocolResultOk(loadResult)) {
+        error = DebugProtocolJson::TryParse(response, loadResult)
+            ? PropertyText(loadResult.properties, "message", "scene load request failed")
+            : "scene load request returned an invalid response";
+        return false;
+    }
+
+    constexpr auto kSceneLoadTimeout = std::chrono::seconds(20);
+    const auto deadline = std::chrono::steady_clock::now() + kSceneLoadTimeout;
+    while (!gAIStopRequested && std::chrono::steady_clock::now() < deadline) {
+        {
+            std::unique_lock lock(gAIWaitMutex);
+            gAIWaitCondition.wait_for(
+                lock, std::chrono::milliseconds(100),
+                [] { return gAIStopRequested.load(); });
+        }
+        if (gAIStopRequested) break;
+        std::string statusResponse;
+        if (!SendCommand("status", statusResponse)) continue;
+        DebugProtocolMessage current;
+        if (!DebugProtocolJson::TryParse(statusResponse, current) ||
+            !ProtocolResultOk(current) || !current.observation ||
+            current.observation->sceneId != targetSceneId) {
+            continue;
+        }
+        // Scene entry may have opened an automatic recording. Close it before
+        // the scenario restores its baseline and starts its own recording.
+        return StopScenarioRuntimeActivity(current, error);
+    }
+    error = gAIStopRequested
+        ? "Scene loading was stopped by the user."
+        : "Timed out waiting for scene: " + targetSceneId;
+    return false;
+}
+
+bool RestoreScenarioBaseline(
+    const DebugObservation& observation,
+    std::string& error) {
+    DebugProtocolMessage request = MakeRequest("restore_observation");
+    request.observation = observation;
+    std::string response;
+    if (!SendProtocolMessage(request, response)) {
+        error = response;
+        return false;
+    }
+    DebugProtocolMessage message;
+    if (!DebugProtocolJson::TryParse(response, message) ||
+        !ProtocolResultOk(message)) {
+        error = DebugProtocolJson::TryParse(response, message)
+            ? PropertyText(message.properties, "message", "observation restore failed")
+            : "observation restore returned an invalid response";
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
+const char* ScenarioStatusName(ScenarioRunner::Status status) {
+    switch (status) {
+    case ScenarioRunner::Status::Ready: return "ready";
+    case ScenarioRunner::Status::Running: return "running";
+    case ScenarioRunner::Status::Passed: return "passed";
+    case ScenarioRunner::Status::Failed: return "failed";
+    case ScenarioRunner::Status::Stopped: return "stopped";
+    default: return "idle";
+    }
+}
+
+std::filesystem::path SaveScenarioBatchResult(
+    const std::filesystem::path& projectRoot,
+    const std::vector<ScenarioBatchItemResult>& items,
+    bool stopped,
+    double elapsedSeconds) {
+    const auto directory = projectRoot / "generated/debug_ai/scenarios/results";
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const auto path = directory /
+        ("batch_" + std::to_string(stamp) + ".result.json");
+    std::size_t passed = 0;
+    std::size_t failed = 0;
+    std::size_t anomalies = 0;
+    std::size_t anomalyErrors = 0;
+    nlohmann::json scenarios = nlohmann::json::array();
+    for (const auto& item : items) {
+        if (item.status == "passed") ++passed;
+        else if (item.status != "stopped") ++failed;
+        anomalies += item.anomalyCount;
+        anomalyErrors += item.anomalyErrorCount;
+        scenarios.push_back({
+            { "label", item.label },
+            { "status", item.status },
+            { "detail", item.detail },
+            { "anomalyCount", item.anomalyCount },
+            { "anomalyErrorCount", item.anomalyErrorCount },
+            { "elapsedSeconds", item.elapsedSeconds },
+            { "scenarioPath", WideToUtf8(item.scenarioPath.wstring()) },
+            { "resultPath", WideToUtf8(item.resultPath.wstring()) },
+        });
+    }
+    const std::string status = stopped
+        ? "stopped" : (failed == 0 && passed == items.size() ? "passed" : "failed");
+    nlohmann::json result = {
+        { "schemaVersion", 1 },
+        { "type", "scenarioBatch" },
+        { "status", status },
+        { "elapsedSeconds", elapsedSeconds },
+        { "scenarioCount", items.size() },
+        { "passed", passed },
+        { "failed", failed },
+        { "anomalyCount", anomalies },
+        { "anomalyErrorCount", anomalyErrors },
+        { "scenarios", std::move(scenarios) },
+    };
+    std::ofstream output(path, std::ios::trunc);
+    if (!output) return {};
+    output << result.dump(2) << '\n';
+    return path;
+}
+
+std::string FormatScenarioBatchResult(
+    const std::vector<ScenarioBatchItemResult>& items,
+    const std::filesystem::path& resultPath,
+    bool stopped,
+    double elapsedSeconds) {
+    std::size_t passed = 0;
+    std::size_t failed = 0;
+    std::size_t anomalies = 0;
+    std::size_t anomalyErrors = 0;
+    std::ostringstream output;
+    output << "Scenario batch finished\r\n";
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        const auto& item = items[index];
+        if (item.status == "passed") ++passed;
+        else if (item.status != "stopped") ++failed;
+        anomalies += item.anomalyCount;
+        anomalyErrors += item.anomalyErrorCount;
+        output << "  [" << (item.status == "passed" ? "PASS" : "FAIL") << "] "
+            << item.label << " (" << std::fixed << std::setprecision(1)
+            << item.elapsedSeconds << "s)\r\n";
+        output << "         Anomalies: " << item.anomalyCount
+            << "  Errors: " << item.anomalyErrorCount << "\r\n";
+        if (!item.detail.empty()) output << "         " << item.detail << "\r\n";
+    }
+    output << "Result: " << (stopped ? "stopped" : (failed == 0 ? "passed" : "failed"))
+        << "  Passed: " << passed << '/' << items.size()
+        << "  Failed: " << failed
+        << "  Anomalies: " << anomalies
+        << "  Errors: " << anomalyErrors
+        << "  Time: " << std::fixed << std::setprecision(1) << elapsedSeconds << "s\r\n";
+    if (!resultPath.empty()) {
+        output << "Batch result JSON: " << WideToUtf8(resultPath.wstring());
+    } else {
+        output << "Batch result JSON could not be saved.";
+    }
+    return output.str();
+}
+
+std::string FormatSelectedReplayCoverageCore(
+    const std::filesystem::path& manifestPath) {
+    std::string summary = CoverageTracker::FormatReplaySummary(manifestPath);
+    if (summary.find("unavailable for this session") == std::string::npos) {
+        return summary;
+    }
+    if (!ConfigureCoverageFromCurrentProject()) return summary;
+    return gCoverageTracker.FinalizeReplaySession(manifestPath) +
+        "\r\n\r\nCoverage was generated from the saved replay timeline.";
 }
 
 std::string ExecuteAIStepCore(
@@ -2510,7 +3465,8 @@ std::string ExecuteAIStepCore(
     const bool captured = visionEnabled && CaptureGameProcessWindow(
         gGameProcessId.load(),
         gAIProvider.VisionMaximumWidth(),
-        capture);
+        capture,
+        window);
     if (captured) {
         SaveLatestVisionCapture(projectRoot, capture.pngBytes, capturePath);
     }
@@ -2636,6 +3592,9 @@ struct LocalPolicyConfig {
     std::int64_t approachDurationFrames = 16;
     std::int64_t evadeDurationFrames = 10;
     std::int64_t attackDurationFrames = 8;
+    double closeRangeEnterDistance = 3.0;
+    double closeRangeExitDistance = 4.0;
+    std::int64_t closeRangeWaitFrames = 4;
     bool preferLeastUsedAttack = true;
     bool loadedFromFile = false;
 };
@@ -2670,6 +3629,13 @@ LocalPolicyConfig LoadLocalPolicyConfig() {
     config.approachAction = policy.value("approachAction", config.approachAction);
     config.idleAction = policy.value("idleAction", config.idleAction);
     config.attackDistance = std::clamp(policy.value("attackDistance", config.attackDistance), 0.0, 100.0);
+    config.closeRangeEnterDistance = std::clamp(
+        policy.value("closeRangeEnterDistance", config.attackDistance), 0.0, 99.0);
+    config.closeRangeExitDistance = std::clamp(
+        policy.value("closeRangeExitDistance", config.closeRangeEnterDistance + 1.0),
+        config.closeRangeEnterDistance + 0.1, 100.0);
+    config.closeRangeWaitFrames = std::clamp<std::int64_t>(
+        policy.value("closeRangeWaitFrames", config.closeRangeWaitFrames), 1, 60);
     config.approachDurationFrames = std::clamp<std::int64_t>(
         policy.value("approachDurationFrames", config.approachDurationFrames), 1, 60);
     config.evadeDurationFrames = std::clamp<std::int64_t>(
@@ -2770,6 +3736,7 @@ struct LocalPolicyState {
     int activePriority = -1;
     std::string activeRuleId;
     std::string activeActionId;
+    bool closeRangeHoldActive = false;
     struct PendingAttackSample {
         bool active = false;
         bool sawAttackActive = false;
@@ -2779,6 +3746,17 @@ struct LocalPolicyState {
         std::uint64_t deadlineFrame = 0;
     } pendingAttack;
 };
+
+constexpr bool NextCloseRangeHoldState(
+    bool active, double distance, double enterDistance, double exitDistance) {
+    if (distance < 0.0) return false;
+    return active ? distance < exitDistance : distance <= enterDistance;
+}
+
+static_assert(!NextCloseRangeHoldState(false, 5.0, 3.0, 4.0));
+static_assert(NextCloseRangeHoldState(false, 3.0, 3.0, 4.0));
+static_assert(NextCloseRangeHoldState(true, 3.5, 3.0, 4.0));
+static_assert(!NextCloseRangeHoldState(true, 4.0, 3.0, 4.0));
 
 bool BoolProperty(const DebugPropertyMap& properties, const char* name, bool fallback) {
     const auto found = properties.find(name);
@@ -2901,6 +3879,15 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
     const double enemyHp = NumberProperty(observation.properties, "enemy.hp", -1.0);
     const std::string nearestId = StringProperty(observation.properties, "enemy.nearestId");
     const auto& config = policy.config;
+    policy.closeRangeHoldActive = NextCloseRangeHoldState(
+        policy.closeRangeHoldActive, distance,
+        config.closeRangeEnterDistance, config.closeRangeExitDistance);
+    const auto isApproachAction = [&](const std::string& actionId) {
+        if (actionId == config.approachAction) return true;
+        const auto tags = config.actionTags.find(actionId);
+        return tags != config.actionTags.end() &&
+            tags->second.contains("movement.approach");
+    };
 
     if (policy.pendingAttack.active) {
         if (isAttacking) policy.pendingAttack.sawAttackActive = true;
@@ -2918,6 +3905,7 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
     const DebugGenericAction* choice = nullptr;
     const LocalPolicyConfig::Rule* selectedRule = nullptr;
     bool selectedRecovery = false;
+    bool closeRangeHoldChoice = false;
     std::string reason;
     for (const auto& rule : config.rules) {
         const bool wasActive = policy.ruleActive[rule.id];
@@ -2930,6 +3918,15 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
             : matchedConditions == rule.conditions.size();
         policy.ruleActive[rule.id] = matched;
         if (!matched || selectedRule) continue;
+        const bool approachRule =
+            std::find(rule.actionTags.begin(), rule.actionTags.end(),
+                "movement.approach") != rule.actionTags.end() ||
+            std::any_of(rule.actionIds.begin(), rule.actionIds.end(),
+                [&](const std::string& actionId) { return isApproachAction(actionId); });
+        if (policy.closeRangeHoldActive && approachRule) {
+            policy.ruleActive[rule.id] = false;
+            continue;
+        }
 
         std::vector<const DebugGenericAction*> candidates;
         for (const auto& actionId : rule.actionIds) {
@@ -2991,6 +3988,26 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
         }
         if (!choice) choice = firstAvailable({ "Guard", "Wait" });
         reason = attackActive ? "enemy attack is active" : "incoming enemy threat";
+    } else if (!choice && policy.closeRangeHoldActive) {
+        if (canAttack && !isAttacking) {
+            for (const auto& action : actions) {
+                const bool listed = config.attackActions.empty()
+                    ? GuessActionCategory(action.actionId) == "attack"
+                    : std::find(config.attackActions.begin(), config.attackActions.end(),
+                        action.actionId) != config.attackActions.end();
+                if (!listed) continue;
+                if (!choice || !config.preferLeastUsedAttack ||
+                    policy.useCount[action.actionId] < policy.useCount[choice->actionId]) {
+                    choice = &action;
+                }
+                if (choice && !config.preferLeastUsedAttack) break;
+            }
+        }
+        if (!choice) choice = firstAvailable({ "Wait", "Guard" });
+        closeRangeHoldChoice = choice != nullptr;
+        reason = choice && GuessActionCategory(choice->actionId) == "attack"
+            ? "contact range; attacking without additional approach movement"
+            : "contact range; holding position until spacing is stable";
     } else if (!choice && canAttack && !isAttacking && (distance < 0.0 || distance <= config.attackDistance)) {
         for (const auto& action : actions) {
             const bool listed = config.attackActions.empty()
@@ -3002,12 +4019,13 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
             if (choice && !config.preferLeastUsedAttack) break;
         }
         reason = "safe attack range; selecting least-used attack";
-    } else if (!choice && canMove && distance > config.attackDistance) {
+    } else if (!choice && canMove && !policy.closeRangeHoldActive &&
+        distance >= config.closeRangeExitDistance) {
         choice = findAction(config.approachAction);
         if (!choice) choice = firstAvailable({ "Move" });
         reason = "enemy is outside attack range; approaching target";
     }
-    if (!choice && canMove) {
+    if (!choice && canMove && !policy.closeRangeHoldActive) {
         choice = findAction(config.approachAction);
         if (!choice) choice = FindAvailableActionByProfileTag(observation, "movement.approach");
         if (choice) reason = "no attack can currently hit; adjusting range or facing";
@@ -3020,6 +4038,12 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
             }
         }
         reason = "using an available attack";
+    }
+    if (!choice && policy.closeRangeHoldActive) {
+        return "Generic Local Policy\r\nAction: none (holding position)"
+            "\r\nReason: contact range has no safe idle or attack Action"
+            "\r\nDistance: " + std::to_string(distance) +
+            "\r\nAPI call: skipped\r\n\r\n" + FormatProtocolResponse(response);
     }
     if (!choice) {
         choice = firstAvailable({ "Wait", "Guard" });
@@ -3036,7 +4060,9 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
         const bool mayRefresh = repeatWhileMatched &&
             choice->actionId == policy.activeActionId &&
             (!selectedRule || selectedRule->id == policy.activeRuleId);
-        if (!mayInterrupt && !mayRefresh) {
+        const bool mayStopApproach = policy.closeRangeHoldActive &&
+            isApproachAction(policy.activeActionId);
+        if (!mayInterrupt && !mayRefresh && !mayStopApproach) {
             return "Generic Local Policy\r\nAction lock: " + policy.activeRuleId +
                 " continues until frame " + std::to_string(policy.actionLockUntilFrame) +
                 "\r\nCurrent frame: " + std::to_string(observation.frameNumber) +
@@ -3059,6 +4085,12 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
             selected.parameters[DebugActionParameter::Direction] = selectedRule->direction;
             selected.parameters[DebugActionParameter::CoordinateSpace] = selectedRule->coordinateSpace;
         }
+    } else if (closeRangeHoldChoice) {
+        const bool attackChoice = GuessActionCategory(selected.actionId) == "attack";
+        selectedDuration = attackChoice
+            ? config.attackDurationFrames : config.closeRangeWaitFrames;
+        selected.parameters[DebugActionParameter::DurationFrames] = selectedDuration;
+        selected.parameters[DebugActionParameter::TargetId] = nearestId;
     } else if (selected.actionId == config.approachAction ||
         (config.actionTags.contains(selected.actionId) &&
          config.actionTags.at(selected.actionId).contains("movement.approach"))) {
@@ -3114,6 +4146,7 @@ std::string ExecuteLocalContinuousStep(LocalPolicyState& policy, unsigned int in
         "\r\nThreat: " + (threat ? "true" : "false") +
         "  Attack active: " + (attackActive ? "true" : "false") +
         "  Distance: " + std::to_string(distance) +
+        "  Close hold: " + (policy.closeRangeHoldActive ? "true" : "false") +
         "\r\nPolicy source: " + (config.loadedFromFile ? "AI-generated local_policy.json" : "built-in default") +
         "\r\nAPI call: skipped\r\n\r\n" + FormatProtocolResponse(response);
 }
@@ -3190,12 +4223,14 @@ void PostAIStatus(HWND window, std::string text, bool preserveResult = false) {
     PostMessageW(window, kAIStatusMessage, preserveResult ? 1 : 0, 0);
 }
 
-unsigned int ReadAIIntervalMilliseconds() {
+unsigned int ReadIntervalMilliseconds(HWND control, unsigned int fallback) {
+    if (!control) return fallback;
     wchar_t text[32]{};
-    GetWindowTextW(gAIInterval, text, static_cast<int>(std::size(text)));
+    GetWindowTextW(control, text, static_cast<int>(std::size(text)));
     wchar_t* end = nullptr;
     const unsigned long value = wcstoul(text, &end, 10);
-    return end == text ? 250u : static_cast<unsigned int>(std::clamp(value, 60ul, 5000ul));
+    return end == text ? fallback
+        : static_cast<unsigned int>(std::clamp(value, 60ul, 5000ul));
 }
 
 ControlledActorMode ReadControlledActorMode() {
@@ -3230,22 +4265,25 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
     const bool useApi = mode != AIWorkerMode::LocalContinuous;
     if (useApi) ApplyViewerGoal();
     gAIStopRequested = false;
-    const unsigned int requestedInterval = ReadAIIntervalMilliseconds();
+    const unsigned int apiInterval = ReadIntervalMilliseconds(gAIInterval, 2000);
+    const unsigned int localInterval = ReadIntervalMilliseconds(gLocalAIInterval, 250);
     const unsigned int interval = mode == AIWorkerMode::LocalContinuous
-        ? (requestedInterval > 250 ? 250 : requestedInterval)
-        : requestedInterval;
+        ? localInterval : apiInterval;
     const ControlledActorMode actorMode = ReadControlledActorMode();
-    const std::filesystem::path projectRoot(
-        gProjectFolder ? ReadWindowText(gProjectFolder) : std::wstring{});
+    const std::filesystem::path projectRoot = gProjectFolder
+        ? std::filesystem::path(ReadWindowText(gProjectFolder))
+        : ConfiguredProjectRoot();
+    const std::wstring scanTargets = gScanTargets
+        ? ReadWindowText(gScanTargets) : LoadScanTargets();
     const bool visionEnabled = gAIVisionEnabled &&
         SendMessageW(gAIVisionEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED;
     SaveWorkspaceSettings(
         projectRoot,
-        gScanTargets ? ReadWindowText(gScanTargets) : std::wstring{});
+        scanTargets);
     SetWindowTextW(gStatusText, mode == AIWorkerMode::ApiStep ? L"API Step started..."
         : (mode == AIWorkerMode::ApiContinuous ? L"API Continuous started..." : L"Local AI started (basic policy)..."));
     gAIWorker = std::thread([
-        window, mode, continuous, useApi, interval, actorMode,
+        window, mode, continuous, useApi, interval, localInterval, actorMode,
         projectRoot, visionEnabled] {
         constexpr auto kRateLimitCooldown = std::chrono::seconds(60);
         LocalPolicyState localPolicy;
@@ -3255,12 +4293,14 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
         auto apiCooldownUntil = std::chrono::steady_clock::time_point{};
         do {
             const auto now = std::chrono::steady_clock::now();
+            unsigned int waitMilliseconds = interval;
             if (useApi && continuous && now < apiCooldownUntil) {
+                waitMilliseconds = localInterval;
                 const auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
                     apiCooldownUntil - now).count() + 1;
                 PostAIStatus(window, "API: rate-limit cooldown (" +
                     std::to_string(remaining) + "s remaining).\r\nAPI call: skipped\r\n\r\n" +
-                    ExecuteLocalActors(localPolicy, bossLocalPolicy, actorMode, interval), true);
+                    ExecuteLocalActors(localPolicy, bossLocalPolicy, actorMode, localInterval), true);
             } else if (useApi) {
                 bool apiExecuted = false;
                 ControlledActorMode decisionActor = actorMode;
@@ -3278,11 +4318,14 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
                 if (continuous && !apiExecuted && !gAIStopRequested) {
                     const bool rateLimited = apiResult.find("HTTP error 429") != std::string::npos ||
                         apiResult.find("RESOURCE_EXHAUSTED") != std::string::npos;
-                    if (rateLimited) apiCooldownUntil = std::chrono::steady_clock::now() + kRateLimitCooldown;
+                    if (rateLimited) {
+                        apiCooldownUntil = std::chrono::steady_clock::now() + kRateLimitCooldown;
+                        waitMilliseconds = localInterval;
+                    }
                     PostAIStatus(window, "API decision failed; using one local fallback.\r\n\r\n" +
                         (rateLimited ? std::string("Rate limit detected. API calls paused for 60 seconds.\r\n") : std::string{}) +
                         apiResult + "\r\n\r\n" + ExecuteLocalActors(
-                            localPolicy, bossLocalPolicy, decisionActor, interval), true);
+                            localPolicy, bossLocalPolicy, decisionActor, localInterval), true);
                 } else {
                     PostAIStatus(window, apiResult, true);
                 }
@@ -3292,7 +4335,7 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
             }
             if (!continuous || gAIStopRequested) break;
             std::unique_lock lock(gAIWaitMutex);
-            gAIWaitCondition.wait_for(lock, std::chrono::milliseconds(interval),
+            gAIWaitCondition.wait_for(lock, std::chrono::milliseconds(waitMilliseconds),
                 [] { return gAIStopRequested.load(); });
         } while (!gAIStopRequested);
         gAIWorkerRunning = false;
@@ -3306,9 +4349,234 @@ void StopAIWorker() {
     gAIWaitCondition.notify_all();
 }
 
+ControlledActorMode ScenarioActorMode(const std::string& actor) {
+    if (actor == "Boss") return ControlledActorMode::Boss;
+    if (actor == "Both") return ControlledActorMode::Both;
+    return ControlledActorMode::Player;
+}
+
+void StartScenarioWorker(HWND window, bool runAll) {
+    const LRESULT selected = gScenarioList
+        ? SendMessageW(gScenarioList, CB_GETCURSEL, 0, 0) : CB_ERR;
+    if ((!runAll && selected == CB_ERR) ||
+        gScenarioEntries.empty() ||
+        (!runAll &&
+            static_cast<std::size_t>(selected) >= gScenarioEntries.size())) {
+        SetWindowTextW(gStatusText,
+            L"Select a scenario first. Use Reload after adding a JSON file.");
+        return;
+    }
+    if (gAIWorkerRunning.exchange(true)) {
+        SetWindowTextW(gStatusText,
+            L"Another AI, scenario, or Viewer operation is already running.");
+        return;
+    }
+    if (gAIWorker.joinable()) gAIWorker.join();
+    const auto projectRoot = ConfiguredProjectRoot();
+    if (projectRoot.empty()) {
+        gAIWorkerRunning = false;
+        SetWindowTextW(gStatusText,
+            L"Scenario start failed: select a Game Project Folder first.");
+        return;
+    }
+    std::vector<ScenarioListEntry> scenarios;
+    if (runAll) {
+        scenarios = gScenarioEntries;
+    } else {
+        scenarios.push_back(gScenarioEntries[static_cast<std::size_t>(selected)]);
+    }
+    const unsigned int localInterval =
+        ReadIntervalMilliseconds(gLocalAIInterval, 250);
+    gAIStopRequested = false;
+    gAutoRefreshResumeTick = GetTickCount64() + 60000;
+    SetWindowTextW(gStatusText,
+        runAll ? L"Capturing the batch baseline..." : L"Scenario started...");
+    gAIWorker = std::thread([
+        window, localInterval, projectRoot, scenarios = std::move(scenarios), runAll] {
+        const auto batchStartedAt = std::chrono::steady_clock::now();
+        std::map<std::string, DebugObservation> sceneBaselines;
+        std::vector<ScenarioBatchItemResult> batchItems;
+        std::string lastSingleResult;
+        for (std::size_t scenarioIndex = 0;
+            scenarioIndex < scenarios.size() && !gAIStopRequested;
+            ++scenarioIndex) {
+            const auto& scenario = scenarios[scenarioIndex];
+            ScenarioBatchItemResult item;
+            item.scenarioPath = scenario.path;
+            item.label = WideToUtf8(scenario.label);
+            const auto scenarioStartedAt = std::chrono::steady_clock::now();
+
+            std::string error;
+            if (!gScenarioRunner.Load(
+                scenario.path,
+                ActionProfilePath(projectRoot),
+                projectRoot / "generated/debug_ai/scenarios/results",
+                error)) {
+                item.status = "load_failed";
+                item.detail = error;
+                item.elapsedSeconds = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - scenarioStartedAt).count();
+                batchItems.push_back(std::move(item));
+                PostAIStatus(window,
+                    "Scenario could not start: " + error, true);
+                continue;
+            }
+
+            const std::string targetSceneId = gScenarioRunner.TargetSceneId();
+            PostAIStatus(window,
+                (runAll
+                    ? "Scenario batch " + std::to_string(scenarioIndex + 1) + "/" +
+                        std::to_string(scenarios.size()) + "\r\n"
+                    : std::string{}) +
+                "Preparing scene: " +
+                (targetSceneId.empty() ? std::string("current") : targetSceneId), true);
+            if (!EnsureScenarioSceneLoaded(targetSceneId, error)) {
+                item.status = "scene_load_failed";
+                item.detail = error;
+                item.elapsedSeconds = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - scenarioStartedAt).count();
+                batchItems.push_back(std::move(item));
+                continue;
+            }
+
+            if (runAll) {
+                const std::string baselineKey = targetSceneId.empty()
+                    ? std::string("<current>") : targetSceneId;
+                auto baseline = sceneBaselines.find(baselineKey);
+                if (baseline == sceneBaselines.end()) {
+                    DebugObservation captured;
+                    if (!CaptureScenarioBaseline(captured, error)) {
+                        item.status = "baseline_failed";
+                        item.detail = error;
+                        item.elapsedSeconds = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - scenarioStartedAt).count();
+                        batchItems.push_back(std::move(item));
+                        continue;
+                    }
+                    baseline = sceneBaselines.emplace(baselineKey, std::move(captured)).first;
+                }
+                if (!RestoreScenarioBaseline(baseline->second, error)) {
+                    item.status = "restore_failed";
+                    item.detail = error;
+                    item.elapsedSeconds = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - scenarioStartedAt).count();
+                    batchItems.push_back(std::move(item));
+                    continue;
+                }
+            }
+
+            std::string anomalyResetResponse;
+            if (!SendCheckedCommand("reset_anomalies", anomalyResetResponse)) {
+                item.status = "anomaly_reset_failed";
+                item.detail = anomalyResetResponse;
+                item.elapsedSeconds = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - scenarioStartedAt).count();
+                batchItems.push_back(std::move(item));
+                continue;
+            }
+
+            if (!gScenarioRunner.Start(error)) {
+                item.status = "start_failed";
+                item.detail = error;
+                item.elapsedSeconds = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - scenarioStartedAt).count();
+                batchItems.push_back(std::move(item));
+                continue;
+            }
+
+            LocalPolicyState playerPolicy;
+            playerPolicy.config = LoadLocalPolicyConfig();
+            BossLocalPolicyState bossPolicy;
+            const ControlledActorMode actorMode =
+                ScenarioActorMode(gScenarioRunner.ActorMode());
+            const bool autoRecord = gScenarioRunner.AutoRecord();
+            std::string replayStart;
+            bool scenarioRecordingStarted = false;
+            if (autoRecord) {
+                replayStart = StartRecordingWithCoverageCore();
+                scenarioRecordingStarted =
+                    replayStart.find("Recording: true") != std::string::npos ||
+                    replayStart.find("recording started") != std::string::npos;
+            }
+            while (gScenarioRunner.IsRunning() && !gAIStopRequested) {
+                const std::string step = ExecuteLocalActors(
+                    playerPolicy, bossPolicy, actorMode, localInterval);
+                const bool actionUnavailable =
+                    step.find("no available action") != std::string::npos ||
+                    step.find("no player action is available") != std::string::npos ||
+                    step.find("no boss action is available") != std::string::npos ||
+                    step.find("no game observation") != std::string::npos;
+                if (actionUnavailable && !targetSceneId.empty()) {
+                    std::string sceneResponse;
+                    DebugProtocolMessage sceneStatus;
+                    if (!SendCommand("status", sceneResponse) ||
+                        !DebugProtocolJson::TryParse(sceneResponse, sceneStatus) ||
+                        !sceneStatus.observation ||
+                        sceneStatus.observation->sceneId != targetSceneId) {
+                        gScenarioRunner.Fail(
+                            "Target scene ended or changed before all goals passed: " +
+                            targetSceneId);
+                    }
+                }
+                const std::string batchPrefix = runAll
+                    ? "Scenario batch " + std::to_string(scenarioIndex + 1) + "/" +
+                        std::to_string(scenarios.size()) + "\r\n"
+                    : std::string{};
+                PostAIStatus(window,
+                    batchPrefix + gScenarioRunner.FormatProgress() +
+                    "\r\nLast local decision:\r\n" + step, true);
+                if (!gScenarioRunner.IsRunning() || gAIStopRequested) break;
+                std::unique_lock lock(gAIWaitMutex);
+                gAIWaitCondition.wait_for(
+                    lock, std::chrono::milliseconds(localInterval),
+                    [] { return gAIStopRequested.load(); });
+            }
+            if (gAIStopRequested) gScenarioRunner.RequestStop();
+            item.status = ScenarioStatusName(gScenarioRunner.CurrentStatus());
+            item.detail = gScenarioRunner.FailureReason();
+            item.anomalyCount = gScenarioRunner.AnomalyCount();
+            item.anomalyErrorCount = gScenarioRunner.AnomalyErrorCount();
+            const std::string replayStop = scenarioRecordingStarted
+                ? StopRecordingWithCoverageCore()
+                : (autoRecord ? replayStart : std::string("Automatic replay recording disabled."));
+            const std::string result = gScenarioRunner.Finalize(replayStop);
+            item.resultPath = gScenarioRunner.ResultPath();
+            item.elapsedSeconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - scenarioStartedAt).count();
+            batchItems.push_back(std::move(item));
+            lastSingleResult = result + "\r\n\r\n" +
+                gScenarioRunner.FormatProgress() +
+                "\r\nReplay / Coverage:\r\n" + replayStop;
+        }
+
+        if (runAll) {
+            const double elapsedSeconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - batchStartedAt).count();
+            const auto resultPath = SaveScenarioBatchResult(
+                projectRoot, batchItems, gAIStopRequested, elapsedSeconds);
+            PostAIStatus(window, FormatScenarioBatchResult(
+                batchItems, resultPath, gAIStopRequested, elapsedSeconds), true);
+        } else if (!lastSingleResult.empty()) {
+            PostAIStatus(window, std::move(lastSingleResult), true);
+        }
+        PostMessageW(window, kReplayListRefreshMessage, 0, 0);
+        gAIWorkerRunning = false;
+    });
+}
+
+void StopScenarioWorker() {
+    gScenarioRunner.RequestStop();
+    StopAIWorker();
+}
+
 void StartOneShotWorker(HWND window, std::function<std::string()> task,
     const wchar_t* startingText = nullptr, bool preserveResult = true) {
-    if (gAIWorkerRunning.exchange(true)) return;
+    if (gAIWorkerRunning.exchange(true)) {
+        SetWindowTextW(
+            gStatusText,
+            L"Another Viewer operation is still running. Wait for it to finish or press Stop.");
+        return;
+    }
     if (gAIWorker.joinable()) gAIWorker.join();
     gAIStopRequested = false;
     if (startingText) SetWindowTextW(gStatusText, startingText);
@@ -3350,6 +4618,29 @@ void StartCommandWorker(HWND window, const char* command,
         startingText, preserveResult);
 }
 
+void StartConnectionWorker(HWND window, const wchar_t* startingText = nullptr) {
+    if (gConnectionWorkerRunning.exchange(true)) return;
+    if (gConnectionWorker.joinable()) gConnectionWorker.join();
+    if (startingText) SetWindowTextW(gStatusText, startingText);
+    gConnectionWorker = std::thread([window] {
+        std::string result;
+        try {
+            result = ExecuteCommandCore("status");
+        } catch (const std::exception& exception) {
+            result = std::string("Game connection check failed safely.\r\nError: ") +
+                exception.what();
+        } catch (...) {
+            result = "Game connection check failed safely.\r\nError: unknown exception";
+        }
+        {
+            std::lock_guard lock(gConnectionStatusMutex);
+            gPendingConnectionStatus = result;
+        }
+        gConnectionStatusReady = true;
+        gConnectionWorkerRunning = false;
+    });
+}
+
 HWND AddButton(HWND parent, const wchar_t* text, int id, int x, int y, int width) {
     return CreateWindowW(
         L"BUTTON", text,
@@ -3361,11 +4652,477 @@ HWND AddButton(HWND parent, const wchar_t* text, int id, int x, int y, int width
         nullptr);
 }
 
+void AppendSemanticEvidence(
+    std::vector<std::string>& destination,
+    const nlohmann::json& evidence) {
+    if (!evidence.is_array()) return;
+    for (const auto& item : evidence) {
+        if (destination.size() >= 12) break;
+        if (item.is_string()) {
+            destination.push_back(item.get<std::string>());
+            continue;
+        }
+        if (!item.is_object()) continue;
+        std::ostringstream line;
+        const std::string source = item.value("source", "");
+        const std::size_t sourceLine = item.value("line", std::size_t{});
+        const std::string excerpt = item.value("excerpt", "");
+        if (!source.empty()) line << source;
+        if (sourceLine > 0) line << ':' << sourceLine;
+        if (!excerpt.empty()) {
+            if (line.tellp() > 0) line << " - ";
+            line << excerpt;
+        }
+        if (line.tellp() > 0) destination.push_back(line.str());
+    }
+}
+
+void UpdateSemanticReviewDetails() {
+    if (!gSemanticReviewList || !gSemanticReviewDetails) return;
+    const LRESULT selected = SendMessageW(gSemanticReviewList, LB_GETCURSEL, 0, 0);
+    if (selected == LB_ERR ||
+        static_cast<std::size_t>(selected) >= gSemanticReviewEntries.size()) {
+        const std::wstring message = gSemanticReviewEntries.empty()
+            ? L"No semantic items require review.\r\n"
+                L"Candidates already covered by an approved runtime property are hidden: " +
+                std::to_wstring(gSemanticReviewHiddenDuplicates)
+            : L"Select an item to inspect its evidence.\r\n"
+                L"Approved-runtime duplicates hidden: " +
+                std::to_wstring(gSemanticReviewHiddenDuplicates);
+        SetWindowTextW(gSemanticReviewDetails, message.c_str());
+        EnableWindow(gSemanticReviewCategory, FALSE);
+        return;
+    }
+    const auto& entry = gSemanticReviewEntries[static_cast<std::size_t>(selected)];
+    std::ostringstream details;
+    if (entry.kind == SemanticReviewKind::Action) {
+        details << "Action: " << entry.actionId
+            << "\r\nSuggested category: " << entry.category;
+        EnableWindow(gSemanticReviewCategory, TRUE);
+        const std::wstring category = Utf8ToWide(entry.category);
+        const LRESULT categoryIndex = SendMessageW(
+            gSemanticReviewCategory, CB_FINDSTRINGEXACT, -1,
+            reinterpret_cast<LPARAM>(category.c_str()));
+        SendMessageW(gSemanticReviewCategory, CB_SETCURSEL,
+            categoryIndex == CB_ERR ? 0 : categoryIndex, 0);
+    } else {
+        details << "State Mapping: " << entry.genericProperty
+            << " <- " << entry.sourceSymbol;
+        EnableWindow(gSemanticReviewCategory, FALSE);
+    }
+    details << "\r\nConfidence: " << std::fixed << std::setprecision(2)
+        << entry.confidence << "\r\n\r\nEvidence:";
+    if (entry.evidence.empty()) details << "\r\n  (none)";
+    for (const auto& evidence : entry.evidence) details << "\r\n  " << evidence;
+    if (gSemanticReviewHiddenDuplicates > 0) {
+        details << "\r\n\r\nApproved-runtime duplicates hidden: "
+            << gSemanticReviewHiddenDuplicates;
+    }
+    SetWindowTextW(gSemanticReviewDetails, Utf8ToWide(details.str()).c_str());
+}
+
+void LoadSemanticReviewEntries() {
+    gSemanticReviewEntries.clear();
+    gSemanticReviewHiddenDuplicates = 0;
+    if (!gSemanticReviewList) return;
+    SendMessageW(gSemanticReviewList, LB_RESETCONTENT, 0, 0);
+    const auto projectRoot = ConfiguredProjectRoot();
+    if (projectRoot.empty()) {
+        SetWindowTextW(gSemanticReviewDetails,
+            L"Select a Game Project Folder in Project Tools first.");
+        return;
+    }
+
+    std::ifstream actionInput(ActionProfilePath(projectRoot));
+    const auto actionProfile = nlohmann::json::parse(actionInput, nullptr, false);
+    if (!actionProfile.is_discarded() && actionProfile.is_object() &&
+        actionProfile.contains("actions") && actionProfile["actions"].is_array()) {
+        for (const auto& action : actionProfile["actions"]) {
+            if (!action.is_object() || !action.value("semanticReviewRequired", false)) continue;
+            SemanticReviewEntry entry;
+            entry.kind = SemanticReviewKind::Action;
+            entry.actionId = action.value("actionId", "");
+            entry.category = action.value("category", "generic");
+            if (action.contains("semanticInference") && action["semanticInference"].is_object()) {
+                const auto& inference = action["semanticInference"];
+                entry.confidence = inference.value("confidence", 0.0f);
+                AppendSemanticEvidence(entry.evidence,
+                    inference.value("evidence", nlohmann::json::array()));
+            }
+            const std::wstring label = L"[Action] " + Utf8ToWide(entry.actionId) +
+                L" -> " + Utf8ToWide(entry.category);
+            gSemanticReviewEntries.push_back(std::move(entry));
+            SendMessageW(gSemanticReviewList, LB_ADDSTRING, 0,
+                reinterpret_cast<LPARAM>(label.c_str()));
+        }
+    }
+
+    std::ifstream stateInput(StateProfilePath(projectRoot));
+    const auto stateProfile = nlohmann::json::parse(stateInput, nullptr, false);
+    if (!stateProfile.is_discarded() && stateProfile.is_object() &&
+        stateProfile.contains("mappings") && stateProfile["mappings"].is_array()) {
+        std::set<std::string> approvedRuntimeProperties;
+        for (const auto& mapping : stateProfile["mappings"]) {
+            if (!mapping.is_object() || !mapping.value("approved", false)) continue;
+            const std::string property = mapping.value("genericProperty", "");
+            const std::string symbol = mapping.value("sourceSymbol", "");
+            if (!property.empty() && (mapping.value("runtimeObserved", false) || symbol == property))
+                approvedRuntimeProperties.insert(property);
+        }
+        for (const auto& mapping : stateProfile["mappings"]) {
+            if (!mapping.is_object() || !mapping.value("reviewRequired", false)) continue;
+            if (approvedRuntimeProperties.contains(mapping.value("genericProperty", ""))) {
+                ++gSemanticReviewHiddenDuplicates;
+                continue;
+            }
+            SemanticReviewEntry entry;
+            entry.kind = SemanticReviewKind::StateMapping;
+            entry.genericProperty = mapping.value("genericProperty", "");
+            entry.sourceSymbol = mapping.value("sourceSymbol", "");
+            entry.confidence = mapping.value("confidence", 0.0f);
+            AppendSemanticEvidence(entry.evidence,
+                mapping.value("evidence", nlohmann::json::array()));
+            const std::wstring label = L"[State] " + Utf8ToWide(entry.genericProperty) +
+                L" <- " + Utf8ToWide(entry.sourceSymbol);
+            gSemanticReviewEntries.push_back(std::move(entry));
+            SendMessageW(gSemanticReviewList, LB_ADDSTRING, 0,
+                reinterpret_cast<LPARAM>(label.c_str()));
+        }
+    }
+    if (!gSemanticReviewEntries.empty())
+        SendMessageW(gSemanticReviewList, LB_SETCURSEL, 0, 0);
+    UpdateSemanticReviewDetails();
+}
+
+void RecalculateActionSemanticSummary(nlohmann::json& profile) {
+    std::size_t automatic = 0, manual = 0, ignored = 0, review = 0;
+    for (const auto& action : profile.value("actions", nlohmann::json::array())) {
+        if (!action.is_object()) continue;
+        const std::string source = action.value("semanticApprovalSource", "");
+        if (action.value("semanticReviewRequired", false)) ++review;
+        else if (action.value("semanticIgnored", false) || source == "manual_ignored") ++ignored;
+        else if (source == "manual") ++manual;
+        else if (action.value("semanticApproved", false)) ++automatic;
+    }
+    profile["semanticSummary"] = {
+        { "autoApproved", automatic }, { "manuallyApproved", manual },
+        { "manuallyIgnored", ignored }, { "reviewRequired", review },
+        { "autoApprovalThreshold", 0.90 }, { "method", "local_source_scan" },
+    };
+}
+
+void RecalculateStateSemanticSummary(nlohmann::json& profile) {
+    std::size_t automatic = 0, manual = 0, ignored = 0, review = 0;
+    for (const auto& mapping : profile.value("mappings", nlohmann::json::array())) {
+        if (!mapping.is_object()) continue;
+        const std::string source = mapping.value("approvalSource", "");
+        if (mapping.value("reviewRequired", false)) ++review;
+        else if (mapping.value("ignored", false) || source == "manual_ignored") ++ignored;
+        else if (source == "manual" || source == "manual_legacy") ++manual;
+        else if (mapping.value("approved", false)) ++automatic;
+    }
+    profile["reviewRequired"] = review > 0;
+    profile["semanticSummary"] = {
+        { "autoApproved", automatic }, { "manuallyApproved", manual },
+        { "manuallyIgnored", ignored }, { "reviewRequired", review },
+        { "autoApprovalThreshold", 0.98 }, { "method", "local_source_scan" },
+    };
+}
+
+bool SaveSelectedSemanticReview(bool approve, std::string& resultMessage) {
+    if (!gSemanticReviewList) return false;
+    const LRESULT selected = SendMessageW(gSemanticReviewList, LB_GETCURSEL, 0, 0);
+    if (selected == LB_ERR ||
+        static_cast<std::size_t>(selected) >= gSemanticReviewEntries.size()) {
+        resultMessage = "Select a semantic review item first.";
+        return false;
+    }
+    const auto selectedEntry = gSemanticReviewEntries[static_cast<std::size_t>(selected)];
+    const auto projectRoot = ConfiguredProjectRoot();
+    if (projectRoot.empty()) {
+        resultMessage = "Semantic Review failed: project folder is not configured.";
+        return false;
+    }
+    if (selectedEntry.kind == SemanticReviewKind::Action) {
+        const auto path = ActionProfilePath(projectRoot);
+        std::ifstream input(path);
+        auto profile = nlohmann::json::parse(input, nullptr, false);
+        if (profile.is_discarded() || !profile.is_object() ||
+            !profile.contains("actions") || !profile["actions"].is_array()) {
+            resultMessage = "Semantic Review failed: Action Profile is invalid.";
+            return false;
+        }
+        bool found = false;
+        for (auto& action : profile["actions"]) {
+            if (!action.is_object() || action.value("actionId", "") != selectedEntry.actionId) continue;
+            found = true;
+            if (approve) {
+                const std::string category = WideToUtf8(ReadWindowText(gSemanticReviewCategory));
+                action["category"] = category.empty() ? selectedEntry.category : category;
+                action["tags"] = nlohmann::json::array({ action["category"] });
+                action["semanticApproved"] = true;
+                action["semanticIgnored"] = false;
+                action["semanticApprovalSource"] = "manual";
+            } else {
+                action["semanticApproved"] = false;
+                action["semanticIgnored"] = true;
+                action["semanticApprovalSource"] = "manual_ignored";
+            }
+            action["semanticReviewRequired"] = false;
+            break;
+        }
+        if (!found) {
+            resultMessage = "Semantic Review failed: Action was not found.";
+            return false;
+        }
+        RecalculateActionSemanticSummary(profile);
+        std::ofstream output(path, std::ios::trunc);
+        if (!output) {
+            resultMessage = "Semantic Review failed: Action Profile could not be saved.";
+            return false;
+        }
+        output << profile.dump(2) << '\n';
+        resultMessage = std::string(approve ? "Approved Action: " : "Ignored Action candidate: ") +
+            selectedEntry.actionId;
+        return true;
+    }
+
+    const auto path = StateProfilePath(projectRoot);
+    std::ifstream input(path);
+    auto profile = nlohmann::json::parse(input, nullptr, false);
+    if (profile.is_discarded() || !profile.is_object() ||
+        !profile.contains("mappings") || !profile["mappings"].is_array()) {
+        resultMessage = "Semantic Review failed: State Mapping Profile is invalid.";
+        return false;
+    }
+    bool found = false;
+    for (auto& mapping : profile["mappings"]) {
+        if (!mapping.is_object() ||
+            mapping.value("genericProperty", "") != selectedEntry.genericProperty ||
+            mapping.value("sourceSymbol", "") != selectedEntry.sourceSymbol) continue;
+        found = true;
+        mapping["approved"] = approve;
+        mapping["autoApproved"] = false;
+        mapping["ignored"] = !approve;
+        mapping["approvalSource"] = approve ? "manual" : "manual_ignored";
+        mapping["reviewRequired"] = false;
+        break;
+    }
+    if (!found) {
+        resultMessage = "Semantic Review failed: State Mapping was not found.";
+        return false;
+    }
+    RecalculateStateSemanticSummary(profile);
+    std::ofstream output(path, std::ios::trunc);
+    if (!output) {
+        resultMessage = "Semantic Review failed: State Mapping Profile could not be saved.";
+        return false;
+    }
+    output << profile.dump(2) << '\n';
+    resultMessage = std::string(approve ? "Approved State Mapping: " : "Ignored State Mapping candidate: ") +
+        selectedEntry.genericProperty + " <- " + selectedEntry.sourceSymbol;
+    return true;
+}
+
+LRESULT CALLBACK ProjectToolsWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_CREATE: {
+        gProjectToolsWindow = window;
+        CreateWindowW(L"STATIC", L"Project / Profile Tools", WS_CHILD | WS_VISIBLE,
+            20, 15, 250, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L"Game Project Folder:", WS_CHILD | WS_VISIBLE,
+            20, 48, 160, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        const std::wstring savedProjectFolder = LoadProjectFolder();
+        gProjectFolder = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedProjectFolder.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 70, 450, 27, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ProjectFolderId)), GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Browse...", BrowseProjectId, 480, 67, 80);
+        AddButton(window, L"Scan Project", ScanProjectId, 570, 67, 90);
+        CreateWindowW(L"STATIC", L"Scan Targets (blank = automatic):", WS_CHILD | WS_VISIBLE,
+            20, 110, 300, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        const std::wstring savedScanTargets = LoadScanTargets();
+        gScanTargets = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedScanTargets.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 132, 640, 27, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ScanTargetsId)), GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Generate Action Profile", GenerateProfileId, 20, 175, 190);
+        AddButton(window, L"Generate State Mapping", GenerateStateProfileId, 220, 175, 190);
+        AddButton(window, L"Generate Local Policy", GenerateLocalPolicyId, 420, 175, 190);
+        AddButton(window, L"Semantic Review...", OpenSemanticReviewId, 20, 218, 190);
+        CreateWindowW(L"STATIC", L"Results are shown in the main Viewer status area.",
+            WS_CHILD | WS_VISIBLE, 220, 226, 390, 22, window, nullptr,
+            GetModuleHandleW(nullptr), nullptr);
+        return 0;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case BrowseProjectId: {
+            std::filesystem::path selected;
+            if (BrowseForProjectFolder(window, selected)) {
+                SetWindowTextW(gProjectFolder, selected.c_str());
+                SaveProjectFolder(selected);
+                RefreshReplaySessionList(false);
+                SetWindowTextW(gStatusText, L"Project folder saved locally.");
+            }
+            return 0;
+        }
+        case ScanProjectId: {
+            const std::filesystem::path folder(ReadWindowText(gProjectFolder));
+            const std::wstring targets = ReadWindowText(gScanTargets);
+            SaveWorkspaceSettings(folder, targets);
+            const std::string targetText = WideToUtf8(targets);
+            StartOneShotWorker(gMainWindow, [folder, targetText] {
+                return ScanProjectFolder(folder, targetText);
+            }, L"Scanning project files...");
+            return 0;
+        }
+        case GenerateProfileId: {
+            const std::filesystem::path folder(ReadWindowText(gProjectFolder));
+            SaveProjectFolder(folder);
+            StartOneShotWorker(gMainWindow, [folder] { return GenerateActionProfile(folder); },
+                L"Generating Action Profile locally...");
+            return 0;
+        }
+        case GenerateStateProfileId: {
+            const std::filesystem::path folder(ReadWindowText(gProjectFolder));
+            const std::wstring targets = ReadWindowText(gScanTargets);
+            SaveWorkspaceSettings(folder, targets);
+            const std::string targetText = WideToUtf8(targets);
+            StartOneShotWorker(gMainWindow, [folder, targetText] {
+                return GenerateStateMappingProfile(folder, targetText);
+            }, L"Generating State Mapping Profile locally...");
+            return 0;
+        }
+        case GenerateLocalPolicyId:
+            ApplyViewerGoal();
+            StartOneShotWorker(gMainWindow, GenerateLocalPolicyCore,
+                L"Generating Local Policy from AI Goal...");
+            return 0;
+        case OpenSemanticReviewId:
+            PostMessageW(gMainWindow, WM_COMMAND, OpenSemanticReviewId, 0);
+            return 0;
+        default: break;
+        }
+        break;
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    case WM_DESTROY:
+        gProjectToolsWindow = nullptr;
+        gProjectFolder = nullptr;
+        gScanTargets = nullptr;
+        return 0;
+    default: break;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+LRESULT CALLBACK SemanticReviewWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_CREATE: {
+        gSemanticReviewWindow = window;
+        CreateWindowW(L"STATIC", L"Semantic Review - only ambiguous candidates are shown",
+            WS_CHILD | WS_VISIBLE, 20, 15, 500, 24, window, nullptr,
+            GetModuleHandleW(nullptr), nullptr);
+        gSemanticReviewList = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
+            20, 48, 640, 210, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(SemanticReviewListId)),
+            GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L"Action category:", WS_CHILD | WS_VISIBLE,
+            20, 272, 120, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        gSemanticReviewCategory = CreateWindowW(L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+            140, 268, 180, 180, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(SemanticReviewCategoryId)),
+            GetModuleHandleW(nullptr), nullptr);
+        for (const wchar_t* category : { L"generic", L"attack", L"movement", L"mobility",
+            L"defense", L"idle", L"flow", L"interaction" }) {
+            SendMessageW(gSemanticReviewCategory, CB_ADDSTRING, 0,
+                reinterpret_cast<LPARAM>(category));
+        }
+        AddButton(window, L"Approve Selected", SemanticReviewApproveId, 335, 264, 145);
+        AddButton(window, L"Ignore Candidate", SemanticReviewIgnoreId, 490, 264, 135);
+        AddButton(window, L"Reload", SemanticReviewReloadId, 20, 307, 90);
+        gSemanticReviewDetails = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
+            20, 350, 640, 190, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(SemanticReviewDetailsId)),
+            GetModuleHandleW(nullptr), nullptr);
+        LoadSemanticReviewEntries();
+        PostMessageW(window, WM_COMMAND, SemanticReviewReloadId, 0);
+        return 0;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case SemanticReviewListId:
+            if (HIWORD(wParam) == LBN_SELCHANGE) UpdateSemanticReviewDetails();
+            return 0;
+        case SemanticReviewApproveId:
+        case SemanticReviewIgnoreId: {
+            std::string result;
+            const bool approve = LOWORD(wParam) == SemanticReviewApproveId;
+            SaveSelectedSemanticReview(approve, result);
+            SetWindowTextW(gStatusText, Utf8ToWide(result).c_str());
+            LoadSemanticReviewEntries();
+            return 0;
+        }
+        case SemanticReviewReloadId:
+            LoadSemanticReviewEntries();
+            return 0;
+        default: break;
+        }
+        break;
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    case WM_DESTROY:
+        gSemanticReviewWindow = nullptr;
+        gSemanticReviewList = nullptr;
+        gSemanticReviewCategory = nullptr;
+        gSemanticReviewDetails = nullptr;
+        gSemanticReviewEntries.clear();
+        return 0;
+    default: break;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+void ShowProjectToolsWindow(HWND owner) {
+    if (gProjectToolsWindow && IsWindow(gProjectToolsWindow)) {
+        ShowWindow(gProjectToolsWindow, SW_SHOWNORMAL);
+        SetForegroundWindow(gProjectToolsWindow);
+        return;
+    }
+    CreateWindowExW(WS_EX_TOOLWINDOW, kProjectToolsWindowClass,
+        L"DebugAI Project Tools", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+        CW_USEDEFAULT, CW_USEDEFAULT, 700, 310, owner, nullptr,
+        GetModuleHandleW(nullptr), nullptr);
+    if (gProjectToolsWindow) ShowWindow(gProjectToolsWindow, SW_SHOWNORMAL);
+}
+
+void ShowSemanticReviewWindow(HWND owner) {
+    if (gSemanticReviewWindow && IsWindow(gSemanticReviewWindow)) {
+        LoadSemanticReviewEntries();
+        ShowWindow(gSemanticReviewWindow, SW_SHOWNORMAL);
+        SetForegroundWindow(gSemanticReviewWindow);
+        return;
+    }
+    CreateWindowExW(WS_EX_TOOLWINDOW, kSemanticReviewWindowClass,
+        L"DebugAI Semantic Review", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+        CW_USEDEFAULT, CW_USEDEFAULT, 700, 600, owner, nullptr,
+        GetModuleHandleW(nullptr), nullptr);
+    if (gSemanticReviewWindow) ShowWindow(gSemanticReviewWindow, SW_SHOWNORMAL);
+}
+
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_CREATE: {
+        gMainWindow = window;
         gAIProvider.Configure();
-        const std::wstring configuredInterval = std::to_wstring(gAIProvider.SuggestedIntervalMilliseconds());
+        const std::wstring configuredApiInterval = std::to_wstring(
+            LoadWorkspaceInterval("apiIntervalMs", gAIProvider.SuggestedIntervalMilliseconds()));
+        const std::wstring configuredLocalInterval = std::to_wstring(
+            LoadWorkspaceInterval("localIntervalMs", 250));
         CreateWindowW(L"STATIC", L"DebugAI Viewer", WS_CHILD | WS_VISIBLE,
             20, 16, 300, 28, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         AddButton(window, L"Start Recording", StartRecordingId, 20, 55, 130);
@@ -3399,8 +5156,6 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0.25x"));
         SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0.5x"));
         SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"1x"));
-        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"2x"));
-        SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"4x"));
         SendMessageW(gReplaySpeed, CB_SETCURSEL, 0, 2);
         AddButton(window, L"Apply", ApplyReplaySpeedId, 495, 141, 75);
         CreateWindowW(L"STATIC", L"API:", WS_CHILD | WS_VISIBLE,
@@ -3411,16 +5166,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             320, 194, 60, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         AddButton(window, L"Start Local", LocalStartId, 380, 186, 120);
         AddButton(window, L"Stop", AIStopId, 510, 186, 80);
-        CreateWindowW(L"STATIC", L"Interval ms:", WS_CHILD | WS_VISIBLE,
-            20, 227, 75, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        gAIInterval = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredInterval.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_NUMBER, 95, 223, 85, 26, window,
+        CreateWindowW(L"STATIC", L"API ms:", WS_CHILD | WS_VISIBLE,
+            20, 227, 55, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        gAIInterval = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredApiInterval.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_NUMBER, 75, 223, 70, 26, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIIntervalId)), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L"Local ms:", WS_CHILD | WS_VISIBLE,
+            155, 227, 65, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        gLocalAIInterval = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredLocalInterval.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_NUMBER, 220, 223, 70, 26, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(LocalAIIntervalId)), GetModuleHandleW(nullptr), nullptr);
         CreateWindowW(L"STATIC", L"Actor:", WS_CHILD | WS_VISIBLE,
-            210, 227, 50, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            310, 227, 45, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIActorMode = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            260, 223, 150, 180, window,
+            355, 223, 100, 180, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIActorModeId)), GetModuleHandleW(nullptr), nullptr);
         SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Player"));
         SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Boss"));
@@ -3430,9 +5190,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             L"BUTTON",
             L"AI Vision",
             WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-            430,
+            470,
             221,
-            115,
+            90,
             28,
             window,
             reinterpret_cast<HMENU>(
@@ -3446,55 +5206,59 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 ? BST_CHECKED
                 : BST_UNCHECKED,
             0);
-        AddButton(window, L"Capture", CaptureVisionId, 555, 216, 95);
-        CreateWindowW(L"STATIC", L"Game Project Folder:", WS_CHILD | WS_VISIBLE,
-            20, 258, 160, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        const std::wstring savedProjectFolder = LoadProjectFolder();
-        gProjectFolder = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedProjectFolder.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 280, 450, 27, window,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ProjectFolderId)), GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Browse...", BrowseProjectId, 480, 277, 80);
-        AddButton(window, L"Scan Project", ScanProjectId, 570, 277, 80);
-        AddButton(window, L"Generate Action Profile", GenerateProfileId, 20, 315, 190);
-        AddButton(window, L"Generate State Mapping", GenerateStateProfileId, 220, 315, 190);
-        AddButton(window, L"Generate Local Policy", GenerateLocalPolicyId, 420, 315, 190);
-        CreateWindowW(L"STATIC", L"Scan Targets (comma separated; blank = automatic):", WS_CHILD | WS_VISIBLE,
-            20, 356, 390, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        const std::wstring savedScanTargets = LoadScanTargets();
-        gScanTargets = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedScanTargets.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 378, 630, 27, window,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ScanTargetsId)), GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Capture", CaptureVisionId, 565, 216, 85);
+        CreateWindowW(L"STATIC", L"Scenario:", WS_CHILD | WS_VISIBLE,
+            20, 269, 70, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        gScenarioList = CreateWindowW(L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            90, 265, 235, 220, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ScenarioListId)),
+            GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Reload", ReloadScenarioListId, 335, 260, 65);
+        AddButton(window, L"Start One", StartScenarioId, 410, 260, 95);
+        AddButton(window, L"Run All", RunAllScenariosId, 515, 260, 80);
+        AddButton(window, L"Stop", StopScenarioId, 605, 260, 55);
         const std::wstring configuredGoal = Utf8ToWide(gAIProvider.Goal());
         CreateWindowW(L"STATIC", L"AI Goal / Instruction:", WS_CHILD | WS_VISIBLE,
-            20, 415, 170, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            20, 310, 170, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIGoal = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredGoal.c_str(),
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-            20, 437, 630, 58, window,
+            20, 332, 640, 68, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIGoalId)), GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"Project Tools...", OpenProjectToolsId, 20, 411, 145);
+        AddButton(window, L"Semantic Review...", OpenSemanticReviewId, 175, 411, 155);
+        AddButton(window, L"Coverage", CoverageSummaryId, 340, 411, 120);
+        AddButton(window, L"Reset Coverage", ResetCoverageId, 470, 411, 140);
         gStatusText = CreateWindowExW(
             WS_EX_CLIENTEDGE,
             L"EDIT",
             L"Game connection: checking...",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
-            20, 505, 630, 225,
+            20, 456, 640, 244,
             window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(StatusTextId)),
             GetModuleHandleW(nullptr),
             nullptr);
         RefreshReplaySessionList(false);
-        StartCommandWorker(window, "status", L"Game connection: checking...", false);
+        RefreshScenarioList(false);
+        StartConnectionWorker(window, L"Game connection: checking...");
         return 0;
     }
 
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
-        case StartRecordingId: StartCommandWorker(window, "start_recording", L"Starting recording..."); return 0;
+        case StartRecordingId:
+            StartOneShotWorker(
+                window,
+                StartRecordingWithCoverageCore,
+                L"Starting replay and coverage recording...");
+            return 0;
         case StopRecordingId:
             StartOneShotWorker(window, [window] {
-                const std::string result = ExecuteCommandCore("stop_recording");
+                const std::string result = StopRecordingWithCoverageCore();
                 PostMessageW(window, kReplayListRefreshMessage, 0, 0);
                 return result;
-            }, L"Stopping recording...");
+            }, L"Finalizing replay and coverage...");
             return 0;
         case PlayLatestId:
             StartReplayWorker(window, [] {
@@ -3539,6 +5303,24 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case ReloadReplayListId:
             RefreshReplaySessionList(true);
             return 0;
+        case ReplaySessionId: {
+            if (HIWORD(wParam) != CBN_SELCHANGE) return 0;
+            const LRESULT selected =
+                SendMessageW(gReplaySessions, CB_GETCURSEL, 0, 0);
+            if (selected == CB_ERR ||
+                static_cast<std::size_t>(selected) >= gReplaySessionEntries.size()) {
+                return 0;
+            }
+            const auto manifestPath =
+                gReplaySessionEntries[static_cast<std::size_t>(selected)].manifestPath;
+            StartOneShotWorker(window, [manifestPath, window] {
+                const std::string result =
+                    FormatSelectedReplayCoverageCore(manifestPath);
+                PostMessageW(window, kReplayListRefreshMessage, 0, 0);
+                return result;
+            }, L"Loading selected replay coverage...");
+            return 0;
+        }
         case PauseReplayId:
             StartCommandWorker(window, "pause_replay", L"Pausing replay...");
             return 0;
@@ -3551,7 +5333,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case ApplyReplaySpeedId: {
             const LRESULT selected =
                 SendMessageW(gReplaySpeed, CB_GETCURSEL, 0, 0);
-            constexpr double speeds[] = { 0.25, 0.5, 1.0, 2.0, 4.0 };
+            constexpr double speeds[] = { 0.25, 0.5, 1.0 };
             if (selected == CB_ERR ||
                 static_cast<std::size_t>(selected) >=
                     sizeof(speeds) / sizeof(speeds[0])) {
@@ -3569,57 +5351,44 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case AIStepId: StartAIWorker(window, AIWorkerMode::ApiStep); return 0;
         case AIStartId: StartAIWorker(window, AIWorkerMode::ApiContinuous); return 0;
         case LocalStartId: StartAIWorker(window, AIWorkerMode::LocalContinuous); return 0;
-        case AIStopId: StopAIWorker(); return 0;
+        case AIStopId:
+            if (gScenarioRunner.IsRunning()) StopScenarioWorker();
+            else StopAIWorker();
+            return 0;
+        case ReloadScenarioListId:
+            RefreshScenarioList(true);
+            return 0;
+        case StartScenarioId:
+            StartScenarioWorker(window, false);
+            return 0;
+        case RunAllScenariosId:
+            StartScenarioWorker(window, true);
+            return 0;
+        case StopScenarioId:
+            StopScenarioWorker();
+            return 0;
         case CaptureVisionId: {
-            const std::filesystem::path projectRoot(
-                gProjectFolder ? ReadWindowText(gProjectFolder) : std::wstring{});
-            StartOneShotWorker(window, [projectRoot] {
-                return CaptureVisionPreviewCore(projectRoot);
+            const std::filesystem::path projectRoot = gProjectFolder
+                ? std::filesystem::path(ReadWindowText(gProjectFolder))
+                : ConfiguredProjectRoot();
+            StartOneShotWorker(window, [projectRoot, window] {
+                return CaptureVisionPreviewCore(projectRoot, window);
             }, L"Capturing the connected game window...");
             return 0;
         }
-        case BrowseProjectId: {
-            std::filesystem::path selected;
-            if (BrowseForProjectFolder(window, selected)) {
-                SetWindowTextW(gProjectFolder, selected.c_str());
-                SaveProjectFolder(selected);
-                RefreshReplaySessionList(false);
-                SetWindowTextW(gStatusText,
-                    L"Project folder saved locally. Replay list was refreshed.");
-            }
+        case OpenProjectToolsId:
+            ShowProjectToolsWindow(window);
             return 0;
-        }
-        case ScanProjectId: {
-            const std::filesystem::path folder(ReadWindowText(gProjectFolder));
-            const std::wstring targets = ReadWindowText(gScanTargets);
-            SaveWorkspaceSettings(folder, targets);
-            const std::string targetText = WideToUtf8(targets);
-            StartOneShotWorker(window, [folder, targetText] {
-                return ScanProjectFolder(folder, targetText);
-            },
-                L"Scanning project files...");
+        case OpenSemanticReviewId:
+            ShowSemanticReviewWindow(window);
             return 0;
-        }
-        case GenerateProfileId: {
-            const std::filesystem::path folder(ReadWindowText(gProjectFolder));
-            SaveProjectFolder(folder);
-            StartOneShotWorker(window, [folder] { return GenerateActionProfile(folder); },
-                L"Generating Action Profile locally...");
+        case CoverageSummaryId:
+            StartOneShotWorker(window, FormatCoverageSummaryCore,
+                L"Building runtime coverage summary...");
             return 0;
-        }
-        case GenerateStateProfileId: {
-            const std::filesystem::path folder(ReadWindowText(gProjectFolder));
-            const std::wstring targets = ReadWindowText(gScanTargets);
-            SaveWorkspaceSettings(folder, targets);
-            const std::string targetText = WideToUtf8(targets);
-            StartOneShotWorker(window, [folder, targetText] { return GenerateStateMappingProfile(folder, targetText); },
-                L"Generating State Mapping Profile locally...");
-            return 0;
-        }
-        case GenerateLocalPolicyId:
-            ApplyViewerGoal();
-            StartOneShotWorker(window, GenerateLocalPolicyCore,
-                L"Generating Local Policy from AI Goal...");
+        case ResetCoverageId:
+            StartOneShotWorker(window, ResetCoverageCore,
+                L"Archiving and resetting runtime coverage...");
             return 0;
         default: break;
         }
@@ -3632,7 +5401,30 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     case WM_TIMER:
         if (wParam == kGameProcessWatchTimerId) {
             if (WatchedGameProcessExited()) {
+                ShowWindow(window, SW_HIDE);
                 DestroyWindow(window);
+                return 0;
+            }
+            const ULONGLONG now = GetTickCount64();
+            if (gGameConnectionEstablished && !HasWatchedGameProcess()) {
+                WatchGameProcess(gGameProcessId.load());
+            }
+            const bool connectionStatusReady = gConnectionStatusReady.exchange(false);
+            const bool showConnectionStatus = connectionStatusReady &&
+                (gGameConnectionEstablished ||
+                    gConnectionInitialResultPending.exchange(false));
+            if (connectionStatusReady && showConnectionStatus && !gAIWorkerRunning) {
+                std::string status;
+                {
+                    std::lock_guard lock(gConnectionStatusMutex);
+                    status = gPendingConnectionStatus;
+                }
+                SetWindowTextW(gStatusText, Utf8ToWide(status).c_str());
+            }
+            if (!gGameConnectionEstablished && !gConnectionWorkerRunning &&
+                now >= gNextConnectionAttemptTick) {
+                gNextConnectionAttemptTick = now + 1000;
+                StartConnectionWorker(window);
             }
             return 0;
         }
@@ -3668,12 +5460,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     }
 
     case WM_DESTROY:
+        gScenarioRunner.RequestStop();
+        if (gProjectToolsWindow && IsWindow(gProjectToolsWindow))
+            DestroyWindow(gProjectToolsWindow);
+        if (gSemanticReviewWindow && IsWindow(gSemanticReviewWindow))
+            DestroyWindow(gSemanticReviewWindow);
+        gMainWindow = nullptr;
         KillTimer(window, kPendingReplayStartTimerId);
         KillTimer(window, kGameProcessWatchTimerId);
         StopWatchingGameProcess();
         gPendingReplayStart = {};
         StopAIWorker();
+        if (gConnectionWorker.joinable()) gConnectionWorker.join();
         if (gAIWorker.joinable()) gAIWorker.join();
+        gCoverageTracker.Save();
         PostQuitMessage(0);
         return 0;
     default:
@@ -3686,6 +5486,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
     std::wstring arguments = commandLine ? commandLine : L"";
+#if defined(DEBUGAI_VIEWER_DISABLED)
+    if (arguments.empty()) return 0;
+#endif
     constexpr std::wstring_view diagnosticPrefix = L"--scan-diagnostic";
     if (arguments.starts_with(diagnosticPrefix)) {
         arguments.erase(0, diagnosticPrefix.size());
@@ -3701,6 +5504,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
         int resultCode = 0;
         try {
             diagnostic = "SCAN\r\n" + ScanProjectFolder(root) +
+                "\r\n\r\nACTION PROFILE\r\n" + GenerateActionProfile(root) +
                 "\r\n\r\nSTATE MAPPING\r\n" + GenerateStateMappingProfile(root, "");
         } catch (const std::exception& exception) {
             diagnostic = std::string("Scan diagnostic failed safely: ") + exception.what();
@@ -3729,13 +5533,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     if (!RegisterClassW(&windowClass)) {
         return 1;
     }
+    WNDCLASSW projectToolsClass = windowClass;
+    projectToolsClass.lpfnWndProc = ProjectToolsWindowProc;
+    projectToolsClass.lpszClassName = kProjectToolsWindowClass;
+    if (!RegisterClassW(&projectToolsClass)) return 1;
+    WNDCLASSW semanticReviewClass = windowClass;
+    semanticReviewClass.lpfnWndProc = SemanticReviewWindowProc;
+    semanticReviewClass.lpszClassName = kSemanticReviewWindowClass;
+    if (!RegisterClassW(&semanticReviewClass)) return 1;
 
     HWND window = CreateWindowExW(
         0,
         kWindowClass,
         L"DebugAI Viewer",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 700, 815,
+        CW_USEDEFAULT, CW_USEDEFAULT, 700, 760,
         nullptr, nullptr, instance, nullptr);
     if (!window) {
         return 1;

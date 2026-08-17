@@ -31,6 +31,9 @@ public:
 
     IScene* Current() { return current_.get(); }
     const std::string& CurrentName() const { return currentName_; }
+    bool HasRegisteredScene(const std::string& name) const {
+        return factories_.contains(name);
+    }
 
 private:
     std::unordered_map<std::string, Factory> factories_;

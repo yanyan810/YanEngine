@@ -9,6 +9,7 @@ struct DebugAIConfig {
     std::string logDirectory = "generated/debug_ai";
     std::string playerLogDirectory;
     std::string aiLogDirectory;
+    std::string anomalyRulesPath;
 
     bool detectNegativeHp = true;
     bool detectInvalidCounts = true;

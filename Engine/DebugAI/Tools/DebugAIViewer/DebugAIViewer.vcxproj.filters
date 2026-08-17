@@ -2,12 +2,16 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="DebugAIViewer.cpp" />
+    <ClCompile Include="CoverageTracker.cpp" />
     <ClCompile Include="ExternalGenericAIProvider.cpp" />
     <ClCompile Include="GameWindowCapture.cpp" />
+    <ClCompile Include="ScenarioRunner.cpp" />
     <ClCompile Include="..\..\Protocol\DebugProtocol.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CoverageTracker.h" />
     <ClInclude Include="ExternalGenericAIProvider.h" />
     <ClInclude Include="GameWindowCapture.h" />
+    <ClInclude Include="ScenarioRunner.h" />
   </ItemGroup>
 </Project>

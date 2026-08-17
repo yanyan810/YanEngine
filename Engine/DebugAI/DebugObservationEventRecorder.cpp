@@ -109,8 +109,10 @@ bool DebugObservationEventRecorder::StartRecording(
     lastCheckpointFrame_ = startFrame;
     eventCount_ = 0;
     checkpointCount_ = 0;
+    anomalyCount_ = 0;
     previous_ = {};
     eventCounts_.clear();
+    anomalyRuleCounts_.clear();
     recentActions_.clear();
     lastEventSummary_.clear();
     lastError_.clear();
@@ -212,6 +214,21 @@ void DebugObservationEventRecorder::RecordAction(
     properties["event.inferred"] = false;
     Emit_(frame, "ActionExecuted", actorId, targetId,
         action.actionId + " executed by " + source, std::move(properties), &action);
+}
+
+void DebugObservationEventRecorder::RecordAnomaly(
+    const DebugAnomalyFinding& finding) {
+    if (!recording_) return;
+    DebugPropertyMap properties;
+    properties["rule.id"] = finding.ruleId;
+    properties["rule.severity"] = finding.severity;
+    properties["rule.property"] = finding.property;
+    properties["rule.actual"] = finding.actualValue;
+    properties["event.inferred"] = false;
+    Emit_(finding.frameNumber, "AnomalyDetected", finding.subjectId, {},
+        finding.message, std::move(properties));
+    ++anomalyCount_;
+    ++anomalyRuleCounts_[finding.ruleId];
 }
 
 const DebugObservationEventRecorder::RecentAction*
@@ -384,14 +401,18 @@ void DebugObservationEventRecorder::WriteSummary_() {
     if (summaryPath_.empty()) return;
     nlohmann::json counts = nlohmann::json::object();
     for (const auto& [type, count] : eventCounts_) counts[type] = count;
+    nlohmann::json anomalyCounts = nlohmann::json::object();
+    for (const auto& [rule, count] : anomalyRuleCounts_) anomalyCounts[rule] = count;
     nlohmann::json summary = {
         { "schemaVersion", 1 },
         { "startFrame", startFrame_ },
         { "endFrame", lastFrame_ },
         { "eventCount", eventCount_ },
         { "checkpointCount", checkpointCount_ },
+        { "anomalyCount", anomalyCount_ },
         { "timelinePath", timelinePath_ },
         { "eventCounts", std::move(counts) },
+        { "anomalyRuleCounts", std::move(anomalyCounts) },
         { "lastEvent", lastEventSummary_ },
     };
     std::ofstream output(summaryPath_, std::ios::out | std::ios::trunc);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Protocol/DebugGenericTypes.h"
+#include "DebugAnomalyDetector.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -20,9 +21,12 @@ public:
     std::string StopRecording(std::uint64_t endFrame = 0);
     void Observe(const DebugObservation& observation);
     void RecordAction(std::uint64_t frame, const DebugGenericAction& action, const std::string& source);
+    void RecordAnomaly(const DebugAnomalyFinding& finding);
 
     bool IsRecording() const { return recording_; }
     std::size_t EventCount() const { return eventCount_; }
+    std::size_t CheckpointCount() const { return checkpointCount_; }
+    std::size_t AnomalyCount() const { return anomalyCount_; }
     const std::string& TimelinePath() const { return timelinePath_; }
     const std::string& SummaryPath() const { return summaryPath_; }
     const std::string& LastEventSummary() const { return lastEventSummary_; }
@@ -60,7 +64,9 @@ private:
     std::uint64_t lastCheckpointFrame_ = 0;
     std::size_t eventCount_ = 0;
     std::size_t checkpointCount_ = 0;
+    std::size_t anomalyCount_ = 0;
     DebugObservation previous_;
     std::unordered_map<std::string, std::size_t> eventCounts_;
+    std::unordered_map<std::string, std::size_t> anomalyRuleCounts_;
     std::unordered_map<std::string, RecentAction> recentActions_;
 };

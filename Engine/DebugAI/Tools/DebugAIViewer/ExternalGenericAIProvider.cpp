@@ -269,6 +269,9 @@ bool ExternalGenericAIProvider::GenerateLocalPolicy(
     const json attackActions = policy.value("attackActions", json::array());
     const std::string approachAction = policy.value("approachAction", "");
     const std::string idleAction = policy.value("idleAction", "");
+    policy["closeRangeEnterDistance"] = attackDistance;
+    policy["closeRangeExitDistance"] = (std::min)(100.0, attackDistance + 1.0);
+    policy["closeRangeWaitFrames"] = 4;
     policy["rules"] = json::array({
         {
             { "id", "unable_to_act" }, { "priority", 200 }, { "conditionMode", "all" },
@@ -314,7 +317,7 @@ bool ExternalGenericAIProvider::GenerateLocalPolicy(
             { "maxConsecutive", 0 },
         },
     });
-    policy["schemaVersion"] = 1;
+    policy["schemaVersion"] = 2;
     policy["generatedBy"] = Name();
     policy["model"] = model_;
     policy["goal"] = goal_;

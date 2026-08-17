@@ -74,11 +74,11 @@ bool EncodePng(
     if (SUCCEEDED(result)) {
         result = frame->SetSize(width, height);
     }
-    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGR;
+    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
     if (SUCCEEDED(result)) {
         result = frame->SetPixelFormat(&format);
     }
-    if (SUCCEEDED(result) && format != GUID_WICPixelFormat32bppBGR) {
+    if (SUCCEEDED(result) && format != GUID_WICPixelFormat32bppBGRA) {
         result = WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT;
     }
     if (SUCCEEDED(result)) {
@@ -122,7 +122,8 @@ bool EncodePng(
 bool CaptureGameProcessWindow(
     DWORD processId,
     unsigned int maximumWidth,
-    GameWindowCaptureResult& result) {
+    GameWindowCaptureResult& result,
+    HWND windowToHide) {
     result = {};
     if (processId == 0) {
         result.error = "The connected game process ID is not available yet.";
@@ -165,24 +166,70 @@ bool CaptureGameProcessWindow(
     info.bmiHeader.biBitCount = 32;
     info.bmiHeader.biCompression = BI_RGB;
 
+    WINDOWPLACEMENT hiddenWindowPlacement{};
+    hiddenWindowPlacement.length = sizeof(hiddenWindowPlacement);
+    const bool hideWindow = windowToHide && windowToHide != search.bestWindow &&
+        IsWindowVisible(windowToHide) &&
+        GetWindowPlacement(windowToHide, &hiddenWindowPlacement);
+    if (hideWindow) {
+        ShowWindow(windowToHide, SW_HIDE);
+        Sleep(80);
+    }
+
     HDC source = GetDC(search.bestWindow);
     HDC target = source ? CreateCompatibleDC(source) : nullptr;
+    HDC printedSource = source ? CreateCompatibleDC(source) : nullptr;
     void* pixels = nullptr;
     HBITMAP bitmap = target
         ? CreateDIBSection(target, &info, DIB_RGB_COLORS, &pixels, nullptr, 0)
         : nullptr;
-    HGDIOBJ previous = bitmap ? SelectObject(target, bitmap) : nullptr;
+    HGDIOBJ previousTarget = bitmap ? SelectObject(target, bitmap) : nullptr;
+
+    BITMAPINFO sourceInfo = info;
+    sourceInfo.bmiHeader.biWidth = sourceWidth;
+    sourceInfo.bmiHeader.biHeight = -sourceHeight;
+    void* printedPixels = nullptr;
+    HBITMAP printedBitmap = printedSource
+        ? CreateDIBSection(
+            printedSource,
+            &sourceInfo,
+            DIB_RGB_COLORS,
+            &printedPixels,
+            nullptr,
+            0)
+        : nullptr;
+    HGDIOBJ previousPrinted = printedBitmap
+        ? SelectObject(printedSource, printedBitmap) : nullptr;
+    bool printed = false;
+    if (printedSource && printedBitmap && printedPixels) {
+        constexpr UINT kPrintClientAndFullContent = PW_CLIENTONLY | 0x00000002;
+        printed = PrintWindow(
+            search.bestWindow,
+            printedSource,
+            kPrintClientAndFullContent) != FALSE;
+        if (printed) {
+            const auto* printedBytes = static_cast<const unsigned char*>(printedPixels);
+            const std::size_t printedByteCount =
+                static_cast<std::size_t>(sourceWidth) * sourceHeight * 4;
+            printed = std::any_of(
+                printedBytes,
+                printedBytes + printedByteCount,
+                [](unsigned char value) { return value != 0; });
+        }
+    }
+
     bool copied = false;
     if (source && target && bitmap && pixels) {
         SetStretchBltMode(target, HALFTONE);
         SetBrushOrgEx(target, 0, 0, nullptr);
+        HDC captureSource = printed ? printedSource : source;
         copied = StretchBlt(
             target,
             0,
             0,
             static_cast<int>(targetWidth),
             static_cast<int>(targetHeight),
-            source,
+            captureSource,
             0,
             0,
             sourceWidth,
@@ -193,7 +240,7 @@ bool CaptureGameProcessWindow(
     if (!copied) {
         result.error = "The game window pixels could not be captured.";
     } else {
-        const auto* bytes = static_cast<const unsigned char*>(pixels);
+        auto* bytes = static_cast<unsigned char*>(pixels);
         const std::size_t byteCount =
             static_cast<std::size_t>(targetWidth) * targetHeight * 4;
         const bool anyVisiblePixel = std::any_of(
@@ -204,6 +251,9 @@ bool CaptureGameProcessWindow(
             result.error =
                 "The captured image was completely black. Keep the game window visible and not minimized.";
         } else {
+            for (std::size_t index = 3; index < byteCount; index += 4) {
+                bytes[index] = 255;
+            }
             result.window = search.bestWindow;
             result.width = targetWidth;
             result.height = targetHeight;
@@ -226,10 +276,18 @@ bool CaptureGameProcessWindow(
         }
     }
 
-    if (previous) SelectObject(target, previous);
+    if (previousPrinted) SelectObject(printedSource, previousPrinted);
+    if (printedBitmap) DeleteObject(printedBitmap);
+    if (printedSource) DeleteDC(printedSource);
+    if (previousTarget) SelectObject(target, previousTarget);
     if (bitmap) DeleteObject(bitmap);
     if (target) DeleteDC(target);
     if (source) ReleaseDC(search.bestWindow, source);
+    if (hideWindow) {
+        const int restoreCommand = hiddenWindowPlacement.showCmd == SW_SHOWMAXIMIZED
+            ? SW_SHOWMAXIMIZED : SW_SHOWNOACTIVATE;
+        ShowWindow(windowToHide, restoreCommand);
+    }
     return !result.pngBytes.empty();
 }
 
