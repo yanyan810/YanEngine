@@ -120,6 +120,37 @@ Adapter は、共通の DebugAI データと実際のゲーム処理を変換し
 | `RestoreDebugState()` | リプレイやSnapshot用にゲーム状態を復元する |
 | `SetReplaySpawnOverrides()` | リプレイ時の敵出現情報などを反映する |
 
+外部Viewer用の新しいゲームでは、エンジン非依存の
+`IGenericGameDebugAdapter` を使用します。Viewerの `Adapter Check` は、接続中の
+`DebugObservation` とローカルの `project_scan.json` を照合し、次を診断します。
+
+- `CaptureDebugObservation()` / `ExecuteGenericDebugAction()` とAdapter登録
+- ホスト側の制御更新・リプレイ更新フック
+- 生入力リプレイの `ProcessInput()` / `EndFrame()`
+- 任意の状態復元、シミュレーション停止、Sceneロード対応
+- Scene、Entity ID、Action ID、汎用状態プロパティの実行時品質
+- Action ProfileとState Mapping Profileの未設定・未確認項目
+
+新しい必須メソッドを追加する機能ではありません。診断結果はViewerへ表示され、
+詳細JSONは次へ保存されます。
+
+Adapterを登録していないタイトルSceneなどでは `source_ready` となり、ソース上の
+組み込みだけを確認します。対応するゲームSceneで再実行すると、実行時データまで
+確認して `ready` を判定します。
+
+Viewerのメイン画面は、普段使用するローカルAI操作を中心に表示します。API接続や
+モデルなどの設定は引き続き設定JSONで保持されますが、API実行ボタンはメイン画面へ
+表示しません。
+
+ローカルAIの「開始」は、タイトルSceneなど `DebugObservation` をまだ提供して
+いない状態でも先に押せます。その場合は待機状態となり、ゲーム側が対応Sceneへ
+移動して使用可能なActionを返した時点で、自動的に操作を開始します。待機を取り消す
+場合は「停止」を押します。
+
+```txt
+generated/debug_ai/diagnostics/latest_adapter_diagnostic.json
+```
+
 ## Action の形式
 
 AIやBotは、必ず `DebugGameState::availableActions` に含まれるActionから選びます。

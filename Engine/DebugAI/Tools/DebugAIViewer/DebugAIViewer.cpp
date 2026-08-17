@@ -1,12 +1,19 @@
-#define WIN32_LEAN_AND_MEAN
+﻿#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
+#include <CommCtrl.h>
 #include <ShObjIdl.h>
+#include <Shellapi.h>
 
 #include "DebugProtocol.h"
+#include "AdapterDiagnostics.h"
 #include "CoverageTracker.h"
 #include "ExternalGenericAIProvider.h"
 #include "GameWindowCapture.h"
 #include "ScenarioRunner.h"
+#include "TestReportGenerator.h"
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -37,8 +44,13 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"DebugAIViewerWindow";
 constexpr wchar_t kProjectToolsWindowClass[] = L"DebugAIProjectToolsWindow";
 constexpr wchar_t kSemanticReviewWindowClass[] = L"DebugAISemanticReviewWindow";
+constexpr wchar_t kTooltipProperty[] = L"DebugAIViewer.ButtonTooltip";
+constexpr wchar_t kTooltipHoverStateProperty[] = L"DebugAIViewer.TooltipHoverState";
+constexpr wchar_t kTooltipTextProperty[] = L"DebugAIViewer.TooltipText";
+constexpr wchar_t kTooltipTextControlProperty[] = L"DebugAIViewer.TooltipTextControl";
 constexpr char kPipeName[] = "\\\\.\\pipe\\DebugAI_CG5";
 constexpr DWORD kPipeIoTimeoutMilliseconds = 10000;
+constexpr UINT_PTR kButtonTooltipTimerId = 0xD06A;
 
 enum ControlId {
     StartRecordingId = 1001,
@@ -74,7 +86,9 @@ enum ControlId {
     GenerateStateProfileId,
     GenerateLocalPolicyId,
     CoverageSummaryId,
+    AdapterDiagnosticsId,
     ResetCoverageId,
+    OpenLatestReportId,
     StatusTextId,
     OpenProjectToolsId,
     OpenSemanticReviewId,
@@ -136,6 +150,7 @@ std::string gPendingAIStatus;
 std::mutex gTransportMutex;
 std::atomic<DWORD> gGameProcessId = 0;
 std::atomic_bool gGameConnectionEstablished = false;
+std::atomic_uint64_t gEvidenceCaptureSequence = 0;
 std::mutex gGameProcessWatchMutex;
 DWORD gWatchedGameProcessId = 0;
 HANDLE gWatchedGameProcessHandle = nullptr;
@@ -183,11 +198,25 @@ struct ScenarioBatchItemResult {
     std::string detail;
     std::size_t anomalyCount = 0;
     std::size_t anomalyErrorCount = 0;
+    std::string replayVerificationStatus = "not_run";
+    std::size_t replayVerificationChecked = 0;
+    std::size_t replayVerificationCheckpoints = 0;
+    std::size_t replayVerificationMismatches = 0;
+    std::string replayVerificationDetail;
     double elapsedSeconds = 0.0;
+};
+
+struct AutomaticReplayVerificationResult {
+    std::string status = "not_run";
+    std::size_t checked = 0;
+    std::size_t checkpoints = 0;
+    std::size_t mismatches = 0;
+    std::string detail;
 };
 
 void PostAIStatus(HWND window, std::string text, bool preserveResult);
 bool IsPlayerActorAction(const DebugGenericAction& action);
+bool ProtocolResultOk(const DebugProtocolMessage& message);
 
 void WatchGameProcess(DWORD processId) {
     if (processId == 0) return;
@@ -267,6 +296,14 @@ void SaveWorkspaceSettings(const std::filesystem::path& folder, const std::wstri
     const auto path = WorkspaceConfigPath();
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
+    nlohmann::json previous;
+    {
+        std::ifstream input(path);
+        previous = nlohmann::json::parse(input, nullptr, false);
+        if (previous.is_discarded() || !previous.is_object()) {
+            previous = nlohmann::json::object();
+        }
+    }
     const auto readInterval = [](HWND control, unsigned int fallback) {
         if (!control) return fallback;
         wchar_t text[32]{};
@@ -280,10 +317,13 @@ void SaveWorkspaceSettings(const std::filesystem::path& folder, const std::wstri
         { "schemaVersion", 3 },
         { "projectFolder", WideToUtf8(folder.wstring()) },
         { "scanTargets", WideToUtf8(scanTargets) },
-        { "apiIntervalMs", readInterval(gAIInterval, 2000) },
+        { "apiIntervalMs", gAIInterval
+            ? readInterval(gAIInterval, 2000)
+            : previous.value("apiIntervalMs", 2000u) },
         { "localIntervalMs", readInterval(gLocalAIInterval, 250) },
-        { "visionEnabled", gAIVisionEnabled &&
-            SendMessageW(gAIVisionEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED },
+        { "visionEnabled", gAIVisionEnabled
+            ? SendMessageW(gAIVisionEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED
+            : previous.value("visionEnabled", false) },
     };
     std::ofstream output(path);
     if (output) output << config.dump(2) << '\n';
@@ -2720,6 +2760,159 @@ std::string SetReplaySpeedCore(double speed) {
         : response;
 }
 
+std::size_t ProtocolCountProperty(
+    const DebugProtocolMessage& message,
+    const char* name) {
+    const auto found = message.properties.find(name);
+    if (found == message.properties.end()) return 0;
+    if (const auto* value = std::get_if<std::int64_t>(&found->second)) {
+        return *value > 0 ? static_cast<std::size_t>(*value) : 0;
+    }
+    if (const auto* value = std::get_if<double>(&found->second)) {
+        return *value > 0.0 ? static_cast<std::size_t>(*value) : 0;
+    }
+    return 0;
+}
+
+bool ProtocolBoolProperty(
+    const DebugProtocolMessage& message,
+    const char* name) {
+    const auto found = message.properties.find(name);
+    if (found == message.properties.end()) return false;
+    const auto* value = std::get_if<bool>(&found->second);
+    return value && *value;
+}
+
+std::string FormattedLineValue(
+    const std::string& text,
+    const std::string& label) {
+    const auto position = text.find(label);
+    if (position == std::string::npos) return {};
+    std::size_t begin = position + label.size();
+    while (begin < text.size() &&
+        (text[begin] == ' ' || text[begin] == '\t')) ++begin;
+    std::size_t end = text.find_first_of("\r\n", begin);
+    if (end == std::string::npos) end = text.size();
+    return text.substr(begin, end - begin);
+}
+
+AutomaticReplayVerificationResult VerifyReplayAutomatically(
+    HWND window,
+    const std::filesystem::path& manifestPath,
+    double timeoutSeconds) {
+    AutomaticReplayVerificationResult result;
+    if (manifestPath.empty()) {
+        result.status = "unavailable";
+        result.detail = "replay manifest path is missing";
+        return result;
+    }
+
+    // Verified playback deliberately uses real-time simulation. Speeds above
+    // 1x can change physics results, so 1x is the fastest deterministic mode.
+    std::string speedResponse;
+    DebugProtocolMessage speedRequest = MakeRequest("set_replay_speed");
+    speedRequest.properties["speed"] = 1.0;
+    SendProtocolMessage(speedRequest, speedResponse);
+
+    DebugProtocolMessage playRequest = MakeRequest("play_latest");
+    playRequest.properties["manifestPath"] = WideToUtf8(manifestPath.wstring());
+    std::string response;
+    if (!SendProtocolMessage(playRequest, response)) {
+        result.status = "start_failed";
+        result.detail = response;
+        return result;
+    }
+    DebugProtocolMessage status;
+    if (!DebugProtocolJson::TryParse(response, status) || !ProtocolResultOk(status)) {
+        result.status = "start_failed";
+        result.detail = DebugProtocolJson::TryParse(response, status)
+            ? PropertyText(status.properties, "message", "replay start was rejected")
+            : "replay start returned an invalid response";
+        return result;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(static_cast<std::int64_t>(timeoutSeconds * 1000.0));
+    bool playbackStarted = ProtocolBoolProperty(status, "replaying");
+    ULONGLONG nextProgressUpdate = 0;
+    unsigned int consecutiveStatusFailures = 0;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (gAIStopRequested) {
+            std::string stopResponse;
+            SendCommand("stop_replay", stopResponse);
+            result.status = "stopped";
+            result.detail = "verification was stopped by the user";
+            return result;
+        }
+
+        const std::string validation =
+            PropertyText(status.properties, "replayValidationStatus", "unavailable");
+        result.checked = ProtocolCountProperty(status, "replayValidationChecked");
+        result.checkpoints = ProtocolCountProperty(status, "replayValidationCheckpoints");
+        result.mismatches = ProtocolCountProperty(status, "replayValidationMismatches");
+        const bool queued = ProtocolBoolProperty(status, "replayQueued");
+        const bool replaying = ProtocolBoolProperty(status, "replaying");
+        playbackStarted = playbackStarted || replaying;
+
+        if (!queued && !replaying &&
+            (playbackStarted || validation == "passed" ||
+                validation == "diverged" || validation == "interrupted")) {
+            result.status = validation;
+            result.detail = PropertyText(
+                status.properties, "replayValidationFirstDetail", "");
+            if (result.detail.empty()) {
+                result.detail = PropertyText(
+                    status.properties, "replayValidationDetail", "");
+            }
+            if (result.status == "unavailable") {
+                result.detail = "no verification checkpoints were recorded";
+            }
+            return result;
+        }
+        if (!queued && !replaying && validation == "unavailable") {
+            result.status = "unavailable";
+            result.detail = "no verification checkpoints were recorded";
+            return result;
+        }
+
+        const ULONGLONG now = GetTickCount64();
+        if (now >= nextProgressUpdate) {
+            nextProgressUpdate = now + 500;
+            std::ostringstream progress;
+            progress << "Automatic replay verification\r\n"
+                << "Status: " << (queued ? "loading scene" :
+                    (replaying ? "playing" : validation))
+                << "  checked " << result.checked << '/' << result.checkpoints
+                << "  mismatches " << result.mismatches;
+            PostAIStatus(window, progress.str(), true);
+        }
+
+        std::unique_lock waitLock(gAIWaitMutex);
+        gAIWaitCondition.wait_for(
+            waitLock, std::chrono::milliseconds(100),
+            [] { return gAIStopRequested.load(); });
+        if (gAIStopRequested) continue;
+        std::string statusResponse;
+        if (!SendCommand("status", statusResponse) ||
+            !DebugProtocolJson::TryParse(statusResponse, status)) {
+            if (++consecutiveStatusFailures >= 20) {
+                result.status = "connection_failed";
+                result.detail = "game status could not be read during replay verification";
+                return result;
+            }
+            continue;
+        }
+        consecutiveStatusFailures = 0;
+    }
+
+    std::string stopResponse;
+    SendCommand("stop_replay", stopResponse);
+    result.status = "timeout";
+    result.detail = "verification exceeded " +
+        std::to_string(static_cast<int>(timeoutSeconds)) + " seconds";
+    return result;
+}
+
 std::string FormatReplayTimelineCore(
     const std::filesystem::path& manifestPath) {
     std::ifstream manifestInput(manifestPath);
@@ -3055,6 +3248,61 @@ bool SaveLatestVisionCapture(
     return static_cast<bool>(output);
 }
 
+std::string CapturePendingScenarioEvidence(
+    const std::filesystem::path& projectRoot,
+    const std::filesystem::path& scenarioPath,
+    HWND viewerWindow) {
+    std::string reason;
+    if (!gScenarioRunner.ConsumeEvidenceRequest(reason)) return {};
+    if (gGameProcessId.load() == 0) {
+        std::string response;
+        SendCommand("status", response);
+    }
+
+    GameWindowCaptureResult capture;
+    if (!CaptureGameProcessWindow(
+        gGameProcessId.load(), 1280, capture, viewerWindow)) {
+        gScenarioRunner.RecordEvidence(
+            {}, reason, 0, 0, capture.error);
+        return "Evidence screenshot failed: " + capture.error;
+    }
+
+    const auto directory = projectRoot / "generated/debug_ai/evidence" /
+        scenarioPath.stem();
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    if (error) {
+        const std::string message =
+            "evidence directory could not be created";
+        gScenarioRunner.RecordEvidence({}, reason, capture.width, capture.height, message);
+        return "Evidence screenshot failed: " + message;
+    }
+    const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const auto sequence = gEvidenceCaptureSequence.fetch_add(1) + 1;
+    const auto path = directory /
+        (std::to_string(stamp) + "_" + std::to_string(sequence) + ".png");
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        const std::string message = "evidence PNG could not be opened";
+        gScenarioRunner.RecordEvidence({}, reason, capture.width, capture.height, message);
+        return "Evidence screenshot failed: " + message;
+    }
+    output.write(
+        reinterpret_cast<const char*>(capture.pngBytes.data()),
+        static_cast<std::streamsize>(capture.pngBytes.size()));
+    if (!output) {
+        const std::string message = "evidence PNG could not be written";
+        gScenarioRunner.RecordEvidence({}, reason, capture.width, capture.height, message);
+        return "Evidence screenshot failed: " + message;
+    }
+    gScenarioRunner.RecordEvidence(
+        path, reason, capture.width, capture.height);
+    return "Evidence screenshot saved.\r\nReason: " + reason +
+        "\r\nPath: " + WideToUtf8(path.wstring()) +
+        "\r\nNo API was called.";
+}
+
 std::string CaptureVisionPreviewCore(
     const std::filesystem::path& projectRoot,
     HWND viewerWindow) {
@@ -3104,6 +3352,42 @@ std::string ResetCoverageCore() {
     }
     gCoverageTracker.ReloadProfiles();
     return gCoverageTracker.Reset();
+}
+
+std::string OpenLatestTestReportCore() {
+    const auto projectRoot = ConfiguredProjectRoot();
+    if (projectRoot.empty()) {
+        return "Test report could not be opened: select a Game Project Folder first.";
+    }
+    const auto reportPath = TestReportGenerator::FindLatestHtml(projectRoot);
+    if (reportPath.empty()) {
+        return "No test report was found. Run all scenarios once to generate it.";
+    }
+    const HINSTANCE opened = ShellExecuteW(
+        nullptr, L"open", reportPath.c_str(), nullptr,
+        reportPath.parent_path().c_str(), SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(opened) <= 32) {
+        return "Test report could not be opened.\r\nPath: " +
+            WideToUtf8(reportPath.wstring());
+    }
+    return "Opened latest test report.\r\nPath: " +
+        WideToUtf8(reportPath.wstring());
+}
+
+std::string RunAdapterDiagnosticsCore(
+    const std::filesystem::path& projectRoot) {
+    if (projectRoot.empty()) {
+        return "Adapter diagnosis failed: select a Game Project Folder first.";
+    }
+    std::string response;
+    if (!SendCommand("status", response)) return response;
+    DebugProtocolMessage status;
+    std::string parseError;
+    if (!DebugProtocolJson::TryParse(response, status, &parseError)) {
+        return "Adapter diagnosis failed: game response could not be parsed.\r\n" +
+            parseError;
+    }
+    return AdapterDiagnostics::Run(projectRoot, status).message;
 }
 
 bool ProtocolResultOk(const DebugProtocolMessage& message) {
@@ -3339,18 +3623,29 @@ std::filesystem::path SaveScenarioBatchResult(
     std::size_t failed = 0;
     std::size_t anomalies = 0;
     std::size_t anomalyErrors = 0;
+    std::size_t replayVerified = 0;
+    std::size_t replayVerificationFailed = 0;
     nlohmann::json scenarios = nlohmann::json::array();
     for (const auto& item : items) {
         if (item.status == "passed") ++passed;
         else if (item.status != "stopped") ++failed;
         anomalies += item.anomalyCount;
         anomalyErrors += item.anomalyErrorCount;
+        if (item.replayVerificationStatus == "passed") ++replayVerified;
+        else if (item.replayVerificationStatus != "disabled") {
+            ++replayVerificationFailed;
+        }
         scenarios.push_back({
             { "label", item.label },
             { "status", item.status },
             { "detail", item.detail },
             { "anomalyCount", item.anomalyCount },
             { "anomalyErrorCount", item.anomalyErrorCount },
+            { "replayVerificationStatus", item.replayVerificationStatus },
+            { "replayVerificationChecked", item.replayVerificationChecked },
+            { "replayVerificationCheckpoints", item.replayVerificationCheckpoints },
+            { "replayVerificationMismatches", item.replayVerificationMismatches },
+            { "replayVerificationDetail", item.replayVerificationDetail },
             { "elapsedSeconds", item.elapsedSeconds },
             { "scenarioPath", WideToUtf8(item.scenarioPath.wstring()) },
             { "resultPath", WideToUtf8(item.resultPath.wstring()) },
@@ -3368,6 +3663,8 @@ std::filesystem::path SaveScenarioBatchResult(
         { "failed", failed },
         { "anomalyCount", anomalies },
         { "anomalyErrorCount", anomalyErrors },
+        { "replayVerified", replayVerified },
+        { "replayVerificationFailed", replayVerificationFailed },
         { "scenarios", std::move(scenarios) },
     };
     std::ofstream output(path, std::ios::trunc);
@@ -3385,6 +3682,8 @@ std::string FormatScenarioBatchResult(
     std::size_t failed = 0;
     std::size_t anomalies = 0;
     std::size_t anomalyErrors = 0;
+    std::size_t replayVerified = 0;
+    std::size_t replayVerificationFailed = 0;
     std::ostringstream output;
     output << "Scenario batch finished\r\n";
     for (std::size_t index = 0; index < items.size(); ++index) {
@@ -3393,11 +3692,26 @@ std::string FormatScenarioBatchResult(
         else if (item.status != "stopped") ++failed;
         anomalies += item.anomalyCount;
         anomalyErrors += item.anomalyErrorCount;
+        if (item.replayVerificationStatus == "passed") ++replayVerified;
+        else if (item.replayVerificationStatus != "disabled") {
+            ++replayVerificationFailed;
+        }
         output << "  [" << (item.status == "passed" ? "PASS" : "FAIL") << "] "
             << item.label << " (" << std::fixed << std::setprecision(1)
             << item.elapsedSeconds << "s)\r\n";
         output << "         Anomalies: " << item.anomalyCount
             << "  Errors: " << item.anomalyErrorCount << "\r\n";
+        output << "         Replay: " << item.replayVerificationStatus;
+        if (item.replayVerificationCheckpoints > 0) {
+            output << "  checked " << item.replayVerificationChecked << '/'
+                << item.replayVerificationCheckpoints << "  mismatches "
+                << item.replayVerificationMismatches;
+        }
+        output << "\r\n";
+        if (!item.replayVerificationDetail.empty()) {
+            output << "         Replay detail: "
+                << item.replayVerificationDetail << "\r\n";
+        }
         if (!item.detail.empty()) output << "         " << item.detail << "\r\n";
     }
     output << "Result: " << (stopped ? "stopped" : (failed == 0 ? "passed" : "failed"))
@@ -3405,6 +3719,8 @@ std::string FormatScenarioBatchResult(
         << "  Failed: " << failed
         << "  Anomalies: " << anomalies
         << "  Errors: " << anomalyErrors
+        << "  Replay verified: " << replayVerified << '/' << items.size()
+        << "  Replay failures: " << replayVerificationFailed
         << "  Time: " << std::fixed << std::setprecision(1) << elapsedSeconds << "s\r\n";
     if (!resultPath.empty()) {
         output << "Batch result JSON: " << WideToUtf8(resultPath.wstring());
@@ -4252,6 +4568,34 @@ void ApplyViewerGoal() {
 
 enum class AIWorkerMode { ApiStep, ApiContinuous, LocalContinuous };
 
+bool LocalAIRuntimeReady(
+    ControlledActorMode actorMode,
+    std::string& waitingMessage) {
+    std::string response;
+    if (!SendCommand("status", response)) {
+        waitingMessage = "ローカルAI待機中\r\nゲームへの接続を待っています。\r\n"
+            "停止ボタンを押すまで自動で再確認します。";
+        return false;
+    }
+    DebugProtocolMessage status;
+    if (!DebugProtocolJson::TryParse(response, status) || !status.observation) {
+        waitingMessage = "ローカルAI待機中\r\n"
+            "現在のSceneはDebugObservationを提供していません。\r\n"
+            "対応するゲームSceneへ入ると自動的に操作を開始します。";
+        return false;
+    }
+    const DebugObservation actorObservation =
+        ObservationForActor(*status.observation, actorMode);
+    if (actorObservation.availableActions.empty()) {
+        waitingMessage = "ローカルAI待機中\r\nScene: " +
+            status.observation->sceneId +
+            "\r\n現在のSceneまたはPhaseで使用可能なActionを待っています。";
+        return false;
+    }
+    waitingMessage.clear();
+    return true;
+}
+
 void StartAIWorker(HWND window, AIWorkerMode mode) {
     if (gAIWorkerRunning.exchange(true)) {
         SetWindowTextW(gStatusText, L"AI is already running.");
@@ -4280,8 +4624,9 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
     SaveWorkspaceSettings(
         projectRoot,
         scanTargets);
-    SetWindowTextW(gStatusText, mode == AIWorkerMode::ApiStep ? L"API Step started..."
-        : (mode == AIWorkerMode::ApiContinuous ? L"API Continuous started..." : L"Local AI started (basic policy)..."));
+    SetWindowTextW(gStatusText, mode == AIWorkerMode::ApiStep ? L"APIステップを開始しています..."
+        : (mode == AIWorkerMode::ApiContinuous ? L"API連続実行を開始しています..." :
+            L"ローカルAIを開始しています。対応Sceneまでは待機します..."));
     gAIWorker = std::thread([
         window, mode, continuous, useApi, interval, localInterval, actorMode,
         projectRoot, visionEnabled] {
@@ -4330,8 +4675,13 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
                     PostAIStatus(window, apiResult, true);
                 }
             } else {
-                PostAIStatus(window, ExecuteLocalActors(
-                    localPolicy, bossLocalPolicy, actorMode, interval), true);
+                std::string waitingMessage;
+                if (!LocalAIRuntimeReady(actorMode, waitingMessage)) {
+                    PostAIStatus(window, std::move(waitingMessage), true);
+                } else {
+                    PostAIStatus(window, ExecuteLocalActors(
+                        localPolicy, bossLocalPolicy, actorMode, interval), true);
+                }
             }
             if (!continuous || gAIStopRequested) break;
             std::unique_lock lock(gAIWaitMutex);
@@ -4340,7 +4690,8 @@ void StartAIWorker(HWND window, AIWorkerMode mode) {
         } while (!gAIStopRequested);
         gAIWorkerRunning = false;
         if (continuous && gAIStopRequested) PostAIStatus(window,
-            mode == AIWorkerMode::LocalContinuous ? "Local AI stopped." : "API Continuous stopped.", true);
+            mode == AIWorkerMode::LocalContinuous ?
+                "ローカルAIを停止しました。" : "API連続実行を停止しました。", true);
     });
 }
 
@@ -4501,6 +4852,8 @@ void StartScenarioWorker(HWND window, bool runAll) {
             while (gScenarioRunner.IsRunning() && !gAIStopRequested) {
                 const std::string step = ExecuteLocalActors(
                     playerPolicy, bossPolicy, actorMode, localInterval);
+                const std::string evidenceStatus = CapturePendingScenarioEvidence(
+                    projectRoot, scenario.path, window);
                 const bool actionUnavailable =
                     step.find("no available action") != std::string::npos ||
                     step.find("no player action is available") != std::string::npos ||
@@ -4524,7 +4877,10 @@ void StartScenarioWorker(HWND window, bool runAll) {
                     : std::string{};
                 PostAIStatus(window,
                     batchPrefix + gScenarioRunner.FormatProgress() +
-                    "\r\nLast local decision:\r\n" + step, true);
+                    "\r\nLast local decision:\r\n" + step +
+                    (evidenceStatus.empty()
+                        ? std::string{}
+                        : "\r\n\r\n" + evidenceStatus), true);
                 if (!gScenarioRunner.IsRunning() || gAIStopRequested) break;
                 std::unique_lock lock(gAIWaitMutex);
                 gAIWaitCondition.wait_for(
@@ -4532,21 +4888,77 @@ void StartScenarioWorker(HWND window, bool runAll) {
                     [] { return gAIStopRequested.load(); });
             }
             if (gAIStopRequested) gScenarioRunner.RequestStop();
+            if (!gAIStopRequested) {
+                CapturePendingScenarioEvidence(projectRoot, scenario.path, window);
+            }
+            const std::string replayStop = scenarioRecordingStarted
+                ? StopRecordingWithCoverageCore()
+                : (autoRecord ? replayStart : std::string("Automatic replay recording disabled."));
+            // The recording stop response includes the final gameplay
+            // observation. Freeze its anomaly counts before replay playback so
+            // the same recorded warning is not counted a second time.
+            gScenarioRunner.FinishExecutionObservation();
+            AutomaticReplayVerificationResult verification;
+            if (gAIStopRequested) {
+                verification.status = "stopped";
+                verification.detail = "verification was not started because the batch was stopped";
+            } else if (!gScenarioRunner.VerifyReplay()) {
+                verification.status = "disabled";
+            } else if (!scenarioRecordingStarted) {
+                verification.status = "unavailable";
+                verification.detail = "automatic replay recording did not start";
+            } else {
+                const auto manifestPath = ResolveProjectOutputPath(
+                    FormattedLineValue(replayStop, "Replay manifest:"));
+                PostAIStatus(window,
+                    (runAll
+                        ? "Scenario batch " + std::to_string(scenarioIndex + 1) + "/" +
+                            std::to_string(scenarios.size()) + "\r\n"
+                        : std::string{}) +
+                    "Starting automatic replay verification...", true);
+                verification = VerifyReplayAutomatically(
+                    window, manifestPath,
+                    gScenarioRunner.ReplayVerificationTimeoutSeconds());
+            }
+            gScenarioRunner.RecordReplayVerification(
+                verification.status,
+                verification.checked,
+                verification.checkpoints,
+                verification.mismatches,
+                verification.detail);
+            if (!gAIStopRequested) {
+                CapturePendingScenarioEvidence(projectRoot, scenario.path, window);
+            }
             item.status = ScenarioStatusName(gScenarioRunner.CurrentStatus());
             item.detail = gScenarioRunner.FailureReason();
             item.anomalyCount = gScenarioRunner.AnomalyCount();
             item.anomalyErrorCount = gScenarioRunner.AnomalyErrorCount();
-            const std::string replayStop = scenarioRecordingStarted
-                ? StopRecordingWithCoverageCore()
-                : (autoRecord ? replayStart : std::string("Automatic replay recording disabled."));
-            const std::string result = gScenarioRunner.Finalize(replayStop);
+            item.replayVerificationStatus = verification.status;
+            item.replayVerificationChecked = verification.checked;
+            item.replayVerificationCheckpoints = verification.checkpoints;
+            item.replayVerificationMismatches = verification.mismatches;
+            item.replayVerificationDetail = verification.detail;
+            std::ostringstream replayVerificationSummary;
+            replayVerificationSummary << replayStop
+                << "\r\nAutomatic replay verification: " << verification.status;
+            if (verification.checkpoints > 0) {
+                replayVerificationSummary << " checked " << verification.checked << '/'
+                    << verification.checkpoints << " mismatches "
+                    << verification.mismatches;
+            }
+            if (!verification.detail.empty()) {
+                replayVerificationSummary << "\r\nVerification detail: "
+                    << verification.detail;
+            }
+            const std::string replaySummary = replayVerificationSummary.str();
+            const std::string result = gScenarioRunner.Finalize(replaySummary);
             item.resultPath = gScenarioRunner.ResultPath();
             item.elapsedSeconds = std::chrono::duration<double>(
                 std::chrono::steady_clock::now() - scenarioStartedAt).count();
             batchItems.push_back(std::move(item));
             lastSingleResult = result + "\r\n\r\n" +
                 gScenarioRunner.FormatProgress() +
-                "\r\nReplay / Coverage:\r\n" + replayStop;
+                "\r\nReplay / Coverage:\r\n" + replaySummary;
         }
 
         if (runAll) {
@@ -4554,8 +4966,19 @@ void StartScenarioWorker(HWND window, bool runAll) {
                 std::chrono::steady_clock::now() - batchStartedAt).count();
             const auto resultPath = SaveScenarioBatchResult(
                 projectRoot, batchItems, gAIStopRequested, elapsedSeconds);
-            PostAIStatus(window, FormatScenarioBatchResult(
-                batchItems, resultPath, gAIStopRequested, elapsedSeconds), true);
+            std::string status = FormatScenarioBatchResult(
+                batchItems, resultPath, gAIStopRequested, elapsedSeconds);
+            try {
+                const auto report =
+                    TestReportGenerator::Generate(projectRoot, resultPath);
+                status += "\r\n\r\n" + report.message;
+            } catch (const std::exception& exception) {
+                status += "\r\n\r\nTest report generation failed safely.\r\nError: ";
+                status += exception.what();
+            } catch (...) {
+                status += "\r\n\r\nTest report generation failed safely: unknown error";
+            }
+            PostAIStatus(window, std::move(status), true);
         } else if (!lastSingleResult.empty()) {
             PostAIStatus(window, std::move(lastSingleResult), true);
         }
@@ -4641,8 +5064,249 @@ void StartConnectionWorker(HWND window, const wchar_t* startingText = nullptr) {
     });
 }
 
+const wchar_t* ButtonTooltipText(int id) {
+    switch (id) {
+    case StartRecordingId:
+        return L"操作とゲーム内イベントの記録を開始します。ゲームSceneへ移動すると本記録が始まります。";
+    case StopRecordingId:
+        return L"現在の記録を終了し、リプレイセッションとして保存します。";
+    case PlayLatestId:
+        return L"保存日時が最も新しいリプレイを最初から再生します。必要なら対象Sceneを自動で読み込みます。";
+    case StopReplayId:
+        return L"再生中またはScene読み込み待ちのリプレイを停止します。";
+    case RefreshId:
+        return L"ゲームとの接続状態、現在のScene、プレイヤーや敵の状態を再取得します。";
+    case PlaySelectedReplayId:
+        return L"左の一覧で選択したリプレイを最初から再生します。";
+    case ShowReplayTimelineId:
+        return L"選択したリプレイで発生したAction、被弾、状態変化などを時系列で表示します。";
+    case ReloadReplayListId:
+        return L"保存済みリプレイの一覧をディスクから読み直します。";
+    case PauseReplayId:
+        return L"リプレイ再生を現在のフレームで一時停止します。";
+    case ResumeReplayId:
+        return L"一時停止しているリプレイの再生を再開します。";
+    case StepReplayId:
+        return L"一時停止中のリプレイを1フレームだけ進めます。";
+    case ApplyReplaySpeedId:
+        return L"左で選択した再生速度を現在のリプレイへ適用します。検証には1xを推奨します。";
+    case LocalStartId:
+        return L"ローカルAIを連続実行します。未対応Sceneでは待機し、ゲームSceneへ移動すると自動で開始します。";
+    case AIStopId:
+        return L"実行中または待機中のローカルAIを停止します。";
+    case ReloadScenarioListId:
+        return L"利用可能なシナリオJSONの一覧をディスクから読み直します。";
+    case StartScenarioId:
+        return L"一覧で選択したシナリオテストを1件実行し、結果とリプレイを保存します。";
+    case RunAllScenariosId:
+        return L"登録されているすべてのシナリオテストを順番に実行し、レポートを生成します。";
+    case StopScenarioId:
+        return L"実行中のシナリオテストまたは一括実行を停止します。";
+    case OpenProjectToolsId:
+        return L"ゲームフォルダーの指定、ソース解析、各プロファイル生成を行う画面を開きます。";
+    case OpenSemanticReviewId:
+        return L"ソース解析で意味を確定できなかったActionや状態候補を確認・承認します。";
+    case AdapterDiagnosticsId:
+        return L"ゲーム側Adapter、通信、Observation、Actionなどの接続準備状況を診断します。";
+    case CoverageSummaryId:
+        return L"これまで確認できたAction、Scene、Phase、状態と未確認項目を表示します。";
+    case OpenLatestReportId:
+        return L"直近に生成されたシナリオテストのHTMLレポートを開きます。";
+    case ResetCoverageId:
+        return L"現在のカバレッジをアーカイブしてから集計を初期化し、新しい計測を開始します。";
+    case BrowseProjectId:
+        return L"解析対象となるゲームプロジェクトのフォルダーを選択します。";
+    case ScanProjectId:
+        return L"ソースと設定をローカル解析し、Action、状態、Sceneなどの候補を収集します。APIには送信しません。";
+    case GenerateProfileId:
+        return L"解析結果からActionの分類とパラメーター候補をまとめたプロファイルを生成します。";
+    case GenerateStateProfileId:
+        return L"解析結果からHP、Phase、敵の予兆などに使える状態プロパティ候補を生成します。";
+    case GenerateLocalPolicyId:
+        return L"設定済みAPIを呼び出し、AI目標と解析結果から繰り返し使えるローカルAI用の行動方針を生成します。";
+    case SemanticReviewApproveId:
+        return L"選択中の候補と分類を正しいものとしてプロファイルへ保存します。";
+    case SemanticReviewIgnoreId:
+        return L"選択中の候補を使用しないものとしてプロファイルへ保存します。";
+    case SemanticReviewReloadId:
+        return L"判断が必要な候補をプロファイルから読み直します。";
+    default:
+        return nullptr;
+    }
+}
+
+HWND EnsureButtonTooltip(HWND parent) {
+    if (!parent) return nullptr;
+    if (const HANDLE value = GetPropW(parent, kTooltipProperty)) {
+        return static_cast<HWND>(value);
+    }
+    HWND tooltip = CreateWindowExW(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+        L"STATIC",
+        L"",
+        WS_POPUP | WS_BORDER | SS_LEFT | SS_NOPREFIX,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        430,
+        40,
+        parent,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+    if (!tooltip) return nullptr;
+    HWND textControl = CreateWindowW(
+        L"STATIC",
+        L"",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX,
+        8,
+        6,
+        414,
+        26,
+        tooltip,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+    if (!textControl) {
+        DestroyWindow(tooltip);
+        return nullptr;
+    }
+    SendMessageW(textControl, WM_SETFONT,
+        reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+    SetPropW(tooltip, kTooltipTextControlProperty, textControl);
+    SetWindowPos(tooltip, HWND_TOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+    if (!SetPropW(parent, kTooltipProperty, tooltip)) {
+        DestroyWindow(tooltip);
+        return nullptr;
+    }
+    return tooltip;
+}
+
+void AddButtonTooltip(HWND parent, HWND button, const wchar_t* text) {
+    if (!button || !text || !*text) return;
+    HWND tooltip = EnsureButtonTooltip(parent);
+    if (!tooltip) return;
+    SetPropW(button, kTooltipTextProperty,
+        reinterpret_cast<HANDLE>(const_cast<wchar_t*>(text)));
+    if (!SetWindowSubclass(button, [](HWND control, UINT message,
+        WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) -> LRESULT {
+        const auto activateTooltip = [control](bool activate) {
+            HWND parent = GetParent(control);
+            HWND tooltip = parent
+                ? static_cast<HWND>(GetPropW(parent, kTooltipProperty))
+                : nullptr;
+            if (!tooltip) return;
+            if (!activate) {
+                ShowWindow(tooltip, SW_HIDE);
+                return;
+            }
+            const auto* text = reinterpret_cast<const wchar_t*>(
+                GetPropW(control, kTooltipTextProperty));
+            if (!text || !*text) return;
+            HWND textControl = static_cast<HWND>(
+                GetPropW(tooltip, kTooltipTextControlProperty));
+            if (!textControl) return;
+            SetWindowTextW(textControl, text);
+
+            RECT buttonRect{};
+            GetWindowRect(control, &buttonRect);
+            constexpr int tooltipWidth = 430;
+            constexpr int horizontalPadding = 8;
+            constexpr int topPadding = 6;
+            constexpr int bottomPadding = 8;
+            const int textWidth = tooltipWidth - horizontalPadding * 2;
+            int textHeight = 20;
+            if (HDC deviceContext = GetDC(textControl)) {
+                const HFONT font = reinterpret_cast<HFONT>(
+                    SendMessageW(textControl, WM_GETFONT, 0, 0));
+                const HGDIOBJ previousFont = font
+                    ? SelectObject(deviceContext, font) : nullptr;
+                RECT measured{ 0, 0, textWidth, 0 };
+                DrawTextW(deviceContext, text, -1, &measured,
+                    DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+                textHeight = (std::max)(20,
+                    static_cast<int>(measured.bottom - measured.top));
+                if (previousFont) SelectObject(deviceContext, previousFont);
+                ReleaseDC(textControl, deviceContext);
+            }
+            const int tooltipHeight = std::clamp(
+                topPadding + textHeight + bottomPadding, 34, 180);
+            SetWindowPos(textControl, nullptr,
+                horizontalPadding, topPadding, textWidth, textHeight,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            int x = buttonRect.left;
+            int y = buttonRect.bottom + 6;
+            MONITORINFO monitorInfo{};
+            monitorInfo.cbSize = sizeof(monitorInfo);
+            const HMONITOR monitor = MonitorFromWindow(
+                control, MONITOR_DEFAULTTONEAREST);
+            if (monitor && GetMonitorInfoW(monitor, &monitorInfo)) {
+                const int workLeft = static_cast<int>(monitorInfo.rcWork.left);
+                const int workTop = static_cast<int>(monitorInfo.rcWork.top);
+                const int workRight = static_cast<int>(monitorInfo.rcWork.right);
+                const int workBottom = static_cast<int>(monitorInfo.rcWork.bottom);
+                x = std::clamp(x, workLeft,
+                    (std::max)(workLeft, workRight - tooltipWidth));
+                if (y + tooltipHeight > workBottom) {
+                    y = buttonRect.top - tooltipHeight - 6;
+                }
+                y = (std::max)(y, workTop);
+            }
+            SetWindowPos(tooltip, HWND_TOPMOST, x, y,
+                tooltipWidth, tooltipHeight,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            RedrawWindow(tooltip, nullptr, nullptr,
+                RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+        };
+        switch (message) {
+        case WM_MOUSEMOVE: {
+            if (!GetPropW(control, kTooltipHoverStateProperty)) {
+                SetPropW(control, kTooltipHoverStateProperty,
+                    reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(1)));
+                SetTimer(control, kButtonTooltipTimerId, 1000, nullptr);
+            }
+            TRACKMOUSEEVENT tracking{};
+            tracking.cbSize = sizeof(tracking);
+            tracking.dwFlags = TME_LEAVE;
+            tracking.hwndTrack = control;
+            TrackMouseEvent(&tracking);
+            break;
+        }
+        case WM_TIMER:
+            if (wParam != kButtonTooltipTimerId) break;
+            KillTimer(control, kButtonTooltipTimerId);
+            SetPropW(control, kTooltipHoverStateProperty,
+                reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(2)));
+            activateTooltip(true);
+            return 0;
+        case WM_MOUSELEAVE:
+        case WM_LBUTTONDOWN:
+            KillTimer(control, kButtonTooltipTimerId);
+            RemovePropW(control, kTooltipHoverStateProperty);
+            activateTooltip(false);
+            break;
+        case WM_NCDESTROY:
+            KillTimer(control, kButtonTooltipTimerId);
+            RemovePropW(control, kTooltipHoverStateProperty);
+            RemovePropW(control, kTooltipTextProperty);
+            activateTooltip(false);
+            break;
+        default:
+            break;
+        }
+        return DefSubclassProc(control, message, wParam, lParam);
+    }, 1, 0)) {
+        RemovePropW(button, kTooltipTextProperty);
+    }
+}
+
+void DestroyButtonTooltip(HWND parent) {
+    HWND tooltip = static_cast<HWND>(RemovePropW(parent, kTooltipProperty));
+    if (tooltip && IsWindow(tooltip)) DestroyWindow(tooltip);
+}
+
 HWND AddButton(HWND parent, const wchar_t* text, int id, int x, int y, int width) {
-    return CreateWindowW(
+    HWND button = CreateWindowW(
         L"BUTTON", text,
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         x, y, width, 34,
@@ -4650,6 +5314,8 @@ HWND AddButton(HWND parent, const wchar_t* text, int id, int x, int y, int width
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
         GetModuleHandleW(nullptr),
         nullptr);
+    AddButtonTooltip(parent, button, ButtonTooltipText(id));
+    return button;
 }
 
 void AppendSemanticEvidence(
@@ -4928,27 +5594,27 @@ LRESULT CALLBACK ProjectToolsWindowProc(HWND window, UINT message, WPARAM wParam
     switch (message) {
     case WM_CREATE: {
         gProjectToolsWindow = window;
-        CreateWindowW(L"STATIC", L"Project / Profile Tools", WS_CHILD | WS_VISIBLE,
+        CreateWindowW(L"STATIC", L"プロジェクト / プロファイル設定", WS_CHILD | WS_VISIBLE,
             20, 15, 250, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        CreateWindowW(L"STATIC", L"Game Project Folder:", WS_CHILD | WS_VISIBLE,
+        CreateWindowW(L"STATIC", L"ゲームプロジェクト:", WS_CHILD | WS_VISIBLE,
             20, 48, 160, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         const std::wstring savedProjectFolder = LoadProjectFolder();
         gProjectFolder = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedProjectFolder.c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 70, 450, 27, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ProjectFolderId)), GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Browse...", BrowseProjectId, 480, 67, 80);
-        AddButton(window, L"Scan Project", ScanProjectId, 570, 67, 90);
-        CreateWindowW(L"STATIC", L"Scan Targets (blank = automatic):", WS_CHILD | WS_VISIBLE,
+        AddButton(window, L"参照...", BrowseProjectId, 480, 67, 80);
+        AddButton(window, L"ソース解析", ScanProjectId, 570, 67, 90);
+        CreateWindowW(L"STATIC", L"解析対象（空欄 = 自動）:", WS_CHILD | WS_VISIBLE,
             20, 110, 300, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         const std::wstring savedScanTargets = LoadScanTargets();
         gScanTargets = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", savedScanTargets.c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 20, 132, 640, 27, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ScanTargetsId)), GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Generate Action Profile", GenerateProfileId, 20, 175, 190);
-        AddButton(window, L"Generate State Mapping", GenerateStateProfileId, 220, 175, 190);
-        AddButton(window, L"Generate Local Policy", GenerateLocalPolicyId, 420, 175, 190);
-        AddButton(window, L"Semantic Review...", OpenSemanticReviewId, 20, 218, 190);
-        CreateWindowW(L"STATIC", L"Results are shown in the main Viewer status area.",
+        AddButton(window, L"操作プロファイル生成", GenerateProfileId, 20, 175, 190);
+        AddButton(window, L"状態マッピング生成", GenerateStateProfileId, 220, 175, 190);
+        AddButton(window, L"ローカル方針生成", GenerateLocalPolicyId, 420, 175, 190);
+        AddButton(window, L"意味確認...", OpenSemanticReviewId, 20, 218, 190);
+        CreateWindowW(L"STATIC", L"結果はメイン画面の下部に表示されます。",
             WS_CHILD | WS_VISIBLE, 220, 226, 390, 22, window, nullptr,
             GetModuleHandleW(nullptr), nullptr);
         return 0;
@@ -5007,6 +5673,7 @@ LRESULT CALLBACK ProjectToolsWindowProc(HWND window, UINT message, WPARAM wParam
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        DestroyButtonTooltip(window);
         gProjectToolsWindow = nullptr;
         gProjectFolder = nullptr;
         gScanTargets = nullptr;
@@ -5020,7 +5687,7 @@ LRESULT CALLBACK SemanticReviewWindowProc(HWND window, UINT message, WPARAM wPar
     switch (message) {
     case WM_CREATE: {
         gSemanticReviewWindow = window;
-        CreateWindowW(L"STATIC", L"Semantic Review - only ambiguous candidates are shown",
+        CreateWindowW(L"STATIC", L"意味確認 - 判断が必要な候補だけを表示",
             WS_CHILD | WS_VISIBLE, 20, 15, 500, 24, window, nullptr,
             GetModuleHandleW(nullptr), nullptr);
         gSemanticReviewList = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
@@ -5028,7 +5695,7 @@ LRESULT CALLBACK SemanticReviewWindowProc(HWND window, UINT message, WPARAM wPar
             20, 48, 640, 210, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(SemanticReviewListId)),
             GetModuleHandleW(nullptr), nullptr);
-        CreateWindowW(L"STATIC", L"Action category:", WS_CHILD | WS_VISIBLE,
+        CreateWindowW(L"STATIC", L"操作分類:", WS_CHILD | WS_VISIBLE,
             20, 272, 120, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gSemanticReviewCategory = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
@@ -5040,9 +5707,9 @@ LRESULT CALLBACK SemanticReviewWindowProc(HWND window, UINT message, WPARAM wPar
             SendMessageW(gSemanticReviewCategory, CB_ADDSTRING, 0,
                 reinterpret_cast<LPARAM>(category));
         }
-        AddButton(window, L"Approve Selected", SemanticReviewApproveId, 335, 264, 145);
-        AddButton(window, L"Ignore Candidate", SemanticReviewIgnoreId, 490, 264, 135);
-        AddButton(window, L"Reload", SemanticReviewReloadId, 20, 307, 90);
+        AddButton(window, L"選択項目を承認", SemanticReviewApproveId, 335, 264, 145);
+        AddButton(window, L"候補を無視", SemanticReviewIgnoreId, 490, 264, 135);
+        AddButton(window, L"再読込", SemanticReviewReloadId, 20, 307, 90);
         gSemanticReviewDetails = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
             20, 350, 640, 190, window,
@@ -5076,6 +5743,7 @@ LRESULT CALLBACK SemanticReviewWindowProc(HWND window, UINT message, WPARAM wPar
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        DestroyButtonTooltip(window);
         gSemanticReviewWindow = nullptr;
         gSemanticReviewList = nullptr;
         gSemanticReviewCategory = nullptr;
@@ -5094,7 +5762,7 @@ void ShowProjectToolsWindow(HWND owner) {
         return;
     }
     CreateWindowExW(WS_EX_TOOLWINDOW, kProjectToolsWindowClass,
-        L"DebugAI Project Tools", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+        L"DebugAI プロジェクト設定", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT, CW_USEDEFAULT, 700, 310, owner, nullptr,
         GetModuleHandleW(nullptr), nullptr);
     if (gProjectToolsWindow) ShowWindow(gProjectToolsWindow, SW_SHOWNORMAL);
@@ -5108,7 +5776,7 @@ void ShowSemanticReviewWindow(HWND owner) {
         return;
     }
     CreateWindowExW(WS_EX_TOOLWINDOW, kSemanticReviewWindowClass,
-        L"DebugAI Semantic Review", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+        L"DebugAI 意味確認", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT, CW_USEDEFAULT, 700, 600, owner, nullptr,
         GetModuleHandleW(nullptr), nullptr);
     if (gSemanticReviewWindow) ShowWindow(gSemanticReviewWindow, SW_SHOWNORMAL);
@@ -5119,129 +5787,99 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     case WM_CREATE: {
         gMainWindow = window;
         gAIProvider.Configure();
-        const std::wstring configuredApiInterval = std::to_wstring(
-            LoadWorkspaceInterval("apiIntervalMs", gAIProvider.SuggestedIntervalMilliseconds()));
         const std::wstring configuredLocalInterval = std::to_wstring(
             LoadWorkspaceInterval("localIntervalMs", 250));
         CreateWindowW(L"STATIC", L"DebugAI Viewer", WS_CHILD | WS_VISIBLE,
             20, 16, 300, 28, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Start Recording", StartRecordingId, 20, 55, 130);
-        AddButton(window, L"Stop Recording", StopRecordingId, 160, 55, 130);
-        AddButton(window, L"Play Latest", PlayLatestId, 300, 55, 120);
-        AddButton(window, L"Stop Replay", StopReplayId, 430, 55, 120);
-        AddButton(window, L"Refresh", RefreshId, 560, 55, 90);
-        CreateWindowW(L"STATIC", L"Replay:", WS_CHILD | WS_VISIBLE,
-            20, 104, 60, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"記録開始", StartRecordingId, 20, 55, 120);
+        AddButton(window, L"記録停止", StopRecordingId, 150, 55, 120);
+        AddButton(window, L"最新を再生", PlayLatestId, 280, 55, 120);
+        AddButton(window, L"再生停止", StopReplayId, 410, 55, 120);
+        AddButton(window, L"更新", RefreshId, 540, 55, 110);
+        CreateWindowW(L"STATIC", L"リプレイ:", WS_CHILD | WS_VISIBLE,
+            20, 104, 70, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gReplaySessions = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            80, 96, 300, 260, window,
+            90, 96, 285, 260, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ReplaySessionId)),
             GetModuleHandleW(nullptr), nullptr);
         gPlaySelectedReplay = AddButton(
-            window, L"Play Selected", PlaySelectedReplayId, 390, 96, 105);
-        AddButton(window, L"Timeline", ShowReplayTimelineId, 505, 96, 75);
-        AddButton(window, L"Reload", ReloadReplayListId, 590, 96, 60);
-        CreateWindowW(L"STATIC", L"Playback:", WS_CHILD | WS_VISIBLE,
-            20, 149, 65, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Pause", PauseReplayId, 85, 141, 75);
-        AddButton(window, L"Resume", ResumeReplayId, 170, 141, 80);
-        AddButton(window, L"Step 1F", StepReplayId, 260, 141, 80);
-        CreateWindowW(L"STATIC", L"Speed:", WS_CHILD | WS_VISIBLE,
-            355, 149, 50, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+            window, L"選択を再生", PlaySelectedReplayId, 385, 96, 110);
+        AddButton(window, L"履歴", ShowReplayTimelineId, 505, 96, 70);
+        AddButton(window, L"再読込", ReloadReplayListId, 585, 96, 65);
+        CreateWindowW(L"STATIC", L"再生操作:", WS_CHILD | WS_VISIBLE,
+            20, 149, 70, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"一時停止", PauseReplayId, 90, 141, 90);
+        AddButton(window, L"再開", ResumeReplayId, 190, 141, 80);
+        AddButton(window, L"1F進む", StepReplayId, 280, 141, 90);
+        CreateWindowW(L"STATIC", L"速度:", WS_CHILD | WS_VISIBLE,
+            380, 149, 50, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gReplaySpeed = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            405, 145, 80, 160, window,
+            430, 145, 80, 160, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ReplaySpeedId)),
             GetModuleHandleW(nullptr), nullptr);
         SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0.25x"));
         SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0.5x"));
         SendMessageW(gReplaySpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"1x"));
         SendMessageW(gReplaySpeed, CB_SETCURSEL, 0, 2);
-        AddButton(window, L"Apply", ApplyReplaySpeedId, 495, 141, 75);
-        CreateWindowW(L"STATIC", L"API:", WS_CHILD | WS_VISIBLE,
-            20, 194, 45, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"API Step", AIStepId, 65, 186, 110);
-        AddButton(window, L"Start API", AIStartId, 185, 186, 115);
-        CreateWindowW(L"STATIC", L"LOCAL:", WS_CHILD | WS_VISIBLE,
-            320, 194, 60, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Start Local", LocalStartId, 380, 186, 120);
-        AddButton(window, L"Stop", AIStopId, 510, 186, 80);
-        CreateWindowW(L"STATIC", L"API ms:", WS_CHILD | WS_VISIBLE,
-            20, 227, 55, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
-        gAIInterval = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredApiInterval.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_NUMBER, 75, 223, 70, 26, window,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIIntervalId)), GetModuleHandleW(nullptr), nullptr);
-        CreateWindowW(L"STATIC", L"Local ms:", WS_CHILD | WS_VISIBLE,
-            155, 227, 65, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"適用", ApplyReplaySpeedId, 520, 141, 80);
+        CreateWindowW(L"STATIC", L"ローカルAI", WS_CHILD | WS_VISIBLE,
+            20, 194, 95, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        AddButton(window, L"開始", LocalStartId, 115, 186, 90);
+        AddButton(window, L"停止", AIStopId, 215, 186, 80);
+        CreateWindowW(L"STATIC", L"間隔(ms):", WS_CHILD | WS_VISIBLE,
+            315, 194, 80, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gLocalAIInterval = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredLocalInterval.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_NUMBER, 220, 223, 70, 26, window,
+            WS_CHILD | WS_VISIBLE | ES_NUMBER, 395, 190, 70, 26, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(LocalAIIntervalId)), GetModuleHandleW(nullptr), nullptr);
-        CreateWindowW(L"STATIC", L"Actor:", WS_CHILD | WS_VISIBLE,
-            310, 227, 45, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L"操作対象:", WS_CHILD | WS_VISIBLE,
+            480, 194, 70, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIActorMode = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            355, 223, 100, 180, window,
+            550, 190, 110, 180, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIActorModeId)), GetModuleHandleW(nullptr), nullptr);
-        SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Player"));
-        SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Boss"));
-        SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Both"));
+        SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"プレイヤー"));
+        SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"ボス"));
+        SendMessageW(gAIActorMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"両方"));
         SendMessageW(gAIActorMode, CB_SETCURSEL, 0, 0);
-        gAIVisionEnabled = CreateWindowW(
-            L"BUTTON",
-            L"AI Vision",
-            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-            470,
-            221,
-            90,
-            28,
-            window,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(AIVisionEnabledId)),
-            GetModuleHandleW(nullptr),
-            nullptr);
-        SendMessageW(
-            gAIVisionEnabled,
-            BM_SETCHECK,
-            LoadVisionEnabled(gAIProvider.VisionEnabledByDefault())
-                ? BST_CHECKED
-                : BST_UNCHECKED,
-            0);
-        AddButton(window, L"Capture", CaptureVisionId, 565, 216, 85);
-        CreateWindowW(L"STATIC", L"Scenario:", WS_CHILD | WS_VISIBLE,
-            20, 269, 70, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L"シナリオ:", WS_CHILD | WS_VISIBLE,
+            20, 237, 70, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gScenarioList = CreateWindowW(L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-            90, 265, 235, 220, window,
+            90, 233, 235, 220, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(ScenarioListId)),
             GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Reload", ReloadScenarioListId, 335, 260, 65);
-        AddButton(window, L"Start One", StartScenarioId, 410, 260, 95);
-        AddButton(window, L"Run All", RunAllScenariosId, 515, 260, 80);
-        AddButton(window, L"Stop", StopScenarioId, 605, 260, 55);
+        AddButton(window, L"再読込", ReloadScenarioListId, 335, 228, 70);
+        AddButton(window, L"選択実行", StartScenarioId, 415, 228, 90);
+        AddButton(window, L"全件実行", RunAllScenariosId, 515, 228, 85);
+        AddButton(window, L"停止", StopScenarioId, 610, 228, 50);
         const std::wstring configuredGoal = Utf8ToWide(gAIProvider.Goal());
-        CreateWindowW(L"STATIC", L"AI Goal / Instruction:", WS_CHILD | WS_VISIBLE,
-            20, 310, 170, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L"AI目標 / 指示:", WS_CHILD | WS_VISIBLE,
+            20, 278, 170, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
         gAIGoal = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", configuredGoal.c_str(),
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-            20, 332, 640, 68, window,
+            20, 300, 640, 68, window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(AIGoalId)), GetModuleHandleW(nullptr), nullptr);
-        AddButton(window, L"Project Tools...", OpenProjectToolsId, 20, 411, 145);
-        AddButton(window, L"Semantic Review...", OpenSemanticReviewId, 175, 411, 155);
-        AddButton(window, L"Coverage", CoverageSummaryId, 340, 411, 120);
-        AddButton(window, L"Reset Coverage", ResetCoverageId, 470, 411, 140);
+        AddButton(window, L"プロジェクト設定...", OpenProjectToolsId, 20, 379, 160);
+        AddButton(window, L"意味確認...", OpenSemanticReviewId, 190, 379, 130);
+        AddButton(window, L"接続診断", AdapterDiagnosticsId, 330, 379, 120);
+        AddButton(window, L"カバレッジ", CoverageSummaryId, 20, 421, 130);
+        AddButton(window, L"レポート", OpenLatestReportId, 160, 421, 100);
+        AddButton(window, L"カバレッジ初期化", ResetCoverageId, 270, 421, 170);
         gStatusText = CreateWindowExW(
             WS_EX_CLIENTEDGE,
             L"EDIT",
-            L"Game connection: checking...",
+            L"ゲーム接続を確認しています...",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
-            20, 456, 640, 244,
+            20, 463, 640, 237,
             window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(StatusTextId)),
             GetModuleHandleW(nullptr),
             nullptr);
         RefreshReplaySessionList(false);
         RefreshScenarioList(false);
-        StartConnectionWorker(window, L"Game connection: checking...");
+        StartConnectionWorker(window, L"ゲーム接続を確認しています...");
         return 0;
     }
 
@@ -5386,6 +6024,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             StartOneShotWorker(window, FormatCoverageSummaryCore,
                 L"Building runtime coverage summary...");
             return 0;
+        case AdapterDiagnosticsId: {
+            const std::filesystem::path projectRoot = gProjectFolder
+                ? std::filesystem::path(ReadWindowText(gProjectFolder))
+                : ConfiguredProjectRoot();
+            StartOneShotWorker(window, [projectRoot] {
+                return RunAdapterDiagnosticsCore(projectRoot);
+            }, L"Checking the connected game Adapter...");
+            return 0;
+        }
+        case OpenLatestReportId:
+            StartOneShotWorker(window, OpenLatestTestReportCore,
+                L"Opening latest test report...");
+            return 0;
         case ResetCoverageId:
             StartOneShotWorker(window, ResetCoverageCore,
                 L"Archiving and resetting runtime coverage...");
@@ -5460,6 +6111,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     }
 
     case WM_DESTROY:
+        DestroyButtonTooltip(window);
         gScenarioRunner.RequestStop();
         if (gProjectToolsWindow && IsWindow(gProjectToolsWindow))
             DestroyWindow(gProjectToolsWindow);
@@ -5485,6 +6137,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
+    INITCOMMONCONTROLSEX commonControls{};
+    commonControls.dwSize = sizeof(commonControls);
+    commonControls.dwICC = ICC_WIN95_CLASSES;
+    InitCommonControlsEx(&commonControls);
+
     std::wstring arguments = commandLine ? commandLine : L"";
 #if defined(DEBUGAI_VIEWER_DISABLED)
     if (arguments.empty()) return 0;

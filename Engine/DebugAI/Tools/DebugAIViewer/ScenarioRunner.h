@@ -27,6 +27,20 @@ public:
         std::size_t anomalyCount,
         std::size_t errorCount,
         std::string lastAnomaly);
+    void FinishExecutionObservation();
+    void RecordReplayVerification(
+        std::string status,
+        std::size_t checked,
+        std::size_t checkpoints,
+        std::size_t mismatches,
+        std::string detail);
+    bool ConsumeEvidenceRequest(std::string& reason);
+    void RecordEvidence(
+        std::filesystem::path path,
+        std::string reason,
+        unsigned int width,
+        unsigned int height,
+        std::string error = {});
     void RequestStop();
     void Fail(std::string reason);
     bool IsRunning() const;
@@ -37,6 +51,8 @@ public:
     std::size_t AnomalyCount() const;
     std::size_t AnomalyErrorCount() const;
     bool AutoRecord() const;
+    bool VerifyReplay() const;
+    double ReplayVerificationTimeoutSeconds() const;
     std::string FormatProgress() const;
     std::string Finalize(const std::string& replaySummary);
     std::filesystem::path ResultPath() const;
@@ -57,7 +73,17 @@ private:
         bool complete = false;
     };
 
+    struct Evidence {
+        std::filesystem::path path;
+        std::string reason;
+        unsigned int width = 0;
+        unsigned int height = 0;
+        std::uint64_t frameNumber = 0;
+        std::string error;
+    };
+
     void UpdateStatusLocked_();
+    void RequestEvidenceLocked_(std::string reason);
     void SaveResultLocked_(const std::string& replaySummary);
     static std::string StatusName_(Status status);
 
@@ -72,8 +98,10 @@ private:
     std::string actorMode_ = "Player";
     std::string targetSceneId_;
     bool autoRecord_ = true;
+    bool verifyReplay_ = true;
     bool failOnAnomaly_ = true;
     double timeoutSeconds_ = 120.0;
+    double replayVerificationTimeoutSeconds_ = 180.0;
     std::vector<Goal> goals_;
     std::set<std::string> executedActions_;
     std::uint64_t startFrame_ = 0;
@@ -85,5 +113,14 @@ private:
     std::size_t anomalyCount_ = 0;
     std::size_t anomalyErrorCount_ = 0;
     std::string lastAnomaly_;
+    bool acceptRuntimeAnomalies_ = false;
+    std::string replayVerificationStatus_ = "not_run";
+    std::size_t replayVerificationChecked_ = 0;
+    std::size_t replayVerificationCheckpoints_ = 0;
+    std::size_t replayVerificationMismatches_ = 0;
+    std::string replayVerificationDetail_;
+    bool evidenceRequested_ = false;
+    std::string evidenceRequestReason_;
+    std::vector<Evidence> evidence_;
     std::chrono::steady_clock::time_point startedAt_{};
 };

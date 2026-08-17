@@ -24,30 +24,34 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <OutDir>$(SolutionDir)..\generated\outputs\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)..\generated\obj\DebugAIViewer\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\..\..\generated\outputs\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\..\..\..\..\generated\obj\DebugAIViewer\$(Configuration)\</IntDir>
     <TargetName>DebugAIViewer</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup>
-    <ClCompile><WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><AdditionalIncludeDirectories>..\..\Protocol;..\..\..\..\externals;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>winhttp.lib;ole32.lib;uuid.lib;windowscodecs.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <ClCompile><WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions><AdditionalIncludeDirectories>..\..\Protocol;..\..\..\..\externals;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>winhttp.lib;ole32.lib;uuid.lib;windowscodecs.lib;gdi32.lib;shell32.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile><PreprocessorDefinitions>DEBUGAI_VIEWER_DISABLED=1;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AdapterDiagnostics.cpp" />
     <ClCompile Include="DebugAIViewer.cpp" />
     <ClCompile Include="CoverageTracker.cpp" />
     <ClCompile Include="ExternalGenericAIProvider.cpp" />
     <ClCompile Include="GameWindowCapture.cpp" />
     <ClCompile Include="ScenarioRunner.cpp" />
+    <ClCompile Include="TestReportGenerator.cpp" />
     <ClCompile Include="..\..\Protocol\DebugProtocol.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AdapterDiagnostics.h" />
     <ClInclude Include="CoverageTracker.h" />
     <ClInclude Include="ExternalGenericAIProvider.h" />
     <ClInclude Include="GameWindowCapture.h" />
     <ClInclude Include="ScenarioRunner.h" />
+    <ClInclude Include="TestReportGenerator.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

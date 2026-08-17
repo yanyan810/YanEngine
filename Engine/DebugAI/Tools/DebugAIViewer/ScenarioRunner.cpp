@@ -142,8 +142,11 @@ bool ScenarioRunner::Load(
     if (actorMode_ != "Player" && actorMode_ != "Boss" && actorMode_ != "Both")
         actorMode_ = "Player";
     autoRecord_ = source.value("autoRecord", true);
+    verifyReplay_ = source.value("verifyReplay", autoRecord_);
     failOnAnomaly_ = source.value("failOnAnomaly", true);
     timeoutSeconds_ = std::clamp(source.value("timeoutSeconds", 120.0), 1.0, 3600.0);
+    replayVerificationTimeoutSeconds_ = std::clamp(
+        source.value("replayVerificationTimeoutSeconds", 180.0), 5.0, 3600.0);
     scenarioPath_ = scenarioPath;
     resultDirectory_ = resultDirectory;
     goals_ = std::move(parsedGoals);
@@ -178,6 +181,15 @@ bool ScenarioRunner::Start(std::string& error) {
     anomalyCount_ = 0;
     anomalyErrorCount_ = 0;
     lastAnomaly_.clear();
+    acceptRuntimeAnomalies_ = true;
+    replayVerificationStatus_ = verifyReplay_ ? "pending" : "disabled";
+    replayVerificationChecked_ = 0;
+    replayVerificationCheckpoints_ = 0;
+    replayVerificationMismatches_ = 0;
+    replayVerificationDetail_.clear();
+    evidenceRequested_ = false;
+    evidenceRequestReason_.clear();
+    evidence_.clear();
     resultPath_.clear();
     startedAt_ = std::chrono::steady_clock::now();
     status_ = Status::Running;
@@ -245,15 +257,78 @@ void ScenarioRunner::RecordAnomalyStatus(
     std::size_t errorCount,
     std::string lastAnomaly) {
     std::lock_guard lock(mutex_);
-    if (status_ != Status::Running && status_ != Status::Passed) return;
+    if (!acceptRuntimeAnomalies_ ||
+        (status_ != Status::Running && status_ != Status::Passed)) return;
+    const std::size_t previousAnomalyCount = anomalyCount_;
     anomalyCount_ = anomalyCount;
     anomalyErrorCount_ = errorCount;
     lastAnomaly_ = std::move(lastAnomaly);
+    if (anomalyCount_ > previousAnomalyCount) {
+        RequestEvidenceLocked_(lastAnomaly_.empty()
+            ? "anomaly detected" : "anomaly detected: " + lastAnomaly_);
+    }
     if (failOnAnomaly_ && anomalyErrorCount_ > 0) {
         failureReason_ = "Error anomaly detected";
         if (!lastAnomaly_.empty()) failureReason_ += ": " + lastAnomaly_;
         status_ = Status::Failed;
     }
+}
+
+void ScenarioRunner::FinishExecutionObservation() {
+    std::lock_guard lock(mutex_);
+    acceptRuntimeAnomalies_ = false;
+}
+
+void ScenarioRunner::RecordReplayVerification(
+    std::string status,
+    std::size_t checked,
+    std::size_t checkpoints,
+    std::size_t mismatches,
+    std::string detail) {
+    std::lock_guard lock(mutex_);
+    replayVerificationStatus_ = std::move(status);
+    replayVerificationChecked_ = checked;
+    replayVerificationCheckpoints_ = checkpoints;
+    replayVerificationMismatches_ = mismatches;
+    replayVerificationDetail_ = std::move(detail);
+    if (!verifyReplay_ || replayVerificationStatus_ == "passed") return;
+    if (status_ == Status::Stopped) return;
+    const std::string previousFailure = failureReason_;
+    failureReason_ = "Replay verification " + replayVerificationStatus_;
+    if (!replayVerificationDetail_.empty()) {
+        failureReason_ += ": " + replayVerificationDetail_;
+    }
+    if (!previousFailure.empty()) failureReason_ += " | " + previousFailure;
+    status_ = Status::Failed;
+    RequestEvidenceLocked_(failureReason_);
+}
+
+bool ScenarioRunner::ConsumeEvidenceRequest(std::string& reason) {
+    std::lock_guard lock(mutex_);
+    if (!evidenceRequested_) return false;
+    reason = evidenceRequestReason_;
+    evidenceRequested_ = false;
+    evidenceRequestReason_.clear();
+    return true;
+}
+
+void ScenarioRunner::RecordEvidence(
+    std::filesystem::path path,
+    std::string reason,
+    unsigned int width,
+    unsigned int height,
+    std::string error) {
+    std::lock_guard lock(mutex_);
+    if (evidence_.size() >= 3) return;
+    evidence_.push_back(Evidence{
+        std::move(path), std::move(reason), width, height, lastFrame_,
+        std::move(error) });
+}
+
+void ScenarioRunner::RequestEvidenceLocked_(std::string reason) {
+    if (evidence_.size() >= 3 || evidenceRequested_) return;
+    evidenceRequested_ = true;
+    evidenceRequestReason_ = std::move(reason);
 }
 
 void ScenarioRunner::UpdateStatusLocked_() {
@@ -265,7 +340,12 @@ void ScenarioRunner::UpdateStatusLocked_() {
     }
     const double elapsed = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - startedAt_).count();
-    if (elapsed >= timeoutSeconds_) status_ = Status::Failed;
+    if (elapsed >= timeoutSeconds_) {
+        status_ = Status::Failed;
+        failureReason_ = "Scenario timed out after " +
+            std::to_string(static_cast<int>(timeoutSeconds_)) + " seconds";
+        RequestEvidenceLocked_(failureReason_);
+    }
 }
 
 void ScenarioRunner::RequestStop() {
@@ -278,6 +358,7 @@ void ScenarioRunner::Fail(std::string reason) {
     if (status_ != Status::Running) return;
     failureReason_ = std::move(reason);
     status_ = Status::Failed;
+    RequestEvidenceLocked_(failureReason_);
 }
 
 bool ScenarioRunner::IsRunning() const {
@@ -320,6 +401,16 @@ bool ScenarioRunner::AutoRecord() const {
     return autoRecord_;
 }
 
+bool ScenarioRunner::VerifyReplay() const {
+    std::lock_guard lock(mutex_);
+    return verifyReplay_;
+}
+
+double ScenarioRunner::ReplayVerificationTimeoutSeconds() const {
+    std::lock_guard lock(mutex_);
+    return replayVerificationTimeoutSeconds_;
+}
+
 std::string ScenarioRunner::StatusName_(Status status) {
     switch (status) {
     case Status::Ready: return "ready";
@@ -340,6 +431,16 @@ std::string ScenarioRunner::FormatProgress() const {
     if (!failureReason_.empty()) output << "Failure: " << failureReason_ << "\r\n";
     output << "Anomalies: " << anomalyCount_
         << "  Errors: " << anomalyErrorCount_ << "\r\n";
+    output << "Replay verification: " << replayVerificationStatus_;
+    if (replayVerificationCheckpoints_ > 0) {
+        output << "  checked " << replayVerificationChecked_ << '/'
+            << replayVerificationCheckpoints_ << "  mismatches "
+            << replayVerificationMismatches_;
+    }
+    output << "\r\n";
+    if (!evidence_.empty()) {
+        output << "Evidence screenshots: " << evidence_.size() << "\r\n";
+    }
     for (const auto& goal : goals_) {
         output << (goal.complete ? "  [PASS] " : "  [....] ") << goal.description;
         if (goal.type == "allActions" || goal.type == "allActionsWithTag")
@@ -368,6 +469,18 @@ void ScenarioRunner::SaveResultLocked_(const std::string& replaySummary) {
     }
     const double elapsed = startedAt_.time_since_epoch().count() == 0 ? 0.0
         : std::chrono::duration<double>(std::chrono::steady_clock::now() - startedAt_).count();
+    json evidence = json::array();
+    for (const auto& item : evidence_) {
+        evidence.push_back({
+            { "type", "screenshot" },
+            { "path", Utf8Path(item.path) },
+            { "reason", item.reason },
+            { "width", item.width },
+            { "height", item.height },
+            { "frameNumber", item.frameNumber },
+            { "error", item.error },
+        });
+    }
     json result = {
         { "schemaVersion", 1 }, { "scenarioId", id_ }, { "name", name_ },
         { "status", StatusName_(status_) }, { "actor", actorMode_ },
@@ -381,6 +494,13 @@ void ScenarioRunner::SaveResultLocked_(const std::string& replaySummary) {
         { "anomalyCount", anomalyCount_ },
         { "anomalyErrorCount", anomalyErrorCount_ },
         { "lastAnomaly", lastAnomaly_ },
+        { "verifyReplay", verifyReplay_ },
+        { "replayVerificationStatus", replayVerificationStatus_ },
+        { "replayVerificationChecked", replayVerificationChecked_ },
+        { "replayVerificationCheckpoints", replayVerificationCheckpoints_ },
+        { "replayVerificationMismatches", replayVerificationMismatches_ },
+        { "replayVerificationDetail", replayVerificationDetail_ },
+        { "evidence", std::move(evidence) },
         { "scenarioPath", Utf8Path(scenarioPath_) }, { "replaySummary", replaySummary },
     };
     std::ofstream output(resultPath_, std::ios::trunc);
