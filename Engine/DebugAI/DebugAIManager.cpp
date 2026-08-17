@@ -17,6 +17,14 @@
 
 namespace {
 
+std::string NativePathUtf8(const std::string& pathText) {
+    if (pathText.empty()) return {};
+    const auto utf8 = std::filesystem::path(pathText).u8string();
+    return std::string(
+        reinterpret_cast<const char*>(utf8.data()),
+        utf8.size());
+}
+
 float AbsDiff(float a, float b) {
     return std::fabs(a - b);
 }
@@ -792,6 +800,7 @@ void DebugAIManager::Initialize(const DebugAIConfig& config) {
     inputReplay_.Open(config_.playerLogDirectory + "/input");
     genericActionReplay_.Open(config_.playerLogDirectory + "/actors");
     eventRecorder_.Open(config_.logDirectory + "/events");
+    anomalyDetector_.Load(config_.anomalyRulesPath);
     if (!controlTransport_) {
         controlTransport_ = std::make_unique<NamedPipeDebugAITransport>();
     }
@@ -806,6 +815,10 @@ void DebugAIManager::SetConfig(const DebugAIConfig& config) {
     }
     if (config_.aiLogDirectory.empty()) {
         config_.aiLogDirectory = config_.logDirectory + "/ai";
+    }
+    if (config_.anomalyRulesPath.empty()) {
+        config_.anomalyRulesPath = "Engine/DebugAI/rules/" +
+            config_.gameId + "/anomaly_rules.json";
     }
 }
 
@@ -847,7 +860,30 @@ void DebugAIManager::ProcessControlCommands() {
             response.properties["ok"] = false;
             response.properties["message"] = "Invalid protocol message: " + parseError;
         }
-        controlTransport_->Send(DebugProtocolJson::Serialize(response));
+        try {
+            controlTransport_->Send(DebugProtocolJson::Serialize(response));
+        } catch (const std::exception& error) {
+            DebugProtocolMessage fallback;
+            fallback.gameId = "DebugAI";
+            fallback.gameVersion = "unknown";
+            fallback.messageType = DebugProtocolMessageType::ControlResult;
+            fallback.sequence = response.sequence;
+            fallback.properties["ok"] = false;
+            fallback.properties["message"] =
+                std::string("Protocol response serialization failed safely: ") +
+                error.what();
+            try {
+                controlTransport_->Send(DebugProtocolJson::Serialize(fallback));
+            } catch (...) {
+                controlTransport_->Send(
+                    "{\"protocolVersion\":1,\"gameId\":\"DebugAI\","
+                    "\"gameVersion\":\"unknown\",\"sessionId\":\"\","
+                    "\"messageType\":\"ControlResult\",\"sequence\":0,"
+                    "\"properties\":{\"ok\":false,"
+                    "\"message\":\"Protocol response serialization failed safely\"}}"
+                );
+            }
+        }
     }
 }
 
@@ -865,6 +901,7 @@ void DebugAIManager::PrepareSimulationFrame() {
             if (eventRecorder_.IsRecording()) {
                 eventRecorder_.Observe(observation);
             }
+            EvaluateAnomalies_(observation);
             if (genericActionReplay_.IsRecording()) {
                 RecordActorStateChanges_(observation);
             }
@@ -1081,11 +1118,40 @@ bool DebugAIManager::StopReplaySessionRecording(std::string* outMessage) {
     return value && *value;
 }
 
-bool DebugAIManager::ConsumeReplaySceneLoadRequest(std::string& outSceneId) {
+bool DebugAIManager::ConsumeSceneLoadRequest(std::string& outSceneId) {
+    if (sceneLoadRequested_ && !pendingSceneLoadId_.empty()) {
+        sceneLoadRequested_ = false;
+        outSceneId = std::move(pendingSceneLoadId_);
+        pendingSceneLoadId_.clear();
+        return true;
+    }
     if (!replaySceneLoadRequested_ || pendingReplaySceneId_.empty()) return false;
     replaySceneLoadRequested_ = false;
     outSceneId = pendingReplaySceneId_;
     return true;
+}
+
+void DebugAIManager::EvaluateAnomalies_(const DebugObservation& observation) {
+    for (const DebugAnomalyFinding& finding : anomalyDetector_.Evaluate(observation)) {
+        eventRecorder_.RecordAnomaly(finding);
+
+        DebugIssue issue;
+        if (finding.severity == "error") issue.severity = DebugIssueSeverity::Error;
+        else if (finding.severity == "info") issue.severity = DebugIssueSeverity::Info;
+        else issue.severity = DebugIssueSeverity::Warning;
+        issue.message = "[" + finding.ruleId + "] " + finding.message +
+            " (subject=" + finding.subjectId +
+            ", property=" + finding.property + ")";
+        issue.frameNumber = finding.frameNumber;
+        issue.sceneName = observation.sceneId;
+        issue.lastAction = lastAction_;
+        issue.replayPath = replayManifestPath_;
+        logger_.LogIssue(issue);
+    }
+}
+
+bool DebugAIManager::ConsumeReplaySceneLoadRequest(std::string& outSceneId) {
+    return ConsumeSceneLoadRequest(outSceneId);
 }
 
 bool DebugAIManager::StartPendingReplay(std::string* outMessage) {
@@ -1194,7 +1260,11 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
             genericActionReplay_.StartRecording(startFrame, replaySessionId_);
         const bool eventOk = !sessionError &&
             eventRecorder_.StartRecording(startFrame, replaySessionId_);
-        if (eventOk && hasStartObservation) eventRecorder_.Observe(startObservation);
+        anomalyDetector_.ResetSession();
+        if (eventOk && hasStartObservation) {
+            eventRecorder_.Observe(startObservation);
+            EvaluateAnomalies_(startObservation);
+        }
         lastRecordedActorStates_.clear();
         ReplaySessionManifest session;
         session.sessionId = replaySessionId_;
@@ -1246,6 +1316,7 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
             const DebugObservation endObservation = genericAdapter_->CaptureDebugObservation();
             endFrame = endObservation.frameNumber;
             eventRecorder_.Observe(endObservation);
+            EvaluateAnomalies_(endObservation);
         }
         const std::string inputPath = inputReplay_.StopRecording();
         const std::string actorPath = genericActionReplay_.StopRecording();
@@ -1423,8 +1494,10 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
                             ? "replay restarted from beginning: "
                             : "replay session started: ") +
                         session.sessionId +
-                        " input=" + (inputOk ? session.inputPath : std::string{}) +
-                        " actor=" + (actorOk ? session.actorPath : std::string{});
+                        " input=" + (inputOk
+                            ? NativePathUtf8(session.inputPath) : std::string{}) +
+                        " actor=" + (actorOk
+                            ? NativePathUtf8(session.actorPath) : std::string{});
                     if (replayInitialStateRestored_) {
                         message += " initialState=restored";
                     } else if (!replayRestoreWarning_.empty()) {
@@ -1541,9 +1614,7 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
         const bool supported =
             std::abs(requestedSpeed - 0.25) < 0.001 ||
             std::abs(requestedSpeed - 0.5) < 0.001 ||
-            std::abs(requestedSpeed - 1.0) < 0.001 ||
-            std::abs(requestedSpeed - 2.0) < 0.001 ||
-            std::abs(requestedSpeed - 4.0) < 0.001;
+            std::abs(requestedSpeed - 1.0) < 0.001;
         ok = supported;
         if (ok) {
             replayPlaybackSpeed_ = requestedSpeed;
@@ -1552,13 +1623,62 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
             speedText << requestedSpeed;
             message = "replay speed set to " + speedText.str() + "x";
         } else {
-            message = "Replay speed must be 0.25, 0.5, 1, 2, or 4.";
+            message =
+                "Verified replay speed must be 0.25, 0.5, or 1. "
+                "Speeds above 1x can change simulation results.";
+        }
+    } else if (command == "reset_anomalies") {
+        anomalyDetector_.ResetSession();
+        message = "anomaly detection session reset";
+    } else if (command == "load_scene") {
+        std::string sceneId;
+        if (const auto found = request.properties.find("sceneId");
+            found != request.properties.end()) {
+            if (const auto* value = std::get_if<std::string>(&found->second)) {
+                sceneId = *value;
+            }
+        }
+        const bool recording = replaySessionRecording_ || inputReplay_.IsRecording() ||
+            genericActionReplay_.IsRecording() || eventRecorder_.IsRecording();
+        if (sceneId.empty()) {
+            ok = false;
+            message = "load_scene requires a sceneId";
+        } else if (recording || IsReplayPlaying()) {
+            ok = false;
+            message = "stop replay recording or playback before loading a scene";
+        } else {
+            pendingSceneLoadId_ = sceneId;
+            sceneLoadRequested_ = true;
+            ok = true;
+            message = "scene load queued: " + sceneId;
         }
     } else if (command == "pause_simulation" || command == "resume_simulation") {
         const bool paused = command == "pause_simulation";
         ok = genericAdapter_ != nullptr && genericAdapter_->SetDebugSimulationPaused(paused);
         message = ok ? (paused ? "simulation paused for AI" : "simulation resumed")
             : "simulation pause is not supported by the current adapter";
+    } else if (command == "restore_observation") {
+        const bool recording = replaySessionRecording_ || inputReplay_.IsRecording() ||
+            genericActionReplay_.IsRecording() || eventRecorder_.IsRecording();
+        if (recording || IsReplayPlaying()) {
+            ok = false;
+            message = "stop replay recording or playback before restoring an observation";
+        } else if (!genericAdapter_) {
+            ok = false;
+            message = "observation restore is not supported in the current scene";
+        } else if (!request.observation) {
+            ok = false;
+            message = "restore_observation requires an observation payload";
+        } else {
+            heldExternalActions_.clear();
+            heldActionFramesRemaining_ = 0;
+            hasPendingAction_ = false;
+            waitingForAction_ = false;
+            ok = genericAdapter_->RestoreDebugObservation(*request.observation);
+            message = ok
+                ? "observation restored"
+                : "the current game adapter rejected the observation";
+        }
     } else {
         ok = false;
         message = "unknown command";
@@ -1584,10 +1704,12 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
     response.properties["path"] = !replayManifestPath_.empty()
         ? replayManifestPath_
         : (!genericActionReplay_.ReplayPath().empty()
-            ? genericActionReplay_.ReplayPath() : inputReplay_.ReplayPath());
+            ? NativePathUtf8(genericActionReplay_.ReplayPath())
+            : NativePathUtf8(inputReplay_.ReplayPath()));
     response.properties["replaySessionId"] = replaySessionId_;
     response.properties["replayManifestPath"] = replayManifestPath_;
-    response.properties["replayInitialObservationPath"] = replayInitialObservationPath_;
+    response.properties["replayInitialObservationPath"] =
+        NativePathUtf8(replayInitialObservationPath_);
     response.properties["replayInitialStateRestored"] = replayInitialStateRestored_;
     response.properties["replayRestoreWarning"] = replayRestoreWarning_;
     std::string replayValidationStatus = "unavailable";
@@ -1616,11 +1738,30 @@ DebugProtocolMessage DebugAIManager::ExecuteControlCommand_(const DebugProtocolM
     response.properties["replayValidationDetail"] = replayLastMismatch_;
     response.properties["replayQueued"] = !pendingReplayManifestPath_.empty();
     response.properties["replayTargetScene"] = pendingReplaySceneId_;
-    response.properties["playerReplayPath"] = inputReplay_.ReplayPath();
-    response.properties["actorReplayPath"] = genericActionReplay_.ReplayPath();
-    response.properties["eventLogPath"] = eventRecorder_.TimelinePath();
-    response.properties["eventSummaryPath"] = eventRecorder_.SummaryPath();
+    response.properties["sceneLoadQueued"] = sceneLoadRequested_;
+    response.properties["sceneLoadTarget"] = pendingSceneLoadId_;
+    response.properties["playerReplayPath"] =
+        NativePathUtf8(inputReplay_.ReplayPath());
+    response.properties["actorReplayPath"] =
+        NativePathUtf8(genericActionReplay_.ReplayPath());
+    response.properties["eventLogPath"] =
+        NativePathUtf8(eventRecorder_.TimelinePath());
+    response.properties["eventSummaryPath"] =
+        NativePathUtf8(eventRecorder_.SummaryPath());
     response.properties["eventCount"] = static_cast<std::int64_t>(eventRecorder_.EventCount());
+    response.properties["eventCheckpointCount"] =
+        static_cast<std::int64_t>(eventRecorder_.CheckpointCount());
+    response.properties["anomalyRulesLoaded"] = anomalyDetector_.IsLoaded();
+    response.properties["anomalyRuleCount"] =
+        static_cast<std::int64_t>(anomalyDetector_.RuleCount());
+    response.properties["anomalyCount"] =
+        static_cast<std::int64_t>(anomalyDetector_.FindingCount());
+    response.properties["anomalyErrorCount"] =
+        static_cast<std::int64_t>(anomalyDetector_.ErrorCount());
+    response.properties["anomalyLast"] = anomalyDetector_.LastFindingSummary();
+    response.properties["anomalyRulePath"] =
+        NativePathUtf8(anomalyDetector_.RulePath().string());
+    response.properties["anomalyRuleError"] = anomalyDetector_.LastError();
     response.properties["lastEvent"] = eventRecorder_.LastEventSummary();
     response.properties["message"] = message;
     response.properties["lastError"] = inputReplay_.LastError();

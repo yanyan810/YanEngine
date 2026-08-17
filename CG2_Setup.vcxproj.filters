@@ -319,6 +319,9 @@
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp">
       <Filter>Engine\DebugAI</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\DebugAI\DebugAnomalyDetector.cpp">
+      <Filter>Engine\DebugAI</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\DebugAI\Protocol\DebugProtocol.cpp">
       <Filter>ソース ファイル\Engine\DebugAI</Filter>
     </ClCompile>
@@ -591,6 +594,9 @@
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h">
+      <Filter>Engine\DebugAI</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\DebugAI\DebugAnomalyDetector.h">
       <Filter>Engine\DebugAI</Filter>
     </ClInclude>
     <ClInclude Include="Engine\DebugAI\ApiDebugBot.h">

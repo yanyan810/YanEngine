@@ -264,13 +264,15 @@ void GameApp::Update(float dt) {
     unsigned int simulationUpdates = 1;
     if (debugAI_) {
         debugAI_->ProcessControlCommands();
-        std::string replayScene;
-        if (debugAI_->ConsumeReplaySceneLoadRequest(replayScene) &&
-            !replayScene.empty()) {
-            if (sceneMgr_->CurrentName() == replayScene) {
-                debugAI_->StartPendingReplay();
-            } else {
-                sceneMgr_->Change(*this, replayScene);
+        std::string requestedScene;
+        if (debugAI_->ConsumeSceneLoadRequest(requestedScene) &&
+            !requestedScene.empty()) {
+            if (sceneMgr_->CurrentName() == requestedScene) {
+                if (debugAI_->HasPendingReplay()) {
+                    debugAI_->StartPendingReplay();
+                }
+            } else if (sceneMgr_->HasRegisteredScene(requestedScene)) {
+                sceneMgr_->Change(*this, requestedScene);
             }
         }
         simulationUpdates = debugAI_->ReplaySimulationUpdatesForHostFrame();

@@ -220,6 +220,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Input\Input.cpp" />
     <ClCompile Include="Engine\Utility\Logger.cpp" />
     <ClCompile Include="Engine\DebugAI\DebugAIManager.cpp" />
+    <ClCompile Include="Engine\DebugAI\DebugAnomalyDetector.cpp" />
     <ClCompile Include="Engine\DebugAI\Protocol\DebugProtocol.cpp" />
     <ClCompile Include="Engine\DebugAI\Transport\NamedPipeDebugAITransport.cpp" />
     <ClCompile Include="Engine\DebugAI\ApiDebugBot.cpp" />
@@ -534,6 +535,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\DebugAI\DebugAI.h" />
     <ClInclude Include="Engine\DebugAI\DebugAIConfig.h" />
     <ClInclude Include="Engine\DebugAI\DebugAIManager.h" />
+    <ClInclude Include="Engine\DebugAI\DebugAnomalyDetector.h" />
     <ClInclude Include="Engine\DebugAI\ApiDebugBot.h" />
     <ClInclude Include="Engine\DebugAI\Protocol\DebugGenericTypes.h" />
     <ClInclude Include="Engine\DebugAI\Protocol\DebugProtocol.h" />

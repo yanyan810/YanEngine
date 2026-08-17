@@ -19,6 +19,7 @@ struct GameWindowCaptureResult {
 bool CaptureGameProcessWindow(
     DWORD processId,
     unsigned int maximumWidth,
-    GameWindowCaptureResult& result);
+    GameWindowCaptureResult& result,
+    HWND windowToHide = nullptr);
 
 std::string Base64Encode(const std::vector<unsigned char>& bytes);

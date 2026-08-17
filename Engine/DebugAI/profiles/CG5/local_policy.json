@@ -11,14 +11,17 @@
     "AttackDownSpecial"
   ],
   "attackDistance": 3.0,
-  "attackDurationFrames": 10,
+  "attackDurationFrames": 15,
+  "closeRangeEnterDistance": 3.0,
+  "closeRangeExitDistance": 4.0,
+  "closeRangeWaitFrames": 4,
   "evadeDurationFrames": 15,
   "generatedBy": "Gemini",
-  "goal": "敵の攻撃が来たら、ジャンプや遠くへ離れて避ける。\r\n攻撃するときはボスに近づいて、いろいろな攻撃をする。\r\n敵の攻撃が来たら、ジャンプや遠くへ離れて避ける。\r\n攻撃するときはボスに近づいて、いろいろな攻撃をする。\r\n\r\n\r\n",
+  "goal": "Explore the game, make progress, and test available actions.",
   "idleAction": "Wait",
   "model": "gemini-3.5-flash-lite",
   "preferLeastUsedAttack": true,
-  "reason": "The user wants to evade enemy attacks using jumps and retreating, approach the boss, and execute a variety of different attacks when close.",
+  "reason": "Explore all available combat and special actions by cycling through them while maintaining safe movement and defensive options.",
   "rules": [
     {
       "actionIds": [
@@ -51,9 +54,9 @@
     {
       "actionIds": [
         "DodgeAway",
-        "Jump",
+        "Guard",
         "Retreat",
-        "Guard"
+        "Jump"
       ],
       "conditionMode": "any",
       "conditions": [
@@ -128,7 +131,7 @@
           "value": false
         }
       ],
-      "durationFrames": 10,
+      "durationFrames": 15,
       "id": "attack",
       "interruptCurrent": true,
       "maxConsecutive": 0,
@@ -136,11 +139,11 @@
       "selection": "leastUsed"
     }
   ],
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "threatActions": [
     "DodgeAway",
-    "Jump",
+    "Guard",
     "Retreat",
-    "Guard"
+    "Jump"
   ]
 }

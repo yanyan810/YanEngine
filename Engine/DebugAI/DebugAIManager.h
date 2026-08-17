@@ -5,6 +5,7 @@
 #include "Protocol/IGenericGameDebugAdapter.h"
 #include "Transport/IDebugAITransport.h"
 #include "DebugLogger.h"
+#include "DebugAnomalyDetector.h"
 #include "DebugGenericActionReplay.h"
 #include "DebugInputReplay.h"
 #include "DebugObservationEventRecorder.h"
@@ -65,6 +66,8 @@ public:
     bool StopReplaySessionRecording(std::string* outMessage = nullptr);
     bool IsReplaySessionRecording() const { return replaySessionRecording_; }
     bool HasPendingReplay() const { return !pendingReplayManifestPath_.empty(); }
+    bool ConsumeSceneLoadRequest(std::string& outSceneId);
+    // Backward-compatible name retained for existing hosts.
     bool ConsumeReplaySceneLoadRequest(std::string& outSceneId);
     bool StartPendingReplay(std::string* outMessage = nullptr);
     bool IsReplayPlaying() const {
@@ -112,6 +115,7 @@ private:
         std::uint64_t replayFrame);
     void ResetReplayValidation_();
     void RecordActorStateChanges_(const DebugObservation& observation);
+    void EvaluateAnomalies_(const DebugObservation& observation);
 
 private:
     bool enabled_ = false;
@@ -127,6 +131,7 @@ private:
     DebugInputReplay inputReplay_;
     DebugGenericActionReplay genericActionReplay_;
     DebugObservationEventRecorder eventRecorder_;
+    DebugAnomalyDetector anomalyDetector_;
     std::unique_ptr<IDebugAITransport> controlTransport_;
     std::uint64_t controlSequence_ = 0;
     DebugAction lastAction_;
@@ -157,6 +162,8 @@ private:
     std::string pendingReplayManifestPath_;
     std::string pendingReplaySceneId_;
     bool replaySceneLoadRequested_ = false;
+    std::string pendingSceneLoadId_;
+    bool sceneLoadRequested_ = false;
     std::vector<DebugGenericReplayEvent> replayTimelineActions_;
     std::size_t replayTimelineActionIndex_ = 0;
     std::vector<DebugReplayObservationCheckpoint> replayCheckpoints_;

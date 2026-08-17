@@ -146,7 +146,10 @@ std::string DebugProtocolJson::Serialize(const DebugProtocolMessage& message) {
     };
     if (message.observation) root["observation"] = ObservationToJson(*message.observation);
     if (message.action) root["action"] = ActionToJson(*message.action);
-    return root.dump();
+    // A protocol boundary must never terminate the game because a game or
+    // filesystem supplied a legacy Windows code-page string. Preserve valid
+    // UTF-8 and replace only malformed byte sequences in the JSON output.
+    return root.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 bool DebugProtocolJson::TryParse(
