@@ -56,9 +56,9 @@
         "rangeSource": "source_scan",
         "requiresFacing": true,
         "runtimeHitSamples": 1,
-        "runtimeMissSamples": 10,
+        "runtimeMissSamples": 16,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 11,
+        "runtimeSamples": 17,
         "verifiedRangeMax": 1.7112421989440918
       },
       "runtimeObserved": true,
@@ -133,7 +133,7 @@
       ],
       "properties": {
         "estimatedRangeMax": 1.75,
-        "nearestMissRange": 1.2876889371228444,
+        "nearestMissRange": 1.280392050743103,
         "rangeConfidence": 0.85,
         "rangeEvidence": [
           {
@@ -146,10 +146,10 @@
         ],
         "rangeSource": "source_scan",
         "requiresFacing": true,
-        "runtimeHitSamples": 19,
-        "runtimeMissSamples": 3,
+        "runtimeHitSamples": 28,
+        "runtimeMissSamples": 6,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 22,
+        "runtimeSamples": 34,
         "verifiedRangeMax": 2.543148060237758
       },
       "runtimeObserved": true,
@@ -224,7 +224,7 @@
       ],
       "properties": {
         "estimatedRangeMax": 2.25,
-        "nearestMissRange": 2.416508199223794,
+        "nearestMissRange": 2.0803914070129395,
         "rangeConfidence": 0.85,
         "rangeEvidence": [
           {
@@ -244,10 +244,10 @@
         ],
         "rangeSource": "source_scan",
         "requiresFacing": true,
-        "runtimeHitSamples": 17,
-        "runtimeMissSamples": 2,
+        "runtimeHitSamples": 23,
+        "runtimeMissSamples": 7,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 19,
+        "runtimeSamples": 30,
         "verifiedRangeMax": 2.787137985229492
       },
       "runtimeObserved": true,
@@ -349,10 +349,10 @@
         ],
         "rangeSource": "source_scan",
         "requiresFacing": true,
-        "runtimeHitSamples": 19,
-        "runtimeMissSamples": 8,
+        "runtimeHitSamples": 27,
+        "runtimeMissSamples": 16,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 27,
+        "runtimeSamples": 43,
         "verifiedRangeMax": 3.1166632175445557
       },
       "runtimeObserved": true,
@@ -552,10 +552,10 @@
         ],
         "rangeSource": "source_scan",
         "requiresFacing": true,
-        "runtimeHitSamples": 23,
-        "runtimeMissSamples": 3,
+        "runtimeHitSamples": 40,
+        "runtimeMissSamples": 6,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 26,
+        "runtimeSamples": 46,
         "verifiedRangeMax": 2.9499964714050293
       },
       "runtimeObserved": true,
@@ -630,8 +630,8 @@
       ],
       "properties": {
         "estimatedRangeMax": 5.2,
-        "nearestMissRange": 3.763549566268921,
-        "rangeConfidence": 0.7799999713897705,
+        "nearestMissRange": 3.639349019260422,
+        "rangeConfidence": 0.85,
         "rangeEvidence": [
           {
             "confidence": 0.6600000262260437,
@@ -664,11 +664,11 @@
         ],
         "rangeSource": "source_scan",
         "requiresFacing": true,
-        "runtimeHitSamples": 17,
-        "runtimeMissSamples": 16,
+        "runtimeHitSamples": 29,
+        "runtimeMissSamples": 41,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 33,
-        "verifiedRangeMax": 4.965085413001812
+        "runtimeSamples": 70,
+        "verifiedRangeMax": 5.137559029296051
       },
       "runtimeObserved": true,
       "semanticApprovalSource": "source_scan_high_confidence",
@@ -742,7 +742,7 @@
       ],
       "properties": {
         "estimatedRangeMax": 2.55,
-        "nearestMissRange": 1.656747227014758,
+        "nearestMissRange": 0.737378754108725,
         "rangeConfidence": 0.8999999761581421,
         "rangeEvidence": [
           {
@@ -762,10 +762,10 @@
         ],
         "rangeSource": "source_scan",
         "requiresFacing": true,
-        "runtimeHitSamples": 31,
-        "runtimeMissSamples": 5,
+        "runtimeHitSamples": 47,
+        "runtimeMissSamples": 11,
         "runtimeRangeVerified": true,
-        "runtimeSamples": 36,
+        "runtimeSamples": 58,
         "verifiedRangeMax": 2.7999963760375977
       },
       "runtimeObserved": true,
@@ -2041,7 +2041,7 @@
   ],
   "gameId": "CG5",
   "generatedLocally": true,
-  "lastRuntimeFrame": 1043,
+  "lastRuntimeFrame": 2275,
   "lastRuntimeScene": "Game",
   "schemaVersion": 2,
   "semanticSummary": {

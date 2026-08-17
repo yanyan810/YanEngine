@@ -6,6 +6,8 @@
   "sceneId": "Game",
   "actor": "Player",
   "autoRecord": true,
+  "verifyReplay": true,
+  "replayVerificationTimeoutSeconds": 180,
   "timeoutSeconds": 120,
   "goals": [
     {
