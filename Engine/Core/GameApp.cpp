@@ -1,6 +1,14 @@
 ﻿#include "GameApp.h"
 #include "SceneManager.h"
 #include "scene/Main/GameScene.h"
+#include "scene/Flow/TitleScene.h"
+#include "scene/Test/TestScene.h"
+#include "scene/Test/ParticleTestScene.h"
+#include "scene/Test/CGTestScene.h"
+#include "scene/Flow/GameOverScene.h"
+#include "scene/Flow/GameClearScene.h"
+#include "scene/Debug/DebugScene.h"
+#include "scene/Debug/DebugAITestScene.h"
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -9,7 +17,6 @@
 #include "TextureManager.h"
 #include "ModelManager.h"
 #include "Object3dCommon.h"
-#include "SkinningCommon.h"
 #include "PrimitiveCommon.h"
 #include "ParticleCommon.h"
 #include "ParticleManager.h"
@@ -197,8 +204,18 @@ bool GameApp::Initialize_() {
 
     // SceneManager
     sceneMgr_ = std::make_unique<SceneManager>();
-    sceneMgr_->Register("Game", [] { return std::make_unique<GameScene>(); });
-    sceneMgr_->Change(*this, "Game");
+    sceneMgr_->Register("Title",     [] { return std::make_unique<TitleScene>();    });
+    sceneMgr_->Register("Game",      [] { return std::make_unique<GameScene>();     });
+    sceneMgr_->Register("Test",      [] { return std::make_unique<TestScene>();     }); 
+    sceneMgr_->Register("ParticleTest", [] { return std::make_unique<ParticleTestScene>(); });
+    sceneMgr_->Register("CGTest", [] { return std::make_unique<CGTestScene>(); });
+    sceneMgr_->Register("GameOver",  [] { return std::make_unique<GameOverScene>(); }); 
+    sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
+    sceneMgr_->Register("Debug",     [] { return std::make_unique<DebugScene>();    });
+    sceneMgr_->Register("DebugAITest", [] { return std::make_unique<DebugAITestScene>(); });
+
+    // ★DebugScene から起動する（確認後は "Title" に戻す）
+    sceneMgr_->Change(*this, "Title");
 
 
     OutputDebugStringA("[GameApp] Initialize END\n");
@@ -349,5 +366,20 @@ void GameApp::Draw() {
 
 void GameApp::WarmupAssets_() {
     OutputDebugStringA("[Warmup] START\n");
+
+    // もしテクスチャも初回で刺さるならここで
+    TextureManager::GetInstance()->LoadTexture("resources/shadow/shadow.png");
+    TextureManager::GetInstance()->LoadTexture("resources/skybox/skybox.dds");
+	TextureManager::GetInstance()->LoadTexture("resources/gradationLine.png");
+
+    // モデル（ModelManager がキャッシュする前提）
+    ModelManager::GetInstance()->LoadModel("human/walk.gltf");
+    ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
+    //ModelManager::GetInstance()->LoadModel("gltf/walk.glb");
+    ModelManager::GetInstance()->LoadModel("Player/player.gltf");
+    
+	ModelManager::GetInstance()->LoadModel("plane.obj");
+    ModelManager::GetInstance()->LoadModel("fence/fence.obj");
+
     OutputDebugStringA("[Warmup] END\n");
 }
