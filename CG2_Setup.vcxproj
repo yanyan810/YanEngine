@@ -194,20 +194,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="externals\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="externals\imgui\imgui_tables.cpp" />
     <ClCompile Include="externals\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="Game\scene\Flow\GameClearScene.cpp" />
-    <ClCompile Include="Game\scene\Flow\GameOverScene.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Dialogs.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.DopeSheet.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.ImGui.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Objects.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.cpp" />
-    <ClCompile Include="Game\scene\Test\CGTestScene.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Serialization.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Timeline.cpp" />
-    <ClCompile Include="Game\enemy\BossAI.cpp" />
-    <ClCompile Include="Game\enemy\Bullet.cpp" />
     <ClCompile Include="Game\enemy\Enemy.cpp" />
-    <ClCompile Include="Game\enemy\EnemyManager.cpp" />
     <ClCompile Include="Engine\Core\D3DResourceLeakChecker.cpp" />
     <ClCompile Include="Engine\Core\CrashHandler.cpp" />
     <ClCompile Include="Engine\Audio\AudioSystem.cpp" />
@@ -239,12 +226,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
     <ClCompile Include="Game\scene\Main\GameScene.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.DebugAI.cpp" />
-    <ClCompile Include="Game\scene\Main\GameSceneDebugProfile.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.Lifecycle.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.Render.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.UI.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.Update.cpp" />
     <ClCompile Include="main.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">MaxSpeed</Optimization>
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">false</WholeProgramOptimization>
@@ -258,26 +239,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Effect\EffectManager.cpp" />
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
-    <ClCompile Include="Game\scene\Flow\TitleScene.cpp" />
     <ClCompile Include="Game\player\Player.cpp" />
-    <ClCompile Include="Game\player\PlayerAttack.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackI.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackIDown.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackINeutral.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackISide.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackIUp.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackU.cpp" />
-    <ClCompile Include="Game\player\PlayerInput.cpp" />
-    <ClCompile Include="Game\player\PlayerMovement.cpp" />
-    <ClCompile Include="Game\player\PlayerPresentation.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.UI.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.PathPreview.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.Trajectory.cpp" />
-    <ClCompile Include="Game\scene\Test\TestSceneBossTuning.cpp" />
-    <ClCompile Include="Game\scene\Test\TestSceneKnockbackPreview.cpp" />
-    <ClCompile Include="Game\scene\Debug\DebugScene.cpp" />
-    <ClCompile Include="Game\scene\Debug\DebugAITestScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="resources\shaders\BoxFilter.PS.hlsl">
@@ -509,15 +471,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
-    <ClInclude Include="Game\scene\Flow\GameClearScene.h" />
-    <ClInclude Include="Game\scene\Flow\GameOverScene.h" />
-    <ClInclude Include="Game\scene\Test\ParticleTestEditorTypes.h" />
-    <ClInclude Include="Game\scene\Test\ParticleTestSceneSupport.h" />
-    <ClInclude Include="Game\scene\Test\ParticleTestScene.h" />
-    <ClInclude Include="Game\enemy\BossAI.h" />
-    <ClInclude Include="Game\enemy\Bullet.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />
-    <ClInclude Include="Game\enemy\EnemyManager.h" />
     <ClInclude Include="Engine\Core\D3DResourceLeakChecker.h" />
     <ClInclude Include="Engine\Core\CrashHandler.h" />
     <ClInclude Include="Engine\Audio\AudioSystem.h" />
@@ -570,19 +524,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
     <ClInclude Include="Game\scene\Main\GameScene.h" />
-    <ClInclude Include="Game\scene\Main\GameSceneDebugAdapter.h" />
-    <ClInclude Include="Game\scene\Main\GameSceneDebugProfile.h" />
-    <ClInclude Include="Game\scene\Flow\TitleScene.h" />
     <ClInclude Include="Game\player\Player.h" />
-    <ClInclude Include="Game\player\PlayerAttackI.h" />
-    <ClInclude Include="Game\player\PlayerAttackIInternal.h" />
-    <ClInclude Include="Game\scene\Test\TestScene.h" />
-    <ClInclude Include="Game\scene\Test\CGTestScene.h" />
-    <ClInclude Include="Game\scene\Test\TestScene.Trajectory.h" />
-    <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h" />
-    <ClInclude Include="Game\scene\Test\TestSceneKnockbackPreview.h" />
-    <ClInclude Include="Game\scene\Debug\DebugScene.h" />
-    <ClInclude Include="Game\scene\Debug\DebugAITestScene.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="externals\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">
