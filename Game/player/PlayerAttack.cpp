@@ -437,6 +437,14 @@ bool Player::CanStartAttackCommand_(const PlayerInputCommand& command) const {
     if (command.action != PlayerAction::Attack) {
         return false;
     }
+    // 必殺技の硬直を同じ必殺技自身でキャンセルすると、先行入力に残った連打で
+    // 技が終了するたびに再始動してしまう。同種への再キャンセルは認めず、
+    // 別種の必殺技へ繋ぐ場合だけキャンセルとして扱う。
+    if (action_ == PlayerAction::Attack &&
+        IsIAttackType_(attackType_) &&
+        command.attackType == attackType_) {
+        return false;
+    }
     if (IsIAttackType_(command.attackType) &&
         !onGround_ &&
         (hasSpecialCancelRight_ || hasSpecialChainCancelRight_) &&
