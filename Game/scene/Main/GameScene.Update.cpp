@@ -508,6 +508,10 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
         if (enemyMgr_.IsBossDefeated()) {
+            // OutroVideo 中は戦闘用の EffectManager / ParticleManager を更新しないため、
+            // 撃破フレームのヒットエフェクトをここで消さないと次のシーンまで静止して残る。
+            EffectManager::GetInstance()->ClearActiveEffects();
+            ParticleManager::GetInstance()->ClearAllParticles();
 
             phase_ = Phase::OutroVideo;
             outroTime_ = 0.0f;

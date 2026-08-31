@@ -572,6 +572,13 @@ void Player::Update(float dt, const Input& input, EnemyManager& enemyMgr) {
     if (inputCommandFilter_) {
         inputCommandFilter_(command);
     }
+    // 被弾入力と移動入力が同じフレームに重なった場合でも、フィルターが
+    // ブロック済みの command に移動値を戻せないよう、最後に再度無効化する。
+    // 特に depth が残ると、吹っ飛び方向が Z=0 でもプレイヤーが奥行き方向へずれる。
+    if (launched_ && !launchControlUnlocked_) {
+        command = {};
+        command.action = PlayerAction::Launched;
+    }
     // ResolveInput_ normally updates these runtime values as a side effect.
     // Replay replaces the command after physical input has been blocked, so
     // keep charge/release driven attacks synchronized with the recorded input.
