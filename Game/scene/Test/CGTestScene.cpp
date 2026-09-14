@@ -70,7 +70,7 @@ void CGTestScene::SelectAnimation_(int index) {
 void CGTestScene::Update(GameApp&, float dt) {
     if (input_) {
         if (input_->IsKeyTrigger(DIK_ESCAPE)) {
-            RequestChangeScene_("Title");
+            RequestChangeScene_("Game");
             return;
         }
         if (input_->IsKeyTrigger(DIK_1)) SelectAnimation_(0);
@@ -253,10 +253,11 @@ void CGTestScene::DrawImGui(GameApp&) {
 
     ImGui::Separator();
     ImGui::TextUnformatted("1/2/3: Select animation  Space: Play/Pause");
-    ImGui::TextUnformatted("B: Bones  R: Auto Rotate  Esc: Back to Title");
-    if (ImGui::Button("Back to Title")) {
-        RequestChangeScene_("Title");
+    ImGui::TextUnformatted("B: Bones  R: Auto Rotate  Esc: Back to Game");
+    if (ImGui::Button("Back to Game")) {
+        RequestChangeScene_("Game");
     }
     ImGui::End();
 #endif
 }
+

@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 #include "TestSceneBattleLayout.h"
 
@@ -207,7 +207,7 @@ void ParticleTestScene::Update(GameApp& app, float dt)
     }
 
     if (input->IsKeyTrigger(DIK_ESCAPE)) {
-        RequestChangeScene_("Title");
+        RequestChangeScene_("Game");
         return;
     }
 
@@ -1030,3 +1030,4 @@ void ParticleTestScene::ApplyPlayerSpecialPreviewPosition_() {
 
     ApplyEditorObjectTransform_(player);
 }
+

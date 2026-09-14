@@ -7,6 +7,7 @@
 
 class Input {
 public:
+    ~Input();
     enum class GamepadButton {
         A,
         B,
@@ -42,6 +43,11 @@ public:
     POINT GetMouseDelta() const { return mouseDelta_; }
     void SetCameraControlEnabled(bool enabled);
     bool IsCameraControlEnabled() const { return cameraControlEnabled_; }
+    bool HasFocus() const;
+    bool IsLeftMouseTrigger() const { return leftMouseDown_ && !prevLeftMouseDown_; }
+    // Optional screen-space viewport; nullptr uses the entire client area.
+    void SetMouseCaptureRect(const RECT* rect);
+    void SetCameraToggleKeyEnabled(bool enabled) { cameraToggleKeyEnabled_ = enabled; }
 
  /*   bool IsKeyPressed(BYTE keyCode) const;
     bool IsKeyReleased(BYTE keyCode) const;*/
@@ -55,6 +61,13 @@ private:
     bool cameraControlEnabled_ = false;
     bool prevToggleKeyState_ = false; // トグル用
     bool justEnteredCameraMode_ = false;
+    bool cameraToggleKeyEnabled_ = true;
+    bool leftMouseDown_ = false;
+    bool prevLeftMouseDown_ = false;
+    bool hasCaptureRect_ = false;
+    RECT captureRect_{};
+    int cursorHideCalls_ = 0;
+    bool GetCaptureRect_(RECT& rect) const;
     XINPUT_STATE gamepadState_{};
     XINPUT_STATE prevGamepadState_{};
     bool gamepadConnected_ = false;

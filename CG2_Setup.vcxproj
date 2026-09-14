@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -85,6 +85,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <AdditionalIncludeDirectories>$(ProjectDir)math\Vector3;$(ProjectDir)math\Matrix4x4;$(ProjectDir)Engine;$(ProjectDir)externals;$(ProjectDir)externals/imgui;$(ProjectDir)externals/DirectXTex/;$(ProjectDir)Engine/math;$(ProjectDir)Engine/2d;$(ProjectDir)Engine/3d;$(ProjectDir)Engine/Audio;$(SolutionDir)..\generated\obj\$(ProjectName)\&amp;(Configuration)\;%(AdditionalIncludeDirectories);$(ProjectDir)Game;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\2D;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Camera;$(ProjectDir)Engine\Render;$(ProjectDir)Engine\3D;$(ProjectDir)Game\player;$(ProjectDir)Game\enemy;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Particle;$(ProjectDir)Engine\Level;$(ProjectDir)Engine\Utility</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <UseFullPaths>true</UseFullPaths>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -97,11 +98,6 @@
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Debug</AdditionalLibraryDirectories>
       <AdditionalDependencies>assimp-vc143-mtd.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreLinkEvent>
-      <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
-copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dxil.dll"
-</Command>
-    </PreLinkEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -117,6 +113,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <TreatWarningAsError>true</TreatWarningAsError>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir)math\Vector3;$(ProjectDir)math\Matrix4x4;$(ProjectDir)Engine;$(ProjectDir)externals;$(ProjectDir)externals/imgui;$(ProjectDir)externals/DirectXTex/;$(ProjectDir)Engine/math;$(ProjectDir)Engine/2d;$(ProjectDir)Engine/3d;$(ProjectDir)Engine/Audio;$(SolutionDir)..\generated\obj\$(ProjectName)\&amp;(Configuration)\;%(AdditionalIncludeDirectories);$(ProjectDir)Game;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\2D;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Camera;$(ProjectDir)Engine\Render;$(ProjectDir)Engine\3D;$(ProjectDir)Game\enemy;$(ProjectDir)Game\player;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Particle;$(ProjectDir)Engine\Level;$(ProjectDir)Engine\Utility</AdditionalIncludeDirectories>
+      <UseFullPaths>true</UseFullPaths>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -128,11 +125,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Release</AdditionalLibraryDirectories>
       <AdditionalDependencies>assimp-vc143-mt.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreLinkEvent>
-      <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
-copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dxil.dll"
-</Command>
-    </PreLinkEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Development|x64'">
     <ClCompile>
@@ -150,6 +142,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <AdditionalIncludeDirectories>$(ProjectDir)math\Vector3;$(ProjectDir)math\Matrix4x4;$(ProjectDir)Engine;$(ProjectDir)externals;$(ProjectDir)externals/imgui;$(ProjectDir)externals/DirectXTex/;$(ProjectDir)Engine/math;$(ProjectDir)Engine/2d;$(ProjectDir)Engine/3d;$(ProjectDir)Engine/Audio;$(SolutionDir)..\generated\obj\$(ProjectName)\&amp;(Configuration)\;%(AdditionalIncludeDirectories);$(ProjectDir)Game;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\2D;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Camera;$(ProjectDir)Engine\Render;$(ProjectDir)Engine\3D;$(ProjectDir)Game\enemy;$(ProjectDir)Game\player;$(ProjectDir)externals\assimp;$(ProjectDir)Engine\Camera;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Particle;$(ProjectDir)Engine\Level;$(ProjectDir)Engine\Utility</AdditionalIncludeDirectories>
+      <UseFullPaths>true</UseFullPaths>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -162,11 +155,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalLibraryDirectories>$(SoltutionDir)..\generated\outputs\$(Configuration)\;$(ProjectDir)externals\assimp\lib\Release</AdditionalLibraryDirectories>
       <AdditionalDependencies>assimp-vc143-mt.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreLinkEvent>
-      <Command>copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" "$(TargetDir)dxcompiler.dll"
-copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dxil.dll"
-</Command>
-    </PreLinkEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Engine\2D\Sprite.cpp" />
@@ -194,20 +182,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="externals\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="externals\imgui\imgui_tables.cpp" />
     <ClCompile Include="externals\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="Game\scene\Flow\GameClearScene.cpp" />
-    <ClCompile Include="Game\scene\Flow\GameOverScene.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Dialogs.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.DopeSheet.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.ImGui.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Objects.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.cpp" />
     <ClCompile Include="Game\scene\Test\CGTestScene.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Serialization.cpp" />
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Timeline.cpp" />
-    <ClCompile Include="Game\enemy\BossAI.cpp" />
-    <ClCompile Include="Game\enemy\Bullet.cpp" />
-    <ClCompile Include="Game\enemy\Enemy.cpp" />
-    <ClCompile Include="Game\enemy\EnemyManager.cpp" />
     <ClCompile Include="Engine\Core\D3DResourceLeakChecker.cpp" />
     <ClCompile Include="Engine\Core\CrashHandler.cpp" />
     <ClCompile Include="Engine\Audio\AudioSystem.cpp" />
@@ -238,13 +213,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\DebugAI\RandomDebugBot.cpp" />
     <ClCompile Include="Engine\Core\ImGuiManagaer.cpp" />
     <ClCompile Include="Engine\Core\GameApp.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.DebugAI.cpp" />
-    <ClCompile Include="Game\scene\Main\GameSceneDebugProfile.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.Lifecycle.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.Render.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.UI.cpp" />
-    <ClCompile Include="Game\scene\Main\GameScene.Update.cpp" />
     <ClCompile Include="main.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">MaxSpeed</Optimization>
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">false</WholeProgramOptimization>
@@ -258,24 +226,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Effect\EffectManager.cpp" />
     <ClCompile Include="Engine\Core\SceneManager.cpp" />
     <ClCompile Include="Engine\Level\LevelLoader.cpp" />
-    <ClCompile Include="Game\scene\Flow\TitleScene.cpp" />
-    <ClCompile Include="Game\player\Player.cpp" />
-    <ClCompile Include="Game\player\PlayerAttack.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackI.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackIDown.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackINeutral.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackISide.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackIUp.cpp" />
-    <ClCompile Include="Game\player\PlayerAttackU.cpp" />
-    <ClCompile Include="Game\player\PlayerInput.cpp" />
-    <ClCompile Include="Game\player\PlayerMovement.cpp" />
-    <ClCompile Include="Game\player\PlayerPresentation.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.UI.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.PathPreview.cpp" />
-    <ClCompile Include="Game\scene\Test\TestScene.Trajectory.cpp" />
-    <ClCompile Include="Game\scene\Test\TestSceneBossTuning.cpp" />
-    <ClCompile Include="Game\scene\Test\TestSceneKnockbackPreview.cpp" />
     <ClCompile Include="Game\scene\Debug\DebugScene.cpp" />
     <ClCompile Include="Game\scene\Debug\DebugAITestScene.cpp" />
   </ItemGroup>
@@ -509,15 +459,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
-    <ClInclude Include="Game\scene\Flow\GameClearScene.h" />
-    <ClInclude Include="Game\scene\Flow\GameOverScene.h" />
-    <ClInclude Include="Game\scene\Test\ParticleTestEditorTypes.h" />
-    <ClInclude Include="Game\scene\Test\ParticleTestSceneSupport.h" />
-    <ClInclude Include="Game\scene\Test\ParticleTestScene.h" />
-    <ClInclude Include="Game\enemy\BossAI.h" />
-    <ClInclude Include="Game\enemy\Bullet.h" />
-    <ClInclude Include="Game\enemy\Enemy.h" />
-    <ClInclude Include="Game\enemy\EnemyManager.h" />
     <ClInclude Include="Engine\Core\D3DResourceLeakChecker.h" />
     <ClInclude Include="Engine\Core\CrashHandler.h" />
     <ClInclude Include="Engine\Audio\AudioSystem.h" />
@@ -569,18 +510,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Core\SceneManager.h" />
     <ClInclude Include="Engine\Level\LevelLoader.h" />
     <ClInclude Include="Engine\Core\GameApp.h" />
-    <ClInclude Include="Game\scene\Main\GameScene.h" />
-    <ClInclude Include="Game\scene\Main\GameSceneDebugAdapter.h" />
-    <ClInclude Include="Game\scene\Main\GameSceneDebugProfile.h" />
-    <ClInclude Include="Game\scene\Flow\TitleScene.h" />
-    <ClInclude Include="Game\player\Player.h" />
-    <ClInclude Include="Game\player\PlayerAttackI.h" />
-    <ClInclude Include="Game\player\PlayerAttackIInternal.h" />
-    <ClInclude Include="Game\scene\Test\TestScene.h" />
     <ClInclude Include="Game\scene\Test\CGTestScene.h" />
-    <ClInclude Include="Game\scene\Test\TestScene.Trajectory.h" />
-    <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h" />
-    <ClInclude Include="Game\scene\Test\TestSceneKnockbackPreview.h" />
     <ClInclude Include="Game\scene\Debug\DebugScene.h" />
     <ClInclude Include="Game\scene\Debug\DebugAITestScene.h" />
   </ItemGroup>
@@ -608,4 +538,21 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
+  <ItemGroup>
+    <ClCompile Include="Game\player\Player.cpp" />
+    <ClInclude Include="Game\player\Player.h" />
+    <ClCompile Include="Game\enemy\Enemy.cpp" />
+    <ClInclude Include="Game\enemy\Enemy.h" />
+    <ClCompile Include="Game\scene\Main\GameScene.cpp" />
+    <ClInclude Include="Game\scene\Main\GameScene.h" />
+  </ItemGroup>
+  <Target Name="CopyShaderCompilerRuntime" BeforeTargets="Link">
+    <Copy SourceFiles="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll;$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <PropertyGroup>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClInclude Include="Game\player\FPSMotion.h" />
+  </ItemGroup>
 </Project>

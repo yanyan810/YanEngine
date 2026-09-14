@@ -1,4 +1,4 @@
-﻿#include "DebugAITestScene.h"
+#include "DebugAITestScene.h"
 
 #include "GameApp.h"
 #include "Camera.h"
@@ -196,8 +196,8 @@ void DebugAITestScene::DrawImGui(GameApp& app) {
         ResetDummyState_();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Back to Title")) {
-        RequestChangeScene_("Title");
+    if (ImGui::Button("Back to Game")) {
+        RequestChangeScene_("Game");
     }
 
     ImGui::Text("Logs:");
@@ -276,3 +276,4 @@ void DebugAITestScene::UpdateDebugObjects_(float dt) {
         enemyObject_->Update(dt);
     }
 }
+
