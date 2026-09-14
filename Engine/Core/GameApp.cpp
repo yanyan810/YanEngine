@@ -1,14 +1,6 @@
-﻿#include "GameApp.h"
-#include "SceneManager.h"
 #include "scene/Main/GameScene.h"
-#include "scene/Flow/TitleScene.h"
-#include "scene/Test/TestScene.h"
-#include "scene/Test/ParticleTestScene.h"
-#include "scene/Test/CGTestScene.h"
-#include "scene/Flow/GameOverScene.h"
-#include "scene/Flow/GameClearScene.h"
-#include "scene/Debug/DebugScene.h"
-#include "scene/Debug/DebugAITestScene.h"
+#include "GameApp.h"
+#include "SceneManager.h"
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -27,6 +19,8 @@
 #include "RenderManager.h"
 
 #include <Windows.h>
+#include <chrono>
+#include <algorithm>
 
 GameApp::GameApp() = default;
 GameApp::~GameApp() = default;
@@ -37,11 +31,14 @@ int GameApp::Run() {
         return -1;
     }
 
+    auto previousFrame = std::chrono::steady_clock::now();
     // ループ
     while (!quit_) {
         if (win_->ProcessMessage()) break;
 
-        const float dt = 1.0f / 60.0f;
+        const auto now = std::chrono::steady_clock::now();
+        const float dt = std::min(std::chrono::duration<float>(now - previousFrame).count(), 0.1f);
+        previousFrame = now;
 
 #ifdef USE_IMGUI
         // ★ ImGui フレーム開始（ここで1回だけ）
@@ -68,6 +65,7 @@ bool GameApp::Initialize_() {
 
     win_ = std::make_unique<WinApp>();
     win_->Initialize();
+    SetWindowTextW(win_->GetHwnd(), L"FPS Foundation");
 
     dx_ = std::make_unique<DirectXCommon>();
     dx_->Initialize(win_.get());
@@ -142,81 +140,10 @@ bool GameApp::Initialize_() {
     debugAIConfig.idleSampleIntervalFrames = 30;
     debugAI_->Initialize(debugAIConfig);
 
-    debugAIApiBot_ = std::make_unique<ApiDebugBot>();
-    debugAIBasicCombatFallback_ = std::make_unique<BasicCombatDebugBot>();
-    debugAIBasicCombatFallback_->SetBehaviorPlanPath("generated/debug_ai/behavior_plan.json");
-    debugAIApiBot_->SetFallbackBot(debugAIBasicCombatFallback_.get());
-    debugAIApiBot_->SetFallbackOnJsonMiss(true);
-    debugAIApiBot_->SetFallbackAfterJsonMisses(10);
-    bool apiBotEnabled = false;
-
-    debugAIGeminiProvider_ = std::make_unique<GeminiDebugActionProvider>();
-    if (debugAIGeminiProvider_->ConfigureFromEnvironment()) {
-        debugAIApiBot_->SetJsonProvider([provider = debugAIGeminiProvider_.get(), debugAI = debugAI_.get()](
-            const DebugGameState& state,
-            std::string& outJsonResponse) {
-            const bool result = provider->RequestActionJson(state, outJsonResponse);
-            if (debugAI) {
-                debugAI->SetLoadingDetails(provider->LoadingStatus(), provider->LoadingSourceFiles());
-            }
-            return result;
-        });
-        debugAI_->SetLoadingDetails(
-            debugAIGeminiProvider_->LoadingStatus(),
-            debugAIGeminiProvider_->LoadingSourceFiles());
-        debugAI_->SetBot(debugAIApiBot_.get());
-        OutputDebugStringA("[DebugAI] Gemini ApiDebugBot enabled with lightweight runtime settings.\n");
-        apiBotEnabled = true;
-    } else {
-        OutputDebugStringA(("[DebugAI] Gemini disabled: " + debugAIGeminiProvider_->LastStatus() + "\n").c_str());
-    }
-
-    debugAIOpenAIProvider_ = std::make_unique<OpenAIDebugActionProvider>();
-    if (!apiBotEnabled) {
-        if (debugAIOpenAIProvider_->ConfigureFromEnvironment()) {
-            debugAIApiBot_->SetJsonProvider([provider = debugAIOpenAIProvider_.get(), debugAI = debugAI_.get()](
-                const DebugGameState& state,
-                std::string& outJsonResponse) {
-                const bool result = provider->RequestActionJson(state, outJsonResponse);
-                if (debugAI) {
-                    debugAI->SetLoadingDetails(provider->LoadingStatus(), provider->LoadingSourceFiles());
-                }
-                return result;
-            });
-            debugAI_->SetLoadingDetails(
-                debugAIOpenAIProvider_->LoadingStatus(),
-                debugAIOpenAIProvider_->LoadingSourceFiles());
-            debugAI_->SetBot(debugAIApiBot_.get());
-            OutputDebugStringA("[DebugAI] OpenAI ApiDebugBot enabled with lightweight runtime settings.\n");
-            apiBotEnabled = true;
-        } else {
-            OutputDebugStringA(("[DebugAI] OpenAI disabled: " + debugAIOpenAIProvider_->LastStatus() + "\n").c_str());
-        }
-    }
-
-    if (!apiBotEnabled) {
-        debugAI_->SetBot(debugAIBasicCombatFallback_.get());
-        debugAI_->SetLoadingDetails("API is not configured. Using local behavior_plan.json bot.", {});
-        OutputDebugStringA("[DebugAI] API Bot disabled. Using local behavior_plan.json bot.\n");
-    }
-
-    WarmupAssets_();
-
     // SceneManager
     sceneMgr_ = std::make_unique<SceneManager>();
-    sceneMgr_->Register("Title",     [] { return std::make_unique<TitleScene>();    });
-    sceneMgr_->Register("Game",      [] { return std::make_unique<GameScene>();     });
-    sceneMgr_->Register("Test",      [] { return std::make_unique<TestScene>();     }); 
-    sceneMgr_->Register("ParticleTest", [] { return std::make_unique<ParticleTestScene>(); });
-    sceneMgr_->Register("CGTest", [] { return std::make_unique<CGTestScene>(); });
-    sceneMgr_->Register("GameOver",  [] { return std::make_unique<GameOverScene>(); }); 
-    sceneMgr_->Register("GameClear", [] { return std::make_unique<GameClearScene>(); });
-    sceneMgr_->Register("Debug",     [] { return std::make_unique<DebugScene>();    });
-    sceneMgr_->Register("DebugAITest", [] { return std::make_unique<DebugAITestScene>(); });
-
-    // ★DebugScene から起動する（確認後は "Title" に戻す）
-    sceneMgr_->Change(*this, "Title");
-
+    sceneMgr_->Register("Game", [] { return std::make_unique<GameScene>(); });
+    sceneMgr_->Change(*this, "Game");
 
     OutputDebugStringA("[GameApp] Initialize END\n");
     return true;
@@ -224,7 +151,9 @@ bool GameApp::Initialize_() {
 
 
 void GameApp::Finalize_() {
-    // Scene 終了（必要ならここで current_->OnExit 呼んでもOK）
+    if (dx_) dx_->WaitForGPU();
+    if (sceneMgr_ && sceneMgr_->Current()) sceneMgr_->Current()->OnExit(*this);
+    sceneMgr_.reset();
 
     if (imgui_) imgui_->Shutdown();
     if (debugAI_) debugAI_->Shutdown();
@@ -240,10 +169,6 @@ void GameApp::Finalize_() {
     sceneMgr_.reset();
     input_.reset();
     debugAI_.reset();
-    debugAIApiBot_.reset();
-    debugAIGeminiProvider_.reset();
-    debugAIOpenAIProvider_.reset();
-    debugAIBasicCombatFallback_.reset();
     skyboxCommon_.reset();
     imgui_.reset();
     primitiveCommon_.reset();
@@ -282,7 +207,7 @@ void GameApp::Update(float dt) {
         if (debugAI_) {
             debugAI_->PrepareSimulationFrame();
         }
-        sceneMgr_->Update(*this, dt);
+        sceneMgr_->Update(*this, debugAI_ && debugAI_->IsReplayPlaying() ? 1.0f / 60.0f : dt);
         if (debugAI_ && update + 1 < simulationUpdates &&
             !debugAI_->IsReplayPlaying()) {
             break;
@@ -364,22 +289,7 @@ void GameApp::Draw() {
     dx_->PostDraw();
 }
 
-void GameApp::WarmupAssets_() {
-    OutputDebugStringA("[Warmup] START\n");
 
-    // もしテクスチャも初回で刺さるならここで
-    TextureManager::GetInstance()->LoadTexture("resources/shadow/shadow.png");
-    TextureManager::GetInstance()->LoadTexture("resources/skybox/skybox.dds");
-	TextureManager::GetInstance()->LoadTexture("resources/gradationLine.png");
 
-    // モデル（ModelManager がキャッシュする前提）
-    ModelManager::GetInstance()->LoadModel("human/walk.gltf");
-    ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
-    //ModelManager::GetInstance()->LoadModel("gltf/walk.glb");
-    ModelManager::GetInstance()->LoadModel("Player/player.gltf");
-    
-	ModelManager::GetInstance()->LoadModel("plane.obj");
-    ModelManager::GetInstance()->LoadModel("fence/fence.obj");
 
-    OutputDebugStringA("[Warmup] END\n");
-}
+

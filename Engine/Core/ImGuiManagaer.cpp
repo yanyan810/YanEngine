@@ -24,8 +24,6 @@ int gParticleTestBlenderHierarchySelected = -1;
 bool gParticleTestBlenderHierarchySelectionChanged = false;
 bool gParticleTestAnimationCameraPreviewVisible = false;
 bool gParticleTestAnimationCameraPreviewSwapped = false;
-bool gTestSceneAttackTuningSwitcherVisible = false;
-int gTestSceneAttackTuningTarget = 0;
 #endif
 
 
@@ -119,6 +117,8 @@ void ImGuiManagaer::Begin()
 #ifdef USE_IMGUI
 
 
+    sceneImageHovered_ = false;
+    gHasSceneImageRect = false;
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -182,15 +182,13 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGuiID rightBottomNode = ImGui::DockBuilderSplitNode(rightNode, ImGuiDir_Down, 0.45f, nullptr, &rightNode);
 
     ImGui::DockBuilderDockWindow("Hierarchy", leftNode);
-    ImGui::DockBuilderDockWindow("PlayerAttack Editor", leftNode);
-    ImGui::DockBuilderDockWindow("Fighter Basic Tuning", leftNode);
     ImGui::DockBuilderDockWindow("Inspector", rightNode);
-    ImGui::DockBuilderDockWindow("Fighter Advanced Tuning", rightNode);
     ImGui::DockBuilderDockWindow("Scene", mainNode);
     ImGui::DockBuilderDockWindow("Console", bottomNode);
 
     ImGui::DockBuilderDockWindow("Sprite Position Control", bottomNode);
     ImGui::DockBuilderDockWindow("Post Effect", bottomNode);
+    ImGui::DockBuilderDockWindow("FPS Controls", bottomNode);
     ImGui::DockBuilderDockWindow("Debug AI", bottomNode);
     ImGui::DockBuilderDockWindow("VideoPlane SRT", bottomNode);
     ImGui::DockBuilderDockWindow("Object Specific Effects", bottomNode);
@@ -208,9 +206,6 @@ void ImGuiManagaer::BuildDefaultDockLayout_(ImGuiID dockspaceId)
     ImGui::DockBuilderDockWindow("Object SRT (Per-Object)", rightBottomNode);
     ImGui::DockBuilderDockWindow("Primitive Check", rightBottomNode);
     ImGui::DockBuilderDockWindow("Video", rightBottomNode);
-    ImGui::DockBuilderDockWindow("Clear", rightBottomNode);
-    ImGui::DockBuilderDockWindow("Clear Video", rightBottomNode);
-    ImGui::DockBuilderDockWindow("GameOver Video", rightBottomNode);
     ImGui::DockBuilderDockWindow("DebugScene - LevelLoader", rightBottomNode);
 
     ImGui::DockBuilderFinish(dockspaceId);
@@ -230,7 +225,7 @@ void ImGuiManagaer::DrawEditorPanels_()
     } else {
         particleManager->SetEditorSelectedGroupName("");
     }
-    const bool blenderHierarchyMode = gParticleTestEditorModeSwitcherVisible && (gParticleTestEditorMode == 0 || gParticleTestEditorMode == 2);
+    const bool blenderHierarchyMode = gParticleTestEditorModeSwitcherVisible && (gParticleTestEditorMode == 0);
 
     if (gParticleTestEditorModeSwitcherVisible) {
         ImGui::SetNextWindowSize(ImVec2(220.0f, 420.0f), ImGuiCond_FirstUseEver);
@@ -238,7 +233,7 @@ void ImGuiManagaer::DrawEditorPanels_()
         ImGui::Begin("Hierarchy");
         if (blenderHierarchyMode) {
             particleManager->SetEditorSelectedGroupName("");
-            ImGui::TextUnformatted(gParticleTestEditorMode == 2 ? "PlayerAttack Root" : "Blender Root");
+            ImGui::TextUnformatted("Blender Root");
             ImGui::Separator();
             if (ImGui::TreeNodeEx("Scene Models", ImGuiTreeNodeFlags_DefaultOpen)) {
                 if (gParticleTestBlenderHierarchyNames.empty()) {
@@ -400,16 +395,6 @@ void ImGuiManagaer::DrawEditorPanels_()
         ImGui::RadioButton("Blender Mode", &gParticleTestEditorMode, 0);
         ImGui::SameLine();
         ImGui::RadioButton("Particle Mode", &gParticleTestEditorMode, 1);
-        ImGui::SameLine();
-        ImGui::RadioButton("PlayerAttack Mode", &gParticleTestEditorMode, 2);
-        ImGui::Separator();
-    }
-    if (gTestSceneAttackTuningSwitcherVisible) {
-        ImGui::TextUnformatted("Attack Tuning");
-        ImGui::SameLine();
-        ImGui::RadioButton("Boss", &gTestSceneAttackTuningTarget, 0);
-        ImGui::SameLine();
-        ImGui::RadioButton("Player", &gTestSceneAttackTuningTarget, 1);
         ImGui::Separator();
     }
     if (hasSceneTexture_ && srvManager_) {
@@ -439,6 +424,7 @@ void ImGuiManagaer::DrawEditorPanels_()
         gSceneImageMax = ImVec2(gSceneImageMin.x + imageSize.x, gSceneImageMin.y + imageSize.y);
         gHasSceneImageRect = true;
         ImGui::Image(static_cast<ImTextureID>(handle.ptr), imageSize);
+        sceneImageHovered_ = ImGui::IsItemHovered();
     } else {
         gHasSceneImageRect = false;
         ImGui::TextUnformatted("Scene texture is not ready.");
@@ -481,3 +467,17 @@ void ImGuiManagaer::Shutdown()
 
 
 }
+
+
+bool ImGuiManagaer::GetSceneImageRect(RECT& rect) const {
+#ifdef USE_IMGUI
+    if (!gHasSceneImageRect) return false;
+    rect = {static_cast<LONG>(gSceneImageMin.x), static_cast<LONG>(gSceneImageMin.y),
+        static_cast<LONG>(gSceneImageMax.x), static_cast<LONG>(gSceneImageMax.y)};
+    return true;
+#else
+    (void)rect;
+    return false;
+#endif
+}
+

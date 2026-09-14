@@ -62,49 +62,58 @@ void Input::Initialize  (WinApp* winApp) {
     keyboardDevice_->Acquire();
 }
 
-void Input::UpdateMouseDelta() {
-    POINT currentMousePos;
-    GetCursorPos(&currentMousePos);
-    HWND hwnd = winApp_ ? winApp_->GetHwnd() : GetActiveWindow();
-    ScreenToClient(hwnd, &currentMousePos);
-
-    if (firstMouseUpdate_) {
-        // 初回は差分をゼロにしておく
-        mouseDelta_ = { 0, 0 };
-        firstMouseUpdate_ = false;
-    } else {
-        mouseDelta_.x = currentMousePos.x - prevMousePos_.x;
-        mouseDelta_.y = currentMousePos.y - prevMousePos_.y;
-    }
-
-    prevMousePos_ = currentMousePos;
-
-    if (cameraControlEnabled_) {
-        // ウィンドウの中央座標を取得して固定
-        RECT rect;
-        GetClientRect(hwnd, &rect);
-        POINT center;
-        center.x = (rect.right - rect.left) / 2;
-        center.y = (rect.bottom - rect.top) / 2;
-
-        // 現在位置を取得
-        POINT currentMousePos;
-        GetCursorPos(&currentMousePos);
-        ScreenToClient(hwnd, &currentMousePos);
-
-        // 差分計算
-        mouseDelta_.x = currentMousePos.x - center.x;
-        mouseDelta_.y = currentMousePos.y - center.y;
-
-        // マウスを中央に戻す
-        ClientToScreen(hwnd, &center);
-        SetCursorPos(center.x, center.y);
-    } else {
-        mouseDelta_ = { 0, 0 };
-    }
-
+Input::~Input() {
+    SetCameraControlEnabled(false);
+    if (keyboardDevice_) { keyboardDevice_->Unacquire(); keyboardDevice_->Release(); }
+    if (directInput_) directInput_->Release();
 }
 
+bool Input::HasFocus() const {
+    return winApp_ && GetForegroundWindow() == winApp_->GetHwnd() && !IsIconic(winApp_->GetHwnd());
+}
+
+bool Input::GetCaptureRect_(RECT& rect) const {
+    if (!winApp_ || !GetClientRect(winApp_->GetHwnd(), &rect)) return false;
+    POINT corners[2]{{rect.left, rect.top}, {rect.right, rect.bottom}};
+    ClientToScreen(winApp_->GetHwnd(), &corners[0]);
+    ClientToScreen(winApp_->GetHwnd(), &corners[1]);
+    rect = {corners[0].x, corners[0].y, corners[1].x, corners[1].y};
+    if (hasCaptureRect_) {
+        RECT intersection{};
+        if (!IntersectRect(&intersection, &rect, &captureRect_)) return false;
+        rect = intersection;
+    }
+    return rect.right > rect.left && rect.bottom > rect.top;
+}
+
+void Input::SetMouseCaptureRect(const RECT* rect) {
+    const bool changed = hasCaptureRect_ != (rect != nullptr) ||
+        (rect && !EqualRect(rect, &captureRect_));
+    hasCaptureRect_ = rect != nullptr;
+    if (rect) captureRect_ = *rect;
+    if (changed) { firstMouseUpdate_ = true; mouseDelta_ = {}; }
+}
+
+void Input::UpdateMouseDelta() {
+    mouseDelta_ = {};
+    if (!cameraControlEnabled_) return;
+    RECT rect{};
+    if (!HasFocus() || !GetCaptureRect_(rect)) {
+        SetCameraControlEnabled(false);
+        return;
+    }
+    // Reapply confinement after window movement/resizing. Never clip another app.
+    if (!ClipCursor(&rect)) { SetCameraControlEnabled(false); return; }
+    POINT cursor{};
+    if (!GetCursorPos(&cursor)) return;
+    POINT center{(rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2};
+    if (!firstMouseUpdate_) {
+        mouseDelta_ = {cursor.x - prevMousePos_.x, cursor.y - prevMousePos_.y};
+    }
+    firstMouseUpdate_ = false;
+    SetCursorPos(center.x, center.y);
+    prevMousePos_ = center;
+}
 
 void Input::Update() {
     // 前フレームの状態を保存
@@ -126,11 +135,14 @@ void Input::Update() {
         memset(keys_, 0, sizeof(keys_));
     }
 
+    prevLeftMouseDown_ = leftMouseDown_;
+    leftMouseDown_ = HasFocus() && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    if (!HasFocus()) memset(keys_, 0, sizeof(keys_));
     UpdateMouseDelta();
 
     // === 修正済み：トグル処理は1回だけ ===
     bool toggleKey = keys_[DIK_F1];
-    if (toggleKey && !prevToggleKeyState_) {
+    if (cameraToggleKeyEnabled_ && HasFocus() && toggleKey && !prevToggleKeyState_) {
         SetCameraControlEnabled(!cameraControlEnabled_);
         justEnteredCameraMode_ = cameraControlEnabled_; // 初回だけtrue
 
@@ -139,16 +151,24 @@ void Input::Update() {
 }
 
 void Input::SetCameraControlEnabled(bool enabled) {
-    if (cameraControlEnabled_ == enabled) {
-        return;
-    }
-
+    if (enabled && !HasFocus()) return;
+    if (cameraControlEnabled_ == enabled) return;
+    RECT rect{};
+    if (enabled && (!GetCaptureRect_(rect) || !ClipCursor(&rect))) return;
     cameraControlEnabled_ = enabled;
-    justEnteredCameraMode_ = enabled;
     firstMouseUpdate_ = true;
-    mouseDelta_ = { 0, 0 };
-
-    ShowCursor(!cameraControlEnabled_);
+    mouseDelta_ = {};
+    if (enabled) {
+        POINT center{(rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2};
+        SetCursorPos(center.x, center.y);
+        prevMousePos_ = center;
+        // Balance our ShowCursor calls exactly when releasing control.
+        int count;
+        do { count = ShowCursor(FALSE); ++cursorHideCalls_; } while (count >= 0);
+    } else {
+        ClipCursor(nullptr);
+        while (cursorHideCalls_ > 0) { ShowCursor(TRUE); --cursorHideCalls_; }
+    }
 }
 
 bool Input::IsKeyTrigger(BYTE keyCode) const {
@@ -214,3 +234,4 @@ bool Input::IsLeftStickUpTrigger(float threshold) const {
 //bool Input::IsKeyReleased(BYTE keyCode) const {
 //    return (keys_[keyCode] & 0x80) == 0;
 //}
+

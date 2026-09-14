@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <memory>
 #include "SceneManager.h"
 #include "Input.h"
@@ -57,7 +57,7 @@ public:
 private:
     bool Initialize_();
     void Finalize_();
-    void WarmupAssets_();
+
 private:
     bool quit_ = false;
 
@@ -84,3 +84,4 @@ private:
     std::unique_ptr<RenderManager> render_;
 
 };
+

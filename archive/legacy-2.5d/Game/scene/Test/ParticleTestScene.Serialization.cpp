@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -1000,4 +1000,5 @@ bool ParticleTestScene::LoadPlayerSpecialTimelinesJson_(const std::string& path)
 		return false;
 	}
 }
+
 

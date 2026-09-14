@@ -1,4 +1,4 @@
-﻿#include "DebugScene.h"
+#include "DebugScene.h"
 #include "GameApp.h"
 #include "Input.h"
 #include "ModelManager.h"
@@ -69,7 +69,7 @@ void DebugScene::Update(GameApp& app, float dt)
 
     // Escでシーン終了（タイトルへ戻る）
     if (input_ && input_->IsKeyTrigger(DIK_ESCAPE)) {
-        RequestChangeScene_("Title");
+        RequestChangeScene_("Game");
     }
 }
 
@@ -113,10 +113,11 @@ void DebugScene::DrawImGui(GameApp& /*app*/)
     }
 
     ImGui::Separator();
-    if (ImGui::Button("Back to Title")) {
-        RequestChangeScene_("Title");
+    if (ImGui::Button("Back to Game")) {
+        RequestChangeScene_("Game");
     }
 
     ImGui::End();
 #endif
 }
+

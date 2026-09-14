@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -4115,3 +4115,4 @@ void ParticleTestScene::DrawImGui(GameApp& app)
 	}
 #endif
 }
+

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <!-- ===== フィルター定義 ===== -->
@@ -169,122 +169,8 @@
     </ClCompile>
     <!-- Engine\Utility: ユーティリティ -->
     <!-- Game\Scene: ゲームシーン -->
-    <ClCompile Include="Game\scene\Main\GameScene.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Main\GameScene.DebugAI.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Main\GameSceneDebugProfile.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Main\GameScene.Lifecycle.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Main\GameScene.Render.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Main\GameScene.UI.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Main\GameScene.Update.cpp">
-      <Filter>Game\Scene\Main</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Flow\TitleScene.cpp">
-      <Filter>Game\Scene\Flow</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Dialogs.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.DopeSheet.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.ImGui.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Objects.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Serialization.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\ParticleTestScene.Timeline.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\TestScene.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\TestScene.UI.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\TestScene.PathPreview.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\TestScene.Trajectory.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\TestSceneBossTuning.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Test\TestSceneKnockbackPreview.cpp">
-      <Filter>Game\Scene\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Flow\GameOverScene.cpp">
-      <Filter>Game\Scene\Flow</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\scene\Flow\GameClearScene.cpp">
-      <Filter>Game\Scene\Flow</Filter>
-    </ClCompile>
     <!-- Game\Player: プレイヤー -->
-    <ClCompile Include="Game\player\Player.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttack.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttackI.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttackIDown.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttackINeutral.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttackISide.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttackIUp.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerAttackU.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerInput.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerMovement.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\player\PlayerPresentation.cpp">
-      <Filter>Game\Player</Filter>
-    </ClCompile>
     <!-- Game\Enemy: エネミー -->
-    <ClCompile Include="Game\enemy\Enemy.cpp">
-      <Filter>Game\Enemy</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\enemy\EnemyManager.cpp">
-      <Filter>Game\Enemy</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\enemy\Bullet.cpp">
-      <Filter>Game\Enemy</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\enemy\BossAI.cpp">
-      <Filter>Game\Enemy</Filter>
-    </ClCompile>
     <!-- externals\imgui -->
     <ClCompile Include="externals\imgui\imgui.cpp">
       <Filter>externals\imgui</Filter>
@@ -489,68 +375,8 @@
     </ClInclude>
     <!-- Engine\Utility -->
     <!-- Game\Scene -->
-    <ClInclude Include="Game\scene\Main\GameScene.h">
-      <Filter>Game\Scene\Main</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Main\GameSceneDebugAdapter.h">
-      <Filter>Game\Scene\Main</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Main\GameSceneDebugProfile.h">
-      <Filter>Game\Scene\Main</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Flow\TitleScene.h">
-      <Filter>Game\Scene\Flow</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\ParticleTestScene.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\ParticleTestEditorTypes.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\ParticleTestSceneSupport.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\TestScene.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\TestScene.Trajectory.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\TestSceneBossTuning.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Test\TestSceneKnockbackPreview.h">
-      <Filter>Game\Scene\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Flow\GameOverScene.h">
-      <Filter>Game\Scene\Flow</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\scene\Flow\GameClearScene.h">
-      <Filter>Game\Scene\Flow</Filter>
-    </ClInclude>
     <!-- Game\Player -->
-    <ClInclude Include="Game\player\Player.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\player\PlayerAttackI.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\player\PlayerAttackIInternal.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
     <!-- Game\Enemy -->
-    <ClInclude Include="Game\enemy\Enemy.h">
-      <Filter>Game\Enemy</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\enemy\EnemyManager.h">
-      <Filter>Game\Enemy</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\enemy\Bullet.h">
-      <Filter>Game\Enemy</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\enemy\BossAI.h">
-      <Filter>Game\Enemy</Filter>
-    </ClInclude>
     <!-- externals\imgui -->
     <ClInclude Include="externals\imgui\imconfig.h">
       <Filter>externals\imgui</Filter>
@@ -788,5 +614,16 @@
     <Text Include="externals\imgui\LICENSE.txt">
       <Filter>externals\imgui</Filter>
     </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Game\player\Player.cpp" />
+    <ClInclude Include="Game\player\Player.h" />
+    <ClCompile Include="Game\enemy\Enemy.cpp" />
+    <ClInclude Include="Game\enemy\Enemy.h" />
+    <ClCompile Include="Game\scene\Main\GameScene.cpp" />
+    <ClInclude Include="Game\scene\Main\GameScene.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Game\player\FPSMotion.h" />
   </ItemGroup>
 </Project>

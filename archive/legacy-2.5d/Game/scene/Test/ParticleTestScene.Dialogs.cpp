@@ -1,4 +1,4 @@
-﻿#include "ParticleTestScene.h"
+#include "ParticleTestScene.h"
 #include "ParticleTestSceneSupport.h"
 
 #include "Camera.h"
@@ -236,4 +236,5 @@ bool ParticleTestScene::OpenParticleFileDialog_(std::vector<std::string>& outGro
         return true;
     }
 }
+
 

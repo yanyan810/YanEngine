@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <d3d12.h>
 #include <cstdint>
 
@@ -24,6 +24,8 @@ public:
     void Begin();
     void End(ID3D12GraphicsCommandList* cmd);
     void Shutdown();
+    bool GetSceneImageRect(RECT& rect) const;
+    bool IsSceneImageHovered() const { return sceneImageHovered_; }
 
 private:
     void BeginDockSpace_();
@@ -37,6 +39,7 @@ private:
     SrvManager* srvManager_ = nullptr;
 
     bool initialized_ = false;
+    bool sceneImageHovered_ = false;
     int selectedParticleItem_ = 0;
     uint32_t sceneSrvIndex_ = 0;
     uint32_t previewSrvIndex_ = 0;
@@ -44,3 +47,4 @@ private:
     bool hasPreviewTexture_ = false;
     uint32_t imguiSrvIndex_ = 0; // SrvManager が 0番をImGui予約してる前提
 };
+
