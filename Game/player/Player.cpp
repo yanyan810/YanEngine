@@ -2,6 +2,7 @@
 #include "Input.h"
 
 void Player::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera) {
+    hp_ = 100.0f;
     camera_ = camera;
     object_.Initialize(common, dx);
     object_.SetCamera(camera);

@@ -4,6 +4,7 @@
 #include "Object3d.h"
 #include "Player.h"
 #include "Enemy.h"
+#include "Sprite.h"
 
 class GameScene : public IScene {
 public:
@@ -13,12 +14,26 @@ public:
     void DrawRender(GameApp& app) override;
     void Draw(GameApp&) override {}
     void DrawImGui(GameApp& app) override;
+    void DrawOverlay2D(GameApp& app) override;
 private:
+    EnemyPartType lastHitPart_ = EnemyPartType::None;
+    unsigned long long shotCount_ = 0;
+    unsigned long long hitCount_ = 0;
+    float lastDamage_ = 0.0f;
+    static constexpr float kShotDamage = 25.0f;
+    static constexpr float kShotRange = 100.0f;
     bool initialCapturePending_ = true;
     int savedMouseFlags_ = 0;
     Camera camera_;
     Player player_;
-    Enemy enemy_;
+    std::vector<std::unique_ptr<Enemy>> enemies_;
+    int selectedEnemy_ = 0;
+    int lastHitEnemy_ = -1;
+    unsigned long long enemyAttackCount_ = 0;
+    float playerDamagedFlash_ = 0;
+    float lastEnemyDamage_ = 0;
     Object3d ground_;
+    Sprite crosshairHorizontal_;
+    Sprite crosshairVertical_;
 };
 

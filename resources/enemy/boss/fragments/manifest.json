@@ -1,0 +1,40 @@
+{
+  "head": [
+    "enemy/boss/fragments/head/boss_head_frag_00.gltf",
+    "enemy/boss/fragments/head/boss_head_frag_01.gltf",
+    "enemy/boss/fragments/head/boss_head_frag_02.gltf",
+    "enemy/boss/fragments/head/boss_head_frag_03.gltf"
+  ],
+  "body": [
+    "enemy/boss/fragments/body/boss_body_frag_00.gltf",
+    "enemy/boss/fragments/body/boss_body_frag_01.gltf",
+    "enemy/boss/fragments/body/boss_body_frag_02.gltf",
+    "enemy/boss/fragments/body/boss_body_frag_03.gltf",
+    "enemy/boss/fragments/body/boss_body_frag_04.gltf",
+    "enemy/boss/fragments/body/boss_body_frag_05.gltf"
+  ],
+  "left_arm": [
+    "enemy/boss/fragments/left_arm/boss_left_arm_frag_00.gltf",
+    "enemy/boss/fragments/left_arm/boss_left_arm_frag_01.gltf",
+    "enemy/boss/fragments/left_arm/boss_left_arm_frag_02.gltf",
+    "enemy/boss/fragments/left_arm/boss_left_arm_frag_03.gltf"
+  ],
+  "right_arm": [
+    "enemy/boss/fragments/right_arm/boss_right_arm_frag_00.gltf",
+    "enemy/boss/fragments/right_arm/boss_right_arm_frag_01.gltf",
+    "enemy/boss/fragments/right_arm/boss_right_arm_frag_02.gltf",
+    "enemy/boss/fragments/right_arm/boss_right_arm_frag_03.gltf"
+  ],
+  "left_leg": [
+    "enemy/boss/fragments/left_leg/boss_left_leg_frag_00.gltf",
+    "enemy/boss/fragments/left_leg/boss_left_leg_frag_01.gltf",
+    "enemy/boss/fragments/left_leg/boss_left_leg_frag_02.gltf",
+    "enemy/boss/fragments/left_leg/boss_left_leg_frag_03.gltf"
+  ],
+  "right_leg": [
+    "enemy/boss/fragments/right_leg/boss_right_leg_frag_00.gltf",
+    "enemy/boss/fragments/right_leg/boss_right_leg_frag_01.gltf",
+    "enemy/boss/fragments/right_leg/boss_right_leg_frag_02.gltf",
+    "enemy/boss/fragments/right_leg/boss_right_leg_frag_03.gltf"
+  ]
+}

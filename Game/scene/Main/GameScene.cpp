@@ -3,6 +3,7 @@
 #include "Object3dCommon.h"
 #include "ImGuiManagaer.h"
 #include "WinApp.h"
+#include <string>
 #ifdef USE_IMGUI
 #include "imgui.h"
 namespace { constexpr int kCapturedMouseFlags = ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange; }
@@ -17,12 +18,20 @@ void GameScene::OnEnter(GameApp& app) {
     camera_.Update();
     app.ObjCom()->SetDefaultCamera(&camera_);
     player_.Initialize(app.ObjCom(), app.Dx(), &camera_);
-    enemy_.Initialize(app.ObjCom(), app.Dx(), &camera_);
+    enemies_.clear();
+    for (const Vector3 position : {Vector3{3,0,18}, Vector3{-1,0,10}, Vector3{7,0,10}, Vector3{-1,0,2}, Vector3{7,0,2}}) {
+        auto enemy = std::make_unique<Enemy>();
+        enemy->SetPosition(position);
+        enemy->Initialize(app.ObjCom(), app.Dx(), &camera_, true);
+        enemies_.push_back(std::move(enemy));
+    }
+    selectedEnemy_ = 0; lastHitEnemy_ = -1;
+    enemyAttackCount_ = 0; playerDamagedFlash_ = 0; lastEnemyDamage_ = 0;
     ground_.Initialize(app.ObjCom(), app.Dx());
     ground_.SetCamera(&camera_);
     ground_.SetModel("cube/cube.obj");
     ground_.SetTexture("resources/white1x1.png");
-    ground_.SetScale({12.0f, 0.25f, 12.0f});
+    ground_.SetScale({32.0f, 0.25f, 32.0f});
     ground_.SetTranslate({0.0f, -0.25f, 2.0f});
     ground_.SetMaterialColor({0.45f, 0.48f, 0.52f, 1.0f});
     ground_.SetEnableLighting(1);
@@ -30,6 +39,17 @@ void GameScene::OnEnter(GameApp& app) {
     ground_.SetIntensity(1.0f);
     ground_.SetPointLightIntensity(0.0f);
     ground_.SetSpotLightIntensity(0.0f);
+    for (Sprite* sprite : {&crosshairHorizontal_, &crosshairVertical_}) {
+        sprite->Initialize(app.SpriteCom(), app.Dx(), "resources/white1x1.png");
+        sprite->SetAnchorPoint({0.5f, 0.5f});
+        sprite->SetPosition({WinApp::kClientWidth * 0.5f, WinApp::kClientHeight * 0.5f});
+        sprite->SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+    }
+    const auto& texture = TextureManager::GetInstance()->GetMetaData("resources/white1x1.png");
+    const float width = static_cast<float>(texture.width);
+    const float height = static_cast<float>(texture.height);
+    crosshairHorizontal_.SetScale({12.0f / width, 2.0f / height, 1.0f});
+    crosshairVertical_.SetScale({2.0f / width, 12.0f / height, 1.0f});
     Update(app, 0.0f);
 }
 void GameScene::OnExit(GameApp& app) {
@@ -39,10 +59,12 @@ void GameScene::OnExit(GameApp& app) {
 #ifdef USE_IMGUI
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
 #endif
+    enemies_.clear();
     app.ObjCom()->SetDefaultCamera(nullptr);
 }
 void GameScene::Update(GameApp& app, float dt) {
     Input& input = *app.GetInput();
+    const bool wasCaptured = input.IsCameraControlEnabled();
     bool viewReady = true;
     bool clickedView = false;
 #ifdef USE_IMGUI
@@ -71,12 +93,70 @@ void GameScene::Update(GameApp& app, float dt) {
         (input.IsCameraControlEnabled() ? kCapturedMouseFlags : savedMouseFlags_);
 #endif
     player_.Update(input, dt);
-    enemy_.Update(dt);
+    playerDamagedFlash_ = std::max(0.0f, playerDamagedFlash_-dt);
+    // Symmetric XZ separation from a snapshot; dead bodies do not push living enemies.
+    std::vector<Vector3> correction(enemies_.size());
+    for (size_t i=0;i<enemies_.size();++i) for(size_t j=i+1;j<enemies_.size();++j) {
+        if (enemies_[i]->IsDead() || enemies_[j]->IsDead()) continue;
+        auto delta=enemies_[i]->GetPosition()-enemies_[j]->GetPosition(); delta.y=0;
+        const float distance=std::hypot(delta.x,delta.z);
+        if (distance>=1.1f) continue;
+        const auto direction=distance>1e-5f ? delta*(1.0f/distance) : Vector3{1,0,0};
+        const auto offset=direction*(std::min((1.1f-distance)*.5f,std::max(dt,0.0f)*.6f));
+        correction[i]=correction[i]+offset; correction[j]=correction[j]-offset;
+    }
+    std::vector<float> enemyDamage(enemies_.size());
+    for(size_t i=0;i<enemies_.size();++i) {
+        enemies_[i]->SetPosition(enemies_[i]->GetPosition()+correction[i]);
+        enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
+    }
+    // A click used to acquire FPS control is consumed, never a shot.
+    if (wasCaptured && input.IsCameraControlEnabled() && input.HasFocus() && input.IsLeftMouseTrigger()) {
+        ++shotCount_;
+        const auto& world = camera_.GetWorldMatrix();
+        const Vector3 forward{world.m[2][0], world.m[2][1], world.m[2][2]};
+        struct SceneHit { Enemy* enemy=nullptr; Enemy::RaycastHit hit{}; int index=-1; } closest;
+        float range=kShotRange;
+        for(size_t i=0;i<enemies_.size();++i) {
+            Enemy::RaycastHit candidate;
+            if (enemies_[i]->Raycast(camera_.GetTranslate(),forward,range,candidate) &&
+                (!closest.enemy || candidate.distance<range)) {
+                range=candidate.distance;
+                closest={enemies_[i].get(),candidate,static_cast<int>(i)};
+            }
+        }
+        if (closest.enemy) {
+            ++hitCount_;
+            lastHitPart_=closest.hit.part;
+            lastHitEnemy_=closest.index;
+            lastDamage_=closest.enemy->ApplyDamage(closest.hit.part,kShotDamage,forward);
+            closest.enemy->ShowHitFeedback(closest.hit.part);
+        }
+
+    }
+    for(size_t i=0;i<enemies_.size();++i) {
+        if (enemies_[i]->IsDead() || enemyDamage[i]<=0) continue;
+        const float before=player_.GetHP();
+        player_.ApplyDamage(enemyDamage[i]);
+        lastEnemyDamage_=before-player_.GetHP();
+        enemies_[i]->ConfirmAttack(lastEnemyDamage_);
+        enemyAttackCount_+=enemies_[i]->PendingAttackCount();
+        playerDamagedFlash_=.35f;
+    }
+    const auto status = std::wstring(L"FPS Foundation | Player HP: ") + std::to_wstring(static_cast<int>(player_.GetHP())) +
+        (player_.IsDead() ? L" (Player Dead)" : L"") + L" | Enemy: " +
+        std::wstring(EnemyStateName(enemies_[static_cast<size_t>(selectedEnemy_)]->GetState()), EnemyStateName(enemies_[static_cast<size_t>(selectedEnemy_)]->GetState()) + std::char_traits<char>::length(EnemyStateName(enemies_[static_cast<size_t>(selectedEnemy_)]->GetState()))) +
+        L" | Shots: " + std::to_wstring(shotCount_) + L" | Hits: " + std::to_wstring(hitCount_);
+    const std::string partName = EnemyPartName(lastHitPart_);
+    const auto fullStatus = status + L" | Last Hit Part: " + std::wstring(partName.begin(), partName.end()) +
+        L" | Last Damage: " + std::to_wstring(static_cast<int>(lastDamage_)) +
+        L" | Enemy Attacks: " + std::to_wstring(enemyAttackCount_);
+    SetWindowTextW(app.Win()->GetHwnd(), fullStatus.c_str());
     ground_.Update(dt);
 }
 void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
-    enemy_.Draw();
+    for(auto& enemy : enemies_) enemy->Draw();
 }
 
 
@@ -84,18 +164,50 @@ void GameScene::DrawImGui(GameApp& app) {
 #ifdef USE_IMGUI
     ImGui::Begin("FPS Controls");
     const bool captured = app.GetInput()->IsCameraControlEnabled();
-    ImGui::TextUnformatted(captured ? "WASD: walk | Mouse: look | ESC: release" : "Click the Scene image to resume FPS controls.");
+    ImGui::TextUnformatted(captured ? "WASD: walk | Mouse: look | LMB: fire | ESC: release" : "Click the Scene image to resume FPS controls.");
+    ImGui::Text("Shot Count: %llu | Hit Count: %llu", shotCount_, hitCount_);
+    ImGui::Text("Last Hit Enemy: %d | Last Hit Part: %s", lastHitEnemy_, EnemyPartName(lastHitPart_));
+    ImGui::Text("Last Damage: %.0f (actual HP lost)", lastDamage_);
+    ImGui::Text("Player HP: %.0f / 100 %s", player_.GetHP(), player_.IsDead() ? "Player Dead" : "");
+    const auto alive=std::count_if(enemies_.begin(),enemies_.end(),[](const auto& e){return !e->IsDead();});
+    ImGui::Text("Enemy Count: %zu | Alive: %d", enemies_.size(), static_cast<int>(alive));
+    ImGui::Text("Last Enemy Attack: %s | Attack Count: %llu | Last Damage: %.0f",
+        playerDamagedFlash_>0 ? "HIT / Player Damaged!" : "-", enemyAttackCount_, lastEnemyDamage_);
     const auto& transform = player_.GetTransform();
     ImGui::Text("Position: %.2f, %.2f, %.2f", transform.translate.x, transform.translate.y, transform.translate.z);
     ImGui::Text("Yaw / Pitch: %.1f / %.1f deg", transform.rotate.y * 57.2957795f, transform.rotate.x * 57.2957795f);
     ImGui::BeginDisabled(captured);
+    if (ImGui::Button("Reset Player HP (Debug)")) player_.ResetHPForDebug();
     auto& settings = player_.Settings();
     ImGui::SliderFloat("Eye height", &settings.cameraHeight, 0.5f, 2.5f);
     ImGui::SliderFloat("Move speed", &settings.moveSpeed, 0.5f, 15.0f);
     ImGui::SliderFloat("Mouse sensitivity", &settings.mouseSensitivity, 0.0005f, 0.01f, "%.4f");
+    const auto selectedLabel=std::to_string(selectedEnemy_);
+    if (ImGui::BeginCombo("Selected Enemy", selectedLabel.c_str())) {
+        for(int i=0;i<static_cast<int>(enemies_.size());++i) {
+            const auto label=std::string("Enemy ")+std::to_string(i);
+            if (ImGui::Selectable(label.c_str(), selectedEnemy_==i)) selectedEnemy_=i;
+        }
+        ImGui::EndCombo();
+    }
+    enemies_[static_cast<size_t>(selectedEnemy_)]->DrawImGui();
     ImGui::EndDisabled();
     ImGui::End();
+    RECT sceneRect{};
+    if(app.ImGui()->GetSceneImageRect(sceneRect)) enemies_[static_cast<size_t>(selectedEnemy_)]->DrawPartDebug(camera_.GetViewProjectionMatrix(),
+        {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
+        {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
 #else
     (void)app;
 #endif
+}
+
+void GameScene::DrawOverlay2D(GameApp&) {
+    const auto view = Matrix4x4::MakeIdentity4x4();
+    const auto projection = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f,
+        static_cast<float>(WinApp::kClientWidth), static_cast<float>(WinApp::kClientHeight), 0.0f, 100.0f);
+    crosshairHorizontal_.Update(view, projection);
+    crosshairVertical_.Update(view, projection);
+    crosshairHorizontal_.Draw();
+    crosshairVertical_.Draw();
 }
