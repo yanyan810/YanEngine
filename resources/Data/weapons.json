@@ -1,117 +1,220 @@
 {
   "initialWeapon": "pistol",
-
   "weapons": [
     {
       "id": "pistol",
       "displayName": "Pistol",
-
       "fireMode": "SemiAuto",
-
       "damage": 25,
       "fireInterval": 0.25,
       "range": 100,
-
       "magazineSize": 12,
       "reserveAmmo": 60,
       "maxReserveAmmo": 60,
       "reloadTime": 1.5,
-
       "pelletCount": 1,
-
       "hipSpreadDegrees": 1.0,
       "adsSpreadDegrees": 0.2,
-
       "adsFov": 50.0,
       "adsTransitionTime": 0.12,
-      "adsSensitivityMultiplier": 0.90,
-
-      "pickupScale": [0.3, 0.15, 0.15],
-      "pickupColor": [1.0, 0.8, 0.2]
+      "adsSensitivityMultiplier": 0.9,
+      "pickupScale": [
+        0.3,
+        0.15,
+        0.15
+      ],
+      "pickupColor": [
+        1.0,
+        0.8,
+        0.2
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "Magazine"
     },
-
     {
       "id": "smg",
       "displayName": "SMG",
-
       "fireMode": "FullAuto",
-
       "damage": 15,
       "fireInterval": 0.08,
       "range": 80,
-
       "magazineSize": 30,
       "reserveAmmo": 120,
       "maxReserveAmmo": 120,
       "reloadTime": 2.0,
-
       "pelletCount": 1,
-
       "hipSpreadDegrees": 2.0,
       "adsSpreadDegrees": 0.6,
-
       "adsFov": 45.0,
       "adsTransitionTime": 0.15,
-      "adsSensitivityMultiplier": 0.80,
-
-      "pickupScale": [0.5, 0.15, 0.15],
-      "pickupColor": [0.2, 0.85, 1.0]
+      "adsSensitivityMultiplier": 0.8,
+      "pickupScale": [
+        0.5,
+        0.15,
+        0.15
+      ],
+      "pickupColor": [
+        0.2,
+        0.85,
+        1.0
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "Magazine"
     },
-
     {
       "id": "rifle",
       "displayName": "Assault Rifle",
-
       "fireMode": "FullAuto",
-
       "damage": 30,
       "fireInterval": 0.12,
       "range": 120,
-
       "magazineSize": 30,
       "reserveAmmo": 90,
       "maxReserveAmmo": 90,
       "reloadTime": 2.2,
-
       "pelletCount": 1,
-
       "hipSpreadDegrees": 1.5,
       "adsSpreadDegrees": 0.25,
-
       "adsFov": 35.0,
       "adsTransitionTime": 0.18,
-      "adsSensitivityMultiplier": 0.70,
-
-      "pickupScale": [0.75, 0.12, 0.12],
-      "pickupColor": [0.25, 1.0, 0.4]
+      "adsSensitivityMultiplier": 0.7,
+      "pickupScale": [
+        0.75,
+        0.12,
+        0.12
+      ],
+      "pickupColor": [
+        0.25,
+        1.0,
+        0.4
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "Magazine"
     },
-
     {
       "id": "shotgun",
       "displayName": "Shotgun",
-
       "fireMode": "SemiAuto",
-
       "damage": 15,
       "fireInterval": 0.8,
       "range": 50,
-
       "magazineSize": 8,
       "reserveAmmo": 32,
       "maxReserveAmmo": 32,
       "reloadTime": 2.5,
-
       "pelletCount": 8,
-
       "hipSpreadDegrees": 4.0,
       "adsSpreadDegrees": 3.0,
-
       "adsFov": 48.0,
-      "adsTransitionTime": 0.20,
+      "adsTransitionTime": 0.2,
       "adsSensitivityMultiplier": 0.85,
-
-      "pickupScale": [0.65, 0.2, 0.2],
-      "pickupColor": [1.0, 0.35, 0.2]
+      "pickupScale": [
+        0.65,
+        0.2,
+        0.2
+      ],
+      "pickupColor": [
+        1.0,
+        0.35,
+        0.2
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "Magazine"
+    },
+    {
+      "id": "pump_shotgun",
+      "displayName": "Pump Shotgun",
+      "fireMode": "SemiAuto",
+      "damage": 12,
+      "fireInterval": 0.85,
+      "range": 50,
+      "magazineSize": 8,
+      "reserveAmmo": 40,
+      "maxReserveAmmo": 40,
+      "pelletCount": 8,
+      "hipSpreadDegrees": 4.5,
+      "adsSpreadDegrees": 3.0,
+      "adsFov": 48.0,
+      "adsTransitionTime": 0.2,
+      "adsSensitivityMultiplier": 0.85,
+      "pickupScale": [
+        0.65,
+        0.2,
+        0.2
+      ],
+      "pickupColor": [
+        1.0,
+        0.35,
+        0.2
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "PerRound",
+      "reloadStartTime": 0.25,
+      "reloadPerRoundTime": 0.55,
+      "reloadEndTime": 0.3,
+      "reloadCanInterrupt": true
+    },
+    {
+      "id": "auto_shotgun",
+      "displayName": "Auto Shotgun",
+      "fireMode": "FullAuto",
+      "damage": 9,
+      "fireInterval": 0.18,
+      "range": 45,
+      "magazineSize": 20,
+      "reserveAmmo": 80,
+      "maxReserveAmmo": 80,
+      "reloadTime": 2.4,
+      "pelletCount": 6,
+      "hipSpreadDegrees": 5,
+      "adsSpreadDegrees": 3.5,
+      "adsFov": 48.0,
+      "adsTransitionTime": 0.2,
+      "adsSensitivityMultiplier": 0.85,
+      "pickupScale": [
+        0.65,
+        0.2,
+        0.2
+      ],
+      "pickupColor": [
+        0.85,
+        0.25,
+        1
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "Magazine"
+    },
+    {
+      "id": "burst_rifle",
+      "displayName": "Burst Rifle",
+      "fireMode": "Burst",
+      "damage": 24,
+      "fireInterval": 0.45,
+      "range": 120,
+      "magazineSize": 30,
+      "reserveAmmo": 90,
+      "maxReserveAmmo": 90,
+      "reloadTime": 2.2,
+      "pelletCount": 1,
+      "hipSpreadDegrees": 1.5,
+      "adsSpreadDegrees": 0.25,
+      "adsFov": 35.0,
+      "adsTransitionTime": 0.18,
+      "adsSensitivityMultiplier": 0.7,
+      "pickupScale": [
+        0.75,
+        0.12,
+        0.12
+      ],
+      "pickupColor": [
+        0.2,
+        0.5,
+        1
+      ],
+      "ammoPerShot": 1,
+      "reloadMode": "Magazine",
+      "burstCount": 3,
+      "burstInterval": 0.07
     }
   ]
 }

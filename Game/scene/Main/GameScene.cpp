@@ -227,11 +227,11 @@ void GameScene::UpdateADS(
 
     if (target > adsBlend_) {
         adsBlend_ =
-            std::min(1.0f, adsBlend_ + step);
+            std::min(target, adsBlend_ + step);
     }
-    else {
+    else if (target < adsBlend_) {
         adsBlend_ =
-            std::max(0.0f, adsBlend_ - step);
+            std::max(target, adsBlend_ - step);
     }
 
     const float adsFov =
@@ -265,10 +265,13 @@ void GameScene::UpdateADS(
 void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     Input& input = *app.GetInput();
     auto& weapon = player_.CurrentWeapon();
-    weapon.Update(dt);
     const bool controls = wasCaptured && input.IsCameraControlEnabled() && input.HasFocus();
     const bool pickedUp = controls && input.IsKeyTrigger(DIK_E) && weapons_.TryPickup(player_.GetTransform().translate,weapon);
-    if (controls && input.IsKeyTrigger(DIK_R)) weapon.StartReload();
+    const bool allowFire = controls && !pickedUp && !suppressFireUntilRelease_;
+    if (!allowFire) weapon.CancelBurst();
+    const int weaponShots = weapon.Step(pickedUp ? 0.0f : dt,
+        allowFire && input.IsLeftMouseTrigger(), allowFire && input.IsLeftMousePressed(),
+        controls && input.IsKeyTrigger(DIK_R));
     spawnSystem_.Update(dt, player_.GetTransform().translate,
         [&](const EnemySpawnPoint& point, const std::string& trigger) {
             auto enemy = std::make_unique<Enemy>();
@@ -303,21 +306,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
     }
     // A click used to acquire FPS control is consumed, never a shot.
-    const auto& definition =
-        weapon.Definition();
-
-    const bool wantsFire =
-        WeaponWantsFire(
-            definition.fireMode,
-            input.IsLeftMouseTrigger(),
-            input.IsLeftMousePressed());
-
-    if (
-        controls &&
-        !pickedUp &&
-        !suppressFireUntilRelease_ &&
-        wantsFire &&
-        weapon.TryFire())
+    for (int shot=0; shot<weaponShots; ++shot)
     {
         ++shotCount_;
         const auto& definition = weapon.Definition();
@@ -382,6 +371,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         L" | Enemy Attacks: " + std::to_wstring(enemyAttackCount_);
     SetWindowTextW(app.Win()->GetHwnd(), fullStatus.c_str());
 }
+
 void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
     for (size_t i=0; i<weaponVisuals_.size(); ++i)
@@ -434,7 +424,23 @@ void GameScene::DrawImGui(GameApp& app) {
         {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
 #ifdef _DEBUG
     ImGui::Begin("Weapon System");
-    const auto& weapon = player_.CurrentWeapon();
+    auto& weapon = player_.CurrentWeapon();
+    ImGui::BeginDisabled(captured || !stage_.IsPlaying() || weapons_.Definitions().empty());
+    const auto& equipped = weapon.Definition();
+    if (ImGui::BeginCombo("Equip Weapon (Debug)", equipped.id.empty() ? "No weapon" : equipped.displayName.c_str())) {
+        for (const auto& candidate : weapons_.Definitions()) {
+            const bool selected = candidate.id == weapon.Definition().id;
+            const auto label = candidate.displayName + " (" + candidate.id + ")";
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                weapon.Equip(candidate);
+                suppressFireUntilRelease_ = true;
+            }
+            if (selected) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    ImGui::TextUnformatted("ESC to select. Equipping resets ammo, reload, burst and cooldown.");
     const auto& definition = weapon.Definition();
     ImGui::Text("Current: %s (%s)",definition.displayName.c_str(),definition.id.c_str());
     ImGui::Text("Magazine: %d / %d | Reserve: %d / %d",weapon.Magazine(),definition.magazineSize,weapon.Reserve(),definition.maxReserveAmmo);
@@ -466,7 +472,12 @@ void GameScene::DrawImGui(GameApp& app) {
         weapon.Cooldown());
 
     ImGui::Text("Reload: %s | Remaining: %.2f / %.2f",weapon.Reloading()?"yes":"no",weapon.ReloadRemaining(),definition.reloadTime);
-    ImGui::TextUnformatted("LMB: one shot per click | E: nearest pickup | R: reload");
+    ImGui::Text("Reload Mode: %s | State: %s",WeaponReloadModeName(definition.reloadMode),WeaponReloadStateName(weapon.ReloadState()));
+    ImGui::Text("Reload start / round / end: %.2f / %.2f / %.2f | Interrupt: %s",
+        definition.reloadStartTime,definition.reloadPerRoundTime,definition.reloadEndTime,definition.reloadCanInterrupt?"yes":"no");
+    ImGui::Text("Ammo per shot: %d | Burst remaining: %d | Next burst shot: %.2f",definition.ammoPerShot,weapon.BurstRemaining(),weapon.BurstTimer());
+    ImGui::Text("Burst count / interval: %d / %.2f",definition.burstCount,definition.burstInterval);
+    ImGui::TextUnformatted("LMB: weapon fire mode | RMB: ADS | E: nearest pickup | R: reload");
     if (!weapons_.Error().empty()) ImGui::TextWrapped("Config error: %s",weapons_.Error().c_str());
     auto randomSettings = weaponSeedOverride_.value_or(weapons_.Settings());
     bool seedChanged = ImGui::Checkbox("Use Fixed Seed (next restart)",&randomSettings.useFixedSeed);

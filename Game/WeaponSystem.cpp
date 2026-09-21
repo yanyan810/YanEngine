@@ -56,6 +56,9 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
             else if (fireMode == "FullAuto") {
                 definition.fireMode = WeaponFireMode::FullAuto;
             }
+            else if (fireMode == "Burst") {
+                definition.fireMode = WeaponFireMode::Burst;
+            }
             else {
                 throw std::runtime_error(
                     "Unknown fireMode for weapon: " + definition.id);
@@ -66,7 +69,18 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
             definition.reserveAmmo = Integer(item.at("reserveAmmo"),0,1000000);
             definition.maxReserveAmmo = item.contains("maxReserveAmmo") ? Integer(item.at("maxReserveAmmo"),0,1000000) : definition.reserveAmmo;
             if (definition.reserveAmmo > definition.maxReserveAmmo) throw std::runtime_error("Reserve exceeds maximum: " + definition.id);
-            definition.reloadTime = Number(item.at("reloadTime"),0,3600);
+            definition.reloadTime = Number(item.value("reloadTime",json(0)),0,3600);
+            definition.ammoPerShot = Integer(item.value("ammoPerShot",json(1)),1,100000);
+            definition.burstCount = Integer(item.value("burstCount",json(3)),1,64);
+            definition.burstInterval = Number(item.value("burstInterval",json(.07)),0,3600);
+            const auto reloadMode = item.value("reloadMode",std::string("Magazine"));
+            if (reloadMode == "Magazine") definition.reloadMode = WeaponReloadMode::Magazine;
+            else if (reloadMode == "PerRound") definition.reloadMode = WeaponReloadMode::PerRound;
+            else throw std::runtime_error("Unknown reloadMode for weapon: " + definition.id);
+            definition.reloadStartTime = Number(item.value("reloadStartTime",json(.25)),0,3600);
+            definition.reloadPerRoundTime = Number(item.value("reloadPerRoundTime",json(.55)),0,3600);
+            definition.reloadEndTime = Number(item.value("reloadEndTime",json(.30)),0,3600);
+            definition.reloadCanInterrupt = item.value("reloadCanInterrupt",true);
             if (item.contains("pelletCount")) definition.pelletCount = Integer(item.at("pelletCount"),1,64);
             // 旧JSONとの互換性も残す
             if (item.contains("hipSpreadDegrees")) {
