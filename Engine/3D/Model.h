@@ -254,13 +254,15 @@ public:
 	D3D12_GPU_VIRTUAL_ADDRESS GetMaterialCBV() const {
 		return materialResource_ ? materialResource_->GetGPUVirtualAddress() : 0;
 	}
-	void SetMaterialCBVOverride(D3D12_GPU_VIRTUAL_ADDRESS cbv, const Material* data = nullptr) {
+	void SetMaterialCBVOverride(D3D12_GPU_VIRTUAL_ADDRESS cbv, const Material* data = nullptr, const std::vector<D3D12_GPU_VIRTUAL_ADDRESS>* materials = nullptr) {
 		materialCBVOverride_ = cbv;
 		materialDataOverride_ = data;
+        instanceMaterialCBVs_ = materials;
 	}
 	void ClearMaterialCBVOverride() {
 		materialCBVOverride_ = 0;
 		materialDataOverride_ = nullptr;
+        instanceMaterialCBVs_ = nullptr;
 	}
 
 	int32_t GetMeshOwnerNodeIndex(uint32_t meshIndex) const {
@@ -323,6 +325,7 @@ private:
 	Material* materialData_ = nullptr;
 	D3D12_GPU_VIRTUAL_ADDRESS materialCBVOverride_ = 0;
 	const Material* materialDataOverride_ = nullptr;
+    const std::vector<D3D12_GPU_VIRTUAL_ADDRESS>* instanceMaterialCBVs_ = nullptr;
 	std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> perMaterialResources_;
 	std::vector<Material*> perMaterialData_;
 	D3D12_GPU_VIRTUAL_ADDRESS GetActiveMaterialCBV_() const {

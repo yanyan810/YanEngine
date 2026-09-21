@@ -346,7 +346,8 @@ void Object3d::Draw()
 	if (model_->HasSkinning()) {
 		EnsureInstanceMaterial_();
 		if (instanceMaterialResource_) {
-			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_);
+			PrepareInstanceMeshMaterials_();
+            model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_, &instanceMeshMaterialCBVs_);
 		}
 		// =====================================================
 		// =====================================================
@@ -540,7 +541,8 @@ void Object3d::Draw()
 	} else {
 		EnsureInstanceMaterial_();
 		if (instanceMaterialResource_) {
-			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_);
+			PrepareInstanceMeshMaterials_();
+            model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_, &instanceMeshMaterialCBVs_);
 		}
 		auto SetNormalPipelineState = [&]() {
 			if (primitiveCommon_) {
@@ -739,7 +741,8 @@ void Object3d::DrawWithOverrideSrv(const D3D12_GPU_DESCRIPTOR_HANDLE& srv)
 	cmd->IASetIndexBuffer(&model_->GetIBV());
 	EnsureInstanceMaterial_();
 	if (instanceMaterialResource_) {
-			model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_);
+			PrepareInstanceMeshMaterials_();
+            model_->SetMaterialCBVOverride(instanceMaterialResource_->GetGPUVirtualAddress(), instanceMaterialData_, &instanceMeshMaterialCBVs_);
 	}
 	cmd->SetGraphicsRootConstantBufferView(
 		0,
@@ -936,4 +939,24 @@ void Object3d::ResetManualJointTransforms()
 	if (animator_) {
 		animator_->ResetManualJointTransforms();
 	}
+}
+
+void Object3d::PrepareInstanceMeshMaterials_() {
+    if (!model_ || !instanceMaterialData_) return;
+    const auto& materials = model_->GetModelData().materials;
+    while (instanceMeshMaterials_.size() < materials.size()) {
+        auto resource = dx_->CreateBufferResource(sizeof(Model::Material));
+        Model::Material* mapped = nullptr;
+        resource->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+        instanceMeshMaterialData_.push_back(mapped);
+        instanceMeshMaterialCBVs_.push_back(resource->GetGPUVirtualAddress());
+        instanceMeshMaterials_.push_back(std::move(resource));
+    }
+    for (size_t i=0; i<materials.size(); ++i) {
+        auto& material = *instanceMeshMaterialData_[i];
+        material = *instanceMaterialData_;
+        const auto& base = materials[i].baseColor;
+        material.color = {material.color.x*base.x, material.color.y*base.y,
+            material.color.z*base.z, material.color.w*base.w};
+    }
 }

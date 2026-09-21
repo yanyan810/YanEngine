@@ -39,6 +39,15 @@ public:
     float Update(float dt, const Vector3& playerPosition);
     const Vector3& GetPosition() const { return position_; }
     void SetPosition(const Vector3& position) { position_ = position; }
+    void SetRotation(const Vector3& rotation) { rotation_ = rotation; }
+    void SetSpawnIdentity(uint64_t id, const std::string& trigger) {
+        spawnId_ = id;
+        id_ = "Enemy_" + std::string(id < 10 ? 2 : id < 100 ? 1 : 0, '0') + std::to_string(id);
+        spawnTriggerId_ = trigger;
+    }
+    uint64_t GetSpawnId() const { return spawnId_; }
+    const std::string& GetId() const { return id_; }
+    const std::string& GetSpawnTriggerId() const { return spawnTriggerId_; }
     unsigned int PendingAttackCount() const { return ai_.attacksThisUpdate; }
     void ConfirmAttack(float actualDamage) { attackCount_ += ai_.attacksThisUpdate; lastAttackDamage_ = actualDamage; attackFlash_ = .35f; }
     bool IsDead() const { return EnemyPartsDead(parts_); }
@@ -46,6 +55,9 @@ public:
     void Draw();
     void SetPartVisible(EnemyPartType type, bool visible);
 private:
+    uint64_t spawnId_ = 0;
+    std::string id_;
+    std::string spawnTriggerId_;
     EnemyAI ai_{};
     unsigned long long attackCount_ = 0;
     float lastAttackDamage_ = 0;

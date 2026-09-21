@@ -30,7 +30,7 @@ int main() {
     auto damaged = parts;
     const float expected[] = {35, 10, 0, 0};
     const float lost[] = {25, 25, 10, 0};
-    for (int shot = 0; shot < 4; ++shot) {
+    for (int shot = 0; shot < 3; ++shot) {
         const auto& arm = damaged[3];
         const auto center = (arm.bounds.min + arm.bounds.max) * .5f;
         EnemyPartHit shotHit;
@@ -44,6 +44,7 @@ int main() {
     }
     assert(damaged[3].DamageState() == EnemyPartDamageState::Destroyed);
     assert(damaged[3].DamageRate() == 1);
+    assert(DamageEnemyPart(damaged, EnemyPartType::RightArm, 25) == 0);
     auto stages = parts;
     assert(stages[1].hp == 100 && stages[1].DamageRate() == 0);
     const EnemyPartDamageState states[] = {EnemyPartDamageState::Normal,
@@ -58,7 +59,7 @@ int main() {
     assert(DamageEnemyPart(invalid, EnemyPartType::Head, std::numeric_limits<float>::quiet_NaN()) == 0);
     assert(DamageEnemyPart(invalid, EnemyPartType::None, 25) == 0);
     assert(invalid[0].hp == 50);
-    std::puts("Damage tests passed: independent RightArm 60/35/10/0/0, overkill, destroyed raycasts, all five states, invalid damage.");
+    std::puts("Damage tests passed: independent RightArm 60/35/10/0/0, overkill, destroyed damage clamp, all five states, invalid damage.");
     for (const auto& part : parts) {
         DetachedPartMotion motion;
         DetachedPartSettings config;
@@ -183,6 +184,30 @@ int main() {
     DamageEnemyPart(individuals[0],EnemyPartType::Head,50);
     assert(EnemyPartsDead(individuals[0]) && !EnemyPartsDead(individuals[1]));
     std::puts("Multiple enemy tests passed: separate attack cooldowns/counts, nearest target independent of iteration order, isolated HP/death.");
+    // Every destroyed part stops occluding a second enemy, including after transforms.
+    for (const auto& transform : transforms) for (const auto& part : parts) {
+        auto front = parts;
+        const auto world = Matrix4x4::MakeAffineMatrix(transform.scale,transform.rotate,transform.translate);
+        const auto behind = Matrix4x4::Multiply(Matrix4x4::MakeAffineMatrix({1,1,1},{},{5,0,0}),world);
+        const auto center=(part.bounds.min+part.bounds.max)*.5f;
+        const auto origin=EnemyPartTransformPoint({bounds.min.x-2,center.y,center.z},world);
+        const auto direction=EnemyPartTransformPoint(center,world)-origin;
+        EnemyPartHit frontHit, backHit;
+        assert(RaycastEnemyParts(front,world,origin,direction,100,frontHit));
+        assert(RaycastEnemyParts(parts,behind,origin,direction,100,backHit));
+        assert(frontHit.part==part.type && frontHit.distance<backHit.distance);
+        DamageEnemyPart(front,part.type,1000);
+        assert(!RaycastEnemyParts(front,world,origin,direction,100,frontHit));
+        assert(!frontHit.hit && frontHit.part==EnemyPartType::None);
+        assert(RaycastEnemyParts(parts,behind,origin,direction,100,backHit) && backHit.part==part.type);
+        for (const auto& remaining : front) if (remaining.type!=part.type) {
+            const auto c=(remaining.bounds.min+remaining.bounds.max)*.5f;
+            const auto o=EnemyPartTransformPoint({bounds.min.x-2,c.y,c.z},world);
+            assert(RaycastEnemyParts(front,world,o,EnemyPartTransformPoint(c,world)-o,100,frontHit));
+            assert(frontHit.part==remaining.type);
+        }
+    }
+    std::puts("Destroyed-part pass-through tests passed: six parts, transformed front/back enemies, intact parts still block.");
     EnemyParts stacked{};
     for(auto& p:stacked)p={EnemyPartType::Head,{{5,0,0},{6,1,1}}};
     stacked[5]={EnemyPartType::Body,{{2,0,0},{3,1,1}}};

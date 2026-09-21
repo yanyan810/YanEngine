@@ -27,7 +27,7 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
     object_.SetCamera(camera);
     object_.SetModel("enemy/boss/boss.gltf");
     object_.StopAnimation();
-    object_.SetRotate({0.0f, 1.5707963f, 0.0f});
+    object_.SetRotate(rotation_);
     object_.SetScale({2.0f, 2.0f, 2.0f});
     object_.SetTranslate(position_);
     object_.SetEnableLighting(1);
@@ -326,6 +326,7 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
     draw->PushClipRect({screenMin.x,screenMin.y},{screenMax.x,screenMax.y},true);
     const auto matrix=Matrix4x4::Multiply(object_.GetWorldMatrix(),vp);
     for (const auto& part:parts_) {
+        if (part.DamageState() == EnemyPartDamageState::Destroyed) continue;
         if (!showPartColliders_ && part.flashRemaining<=0) continue;
         struct Clip { float x,y,z,w; } corners[8];
         for (int i=0;i<8;++i) {

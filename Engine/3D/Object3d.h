@@ -206,6 +206,7 @@ public:
 
 private:
 	void EnsureInstanceMaterial_();
+    void PrepareInstanceMeshMaterials_();
 
 	bool useEnvironmentMap_ = false;
 	std::string environmentTexturePath_;
@@ -234,6 +235,9 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> effectParamResource_;
 	EffectParam* effectParamData_ = nullptr;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> instanceMeshMaterials_;
+    std::vector<Model::Material*> instanceMeshMaterialData_;
+    std::vector<D3D12_GPU_VIRTUAL_ADDRESS> instanceMeshMaterialCBVs_;
 	Microsoft::WRL::ComPtr<ID3D12Resource> instanceMaterialResource_;
 	Model::Material* instanceMaterialData_ = nullptr;
 	bool instanceMaterialInitializedFromModel_ = false;

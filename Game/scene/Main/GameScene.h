@@ -4,6 +4,7 @@
 #include "Object3d.h"
 #include "Player.h"
 #include "Enemy.h"
+#include "EnemySpawnSystem.h"
 #include "Sprite.h"
 
 class GameScene : public IScene {
@@ -27,6 +28,9 @@ private:
     Camera camera_;
     Player player_;
     std::vector<std::unique_ptr<Enemy>> enemies_;
+    EnemySpawnSystem spawnSystem_;
+    uint64_t nextEnemyId_ = 0;
+    bool showSpawnDebug_ = true;
     int selectedEnemy_ = 0;
     int lastHitEnemy_ = -1;
     unsigned long long enemyAttackCount_ = 0;
