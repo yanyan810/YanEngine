@@ -105,10 +105,14 @@ int main() {
         Harness h;
         EnemyDefinitions definitions; assert(definitions.Load("../../resources/Data/enemies.json"));
         assert(h.system.Load("../../resources/levels/fps_spawns.json", definitions));
-        assert(h.system.Points().size() == 7 && h.system.Triggers().size() == 2);
+        assert(h.system.Points().size() == 9 && h.system.Triggers().size() == 2);
         h.Tick(0, {3,0,-6}); assert(h.next == 0);
         h.Tick(0, {3,0,2}); h.Tick(1, {3,0,4}); assert(h.next == 3);
-        h.Tick(20, {3,0,4}); assert(h.next == 3);
+        h.Tick(1, {3,0,4}); assert(h.next == 5);
+        const std::vector<std::string> expected{"normal","ranged","fast","tank","bomber"};
+        for (size_t i=0;i<expected.size();++i)
+            assert(h.system.SelectEnemyId(*h.system.FindPoint(h.points[i]))==expected[i]);
+        h.Tick(20, {3,0,4}); assert(h.next == 5);
         h.alive.clear(); h.Tick(0, {3,0,4}); h.Tick(.5f, {3,0,4}); assert(h.next == 5);
         h.Tick(0, {3,0,24}); assert(h.next == 5);
         h.Tick(2, {3,0,26}); assert(h.next == 6);

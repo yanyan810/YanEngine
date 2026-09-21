@@ -9,7 +9,30 @@
       "attackRange": 1.5,
       "attackDamage": 10,
       "attackInterval": 1,
-      "hpMultiplier": 1
+      "hpMultiplier": 1,
+      "visualScale": [
+        1,
+        1,
+        1
+      ],
+      "typeMarker": {
+        "enabled": false,
+        "offset": [
+          0,
+          2.8,
+          0
+        ],
+        "scale": [
+          0.15,
+          0.15,
+          0.15
+        ],
+        "color": [
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "id": "ranged",
@@ -26,7 +49,30 @@
       "maxRange": 16,
       "projectileSpeed": 12,
       "projectileRadius": 0.2,
-      "projectileLifetime": 5
+      "projectileLifetime": 5,
+      "visualScale": [
+        0.95,
+        0.95,
+        0.95
+      ],
+      "typeMarker": {
+        "enabled": true,
+        "offset": [
+          0,
+          2.8,
+          0
+        ],
+        "scale": [
+          0.15,
+          0.15,
+          0.15
+        ],
+        "color": [
+          0.1,
+          0.4,
+          1
+        ]
+      }
     },
     {
       "id": "fast",
@@ -37,7 +83,30 @@
       "attackRange": 1.2,
       "attackDamage": 7,
       "attackInterval": 0.7,
-      "hpMultiplier": 0.7
+      "hpMultiplier": 0.7,
+      "visualScale": [
+        0.82,
+        0.82,
+        0.82
+      ],
+      "typeMarker": {
+        "enabled": true,
+        "offset": [
+          0,
+          2.8,
+          0
+        ],
+        "scale": [
+          0.15,
+          0.15,
+          0.15
+        ],
+        "color": [
+          1,
+          0.85,
+          0.05
+        ]
+      }
     },
     {
       "id": "tank",
@@ -48,7 +117,30 @@
       "attackRange": 1.8,
       "attackDamage": 20,
       "attackInterval": 1.6,
-      "hpMultiplier": 2.5
+      "hpMultiplier": 2.5,
+      "visualScale": [
+        1.28,
+        1.28,
+        1.28
+      ],
+      "typeMarker": {
+        "enabled": true,
+        "offset": [
+          -0.12,
+          2.25,
+          0.65
+        ],
+        "scale": [
+          0.2,
+          0.2,
+          0.2
+        ],
+        "color": [
+          0.6,
+          0.2,
+          1
+        ]
+      }
     },
     {
       "id": "bomber",
@@ -68,7 +160,30 @@
       "projectileLifetime": 6,
       "explosionRadius": 4,
       "explosionDamage": 25,
-      "fuseTime": 1.2
+      "fuseTime": 1.2,
+      "visualScale": [
+        1.05,
+        1.05,
+        1.05
+      ],
+      "typeMarker": {
+        "enabled": true,
+        "offset": [
+          0,
+          2.8,
+          0
+        ],
+        "scale": [
+          0.17,
+          0.17,
+          0.17
+        ],
+        "color": [
+          1,
+          0.3,
+          0.05
+        ]
+      }
     }
   ]
 }

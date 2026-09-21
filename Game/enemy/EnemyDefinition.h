@@ -1,5 +1,6 @@
 #pragma once
 #include <nlohmann/json.hpp>
+#include "Vector3.h"
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -16,6 +17,12 @@ inline const char* EnemyTypeName(EnemyType type) {
     default: return "Bomber";
     }
 }
+struct EnemyTypeMarker {
+    bool enabled=false;
+    Vector3 offset{0,2.8f,0}; // Enemy model-local coordinates, before its effective scale/rotation.
+    Vector3 scale{.15f,.15f,.15f};
+    Vector3 color{1,1,1};
+};
 struct EnemyDefinition {
     std::string id = "normal", displayName = "Normal";
     EnemyType type = EnemyType::Normal;
@@ -24,6 +31,11 @@ struct EnemyDefinition {
     float projectileSpeed=12, projectileRadius=.2f, projectileLifetime=5;
     float explosionRadius=4, explosionDamage=25, fuseTime=1.2f;
     float bombGravity=9.8f;
+    Vector3 visualScaleMultiplier{1,1,1};
+    EnemyTypeMarker typeMarker{};
+    Vector3 VisualScale(const Vector3& base) const {
+        return {base.x*visualScaleMultiplier.x,base.y*visualScaleMultiplier.y,base.z*visualScaleMultiplier.z};
+    }
     bool IsRanged() const { return type==EnemyType::Ranged || type==EnemyType::Bomber; }
 };
 class EnemyDefinitions {
@@ -56,6 +68,23 @@ public:
                 number("projectileSpeed",d.projectileSpeed,true); number("projectileRadius",d.projectileRadius,true);
                 number("projectileLifetime",d.projectileLifetime,true); number("explosionRadius",d.explosionRadius,true);
                 number("explosionDamage",d.explosionDamage); number("fuseTime",d.fuseTime); number("bombGravity",d.bombGravity,true);
+                const auto vector=[](const nlohmann::json& value,const char* key,bool positive,bool color=false) {
+                    if (!value.is_array() || value.size()!=3) throw std::runtime_error(std::string(key)+": expected 3 components");
+                    Vector3 result{value.at(0).get<float>(),value.at(1).get<float>(),value.at(2).get<float>()};
+                    for (float component : {result.x,result.y,result.z})
+                        if (!std::isfinite(component) || (positive && component<=0) || (color && (component<0 || component>1)))
+                            throw std::runtime_error(std::string(key)+": invalid component");
+                    return result;
+                };
+                if (item.contains("visualScale")) d.visualScaleMultiplier=vector(item.at("visualScale"),"visualScale",true);
+                if (item.contains("typeMarker")) {
+                    const auto& marker=item.at("typeMarker");
+                    if (!marker.is_object()) throw std::runtime_error("typeMarker must be an object");
+                    d.typeMarker.enabled=marker.value("enabled",false);
+                    if (marker.contains("offset")) d.typeMarker.offset=vector(marker.at("offset"),"typeMarker.offset",false);
+                    if (marker.contains("scale")) d.typeMarker.scale=vector(marker.at("scale"),"typeMarker.scale",true);
+                    if (marker.contains("color")) d.typeMarker.color=vector(marker.at("color"),"typeMarker.color",false,true);
+                }
                 if (d.minRange>d.maxRange) throw std::runtime_error("minRange exceeds maxRange: " + d.id);
                 if (d.id.empty() || !next.emplace(d.id,d).second) throw std::runtime_error("Empty/duplicate enemy id: " + d.id);
             }

@@ -38,13 +38,7 @@ public:
     void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax) const;
     void DrawImGui();
     const EnemyDefinition& Definition() const { return definition_; }
-    void ApplyDefinition(const EnemyDefinition& definition) {
-        definition_=definition;
-        ai_={};
-        ai_.settings={definition.detectionRange,definition.attackRange,definition.moveSpeed,
-            definition.attackDamage,definition.attackInterval,definition.IsRanged(),definition.minRange,definition.maxRange};
-        ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
-    }
+    void ApplyDefinition(const EnemyDefinition& definition);
     float Update(float dt, const Vector3& playerPosition);
     void UpdateVisuals(float dt); // Includes fragment lifetime/physics, but no AI or attacks.
     const Vector3& GetPosition() const { return position_; }
@@ -74,6 +68,7 @@ private:
     float lastAttackDamage_ = 0;
     float attackFlash_ = 0;
     Object3d object_;
+    std::unique_ptr<Object3d> typeMarker_; // Visual only: never included in EnemyParts or fragments.
     FragmentMode breakMode_ = FragmentMode::Face;
     std::array<std::vector<std::array<Vector3,3>>,6> faceData_{};
     std::vector<FaceShard> faceShards_;
