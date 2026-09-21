@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Object3d.h"
 #include "FPSMotion.h"
 #include "WeaponSystem.h"
@@ -19,11 +19,20 @@ public:
 #endif
     float GetHP() const { return hp_; }
     bool IsDead() const { return hp_ <= 0; }
+
+    void SetLookSensitivityMultiplier(float multiplier) {
+        lookSensitivityMultiplier_ =
+            std::clamp(multiplier, 0.05f, 2.0f);
+    }
+
 private:
     WeaponRuntime currentWeapon_;
     float hp_ = 100.0f;
     Transform transform_{{1.0f, 1.0f, 1.0f}, {}, {3.0f, 0.0f, -6.0f}};
     FPSMotion::Settings settings_;
     Camera* camera_ = nullptr;
-    Object3d object_; // Retained as a position marker; not drawn in first person.
+    Object3d object_; 
+
+    float lookSensitivityMultiplier_ = 1.0f;
+
 };

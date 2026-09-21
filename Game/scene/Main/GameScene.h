@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "IScene.h"
 #include "Camera.h"
 #include "Object3d.h"
@@ -22,6 +22,9 @@ public:
 private:
     void UpdateCombat(GameApp& app, float dt, bool wasCaptured);
     void OnStageClear(GameApp& app);
+
+    void UpdateADS(const Input& input, float dt);
+
     StageProgress stage_;
     StageClearOverlay clearOverlay_;
     bool showGoalDebug_ = true;
@@ -50,5 +53,12 @@ private:
     Object3d ground_;
     Sprite crosshairHorizontal_;
     Sprite crosshairVertical_;
+
+    float adsBlend_ = 0.0f;
+
+    // SceneをクリックしてFPS操作へ戻した時、
+    // そのクリック長押しでFullAutoが始まるのを防止
+    bool suppressFireUntilRelease_ = false;
+
 };
 

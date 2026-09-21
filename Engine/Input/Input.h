@@ -45,6 +45,11 @@ public:
     bool IsCameraControlEnabled() const { return cameraControlEnabled_; }
     bool HasFocus() const;
     bool IsLeftMouseTrigger() const { return leftMouseDown_ && !prevLeftMouseDown_; }
+    bool IsLeftMousePressed() const { return leftMouseDown_; }
+
+    bool IsRightMouseTrigger() const { return rightMouseDown_ && !prevRightMouseDown_; }
+    bool IsRightMousePressed() const { return rightMouseDown_; }
+
     // Optional screen-space viewport; nullptr uses the entire client area.
     void SetMouseCaptureRect(const RECT* rect);
     void SetCameraToggleKeyEnabled(bool enabled) { cameraToggleKeyEnabled_ = enabled; }
@@ -62,8 +67,14 @@ private:
     bool prevToggleKeyState_ = false; // トグル用
     bool justEnteredCameraMode_ = false;
     bool cameraToggleKeyEnabled_ = true;
+
     bool leftMouseDown_ = false;
     bool prevLeftMouseDown_ = false;
+
+    bool rightMouseDown_ = false;
+    bool prevRightMouseDown_ = false;
+
+
     bool hasCaptureRect_ = false;
     RECT captureRect_{};
     int cursorHideCalls_ = 0;
