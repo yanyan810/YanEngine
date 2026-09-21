@@ -11,6 +11,9 @@ public:
     FPSMotion::Settings& Settings() { return settings_; }
     void ApplyDamage(float damage) { if (std::isfinite(damage) && damage > 0) hp_ = std::max(0.0f, hp_-damage); }
     void ResetHPForDebug() { hp_ = 100.0f; }
+#ifdef _DEBUG
+    void SetPositionForDebug(const Vector3& position) { transform_.translate = position; }
+#endif
     float GetHP() const { return hp_; }
     bool IsDead() const { return hp_ <= 0; }
 private:

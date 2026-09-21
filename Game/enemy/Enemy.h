@@ -37,6 +37,7 @@ public:
     void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax) const;
     void DrawImGui();
     float Update(float dt, const Vector3& playerPosition);
+    void UpdateVisuals(float dt); // Includes fragment lifetime/physics, but no AI or attacks.
     const Vector3& GetPosition() const { return position_; }
     void SetPosition(const Vector3& position) { position_ = position; }
     void SetRotation(const Vector3& rotation) { rotation_ = rotation; }
