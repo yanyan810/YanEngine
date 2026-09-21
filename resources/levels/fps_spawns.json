@@ -2,8 +2,8 @@
   "weaponRandom": { "useFixedSeed": false, "seed": 12345 },
   "weaponSpawnPoints": [
     { "id": "WeaponSpawn_01", "position": [3, 0.5, -2], "rotation": [0, 0, 0], "weaponPool": ["pistol", "smg"] },
-    { "id": "WeaponSpawn_02", "position": [3, 0.5, 20], "rotation": [0, 0, 0], "weaponPool": ["smg", "rifle", "shotgun"] },
-    { "id": "WeaponSpawn_03", "position": [3, 0.5, 44], "rotation": [0, 0, 0], "weaponPool": [{"id":"rifle", "weight":1}, {"id":"shotgun", "weight":1}] }
+    { "id": "WeaponSpawn_02", "position": [3, 0.5, 20], "rotation": [0, 0, 0], "weaponPool": ["smg", "rifle", "shotgun", "pump_shotgun", "burst_rifle"] },
+    { "id": "WeaponSpawn_03", "position": [3, 0.5, 44], "rotation": [0, 0, 0], "weaponPool": [{"id":"rifle", "weight":1}, {"id":"shotgun", "weight":1}, {"id":"pump_shotgun", "weight":1}, {"id":"auto_shotgun", "weight":1}, {"id":"burst_rifle", "weight":1}] }
   ],
   "spawnPoints": [
     { "id": "SP_A_01", "position": [-5, 0, 14], "rotation": [0, 1.5707963, 0] },

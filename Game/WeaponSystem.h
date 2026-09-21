@@ -10,7 +10,8 @@
 
 enum class WeaponFireMode {
     SemiAuto,
-    FullAuto
+    FullAuto,
+    Burst
 };
 
 inline const char* WeaponFireModeName(WeaponFireMode mode) {
@@ -20,6 +21,8 @@ inline const char* WeaponFireModeName(WeaponFireMode mode) {
 
     case WeaponFireMode::FullAuto:
         return "FullAuto";
+    case WeaponFireMode::Burst:
+        return "Burst";
     }
 
     return "Unknown";
@@ -35,11 +38,28 @@ inline bool WeaponWantsFire(
         : trigger;
 }
 
+enum class WeaponReloadMode { Magazine, PerRound };
+enum class WeaponReloadState { None, Starting, InsertingRound, Finishing };
+inline const char* WeaponReloadModeName(WeaponReloadMode mode) {
+    return mode == WeaponReloadMode::Magazine ? "Magazine" : "PerRound";
+}
+inline const char* WeaponReloadStateName(WeaponReloadState state) {
+    switch (state) {
+    case WeaponReloadState::Starting: return "Starting";
+    case WeaponReloadState::InsertingRound: return "InsertingRound";
+    case WeaponReloadState::Finishing: return "Finishing";
+    default: return "None";
+    }
+}
+
 struct WeaponDefinition {
     std::string id;
     std::string displayName;
 
     WeaponFireMode fireMode = WeaponFireMode::SemiAuto;
+    int burstCount = 3;
+    float burstInterval = .07f;
+    int ammoPerShot = 1;
 
     float damage = 0;
     float fireInterval = 0;
@@ -50,6 +70,11 @@ struct WeaponDefinition {
     int maxReserveAmmo = 0;
 
     float reloadTime = 0;
+    WeaponReloadMode reloadMode = WeaponReloadMode::Magazine;
+    float reloadStartTime = .25f;
+    float reloadPerRoundTime = .55f;
+    float reloadEndTime = .30f;
+    bool reloadCanInterrupt = true;
 
     int pelletCount = 1;
 
@@ -74,48 +99,115 @@ public:
         magazine_ = definition.magazineSize;
         reserve_ = std::min(definition.reserveAmmo, definition.maxReserveAmmo);
         cooldown_ = reloadRemaining_ = 0;
-        reloading_ = false;
+        reloadState_ = WeaponReloadState::None;
+        burstShotsRemaining_ = 0;
+        burstTimer_ = 0;
     }
     const WeaponDefinition& Definition() const { return definition_; }
     int Magazine() const { return magazine_; }
     int Reserve() const { return reserve_; }
-    bool Reloading() const { return reloading_; }
+    bool Reloading() const { return reloadState_ != WeaponReloadState::None; }
+    WeaponReloadState ReloadState() const { return reloadState_; }
+    int BurstRemaining() const { return burstShotsRemaining_; }
+    double BurstTimer() const { return burstTimer_; }
     double ReloadRemaining() const { return reloadRemaining_; }
     double Cooldown() const { return cooldown_; }
-    void Update(float dt) {
+    // Returns completed burst shots. Caller must produce one set of pellets per shot.
+    int Update(float dt) {
         const double elapsed = std::isfinite(dt) ? std::max(0.0,static_cast<double>(dt)) : 0;
         cooldown_ = std::max(0.0,cooldown_-elapsed);
-        if (!reloading_) return;
-        reloadRemaining_ = std::max(0.0,reloadRemaining_-elapsed);
-        if (reloadRemaining_ <= 1e-7) FinishReload();
+        UpdateReload(elapsed);
+        int shots = 0;
+        if (burstShotsRemaining_ > 0) {
+            burstTimer_ -= elapsed;
+            while (burstShotsRemaining_ > 0 && burstTimer_ <= 1e-7) {
+                if (magazine_ >= definition_.ammoPerShot) {
+                    magazine_ -= definition_.ammoPerShot;
+                    ++shots;
+                    --burstShotsRemaining_;
+                }
+                if (burstShotsRemaining_ == 0 || magazine_ < definition_.ammoPerShot) {
+                    burstShotsRemaining_ = 0;
+                    // Preserve frame overshoot: cooldown starts at the final shot's time.
+                    cooldown_ = std::max(0.0,definition_.fireInterval+burstTimer_);
+                    burstTimer_ = 0;
+                } else burstTimer_ += definition_.burstInterval;
+            }
+        }
+        return shots;
+    }
+    int Step(float dt, bool trigger, bool held, bool reloadRequested) {
+        int shots = Update(dt);
+        if (reloadRequested) StartReload();
+        if (WeaponWantsFire(definition_.fireMode,trigger,held) && TryFire()) {
+            ++shots;
+            shots += Update(0); // permits burstInterval=0 without delaying the extra shots
+        }
+        return shots;
     }
     bool TryFire() {
-        if (definition_.id.empty() || reloading_ || cooldown_ > 1e-7 || magazine_ <= 0) return false;
-        --magazine_;
+        if (definition_.id.empty() || burstShotsRemaining_ > 0 || cooldown_ > 1e-7 || magazine_ < definition_.ammoPerShot) return false;
+        if (Reloading()) {
+            if (definition_.reloadMode != WeaponReloadMode::PerRound || !definition_.reloadCanInterrupt) return false;
+            reloadState_ = WeaponReloadState::None;
+            reloadRemaining_ = 0;
+        }
+        magazine_ -= definition_.ammoPerShot;
         cooldown_ = definition_.fireInterval;
+        if (definition_.fireMode == WeaponFireMode::Burst && definition_.burstCount > 1 && magazine_ >= definition_.ammoPerShot) {
+            burstShotsRemaining_ = definition_.burstCount-1;
+            burstTimer_ = definition_.burstInterval;
+            cooldown_ = 0;
+        }
         return true;
     }
     bool StartReload() {
-        if (definition_.id.empty() || reloading_ || magazine_ >= definition_.magazineSize || reserve_ <= 0) return false;
-        reloading_ = true;
-        reloadRemaining_ = definition_.reloadTime;
-        if (reloadRemaining_ == 0) FinishReload();
+        if (definition_.id.empty() || Reloading() || magazine_ >= definition_.magazineSize || reserve_ <= 0) return false;
+        CancelBurst();
+        reloadState_ = WeaponReloadState::Starting;
+        reloadRemaining_ = definition_.reloadMode == WeaponReloadMode::Magazine ? definition_.reloadTime : definition_.reloadStartTime;
+        UpdateReload(0);
         return true;
     }
+    void CancelBurst() {
+        if (burstShotsRemaining_ > 0) cooldown_ = definition_.fireInterval;
+        burstShotsRemaining_ = 0;
+        burstTimer_ = 0;
+    }
 private:
-    void FinishReload() {
-        const int amount = std::min(definition_.magazineSize-magazine_,reserve_);
-        magazine_ += amount;
-        reserve_ -= amount;
-        reloadRemaining_ = 0;
-        reloading_ = false;
+    void UpdateReload(double elapsed) {
+        if (!Reloading()) return;
+        reloadRemaining_ -= elapsed;
+        // Every iteration inserts one round or exits a phase; zero timings are bounded by ammo.
+        while (Reloading() && reloadRemaining_ <= 1e-7) {
+            if (definition_.reloadMode == WeaponReloadMode::Magazine) {
+                const int amount = std::min(definition_.magazineSize-magazine_,reserve_);
+                magazine_ += amount;
+                reserve_ -= amount;
+                reloadState_ = WeaponReloadState::None;
+            } else if (reloadState_ == WeaponReloadState::Finishing) {
+                reloadState_ = WeaponReloadState::None;
+            } else {
+                if (reserve_ > 0 && magazine_ < definition_.magazineSize) { ++magazine_; --reserve_; }
+                if (magazine_ == definition_.magazineSize || reserve_ == 0) {
+                    reloadState_ = WeaponReloadState::Finishing;
+                    reloadRemaining_ += definition_.reloadEndTime;
+                } else {
+                    reloadState_ = WeaponReloadState::InsertingRound;
+                    reloadRemaining_ += definition_.reloadPerRoundTime;
+                }
+            }
+        }
+        if (!Reloading()) reloadRemaining_ = 0;
     }
     WeaponDefinition definition_;
     int magazine_ = 0;
     int reserve_ = 0;
     double cooldown_ = 0;
     double reloadRemaining_ = 0;
-    bool reloading_ = false;
+    WeaponReloadState reloadState_ = WeaponReloadState::None;
+    int burstShotsRemaining_ = 0;
+    double burstTimer_ = 0;
 };
 
 struct WeaponPoolEntry { std::string id; double weight = 1; };
@@ -145,6 +237,7 @@ public:
         return nullptr;
     }
     const WeaponDefinition* InitialWeapon() const { return Find(initialWeaponId_); }
+    const std::vector<WeaponDefinition>& Definitions() const { return definitions_; }
     const std::vector<WeaponSpawnPoint>& Points() const { return points_; }
     const std::vector<WeaponPickup>& Pickups() const { return pickups_; }
     const std::string& Error() const { return error_; }

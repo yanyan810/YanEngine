@@ -13,12 +13,124 @@ static void Save(const json& weapons, const json& level) {
     std::ofstream("weapon-test.json") << weapons;
     std::ofstream("weapon-level-test.json") << level;
 }
+static void TestExtendedModes(const WeaponSystem& system) {
+    const auto pistol=*system.Find("pistol");
+    const auto smg=*system.Find("smg");
+    const auto burst=*system.Find("burst_rifle");
+    const auto pump=*system.Find("pump_shotgun");
+    const auto automatic=*system.Find("auto_shotgun");
+    assert(pump.reloadMode==WeaponReloadMode::PerRound && pump.pelletCount==8);
+    assert(automatic.fireMode==WeaponFireMode::FullAuto && automatic.pelletCount==6);
+    assert(burst.fireMode==WeaponFireMode::Burst && burst.burstCount==3);
+    WeaponRuntime weapon;
+    weapon.Equip(pistol);
+    assert(weapon.Step(0,true,true,false)==1);
+    assert(weapon.Step(1,false,true,false)==0); // SemiAuto held
+    assert(weapon.Step(0,true,true,false)==1);
+    weapon.Equip(smg);
+    assert(weapon.Step(0,true,true,false)==1);
+    assert(weapon.Step(.04f,false,true,false)==0);
+    assert(weapon.Step(.04f,false,true,false)==1);
+    assert(weapon.Step(1,false,false,false)==0);
+    weapon.Equip(burst);
+    assert(weapon.Step(0,true,true,false)==1 && weapon.BurstRemaining()==2);
+    assert(weapon.Step(.03f,true,true,false)==0); // spam cannot overlap
+    assert(weapon.Step(.04f,false,false,false)==1 && weapon.BurstRemaining()==1);
+    assert(weapon.Step(.07f,false,false,false)==1 && weapon.BurstRemaining()==0);
+    assert(weapon.Magazine()==27 && std::abs(weapon.Cooldown()-.45)<1e-5);
+    assert(weapon.Step(.44f,true,true,false)==0);
+    assert(weapon.Step(.02f,false,true,false)==0); // held does not start a burst
+    assert(weapon.Step(0,true,true,false)==1);
+    weapon.CancelBurst(); assert(weapon.BurstRemaining()==0 && weapon.Update(1)==0);
+    auto scarce=burst; scarce.magazineSize=5; scarce.ammoPerShot=2;
+    weapon.Equip(scarce);
+    assert(weapon.Step(0,true,true,false)==1);
+    assert(weapon.Step(.07f,false,false,false)==1);
+    assert(weapon.Magazine()==1 && weapon.BurstRemaining()==0);
+    assert(weapon.Step(1,true,true,false)==0);
+    auto instant=burst; instant.burstInterval=0;
+    weapon.Equip(instant);
+    assert(weapon.Step(0,true,true,false)==3 && weapon.Magazine()==27);
+    // Burst scheduling and final cooldown agree across different frame rates.
+    for (float dt : {1.0f/30,1.0f/144}) {
+        weapon.Equip(burst);
+        int shots=weapon.Step(0,true,true,false);
+        float elapsed=0;
+        while (elapsed<.3f) { shots+=weapon.Step(dt,false,false,false); elapsed+=dt; }
+        assert(shots==3 && std::abs(weapon.Cooldown()-(.14+.45-elapsed))<1e-5);
+    }
+    auto emptyPump=pump; emptyPump.magazineSize=2; emptyPump.reserveAmmo=3;
+    weapon.Equip(emptyPump);
+    assert(weapon.TryFire()); weapon.Update(1); assert(weapon.TryFire()); weapon.Update(1);
+    assert(weapon.Magazine()==0 && weapon.StartReload());
+    assert(weapon.ReloadState()==WeaponReloadState::Starting && !weapon.TryFire());
+    weapon.Update(.24f); assert(weapon.Magazine()==0);
+    weapon.Update(.01f); assert(weapon.Magazine()==1 && weapon.Reserve()==2);
+    assert(weapon.ReloadState()==WeaponReloadState::InsertingRound);
+    weapon.Update(.55f); assert(weapon.Magazine()==2 && weapon.Reserve()==1);
+    assert(weapon.ReloadState()==WeaponReloadState::Finishing);
+    weapon.Update(.29f); assert(weapon.Reloading());
+    weapon.Update(.01f); assert(!weapon.Reloading() && !weapon.StartReload());
+    weapon.Equip(pump);
+    for (int i=0;i<6;++i) { assert(weapon.TryFire()); weapon.Update(1); }
+    assert(weapon.Magazine()==2 && weapon.StartReload());
+    weapon.Update(.8f); assert(weapon.Magazine()==4);
+    assert(weapon.TryFire()); assert(weapon.Magazine()==3 && !weapon.Reloading());
+    const auto reserve=weapon.Reserve(); weapon.Update(10); assert(weapon.Reserve()==reserve);
+    auto locked=pump; locked.reloadCanInterrupt=false;
+    weapon.Equip(locked); assert(weapon.TryFire()); weapon.Update(1); assert(weapon.StartReload());
+    assert(!weapon.TryFire()); weapon.Update(.25f); assert(!weapon.TryFire());
+    weapon.Update(.3f); assert(weapon.TryFire());
+    auto lowReserve=pump; lowReserve.reserveAmmo=1;
+    weapon.Equip(lowReserve); assert(weapon.TryFire()); weapon.Update(1); assert(weapon.TryFire()); weapon.Update(1);
+    assert(weapon.StartReload()); weapon.Update(.25f);
+    assert(weapon.Reserve()==0 && weapon.Magazine()==7 && weapon.ReloadState()==WeaponReloadState::Finishing);
+    weapon.Update(.3f); assert(!weapon.Reloading() && !weapon.StartReload());
+    auto zero=pump; zero.reloadStartTime=zero.reloadPerRoundTime=zero.reloadEndTime=0;
+    weapon.Equip(zero); assert(weapon.TryFire()); assert(weapon.StartReload());
+    assert(!weapon.Reloading() && weapon.Magazine()==8 && weapon.Reserve()==39);
+    // Eight generated rays, one ammo payment; change ammo cost without changing pellet count.
+    weapon.Equip(pump);
+    std::mt19937 random(1);
+    int rays=0;
+    for (int shots=weapon.Step(0,true,true,false); shots>0; --shots)
+        for (int pellet=0; pellet<weapon.Definition().pelletCount; ++pellet) {
+            const auto direction=WeaponPelletDirection({0,0,1},{1,0,0},{0,1,0},pump.hipSpreadDegrees,random);
+            assert(direction.z>0); ++rays;
+        }
+    assert(rays==8 && weapon.Magazine()==7);
+    auto doubleShot=pump; doubleShot.ammoPerShot=2;
+    weapon.Equip(doubleShot); assert(weapon.Step(0,true,true,false)==1 && weapon.Magazine()==6 && weapon.Definition().pelletCount==8);
+    weapon.Equip(burst); assert(weapon.Step(0,true,true,false)==1);
+    weapon.Equip(pistol); assert(weapon.BurstRemaining()==0 && weapon.BurstTimer()==0 && weapon.Cooldown()==0 && !weapon.Reloading());
+    assert(weapon.Update(1)==0 && weapon.Magazine()==12);
+    weapon.Equip(pump); assert(weapon.TryFire()); assert(weapon.StartReload());
+    weapon.Equip(smg); assert(weapon.ReloadState()==WeaponReloadState::None && weapon.ReloadRemaining()==0 && weapon.Cooldown()==0);
+    WeaponSystem pickups=system;
+    weapon.Equip(burst); assert(weapon.Step(0,true,true,false)==1);
+    assert(pickups.TryPickup(pickups.Pickups()[0].position,weapon));
+    assert(weapon.BurstRemaining()==0 && weapon.Cooldown()==0 && weapon.BurstTimer()==0);
+    weapon.Equip(pump); assert(weapon.TryFire()); assert(weapon.StartReload());
+    assert(pickups.TryPickup(pickups.Pickups()[1].position,weapon));
+    assert(!weapon.Reloading() && weapon.ReloadRemaining()==0 && weapon.Cooldown()==0);
+    const int freshMagazine=weapon.Magazine();
+    assert(weapon.Update(5)==0 && weapon.Magazine()==freshMagazine);
+    // Stage clear leaves the entire runtime untouched; no Step call after Cleared.
+    weapon.Equip(burst); assert(weapon.Step(0,true,true,false)==1);
+    const int remaining=weapon.BurstRemaining(); const auto timer=weapon.BurstTimer();
+    StageProgress stage; assert(stage.LoadGoals("../../resources/levels/fps_spawns.json"));
+    assert(stage.Update(0,{3,0,52}));
+    if (stage.IsPlaying()) weapon.Step(1,false,false,false);
+    assert(weapon.BurstRemaining()==remaining && weapon.BurstTimer()==timer);
+    std::cout << "Extended weapon tests passed: Semi/Full/Burst, burst timing and exhaustion, ammo/pellet independence, PerRound phases, interruption, reserve/full stop, zero timings, equip reset, stage freeze.\n";
+}
 int main() {
     const auto definitions=Read("../../resources/Data/weapons.json");
     const auto level=Read("../../resources/levels/fps_spawns.json");
     WeaponSystem system;
     assert(system.Load("../../resources/Data/weapons.json","../../resources/levels/fps_spawns.json",WeaponRandomSettings{true,12345}));
     assert(system.Points().size()==3 && system.InitialWeapon()->id=="pistol");
+    TestExtendedModes(system);
     const auto pistol = *system.Find("pistol");
     const auto smg = *system.Find("smg");
     const auto rifle = *system.Find("rifle");
@@ -231,6 +343,14 @@ int main() {
         data=definitions; data["weapons"][0]["magazineSize"]=1.5; reject(data,level);
         data=definitions; data["weapons"][0]["pelletCount"]=100; reject(data,level);
         data=definitions; data["weapons"][1]["id"]="pistol"; reject(data,level);
+        for (const auto* field : {"ammoPerShot","pelletCount","burstCount","magazineSize"}) {
+            data=definitions; data["weapons"][0][field]=0; reject(data,level);
+            data=definitions; data["weapons"][0][field]=-1; reject(data,level);
+        }
+        for (const auto* field : {"burstInterval","reloadTime","reloadStartTime","reloadPerRoundTime","reloadEndTime"}) {
+            data=definitions; data["weapons"][0][field]=-1; reject(data,level);
+        }
+        data=definitions; data["weapons"][0]["reloadMode"]="Unknown"; reject(data,level);
 
         auto map=level; 
         map["weaponSpawnPoints"][0]["weaponPool"]={"missing"};
