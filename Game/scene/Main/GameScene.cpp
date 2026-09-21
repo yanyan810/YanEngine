@@ -19,6 +19,26 @@ void GameScene::OnEnter(GameApp& app) {
     camera_.Update();
     app.ObjCom()->SetDefaultCamera(&camera_);
     player_.Initialize(app.ObjCom(), app.Dx(), &camera_);
+    if (!weapons_.Load("resources/Data/weapons.json","resources/levels/fps_spawns.json",weaponSeedOverride_))
+        OutputDebugStringA(("Weapon configuration error: " + weapons_.Error() + "\n").c_str());
+    if (const auto* initial = weapons_.InitialWeapon()) player_.CurrentWeapon().Equip(*initial);
+    pelletRandom_.seed(weapons_.ActualSeed() ^ 0x9e3779b9u); // independent of placement lottery
+    weaponHUD_.Initialize(app.SpriteCom(),app.Dx());
+    for (const auto& pickup : weapons_.Pickups()) {
+        auto visual = std::make_unique<Object3d>();
+        visual->Initialize(app.ObjCom(),app.Dx());
+        visual->SetCamera(&camera_);
+        visual->SetModel("cube/cube.obj");
+        visual->SetTexture("resources/white1x1.png");
+        const auto& definition = *weapons_.Find(pickup.weaponId);
+        visual->SetScale(definition.pickupScale);
+        visual->SetTranslate(pickup.position);
+        visual->SetRotate(pickup.rotation);
+        visual->SetMaterialColor({definition.pickupColor.x,definition.pickupColor.y,definition.pickupColor.z,1});
+        visual->SetEnableLighting(0);
+        visual->Update(0);
+        weaponVisuals_.push_back(std::move(visual));
+    }
     enemies_.clear();
     spawnSystem_ = EnemySpawnSystem{};
     if (!spawnSystem_.Load("resources/levels/fps_spawns.json"))
@@ -121,6 +141,11 @@ void GameScene::OnStageClear(GameApp& app) {
 
 void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     Input& input = *app.GetInput();
+    auto& weapon = player_.CurrentWeapon();
+    weapon.Update(dt);
+    const bool controls = wasCaptured && input.IsCameraControlEnabled() && input.HasFocus();
+    const bool pickedUp = controls && input.IsKeyTrigger(DIK_E) && weapons_.TryPickup(player_.GetTransform().translate,weapon);
+    if (controls && input.IsKeyTrigger(DIK_R)) weapon.StartReload();
     spawnSystem_.Update(dt, player_.GetTransform().translate,
         [&](const EnemySpawnPoint& point, const std::string& trigger) {
             auto enemy = std::make_unique<Enemy>();
@@ -155,15 +180,20 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
     }
     // A click used to acquire FPS control is consumed, never a shot.
-    if (wasCaptured && input.IsCameraControlEnabled() && input.HasFocus() && input.IsLeftMouseTrigger()) {
+    if (controls && !pickedUp && input.IsLeftMouseTrigger() && weapon.TryFire()) {
         ++shotCount_;
+        const auto& definition = weapon.Definition();
         const auto& world = camera_.GetWorldMatrix();
         const Vector3 forward{world.m[2][0], world.m[2][1], world.m[2][2]};
+        const Vector3 right{world.m[0][0],world.m[0][1],world.m[0][2]};
+        const Vector3 up{world.m[1][0],world.m[1][1],world.m[1][2]};
+        for (int pellet=0; pellet<definition.pelletCount; ++pellet) {
+        const auto direction = WeaponPelletDirection(forward,right,up,definition.spreadDegrees,pelletRandom_);
         struct SceneHit { Enemy* enemy=nullptr; Enemy::RaycastHit hit{}; int index=-1; } closest;
-        float range=kShotRange;
+        float range=definition.range;
         for(size_t i=0;i<enemies_.size();++i) {
             Enemy::RaycastHit candidate;
-            if (enemies_[i]->Raycast(camera_.GetTranslate(),forward,range,candidate) &&
+            if (enemies_[i]->Raycast(camera_.GetTranslate(),direction,range,candidate) &&
                 (!closest.enemy || candidate.distance<range)) {
                 range=candidate.distance;
                 closest={enemies_[i].get(),candidate,static_cast<int>(i)};
@@ -173,8 +203,9 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
             ++hitCount_;
             lastHitPart_=closest.hit.part;
             lastHitEnemy_=closest.index;
-            lastDamage_=closest.enemy->ApplyDamage(closest.hit.part,kShotDamage,forward);
+            lastDamage_=closest.enemy->ApplyDamage(closest.hit.part,definition.damage,direction);
             closest.enemy->ShowHitFeedback(closest.hit.part);
+        }
         }
 
     }
@@ -201,6 +232,8 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
 }
 void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
+    for (size_t i=0; i<weaponVisuals_.size(); ++i)
+        if (weapons_.Pickups()[i].visible) weaponVisuals_[i]->Draw();
     for(auto& enemy : enemies_) enemy->Draw();
 }
 
@@ -248,6 +281,34 @@ void GameScene::DrawImGui(GameApp& app) {
         {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
         {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
 #ifdef _DEBUG
+    ImGui::Begin("Weapon System");
+    const auto& weapon = player_.CurrentWeapon();
+    const auto& definition = weapon.Definition();
+    ImGui::Text("Current: %s (%s)",definition.displayName.c_str(),definition.id.c_str());
+    ImGui::Text("Magazine: %d / %d | Reserve: %d / %d",weapon.Magazine(),definition.magazineSize,weapon.Reserve(),definition.maxReserveAmmo);
+    ImGui::Text("Damage/pellet: %.1f | Range: %.1f | Interval: %.2f",definition.damage,definition.range,definition.fireInterval);
+    ImGui::Text("Pellets: %d | Spread: %.1f deg | Cooldown: %.2f",definition.pelletCount,definition.spreadDegrees,weapon.Cooldown());
+    ImGui::Text("Reload: %s | Remaining: %.2f / %.2f",weapon.Reloading()?"yes":"no",weapon.ReloadRemaining(),definition.reloadTime);
+    ImGui::TextUnformatted("LMB: one shot per click | E: nearest pickup | R: reload");
+    if (!weapons_.Error().empty()) ImGui::TextWrapped("Config error: %s",weapons_.Error().c_str());
+    auto randomSettings = weaponSeedOverride_.value_or(weapons_.Settings());
+    bool seedChanged = ImGui::Checkbox("Use Fixed Seed (next restart)",&randomSettings.useFixedSeed);
+    seedChanged |= ImGui::InputScalar("Seed (next restart)",ImGuiDataType_U32,&randomSettings.seed);
+    if (seedChanged) weaponSeedOverride_ = randomSettings;
+    if (ImGui::Button("Use JSON seed settings next restart")) weaponSeedOverride_.reset();
+    ImGui::Text("This stage seed: %u",weapons_.ActualSeed());
+    const auto nearest = weapons_.Nearest(player_.GetTransform().translate);
+    for (size_t i=0; i<weapons_.Points().size(); ++i) {
+        const auto& point = weapons_.Points()[i];
+        if (!ImGui::TreeNode(point.id.c_str())) continue;
+        ImGui::Text("Position: %.1f, %.1f, %.1f",point.position.x,point.position.y,point.position.z);
+        for (const auto& candidate : point.weaponPool) ImGui::BulletText("%s (weight %.1f)",candidate.id.c_str(),candidate.weight);
+        const auto& pickup = weapons_.Pickups()[i];
+        ImGui::Text("Selected: %s | %s %s",pickup.weaponId.c_str(),pickup.pickedUp?"Picked up":"Available",
+            nearest && *nearest==i ? "[nearest]":"");
+        ImGui::TreePop();
+    }
+    ImGui::End();
     ImGui::Begin("Stage Progress");
     ImGui::Text("Stage State: %s", stage_.IsPlaying() ? "Playing" : "Cleared");
     ImGui::Text("%s: %s", stage_.IsPlaying() ? "Elapsed Time" : "Clear Time", StageProgress::FormatTime(stage_.Time()).c_str());
@@ -269,6 +330,7 @@ void GameScene::DrawImGui(GameApp& app) {
         };
         for (const auto& trigger : spawnSystem_.Triggers()) moveTo(trigger.id, trigger.position);
         for (const auto& goal : stage_.Goals()) moveTo(goal.id, goal.position);
+        for (const auto& point : weapons_.Points()) moveTo(point.id, point.position);
         ImGui::TreePop();
     }
     ImGui::EndDisabled();
@@ -321,4 +383,8 @@ void GameScene::DrawOverlay2D(GameApp&) {
     crosshairVertical_.Update(view, projection);
     crosshairHorizontal_.Draw();
     crosshairVertical_.Draw();
+    const auto nearest = weapons_.Nearest(player_.GetTransform().translate);
+    const auto* nearby = nearest ? weapons_.Find(weapons_.Pickups()[*nearest].weaponId) : nullptr;
+    weaponHUD_.Draw(player_.CurrentWeapon(),nearby,!weapons_.Error().empty(),
+        static_cast<float>(WinApp::kClientWidth),static_cast<float>(WinApp::kClientHeight),view,projection);
 }
