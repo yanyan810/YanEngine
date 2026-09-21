@@ -5,20 +5,34 @@
 #include "WinApp.h"
 #include "EnemySpawnDebug.h"
 #include <string>
+#include <numbers>
 #ifdef USE_IMGUI
 #include "imgui.h"
 namespace { constexpr int kCapturedMouseFlags = ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange; }
 #endif
+
+namespace {
+    constexpr float kNormalFovDegrees = 60.0f;
+
+    constexpr float kDegreesToRadians =
+        std::numbers::pi_v<float> / 180.0f;
+}
 
 void GameScene::OnEnter(GameApp& app) {
     app.GetInput()->SetCameraToggleKeyEnabled(false);
 #ifdef USE_IMGUI
     savedMouseFlags_ = ImGui::GetIO().ConfigFlags & kCapturedMouseFlags;
 #endif
-    camera_.SetFovY(1.0471976f); // 60 degree vertical FOV
+    camera_.SetFovY(
+        kNormalFovDegrees * kDegreesToRadians);
+
     camera_.Update();
     app.ObjCom()->SetDefaultCamera(&camera_);
     player_.Initialize(app.ObjCom(), app.Dx(), &camera_);
+    adsBlend_ = 0.0f;
+    suppressFireUntilRelease_ = false;
+    player_.SetLookSensitivityMultiplier(1.0f);
+
     if (!weapons_.Load("resources/Data/weapons.json","resources/levels/fps_spawns.json",weaponSeedOverride_))
         OutputDebugStringA(("Weapon configuration error: " + weapons_.Error() + "\n").c_str());
     if (const auto* initial = weapons_.InitialWeapon()) player_.CurrentWeapon().Equip(*initial);
@@ -108,19 +122,46 @@ void GameScene::Update(GameApp& app, float dt) {
     if (!stage_.IsPlaying() || !viewReady || input.IsKeyTrigger(DIK_ESCAPE)) {
         input.SetCameraControlEnabled(false);
         if (input.IsKeyTrigger(DIK_ESCAPE)) initialCapturePending_ = false;
-    } else if (initialCapturePending_ || clickedView) {
+    }
+    else if (initialCapturePending_ || clickedView) {
+
         input.SetCameraControlEnabled(true);
+
+        if (clickedView && !wasCaptured) {
+            suppressFireUntilRelease_ = true;
+        }
+
         initialCapturePending_ = false;
     }
 #ifdef USE_IMGUI
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) |
         (input.IsCameraControlEnabled() ? kCapturedMouseFlags : savedMouseFlags_);
 #endif
-    if (stage_.IsPlaying()) {
-        for (const auto& enemy : enemies_) stage_.ObserveEnemy(enemy->GetSpawnId(), enemy->IsDead());
-        player_.Update(input, dt);
-        if (stage_.Update(dt, player_.GetTransform().translate)) OnStageClear(app);
+
+    if (!input.IsLeftMousePressed()) {
+        suppressFireUntilRelease_ = false;
     }
+
+    if (stage_.IsPlaying()) {
+
+        for (const auto& enemy : enemies_) {
+            stage_.ObserveEnemy(
+                enemy->GetSpawnId(),
+                enemy->IsDead());
+        }
+
+        UpdateADS(input, dt);
+
+        player_.Update(input, dt);
+
+        if (stage_.Update(
+            dt,
+            player_.GetTransform().translate)) {
+
+            OnStageClear(app);
+        }
+    }
+
     if (stage_.IsPlaying()) UpdateCombat(app, dt, wasCaptured);
     else for (auto& enemy : enemies_) enemy->UpdateVisuals(dt);
     ground_.Update(dt);
@@ -137,11 +178,88 @@ void GameScene::OnStageClear(GameApp& app) {
 #ifdef USE_IMGUI
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
 #endif
+
+    adsBlend_ = 0.0f;
+
+    player_.SetLookSensitivityMultiplier(1.0f);
+
+    camera_.SetFovY(
+        kNormalFovDegrees *
+        kDegreesToRadians);
+
+    camera_.Update();
+
     clearOverlay_.SetResult(stage_, static_cast<float>(WinApp::kClientWidth), static_cast<float>(WinApp::kClientHeight));
     const auto time = StageProgress::FormatTime(stage_.Time());
     const std::wstring title = L"STAGE CLEAR | Time: " + std::wstring(time.begin(),time.end()) +
         L" | Enemies Defeated: " + std::to_wstring(stage_.DefeatedCount());
     SetWindowTextW(app.Win()->GetHwnd(), title.c_str());
+}
+
+
+void GameScene::UpdateADS(
+    const Input& input,
+    float dt)
+{
+    const auto& definition =
+        player_.CurrentWeapon().Definition();
+
+    const bool controls =
+        input.IsCameraControlEnabled() &&
+        input.HasFocus() &&
+        stage_.IsPlaying();
+
+    const bool wantsADS =
+        controls &&
+        input.IsRightMousePressed() &&
+        !definition.id.empty();
+
+    const float target =
+        wantsADS ? 1.0f : 0.0f;
+
+    const float transitionTime =
+        std::max(
+            0.01f,
+            definition.adsTransitionTime);
+
+    const float step =
+        dt / transitionTime;
+
+    if (target > adsBlend_) {
+        adsBlend_ =
+            std::min(1.0f, adsBlend_ + step);
+    }
+    else {
+        adsBlend_ =
+            std::max(0.0f, adsBlend_ - step);
+    }
+
+    const float adsFov =
+        definition.id.empty()
+        ? kNormalFovDegrees
+        : definition.adsFovDegrees;
+
+    const float currentFovDegrees =
+        kNormalFovDegrees +
+        (adsFov - kNormalFovDegrees) *
+        adsBlend_;
+
+    camera_.SetFovY(
+        currentFovDegrees *
+        kDegreesToRadians);
+
+    const float adsSensitivity =
+        definition.id.empty()
+        ? 1.0f
+        : definition.adsSensitivityMultiplier;
+
+    const float sensitivityMultiplier =
+        1.0f +
+        (adsSensitivity - 1.0f) *
+        adsBlend_;
+
+    player_.SetLookSensitivityMultiplier(
+        sensitivityMultiplier);
 }
 
 void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
@@ -185,7 +303,22 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
     }
     // A click used to acquire FPS control is consumed, never a shot.
-    if (controls && !pickedUp && input.IsLeftMouseTrigger() && weapon.TryFire()) {
+    const auto& definition =
+        weapon.Definition();
+
+    const bool wantsFire =
+        WeaponWantsFire(
+            definition.fireMode,
+            input.IsLeftMouseTrigger(),
+            input.IsLeftMousePressed());
+
+    if (
+        controls &&
+        !pickedUp &&
+        !suppressFireUntilRelease_ &&
+        wantsFire &&
+        weapon.TryFire())
+    {
         ++shotCount_;
         const auto& definition = weapon.Definition();
         const auto& world = camera_.GetWorldMatrix();
@@ -193,7 +326,21 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         const Vector3 right{world.m[0][0],world.m[0][1],world.m[0][2]};
         const Vector3 up{world.m[1][0],world.m[1][1],world.m[1][2]};
         for (int pellet=0; pellet<definition.pelletCount; ++pellet) {
-        const auto direction = WeaponPelletDirection(forward,right,up,definition.spreadDegrees,pelletRandom_);
+            const float currentSpread =
+                definition.hipSpreadDegrees +
+                (
+                    definition.adsSpreadDegrees -
+                    definition.hipSpreadDegrees
+                    ) * adsBlend_;
+
+            const auto direction =
+                WeaponPelletDirection(
+                    forward,
+                    right,
+                    up,
+                    currentSpread,
+                    pelletRandom_);
+
         struct SceneHit { Enemy* enemy=nullptr; Enemy::RaycastHit hit{}; int index=-1; } closest;
         float range=definition.range;
         for(size_t i=0;i<enemies_.size();++i) {
@@ -292,7 +439,32 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::Text("Current: %s (%s)",definition.displayName.c_str(),definition.id.c_str());
     ImGui::Text("Magazine: %d / %d | Reserve: %d / %d",weapon.Magazine(),definition.magazineSize,weapon.Reserve(),definition.maxReserveAmmo);
     ImGui::Text("Damage/pellet: %.1f | Range: %.1f | Interval: %.2f",definition.damage,definition.range,definition.fireInterval);
-    ImGui::Text("Pellets: %d | Spread: %.1f deg | Cooldown: %.2f",definition.pelletCount,definition.spreadDegrees,weapon.Cooldown());
+  
+    const float rpm =
+        definition.fireInterval > 0.0f
+        ? 60.0f / definition.fireInterval
+        : 0.0f;
+
+    ImGui::Text(
+        "Fire Mode: %s | RPM: %.0f",
+        WeaponFireModeName(definition.fireMode),
+        rpm);
+
+    ImGui::Text(
+        "ADS Blend: %.2f | ADS FOV: %.1f",
+        adsBlend_,
+        definition.adsFovDegrees);
+
+    ImGui::Text(
+        "Spread Hip / ADS: %.2f / %.2f",
+        definition.hipSpreadDegrees,
+        definition.adsSpreadDegrees);
+    
+    ImGui::Text(
+        "Pellets: %d | Cooldown: %.2f",
+        definition.pelletCount,
+        weapon.Cooldown());
+
     ImGui::Text("Reload: %s | Remaining: %.2f / %.2f",weapon.Reloading()?"yes":"no",weapon.ReloadRemaining(),definition.reloadTime);
     ImGui::TextUnformatted("LMB: one shot per click | E: nearest pickup | R: reload");
     if (!weapons_.Error().empty()) ImGui::TextWrapped("Config error: %s",weapons_.Error().c_str());

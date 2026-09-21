@@ -1,4 +1,4 @@
-#include "Player.h"
+﻿#include "Player.h"
 #include "Input.h"
 
 void Player::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera) {
@@ -13,7 +13,14 @@ void Player::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camer
 void Player::Update(const Input& input, float dt) {
     if (input.IsCameraControlEnabled() && input.HasFocus()) {
         const POINT mouse = input.GetMouseDelta();
-        FPSMotion::Look(transform_, static_cast<float>(mouse.x), static_cast<float>(mouse.y), settings_);
+
+        FPSMotion::Look(
+            transform_,
+            static_cast<float>(mouse.x),
+            static_cast<float>(mouse.y),
+            settings_,
+            lookSensitivityMultiplier_);
+
         const float forward = static_cast<float>(input.IsKeyPressed(DIK_W)) - static_cast<float>(input.IsKeyPressed(DIK_S));
         const float right = static_cast<float>(input.IsKeyPressed(DIK_D)) - static_cast<float>(input.IsKeyPressed(DIK_A));
         FPSMotion::Move(transform_, right, forward, dt, settings_);

@@ -1,4 +1,4 @@
-#include "Input.h"
+﻿#include "Input.h"
 #include <cassert>
 #include <cstring>
 
@@ -134,10 +134,21 @@ void Input::Update() {
         }
         memset(keys_, 0, sizeof(keys_));
     }
-
     prevLeftMouseDown_ = leftMouseDown_;
-    leftMouseDown_ = HasFocus() && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    if (!HasFocus()) memset(keys_, 0, sizeof(keys_));
+    prevRightMouseDown_ = rightMouseDown_;
+
+    const bool focused = HasFocus();
+
+    leftMouseDown_ =
+        focused && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+    rightMouseDown_ =
+        focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+
+    if (!focused) {
+        memset(keys_, 0, sizeof(keys_));
+    }
+
     UpdateMouseDelta();
 
     // === 修正済み：トグル処理は1回だけ ===

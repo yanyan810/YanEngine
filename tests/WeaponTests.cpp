@@ -1,4 +1,4 @@
-#include "WeaponSystem.h"
+﻿#include "WeaponSystem.h"
 #include "StageProgress.h"
 #include "EnemyParts.h"
 #include <nlohmann/json.hpp>
@@ -19,9 +19,68 @@ int main() {
     WeaponSystem system;
     assert(system.Load("../../resources/Data/weapons.json","../../resources/levels/fps_spawns.json",WeaponRandomSettings{true,12345}));
     assert(system.Points().size()==3 && system.InitialWeapon()->id=="pistol");
-    const auto pistol=*system.Find("pistol");
-    const auto smg=*system.Find("smg");
-    const auto shotgun=*system.Find("shotgun");
+    const auto pistol = *system.Find("pistol");
+    const auto smg = *system.Find("smg");
+    const auto rifle = *system.Find("rifle");
+    const auto shotgun = *system.Find("shotgun");
+
+    {
+        // FireMode
+        assert(pistol.fireMode == WeaponFireMode::SemiAuto);
+        assert(smg.fireMode == WeaponFireMode::FullAuto);
+        assert(rifle.fireMode == WeaponFireMode::FullAuto);
+        assert(shotgun.fireMode == WeaponFireMode::SemiAuto);
+
+        // SemiAuto:
+        // 押した瞬間だけ発射要求
+        assert(WeaponWantsFire(
+            WeaponFireMode::SemiAuto,
+            true,
+            true));
+
+        // 長押しだけでは次弾を撃たない
+        assert(!WeaponWantsFire(
+            WeaponFireMode::SemiAuto,
+            false,
+            true));
+
+        // FullAuto:
+        // 最初のクリックでも撃つ
+        assert(WeaponWantsFire(
+            WeaponFireMode::FullAuto,
+            true,
+            true));
+
+        // クリックTriggerがなくても長押し中なら撃つ
+        assert(WeaponWantsFire(
+            WeaponFireMode::FullAuto,
+            false,
+            true));
+
+        // 離したら撃たない
+        assert(!WeaponWantsFire(
+            WeaponFireMode::FullAuto,
+            false,
+            false));
+
+        // ADS設定
+        assert(pistol.adsFovDegrees == 50.0f);
+        assert(smg.adsFovDegrees == 45.0f);
+        assert(rifle.adsFovDegrees == 35.0f);
+        assert(shotgun.adsFovDegrees == 48.0f);
+
+        assert(pistol.adsSensitivityMultiplier == 0.90f);
+        assert(smg.adsSensitivityMultiplier == 0.80f);
+        assert(rifle.adsSensitivityMultiplier == 0.70f);
+        assert(shotgun.adsSensitivityMultiplier == 0.85f);
+
+        // ADS時のSpreadはHipより狭い
+        assert(pistol.adsSpreadDegrees <= pistol.hipSpreadDegrees);
+        assert(smg.adsSpreadDegrees <= smg.hipSpreadDegrees);
+        assert(rifle.adsSpreadDegrees <= rifle.hipSpreadDegrees);
+        assert(shotgun.adsSpreadDegrees <= shotgun.hipSpreadDegrees);
+    }
+
     {
         WeaponRuntime weapon;
         assert(!weapon.TryFire() && !weapon.StartReload());
@@ -97,9 +156,9 @@ int main() {
         std::mt19937 random(42);
         const Vector3 forward{0,0,1}, right{1,0,0}, up{0,1,0};
         for (int i=0;i<100;++i) {
-            const auto ray=WeaponPelletDirection(forward,right,up,shotgun.spreadDegrees,random);
+            const auto ray=WeaponPelletDirection(forward,right,up,shotgun.hipSpreadDegrees,random);
             assert(std::abs(ray.x*ray.x+ray.y*ray.y+ray.z*ray.z-1)<1e-5f);
-            assert(ray.z>=std::cos(shotgun.spreadDegrees*.01745329252f)-1e-5f);
+            assert(ray.z>=std::cos(shotgun.hipSpreadDegrees *.01745329252f)-1e-5f);
         }
         const auto straight=WeaponPelletDirection(forward,right,up,0,random);
         assert(straight.x==0 && straight.y==0 && straight.z==1);
@@ -139,18 +198,49 @@ int main() {
             assert(!system.Load("weapon-test.json","weapon-level-test.json"));
             assert(!system.Error().empty() && system.Points().size()==3);
         };
-        auto data=definitions; data["weapons"][0]["magazineSize"]=0; reject(data,level);
+        auto data=definitions; 
+        data["weapons"][0]["magazineSize"]=0; 
+        reject(data,level);
+
+        data = definitions;
+        data["weapons"][0]["fireMode"] = "Unknown";
+        reject(data, level);
+
+        data = definitions;
+        data["weapons"][0]["adsFov"] = 0;
+        reject(data, level);
+
+        data = definitions;
+        data["weapons"][0]["adsTransitionTime"] = 0;
+        reject(data, level);
+
+        data = definitions;
+        data["weapons"][0]["adsSensitivityMultiplier"] = 0;
+        reject(data, level);
+
+        data = definitions;
+        data["weapons"][0]["hipSpreadDegrees"] = -1;
+        reject(data, level);
+
+        data = definitions;
+        data["weapons"][0]["adsSpreadDegrees"] = -1;
+        reject(data, level);
+
         data=definitions; data["weapons"][0]["fireInterval"]=-1; reject(data,level);
         data=definitions; data["weapons"][0]["reloadTime"]=-1; reject(data,level);
         data=definitions; data["weapons"][0]["magazineSize"]=1.5; reject(data,level);
         data=definitions; data["weapons"][0]["pelletCount"]=100; reject(data,level);
         data=definitions; data["weapons"][1]["id"]="pistol"; reject(data,level);
-        auto map=level; map["weaponSpawnPoints"][0]["weaponPool"]={"missing"}; reject(definitions,map);
+
+        auto map=level; 
+        map["weaponSpawnPoints"][0]["weaponPool"]={"missing"};
+        reject(definitions,map);
+
         map=level; map["weaponSpawnPoints"][0]["weaponPool"]=json::array(); reject(definitions,map);
         map=level; map["weaponSpawnPoints"][0]["weaponPool"]={{{"id","pistol"},{"weight",0}}}; reject(definitions,map);
         map=level; map["weaponSpawnPoints"][0]["weaponPool"]={{{"id","pistol"},{"weight",-1}}}; reject(definitions,map);
         map=level; map["weaponSpawnPoints"][1]["id"]="WeaponSpawn_01"; reject(definitions,map);
         map=level; map["weaponRandom"]["seed"]=-1; reject(definitions,map);
     }
-    std::cout << "Weapon tests passed: ammo, dry fire, cooldown, reload/partial/empty reserve, equip cancellation, independent state, nearest/ties, consumed pickup, fixed-seed restart, weighted pools, legacy level, pellets/cone, weapon damage/range through part raycasts, cleared-stage freeze, invalid data.\n";
+    std::cout << "Weapon tests passed: ammo, dry fire, cooldown, reload/partial/empty reserve, equip cancellation, independent state, nearest/ties, consumed pickup, fixed-seed restart, weighted pools, legacy level, pellets/cone, fire modes, ADS config, weapon damage/range through part raycasts, cleared-stage freeze, invalid data.\n";
 }

@@ -1,4 +1,4 @@
-#include "WeaponSystem.h"
+﻿#include "WeaponSystem.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <set>
@@ -46,6 +46,21 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
             if (definition.displayName.empty() || definition.displayName.size()>48) throw std::runtime_error("Invalid weapon name: " + definition.id);
             definition.damage = Number(item.at("damage"),.001f,100000);
             definition.fireInterval = Number(item.at("fireInterval"),.001f,3600);
+
+            const std::string fireMode =
+                item.value("fireMode", std::string("SemiAuto"));
+
+            if (fireMode == "SemiAuto") {
+                definition.fireMode = WeaponFireMode::SemiAuto;
+            }
+            else if (fireMode == "FullAuto") {
+                definition.fireMode = WeaponFireMode::FullAuto;
+            }
+            else {
+                throw std::runtime_error(
+                    "Unknown fireMode for weapon: " + definition.id);
+            }
+
             definition.range = Number(item.at("range"),.001f,100000);
             definition.magazineSize = Integer(item.at("magazineSize"),1,100000);
             definition.reserveAmmo = Integer(item.at("reserveAmmo"),0,1000000);
@@ -53,7 +68,43 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
             if (definition.reserveAmmo > definition.maxReserveAmmo) throw std::runtime_error("Reserve exceeds maximum: " + definition.id);
             definition.reloadTime = Number(item.at("reloadTime"),0,3600);
             if (item.contains("pelletCount")) definition.pelletCount = Integer(item.at("pelletCount"),1,64);
-            if (item.contains("spreadDegrees")) definition.spreadDegrees = Number(item.at("spreadDegrees"),0,45);
+            // 旧JSONとの互換性も残す
+            if (item.contains("hipSpreadDegrees")) {
+                definition.hipSpreadDegrees =
+                    Number(item.at("hipSpreadDegrees"), 0, 45);
+            }
+            else if (item.contains("spreadDegrees")) {
+                definition.hipSpreadDegrees =
+                    Number(item.at("spreadDegrees"), 0, 45);
+            }
+
+            if (item.contains("adsSpreadDegrees")) {
+                definition.adsSpreadDegrees =
+                    Number(item.at("adsSpreadDegrees"), 0, 45);
+            }
+            else {
+                definition.adsSpreadDegrees =
+                    definition.hipSpreadDegrees;
+            }
+
+            if (item.contains("adsFov")) {
+                definition.adsFovDegrees =
+                    Number(item.at("adsFov"), 5.0f, 120.0f);
+            }
+
+            if (item.contains("adsTransitionTime")) {
+                definition.adsTransitionTime =
+                    Number(item.at("adsTransitionTime"), 0.01f, 5.0f);
+            }
+
+            if (item.contains("adsSensitivityMultiplier")) {
+                definition.adsSensitivityMultiplier =
+                    Number(
+                        item.at("adsSensitivityMultiplier"),
+                        0.05f,
+                        2.0f);
+            }
+
             if (item.contains("pickupScale")) definition.pickupScale = Vector(item.at("pickupScale"));
             if (definition.pickupScale.x<=0 || definition.pickupScale.y<=0 || definition.pickupScale.z<=0) throw std::runtime_error("Invalid pickup scale");
             if (item.contains("pickupColor")) definition.pickupColor = Vector(item.at("pickupColor"));

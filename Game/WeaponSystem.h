@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Vector3.h"
 #include <algorithm>
 #include <cmath>
@@ -8,20 +8,62 @@
 #include <string>
 #include <vector>
 
+enum class WeaponFireMode {
+    SemiAuto,
+    FullAuto
+};
+
+inline const char* WeaponFireModeName(WeaponFireMode mode) {
+    switch (mode) {
+    case WeaponFireMode::SemiAuto:
+        return "SemiAuto";
+
+    case WeaponFireMode::FullAuto:
+        return "FullAuto";
+    }
+
+    return "Unknown";
+}
+
+inline bool WeaponWantsFire(
+    WeaponFireMode mode,
+    bool trigger,
+    bool held) {
+
+    return mode == WeaponFireMode::FullAuto
+        ? held
+        : trigger;
+}
+
 struct WeaponDefinition {
     std::string id;
     std::string displayName;
+
+    WeaponFireMode fireMode = WeaponFireMode::SemiAuto;
+
     float damage = 0;
     float fireInterval = 0;
     float range = 0;
+
     int magazineSize = 0;
-    int reserveAmmo = 0; // ammunition supplied with a new pickup
+    int reserveAmmo = 0;
     int maxReserveAmmo = 0;
+
     float reloadTime = 0;
+
     int pelletCount = 1;
-    float spreadDegrees = 0; // cone half-angle; damage is PER pellet
-    Vector3 pickupScale{.3f,.15f,.15f};
-    Vector3 pickupColor{1,1,1};
+
+    // 通常射撃とADS射撃の拡散
+    float hipSpreadDegrees = 0.0f;
+    float adsSpreadDegrees = 0.0f;
+
+    // ADS
+    float adsFovDegrees = 60.0f;
+    float adsTransitionTime = 0.15f;
+    float adsSensitivityMultiplier = 1.0f;
+
+    Vector3 pickupScale{ .3f, .15f, .15f };
+    Vector3 pickupColor{ 1, 1, 1 };
 };
 
 // Each player owns mutable ammo/timers; definitions are copied only on equip.
