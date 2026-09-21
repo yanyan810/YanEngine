@@ -22,6 +22,8 @@ struct EnemyAISettings {
     float moveSpeed = 2.5f;
     float attackDamage = 10;
     float attackInterval = 1;
+    bool ranged = false;
+    float minRange = 7, maxRange = 16;
 };
 struct EnemyAI {
     EnemyState state = EnemyState::Idle;
@@ -44,6 +46,24 @@ struct EnemyAI {
         if (distance > 1e-6f) {
             // Boss glTF front +X becomes engine -X during import.
             rotation={0,std::atan2(delta.x,delta.z)+1.57079632679f,0};
+        }
+        if (settings.ranged) {
+            const float minimum=std::max(0.0f,settings.minRange);
+            const float maximum=std::max(minimum,settings.maxRange);
+            if (distance<minimum || distance>maximum) {
+                const float desired=distance<minimum ? minimum : maximum;
+                const float travel=std::min(std::max(settings.moveSpeed,0.0f)*dt,std::abs(distance-desired));
+                const Vector3 direction=distance>1e-6f ? delta*(1.0f/distance) : Vector3{0,0,1};
+                position+=direction*(distance<minimum ? -travel : travel);
+                distance=std::hypot(target.x-position.x,target.z-position.z);
+                state=EnemyState::Chase; cooldown=std::max(0.0f,cooldown-dt); return 0;
+            }
+            state=EnemyState::Attack;
+            cooldown=std::max(0.0f,cooldown-dt);
+            if (dt>0 && cooldown<=0 && distance<=attackRange) {
+                attacksThisUpdate=1; cooldown=std::max(.05f,settings.attackInterval);
+            }
+            return 0; // Scene emits a projectile after resolving player shots.
         }
         if (distance > attackRange) {
             const float speed=std::max(settings.moveSpeed,0.0f);

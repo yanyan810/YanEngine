@@ -1,10 +1,11 @@
-﻿#pragma once
+#pragma once
 #include "IScene.h"
 #include "Camera.h"
 #include "Object3d.h"
 #include "Player.h"
 #include "Enemy.h"
 #include "EnemySpawnSystem.h"
+#include "EnemyProjectile.h"
 #include "Sprite.h"
 #include "StageProgress.h"
 #include "StageClearOverlay.h"
@@ -42,6 +43,9 @@ private:
     Camera camera_;
     Player player_;
     std::vector<std::unique_ptr<Enemy>> enemies_;
+    EnemyDefinitions enemyDefinitions_;
+    EnemyProjectileSystem enemyProjectiles_;
+    std::vector<std::unique_ptr<Object3d>> projectileVisuals_;
     EnemySpawnSystem spawnSystem_;
     uint64_t nextEnemyId_ = 0;
     bool showSpawnDebug_ = true;

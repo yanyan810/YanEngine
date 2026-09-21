@@ -1,5 +1,6 @@
 #pragma once
 #include "Vector3.h"
+#include "EnemyDefinition.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -9,9 +10,11 @@
 #include <vector>
 
 // Pure map data: points never detect the player or create enemies.
+struct EnemyPoolEntry { std::string id; double weight = 1; };
 struct EnemySpawnPoint {
     std::string id;
     Vector3 position{};
+    std::vector<EnemyPoolEntry> enemyPool;
     Vector3 rotation{}; // radians, same convention as Enemy / Object3d
 };
 enum class SpawnPointSelection { Random, RoundRobin };
@@ -41,7 +44,14 @@ public:
     using Spawn = std::function<uint64_t(const EnemySpawnPoint&, const std::string&)>;
     using IsAlive = std::function<bool(uint64_t)>;
     // Transactional validation: bad data never leaves a partially configured map.
-    bool Load(const std::string& path);
+    bool Load(const std::string& path, const EnemyDefinitions& definitions = EnemyDefinitions{});
+    void SetSeed(uint32_t seed) { random_.seed(seed); }
+    std::string SelectEnemyId(const EnemySpawnPoint& point) {
+        if (point.enemyPool.empty()) return "normal";
+        std::vector<double> weights;
+        for (const auto& entry : point.enemyPool) weights.push_back(entry.weight);
+        return point.enemyPool[std::discrete_distribution<size_t>(weights.begin(),weights.end())(random_)].id;
+    }
     const std::string& Error() const { return error_; }
     const std::vector<EnemySpawnPoint>& Points() const { return points_; }
     const std::vector<EnemySpawnTrigger>& Triggers() const { return triggers_; }

@@ -52,6 +52,9 @@ struct EnemyPart {
     }
 };
 using EnemyParts = std::array<EnemyPart, 6>;
+inline void ApplyEnemyHpMultiplier(EnemyParts& parts, float multiplier) {
+    for (auto& part : parts) part.hp = part.maxHp = EnemyPartMaxHp(part.type)*multiplier;
+}
 // Return actual HP lost (overkill and already-destroyed hits are clamped).
 inline float DamageEnemyPart(EnemyParts& parts, EnemyPartType type, float damage) {
     if (!std::isfinite(damage) || damage <= 0 || type == EnemyPartType::None) return 0;

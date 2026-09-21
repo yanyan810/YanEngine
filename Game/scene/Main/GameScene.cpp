@@ -1,4 +1,4 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
 #include "Object3dCommon.h"
 #include "ImGuiManagaer.h"
@@ -54,8 +54,12 @@ void GameScene::OnEnter(GameApp& app) {
         weaponVisuals_.push_back(std::move(visual));
     }
     enemies_.clear();
+    enemyProjectiles_.Clear(); projectileVisuals_.clear();
+    enemyDefinitions_=EnemyDefinitions{};
+    const bool enemiesLoaded=enemyDefinitions_.Load("resources/Data/enemies.json");
+    if (!enemiesLoaded) OutputDebugStringA(("Enemy configuration error: " + enemyDefinitions_.Error() + "\n").c_str());
     spawnSystem_ = EnemySpawnSystem{};
-    if (!spawnSystem_.Load("resources/levels/fps_spawns.json"))
+    if (enemiesLoaded && !spawnSystem_.Load("resources/levels/fps_spawns.json",enemyDefinitions_))
         OutputDebugStringA(("Spawn configuration error: " + spawnSystem_.Error() + "\n").c_str());
     if (!stage_.LoadGoals("resources/levels/fps_spawns.json"))
         OutputDebugStringA(("Goal configuration error: " + stage_.Error() + "\n").c_str());
@@ -95,6 +99,7 @@ void GameScene::OnExit(GameApp& app) {
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
 #endif
     enemies_.clear();
+    enemyProjectiles_.Clear(); projectileVisuals_.clear();
     app.ObjCom()->SetDefaultCamera(nullptr);
 }
 void GameScene::Update(GameApp& app, float dt) {
@@ -173,6 +178,7 @@ void GameScene::Update(GameApp& app, float dt) {
 }
 
 void GameScene::OnStageClear(GameApp& app) {
+    enemyProjectiles_.Clear(); projectileVisuals_.clear();
     initialCapturePending_ = false;
     app.GetInput()->SetCameraControlEnabled(false);
 #ifdef USE_IMGUI
@@ -280,6 +286,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
             enemy->SetPosition(point.position);
             enemy->SetRotation(point.rotation);
             enemy->Initialize(app.ObjCom(), app.Dx(), &camera_, true);
+            enemy->ApplyDefinition(*enemyDefinitions_.Find(spawnSystem_.SelectEnemyId(point)));
             enemies_.push_back(std::move(enemy));
             return id;
         },
@@ -289,6 +296,11 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
             return false;
         });
     playerDamagedFlash_ = std::max(0.0f, playerDamagedFlash_-dt);
+    const float projectileDamage=enemyProjectiles_.Update(dt,player_.GetTransform().translate);
+    if (projectileDamage>0) {
+        const float before=player_.GetHP(); player_.ApplyDamage(projectileDamage);
+        lastEnemyDamage_=before-player_.GetHP(); playerDamagedFlash_=.35f;
+    }
     // Symmetric XZ separation from a snapshot; dead bodies do not push living enemies.
     std::vector<Vector3> correction(enemies_.size());
     for (size_t i=0;i<enemies_.size();++i) for(size_t j=i+1;j<enemies_.size();++j) {
@@ -351,7 +363,14 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
 
     }
     for(size_t i=0;i<enemies_.size();++i) {
-        if (enemies_[i]->IsDead() || enemyDamage[i]<=0) continue;
+        if (enemies_[i]->IsDead()) continue;
+        if (enemies_[i]->Definition().IsRanged() && enemies_[i]->PendingAttackCount()>0) {
+            enemyProjectiles_.projectiles.push_back(MakeEnemyProjectile(enemies_[i]->Definition(),
+                enemies_[i]->GetPosition()+Vector3{0,1.2f,0},player_.GetTransform().translate));
+            enemies_[i]->ConfirmAttack(0);
+            enemyAttackCount_+=enemies_[i]->PendingAttackCount();
+        }
+        if (enemyDamage[i]<=0) continue;
         const float before=player_.GetHP();
         player_.ApplyDamage(enemyDamage[i]);
         lastEnemyDamage_=before-player_.GetHP();
@@ -360,6 +379,20 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         playerDamagedFlash_=.35f;
     }
     for (const auto& enemy : enemies_) stage_.ObserveEnemy(enemy->GetSpawnId(), enemy->IsDead());
+    const auto& projectiles=enemyProjectiles_.projectiles;
+    while (projectileVisuals_.size()<projectiles.size()) {
+        auto visual=std::make_unique<Object3d>();
+        visual->Initialize(app.ObjCom(),app.Dx()); visual->SetCamera(&camera_);
+        visual->SetModel("cube/cube.obj"); visual->SetTexture("resources/white1x1.png");
+        visual->SetEnableLighting(0); projectileVisuals_.push_back(std::move(visual));
+    }
+    projectileVisuals_.resize(projectiles.size());
+    for (size_t i=0;i<projectiles.size();++i) {
+        const auto& p=projectiles[i]; auto& visual=*projectileVisuals_[i];
+        visual.SetTranslate(p.position); visual.SetScale({p.radius,p.radius,p.radius});
+        visual.SetMaterialColor(p.type==EnemyProjectileType::Bomb ? Vector4{1,.3f,.05f,1} : Vector4{0,1,1,1});
+        visual.Update(0);
+    }
     const std::string selectedState = enemies_.empty() ? "No Enemy" : EnemyStateName(enemies_[static_cast<size_t>(selectedEnemy_)]->GetState());
     const auto status = std::wstring(L"FPS Foundation | Player HP: ") + std::to_wstring(static_cast<int>(player_.GetHP())) +
         (player_.IsDead() ? L" (Player Dead)" : L"") + L" | Enemy: " +
@@ -377,6 +410,7 @@ void GameScene::DrawRender(GameApp&) {
     for (size_t i=0; i<weaponVisuals_.size(); ++i)
         if (weapons_.Pickups()[i].visible) weaponVisuals_[i]->Draw();
     for(auto& enemy : enemies_) enemy->Draw();
+    for(auto& visual : projectileVisuals_) visual->Draw();
 }
 
 
@@ -404,6 +438,9 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::SliderFloat("Eye height", &settings.cameraHeight, 0.5f, 2.5f);
     ImGui::SliderFloat("Move speed", &settings.moveSpeed, 0.5f, 15.0f);
     ImGui::SliderFloat("Mouse sensitivity", &settings.mouseSensitivity, 0.0005f, 0.01f, "%.4f");
+    for (const auto& enemy : enemies_)
+        ImGui::Text("%s | %s | %s", enemy->GetId().c_str(), EnemyTypeName(enemy->Definition().type), enemy->GetSpawnTriggerId().c_str());
+    ImGui::Text("Enemy Projectiles: %zu", enemyProjectiles_.projectiles.size());
     const auto selectedLabel=enemies_.empty() ? std::string("No Enemy") : enemies_[static_cast<size_t>(selectedEnemy_)]->GetId();
     if (ImGui::BeginCombo("Selected Enemy", selectedLabel.c_str())) {
         for(int i=0;i<static_cast<int>(enemies_.size());++i) {

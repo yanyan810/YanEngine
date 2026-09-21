@@ -13,6 +13,7 @@ static json Level() {
 }
 static void Save(const json& data) { std::ofstream("stage-test.json") << data; }
 int main() {
+    EnemyDefinitions definitions; assert(definitions.Load("../../resources/Data/enemies.json"));
     const auto config = Level();
     {
         StageProgress stage;
@@ -55,7 +56,7 @@ int main() {
     {
         // Real level progression with living enemies and B waiting for capacity.
         StageProgress stage; EnemySpawnSystem spawns;
-        Save(config); assert(stage.LoadGoals("stage-test.json")); assert(spawns.Load("stage-test.json"));
+        Save(config); assert(stage.LoadGoals("stage-test.json")); assert(spawns.Load("stage-test.json", definitions));
         uint64_t generated = 0;
         EnemyAI ai;
         Vector3 enemyPosition{3,0,8}, enemyRotation{};
@@ -89,12 +90,12 @@ int main() {
         data["goalTriggers"][0]["position"] = data["spawnTriggers"][0]["position"];
         data["spawnTriggers"][0]["spawnInterval"] = 0;
         Save(data); StageProgress stage; EnemySpawnSystem spawns;
-        assert(stage.LoadGoals("stage-test.json") && spawns.Load("stage-test.json"));
+        assert(stage.LoadGoals("stage-test.json") && spawns.Load("stage-test.json", definitions));
         assert(stage.Update(1,{3,0,4}));
         int generated = 0;
         if (stage.IsPlaying()) spawns.Update(1,{3,0,4},[&](const EnemySpawnPoint&,const std::string&){return static_cast<uint64_t>(++generated);},[](uint64_t){return true;});
         assert(generated == 0);
-        stage.Reset(); assert(spawns.Load("stage-test.json"));
+        stage.Reset(); assert(spawns.Load("stage-test.json", definitions));
         assert(stage.IsPlaying() && !spawns.Triggers()[0].activated && spawns.Triggers()[0].spawned == 0);
     }
     assert(StageProgress::FormatTime(92.45) == "01:32.45");
