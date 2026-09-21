@@ -4,7 +4,7 @@
 #include <set>
 #include <stdexcept>
 
-bool EnemySpawnSystem::Load(const std::string& path) {
+bool EnemySpawnSystem::Load(const std::string& path, const EnemyDefinitions& definitions) {
     try {
         std::ifstream file(path);
         if (!file) throw std::runtime_error("Cannot open " + path);
@@ -34,6 +34,18 @@ bool EnemySpawnSystem::Load(const std::string& path) {
             if (point.id.empty() || !pointIds.insert(point.id).second) throw std::runtime_error("Empty/duplicate point ID: " + point.id);
             point.position = vector(item.at("position"));
             if (item.contains("rotation")) point.rotation = vector(item.at("rotation"));
+            if (item.contains("enemyPool")) {
+                const auto& pool=item.at("enemyPool");
+                if (!pool.is_array()) throw std::runtime_error("enemyPool must be an array");
+                double total=0;
+                for (const auto& entry : pool) {
+                    EnemyPoolEntry value{entry.at("id").get<std::string>(),entry.at("weight").get<double>()};
+                    if (!definitions.Find(value.id)) throw std::runtime_error("Unknown enemy id: " + value.id);
+                    if (!std::isfinite(value.weight) || value.weight<0) throw std::runtime_error("Invalid enemy weight");
+                    total+=value.weight; point.enemyPool.push_back(value);
+                }
+                if (!std::isfinite(total) || total<=0) throw std::runtime_error("enemyPool requires positive total weight");
+            }
             points.push_back(std::move(point));
         }
         for (const auto& item : data.at("spawnTriggers")) {
@@ -59,6 +71,17 @@ bool EnemySpawnSystem::Load(const std::string& path) {
             trigger.oneShot = item.value("oneShot", true);
             triggers.push_back(std::move(trigger));
         }
+        auto nextRandom=random_;
+        if (data.contains("enemyRandom")) {
+            const auto& config=data.at("enemyRandom");
+            if (config.value("useFixedSeed",false)) {
+                const auto& seed=config.at("seed");
+                if (!seed.is_number_integer() || seed.get<double>()<0 || seed.get<double>()>4294967295.0)
+                    throw std::runtime_error("Invalid enemy seed");
+                nextRandom.seed(seed.get<uint32_t>());
+            }
+        }
+        random_=nextRandom;
         points_ = std::move(points);
         triggers_ = std::move(triggers);
         error_.clear();

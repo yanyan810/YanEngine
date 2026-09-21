@@ -272,11 +272,19 @@ void Enemy::Draw() {
 #endif
 void Enemy::DrawImGui() {
 #ifdef USE_IMGUI
+    ImGui::Text("Enemy ID: %s | Definition ID: %s | Type: %s", id_.c_str(), definition_.id.c_str(), EnemyTypeName(definition_.type));
+    ImGui::Text("HP Multiplier: %.2f", definition_.hpMultiplier);
+    if (definition_.IsRanged()) {
+        ImGui::Text("Min Range: %.2f | Preferred Range: %.2f | Max Range: %.2f", definition_.minRange, definition_.preferredRange, definition_.maxRange);
+        ImGui::Text("Projectile Speed: %.2f", definition_.projectileSpeed);
+    }
+    if (definition_.type==EnemyType::Bomber)
+        ImGui::Text("Explosion Radius: %.2f | Explosion Damage: %.2f | Fuse Time: %.2f", definition_.explosionRadius, definition_.explosionDamage, definition_.fuseTime);
     ImGui::Text("Enemy State: %s | Distance: %.2f", EnemyStateName(GetState()), ai_.distance);
     ImGui::Text("Last Enemy Attack: %s | Attack Count: %llu", attackFlash_ > 0 ? "HIT" : "-", attackCount_);
     ImGui::Text("Last applied damage: %.0f | Attack Cooldown: %.2f", lastAttackDamage_, ai_.cooldown);
     ImGui::SliderFloat("Detection Range", &ai_.settings.detectionRange, 1, 50);
-    ImGui::SliderFloat("Attack Range", &ai_.settings.attackRange, .2f, 5);
+    ImGui::SliderFloat("Attack Range", &ai_.settings.attackRange, .2f, 30);
     ImGui::SliderFloat("Enemy Move Speed", &ai_.settings.moveSpeed, 0, 10);
     ImGui::SliderFloat("Attack Damage", &ai_.settings.attackDamage, 0, 50);
     ImGui::SliderFloat("Attack Interval", &ai_.settings.attackInterval, .1f, 5);

@@ -2,6 +2,7 @@
 #include "Object3d.h"
 #include "EnemyParts.h"
 #include "EnemyAI.h"
+#include "EnemyDefinition.h"
 #include "DetachedEnemyPart.h"
 #include <random>
 
@@ -36,6 +37,14 @@ public:
     float ApplyDamage(EnemyPartType part, float damage, const Vector3& shotDirection);
     void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax) const;
     void DrawImGui();
+    const EnemyDefinition& Definition() const { return definition_; }
+    void ApplyDefinition(const EnemyDefinition& definition) {
+        definition_=definition;
+        ai_={};
+        ai_.settings={definition.detectionRange,definition.attackRange,definition.moveSpeed,
+            definition.attackDamage,definition.attackInterval,definition.IsRanged(),definition.minRange,definition.maxRange};
+        ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
+    }
     float Update(float dt, const Vector3& playerPosition);
     void UpdateVisuals(float dt); // Includes fragment lifetime/physics, but no AI or attacks.
     const Vector3& GetPosition() const { return position_; }
@@ -59,6 +68,7 @@ private:
     uint64_t spawnId_ = 0;
     std::string id_;
     std::string spawnTriggerId_;
+    EnemyDefinition definition_{};
     EnemyAI ai_{};
     unsigned long long attackCount_ = 0;
     float lastAttackDamage_ = 0;

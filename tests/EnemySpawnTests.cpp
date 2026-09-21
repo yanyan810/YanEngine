@@ -103,7 +103,8 @@ int main() {
     }
     {
         Harness h;
-        assert(h.system.Load("../../resources/levels/fps_spawns.json"));
+        EnemyDefinitions definitions; assert(definitions.Load("../../resources/Data/enemies.json"));
+        assert(h.system.Load("../../resources/levels/fps_spawns.json", definitions));
         assert(h.system.Points().size() == 7 && h.system.Triggers().size() == 2);
         h.Tick(0, {3,0,-6}); assert(h.next == 0);
         h.Tick(0, {3,0,2}); h.Tick(1, {3,0,4}); assert(h.next == 3);

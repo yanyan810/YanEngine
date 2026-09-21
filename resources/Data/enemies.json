@@ -1,0 +1,74 @@
+{
+  "enemies": [
+    {
+      "id": "normal",
+      "displayName": "Normal",
+      "type": "Normal",
+      "detectionRange": 20,
+      "moveSpeed": 2.5,
+      "attackRange": 1.5,
+      "attackDamage": 10,
+      "attackInterval": 1,
+      "hpMultiplier": 1
+    },
+    {
+      "id": "ranged",
+      "displayName": "Ranged",
+      "type": "Ranged",
+      "detectionRange": 30,
+      "moveSpeed": 2,
+      "attackRange": 18,
+      "attackDamage": 8,
+      "attackInterval": 1.4,
+      "hpMultiplier": 1,
+      "preferredRange": 12,
+      "minRange": 7,
+      "maxRange": 16,
+      "projectileSpeed": 12,
+      "projectileRadius": 0.2,
+      "projectileLifetime": 5
+    },
+    {
+      "id": "fast",
+      "displayName": "Fast",
+      "type": "Fast",
+      "detectionRange": 25,
+      "moveSpeed": 5,
+      "attackRange": 1.2,
+      "attackDamage": 7,
+      "attackInterval": 0.7,
+      "hpMultiplier": 0.7
+    },
+    {
+      "id": "tank",
+      "displayName": "Tank",
+      "type": "Tank",
+      "detectionRange": 22,
+      "moveSpeed": 1.2,
+      "attackRange": 1.8,
+      "attackDamage": 20,
+      "attackInterval": 1.6,
+      "hpMultiplier": 2.5
+    },
+    {
+      "id": "bomber",
+      "displayName": "Bomber",
+      "type": "Bomber",
+      "detectionRange": 28,
+      "moveSpeed": 1.8,
+      "attackRange": 20,
+      "attackDamage": 0,
+      "attackInterval": 2.5,
+      "hpMultiplier": 1.2,
+      "preferredRange": 14,
+      "minRange": 9,
+      "maxRange": 18,
+      "projectileSpeed": 8,
+      "projectileRadius": 0.3,
+      "projectileLifetime": 6,
+      "explosionRadius": 4,
+      "explosionDamage": 25,
+      "fuseTime": 1.2
+    }
+  ]
+}

@@ -573,6 +573,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Game\enemy\DetachedEnemyPart.h" />
+    <ClInclude Include="Game\enemy\EnemyDefinition.h" />
+    <ClInclude Include="Game\enemy\EnemyProjectile.h" />
     <ClInclude Include="Game\enemy\EnemyAI.h" />
     <ClInclude Include="Game\enemy\EnemyParts.h" />
   </ItemGroup>
