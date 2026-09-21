@@ -548,6 +548,9 @@
     <ClCompile Include="Game\enemy\Enemy.cpp" />
     <ClCompile Include="Game\enemy\EnemySpawnSystem.cpp" />
     <ClCompile Include="Game\StageProgress.cpp" />
+    <ClCompile Include="Game\WeaponSystem.cpp" />
+    <ClInclude Include="Game\WeaponSystem.h" />
+    <ClInclude Include="Game\WeaponHUD.h" />
     <ClInclude Include="Game\StageProgress.h" />
     <ClInclude Include="Game\StageClearOverlay.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />

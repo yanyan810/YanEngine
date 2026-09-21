@@ -8,6 +8,7 @@
 #include "Sprite.h"
 #include "StageProgress.h"
 #include "StageClearOverlay.h"
+#include "WeaponHUD.h"
 
 class GameScene : public IScene {
 public:
@@ -28,8 +29,11 @@ private:
     unsigned long long shotCount_ = 0;
     unsigned long long hitCount_ = 0;
     float lastDamage_ = 0.0f;
-    static constexpr float kShotDamage = 25.0f;
-    static constexpr float kShotRange = 100.0f;
+    WeaponSystem weapons_;
+    WeaponHUD weaponHUD_;
+    std::vector<std::unique_ptr<Object3d>> weaponVisuals_;
+    std::mt19937 pelletRandom_{std::random_device{}()};
+    inline static std::optional<WeaponRandomSettings> weaponSeedOverride_;
     bool initialCapturePending_ = true;
     int savedMouseFlags_ = 0;
     Camera camera_;
