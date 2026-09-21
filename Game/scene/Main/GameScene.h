@@ -6,6 +6,8 @@
 #include "Enemy.h"
 #include "EnemySpawnSystem.h"
 #include "Sprite.h"
+#include "StageProgress.h"
+#include "StageClearOverlay.h"
 
 class GameScene : public IScene {
 public:
@@ -17,6 +19,11 @@ public:
     void DrawImGui(GameApp& app) override;
     void DrawOverlay2D(GameApp& app) override;
 private:
+    void UpdateCombat(GameApp& app, float dt, bool wasCaptured);
+    void OnStageClear(GameApp& app);
+    StageProgress stage_;
+    StageClearOverlay clearOverlay_;
+    bool showGoalDebug_ = true;
     EnemyPartType lastHitPart_ = EnemyPartType::None;
     unsigned long long shotCount_ = 0;
     unsigned long long hitCount_ = 0;

@@ -1,11 +1,12 @@
 #pragma once
 #if defined(_DEBUG) && defined(USE_IMGUI)
 #include "EnemySpawnSystem.h"
+#include "StageProgress.h"
 #include "Matrix4x4.h"
 #include "imgui.h"
 
 inline void DrawEnemySpawnDebug(const EnemySpawnSystem& system, const Matrix4x4& vp,
-    ImVec2 minimum, ImVec2 maximum) {
+    ImVec2 minimum, ImVec2 maximum, bool showSpawns = true, const std::vector<GoalTrigger>* goals = nullptr) {
     auto* draw = ImGui::GetForegroundDrawList();
     draw->PushClipRect(minimum, maximum, true);
     struct Clip { float x, y, z, w; };
@@ -38,14 +39,16 @@ inline void DrawEnemySpawnDebug(const EnemySpawnSystem& system, const Matrix4x4&
         const auto anchor = clip(center + Vector3{0,size.y*.5f,0});
         if (anchor.z >= 0 && anchor.w > 1e-5f) draw->AddText(project(anchor), color, label.c_str());
     };
-    for (const auto& trigger : system.Triggers()) {
+    if (showSpawns) for (const auto& trigger : system.Triggers()) {
         const ImU32 color = trigger.active ? IM_COL32(255,180,40,255) : trigger.activated ?
             IM_COL32(130,130,130,255) : IM_COL32(40,220,255,255);
         box(trigger.position, trigger.size, trigger.id, color);
         for (const auto& id : trigger.spawnPointIds)
             if (const auto* point = system.FindPoint(id)) line(trigger.position, point->position, color);
     }
-    for (const auto& point : system.Points()) box(point.position, {.5f,.5f,.5f}, point.id, IM_COL32(80,255,120,255));
+    if (showSpawns) for (const auto& point : system.Points()) box(point.position, {.5f,.5f,.5f}, point.id, IM_COL32(80,255,120,255));
+    if (goals) for (const auto& goal : *goals)
+        box(goal.position, goal.size, "GOAL: " + goal.id, IM_COL32(255,90,225,255));
     draw->PopClipRect();
 }
 #endif

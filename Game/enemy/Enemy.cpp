@@ -214,8 +214,12 @@ void Enemy::ShowHitFeedback(EnemyPartType type) {
     for (auto& part:parts_) if (part.type==type) part.flashRemaining=0.2f;
 }
 float Enemy::Update(float dt, const Vector3& playerPosition) {
-    attackFlash_ = std::max(0.0f, attackFlash_-dt);
     const float attackDamage = ai_.Update(position_, rotation_, playerPosition, dt, IsDead());
+    UpdateVisuals(dt);
+    return attackDamage;
+}
+void Enemy::UpdateVisuals(float dt) {
+    attackFlash_ = std::max(0.0f, attackFlash_-dt);
     for (auto& face : faceShards_) face.motion.Update(dt);
     std::erase_if(faceShards_, [](const auto& face) { return !face.motion.Active(); });
     TrimFacePool(0);
@@ -247,7 +251,6 @@ float Enemy::Update(float dt, const Vector3& playerPosition) {
         obj.SetMaterialColor(color);
         obj.Update(dt);
     }
-    return attackDamage;
 }
 
 void Enemy::SetPartVisible(EnemyPartType type, bool visible) {

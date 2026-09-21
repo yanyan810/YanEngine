@@ -23,6 +23,9 @@ void GameScene::OnEnter(GameApp& app) {
     spawnSystem_ = EnemySpawnSystem{};
     if (!spawnSystem_.Load("resources/levels/fps_spawns.json"))
         OutputDebugStringA(("Spawn configuration error: " + spawnSystem_.Error() + "\n").c_str());
+    if (!stage_.LoadGoals("resources/levels/fps_spawns.json"))
+        OutputDebugStringA(("Goal configuration error: " + stage_.Error() + "\n").c_str());
+    clearOverlay_.Initialize(app.SpriteCom(), app.Dx());
     selectedEnemy_ = 0; lastHitEnemy_ = -1;
     enemyAttackCount_ = 0; playerDamagedFlash_ = 0; lastEnemyDamage_ = 0;
     ground_.Initialize(app.ObjCom(), app.Dx());
@@ -61,6 +64,9 @@ void GameScene::OnExit(GameApp& app) {
     app.ObjCom()->SetDefaultCamera(nullptr);
 }
 void GameScene::Update(GameApp& app, float dt) {
+    // SceneManager consumes this request after Update, safely outside ImGui drawing.
+    if (!NextScene().empty()) return;
+    dt = std::isfinite(dt) ? std::max(dt, 0.0f) : 0.0f;
     Input& input = *app.GetInput();
     const bool wasCaptured = input.IsCameraControlEnabled();
     bool viewReady = true;
@@ -79,7 +85,7 @@ void GameScene::Update(GameApp& app, float dt) {
     GetClientRect(app.Win()->GetHwnd(), &client);
     clickedView = PtInRect(&client, cursor) && input.IsLeftMouseTrigger();
 #endif
-    if (!viewReady || input.IsKeyTrigger(DIK_ESCAPE)) {
+    if (!stage_.IsPlaying() || !viewReady || input.IsKeyTrigger(DIK_ESCAPE)) {
         input.SetCameraControlEnabled(false);
         if (input.IsKeyTrigger(DIK_ESCAPE)) initialCapturePending_ = false;
     } else if (initialCapturePending_ || clickedView) {
@@ -90,7 +96,31 @@ void GameScene::Update(GameApp& app, float dt) {
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) |
         (input.IsCameraControlEnabled() ? kCapturedMouseFlags : savedMouseFlags_);
 #endif
-    player_.Update(input, dt);
+    if (stage_.IsPlaying()) {
+        for (const auto& enemy : enemies_) stage_.ObserveEnemy(enemy->GetSpawnId(), enemy->IsDead());
+        player_.Update(input, dt);
+        if (stage_.Update(dt, player_.GetTransform().translate)) OnStageClear(app);
+    }
+    if (stage_.IsPlaying()) UpdateCombat(app, dt, wasCaptured);
+    else for (auto& enemy : enemies_) enemy->UpdateVisuals(dt);
+    ground_.Update(dt);
+}
+
+void GameScene::OnStageClear(GameApp& app) {
+    initialCapturePending_ = false;
+    app.GetInput()->SetCameraControlEnabled(false);
+#ifdef USE_IMGUI
+    ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
+#endif
+    clearOverlay_.SetResult(stage_, static_cast<float>(WinApp::kClientWidth), static_cast<float>(WinApp::kClientHeight));
+    const auto time = StageProgress::FormatTime(stage_.Time());
+    const std::wstring title = L"STAGE CLEAR | Time: " + std::wstring(time.begin(),time.end()) +
+        L" | Enemies Defeated: " + std::to_wstring(stage_.DefeatedCount());
+    SetWindowTextW(app.Win()->GetHwnd(), title.c_str());
+}
+
+void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
+    Input& input = *app.GetInput();
     spawnSystem_.Update(dt, player_.GetTransform().translate,
         [&](const EnemySpawnPoint& point, const std::string& trigger) {
             auto enemy = std::make_unique<Enemy>();
@@ -157,6 +187,7 @@ void GameScene::Update(GameApp& app, float dt) {
         enemyAttackCount_+=enemies_[i]->PendingAttackCount();
         playerDamagedFlash_=.35f;
     }
+    for (const auto& enemy : enemies_) stage_.ObserveEnemy(enemy->GetSpawnId(), enemy->IsDead());
     const std::string selectedState = enemies_.empty() ? "No Enemy" : EnemyStateName(enemies_[static_cast<size_t>(selectedEnemy_)]->GetState());
     const auto status = std::wstring(L"FPS Foundation | Player HP: ") + std::to_wstring(static_cast<int>(player_.GetHP())) +
         (player_.IsDead() ? L" (Player Dead)" : L"") + L" | Enemy: " +
@@ -167,7 +198,6 @@ void GameScene::Update(GameApp& app, float dt) {
         L" | Last Damage: " + std::to_wstring(static_cast<int>(lastDamage_)) +
         L" | Enemy Attacks: " + std::to_wstring(enemyAttackCount_);
     SetWindowTextW(app.Win()->GetHwnd(), fullStatus.c_str());
-    ground_.Update(dt);
 }
 void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
@@ -180,7 +210,8 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::Begin("FPS Controls");
     if (!spawnSystem_.Error().empty()) ImGui::TextWrapped("Spawn configuration error: %s", spawnSystem_.Error().c_str());
     const bool captured = app.GetInput()->IsCameraControlEnabled();
-    ImGui::TextUnformatted(captured ? "WASD: walk | Mouse: look | LMB: fire | ESC: release" : "Click the Scene image to resume FPS controls.");
+    ImGui::TextUnformatted(!stage_.IsPlaying() ? "Stage cleared. Gameplay stopped; debug controls remain available." :
+        captured ? "WASD: walk | Mouse: look | LMB: fire | ESC: release" : "Click the Scene image to resume FPS controls.");
     ImGui::Text("Shot Count: %llu | Hit Count: %llu", shotCount_, hitCount_);
     ImGui::Text("Last Hit Enemy: %d | Last Hit Part: %s", lastHitEnemy_, EnemyPartName(lastHitPart_));
     ImGui::Text("Last Damage: %.0f (actual HP lost)", lastDamage_);
@@ -217,7 +248,33 @@ void GameScene::DrawImGui(GameApp& app) {
         {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
         {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
 #ifdef _DEBUG
+    ImGui::Begin("Stage Progress");
+    ImGui::Text("Stage State: %s", stage_.IsPlaying() ? "Playing" : "Cleared");
+    ImGui::Text("%s: %s", stage_.IsPlaying() ? "Elapsed Time" : "Clear Time", StageProgress::FormatTime(stage_.Time()).c_str());
+    ImGui::Text("Defeated: %zu", stage_.DefeatedCount());
+    if (!stage_.Error().empty()) ImGui::TextWrapped("Goal configuration error: %s", stage_.Error().c_str());
+    if (stage_.Goals().empty()) ImGui::TextUnformatted("No goals configured (spawn-only level).");
+    ImGui::Checkbox("Show Goal boxes", &showGoalDebug_);
+    for (const auto& goal : stage_.Goals()) {
+        const auto delta = player_.GetTransform().translate - goal.position;
+        ImGui::Text("GOAL: %s | Distance: %.1f | Activated: %s", goal.id.c_str(),
+            std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z), goal.activated ? "true" : "false");
+    }
+    if (ImGui::Button("Restart Stage")) RequestChangeScene_("Game");
+    ImGui::BeginDisabled(!stage_.IsPlaying() || captured);
+    if (ImGui::TreeNode("Test positions (debug teleport)")) {
+        const auto moveTo = [&](const std::string& id, const Vector3& position) {
+            if (ImGui::Button(("Move to " + id).c_str()))
+                player_.SetPositionForDebug({position.x,player_.GetTransform().translate.y,position.z});
+        };
+        for (const auto& trigger : spawnSystem_.Triggers()) moveTo(trigger.id, trigger.position);
+        for (const auto& goal : stage_.Goals()) moveTo(goal.id, goal.position);
+        ImGui::TreePop();
+    }
+    ImGui::EndDisabled();
+    ImGui::End();
     ImGui::Begin("Spawn System");
+    if (!stage_.IsPlaying()) ImGui::TextUnformatted("Stage cleared: all spawn schedules are frozen.");
     ImGui::Checkbox("Show trigger boxes / points / links", &showSpawnDebug_);
     ImGui::TextUnformatted("Map: resources/levels/fps_spawns.json (restart to reload)");
     for (const auto& trigger : spawnSystem_.Triggers()) {
@@ -241,10 +298,11 @@ void GameScene::DrawImGui(GameApp& app) {
         ImGui::TreePop();
     }
     ImGui::End();
-    if (showSpawnDebug_ && app.ImGui()->GetSceneImageRect(sceneRect))
+    if ((showSpawnDebug_ || showGoalDebug_) && app.ImGui()->GetSceneImageRect(sceneRect))
         DrawEnemySpawnDebug(spawnSystem_, camera_.GetViewProjectionMatrix(),
             {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
-            {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
+            {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)},
+            showSpawnDebug_, showGoalDebug_ ? &stage_.Goals() : nullptr);
 #endif
 #else
     (void)app;
@@ -255,6 +313,10 @@ void GameScene::DrawOverlay2D(GameApp&) {
     const auto view = Matrix4x4::MakeIdentity4x4();
     const auto projection = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f,
         static_cast<float>(WinApp::kClientWidth), static_cast<float>(WinApp::kClientHeight), 0.0f, 100.0f);
+    if (!stage_.IsPlaying()) {
+        clearOverlay_.Draw(view, projection);
+        return;
+    }
     crosshairHorizontal_.Update(view, projection);
     crosshairVertical_.Update(view, projection);
     crosshairHorizontal_.Draw();

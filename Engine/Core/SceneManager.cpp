@@ -26,6 +26,12 @@ void SceneManager::Change(GameApp& app, const std::string& name) {
 }
 
 void SceneManager::Update(GameApp& app, float dt) {
+    // A requested restart retires the old scene until the next frame's GPU work is complete.
+    // Repeated restarts must not retain every old scene's sprite/model buffers forever.
+    if (!retiredScenes_.empty()) {
+        app.Dx()->WaitForGPU();
+        retiredScenes_.clear();
+    }
     if (!current_) return;
 
     current_->Update(app, dt);
