@@ -82,7 +82,8 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ProgramDataBaseFileName>$(IntDir)$(ProjectName).compiler.pdb</ProgramDataBaseFileName>
+      <!-- Embed compiler symbols in each OBJ to avoid shared compiler-PDB locks (C2471). -->
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <TreatWarningAsError>true</TreatWarningAsError>
       <AdditionalIncludeDirectories>$(ProjectDir)math\Vector3;$(ProjectDir)math\Matrix4x4;$(ProjectDir)Engine;$(ProjectDir)externals;$(ProjectDir)externals/imgui;$(ProjectDir)externals/DirectXTex/;$(ProjectDir)Engine/math;$(ProjectDir)Engine/2d;$(ProjectDir)Engine/3d;$(ProjectDir)Engine/Audio;$(SolutionDir)..\generated\obj\$(ProjectName)\$(Configuration)\;%(AdditionalIncludeDirectories);$(ProjectDir)Game;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\2D;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Camera;$(ProjectDir)Engine\Render;$(ProjectDir)Engine\3D;$(ProjectDir)Game\player;$(ProjectDir)Game\enemy;$(ProjectDir)externals\assimp\include;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Particle;$(ProjectDir)Engine\Level;$(ProjectDir)Engine\Utility</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -545,7 +546,10 @@
     <ClCompile Include="Game\player\Player.cpp" />
     <ClInclude Include="Game\player\Player.h" />
     <ClCompile Include="Game\enemy\Enemy.cpp" />
+    <ClCompile Include="Game\enemy\EnemySpawnSystem.cpp" />
     <ClInclude Include="Game\enemy\Enemy.h" />
+    <ClInclude Include="Game\enemy\EnemySpawnSystem.h" />
+    <ClInclude Include="Game\enemy\EnemySpawnDebug.h" />
     <ClCompile Include="Game\scene\Main\GameScene.cpp" />
     <ClInclude Include="Game\scene\Main\GameScene.h" />
   </ItemGroup>

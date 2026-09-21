@@ -808,6 +808,11 @@ void Model::CreatePerMaterialResources_(DirectXCommon* dx) {
 }
 
 void Model::BindMaterialForMesh_(ID3D12GraphicsCommandList* cmd, const MeshData& mesh) {
+    // GPU commands retain addresses, not a snapshot of shared material contents.
+    if (instanceMaterialCBVs_ && mesh.materialIndex < instanceMaterialCBVs_->size()) {
+        cmd->SetGraphicsRootConstantBufferView(0, (*instanceMaterialCBVs_)[mesh.materialIndex]);
+        return;
+    }
 	if (mesh.materialIndex >= perMaterialResources_.size() ||
 		mesh.materialIndex >= perMaterialData_.size()) {
 		cmd->SetGraphicsRootConstantBufferView(0, GetActiveMaterialCBV_());

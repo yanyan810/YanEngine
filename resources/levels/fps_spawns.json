@@ -1,0 +1,25 @@
+{
+  "spawnPoints": [
+    { "id": "SP_A_01", "position": [-5, 0, 14], "rotation": [0, 1.5707963, 0] },
+    { "id": "SP_A_02", "position": [3, 0, 18], "rotation": [0, 1.5707963, 0] },
+    { "id": "SP_A_03", "position": [11, 0, 14], "rotation": [0, 1.5707963, 0] },
+    { "id": "SP_B_01", "position": [-6, 0, 36], "rotation": [0, 1.5707963, 0] },
+    { "id": "SP_B_02", "position": [0, 0, 40], "rotation": [0, 1.5707963, 0] },
+    { "id": "SP_B_03", "position": [6, 0, 40], "rotation": [0, 1.5707963, 0] },
+    { "id": "SP_B_04", "position": [12, 0, 36], "rotation": [0, 1.5707963, 0] }
+  ],
+  "spawnTriggers": [
+    {
+      "id": "Trigger_A", "position": [3, 1, 4], "size": [24, 4, 4],
+      "spawnPointIds": ["SP_A_01", "SP_A_02", "SP_A_03"],
+      "spawnCount": 5, "spawnInterval": 0.5, "initialDelay": 0.0,
+      "maxAlive": 3, "selection": "Random", "oneShot": true
+    },
+    {
+      "id": "Trigger_B", "position": [3, 1, 26], "size": [24, 4, 4],
+      "spawnPointIds": ["SP_B_01", "SP_B_02", "SP_B_03", "SP_B_04"],
+      "spawnCount": 8, "spawnInterval": 0.5, "initialDelay": 2.0,
+      "maxAlive": 4, "selection": "RoundRobin", "oneShot": true
+    }
+  ]
+}

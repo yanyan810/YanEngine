@@ -1,8 +1,8 @@
-# 固定5体Enemyと攻撃確認
+# 複数Enemyと攻撃確認
 
-GameSceneはvector<unique_ptr<Enemy>>で5体を管理します。配置は(3,0,18),(-1,0,10),(7,0,10),(-1,0,2),(7,0,2)。索敵範囲外の先頭個体はIdle、近い個体は追跡するため、異なる状態を確認できます。個別の部位HP・AI・Cooldown・描画・Faceバッファを保持します。Modelリソースを共有しても、材質色や物理状態は共有しません。
+GameSceneはvector<unique_ptr<Enemy>>で個体を管理します。固定5体配置は進行式Spawnへ置き換えました。設定とA→Bの確認手順は[SPAWN_SYSTEM.md](SPAWN_SYSTEM.md)を参照してください。各Enemyは個別の部位HP・AI・Cooldown・描画・Faceバッファを保持します。Modelリソースを共有しても、材質色や物理状態は共有しません。
 
-射撃は各Enemy::Raycastの最寄り部位を比較し、最も近いEnemyポインター・部位・距離・交点を選択して一体だけに適用します。同距離では配列で先の個体を選びます。Last Hit Enemyは0始まりです。従来同様、Destroyed部位のRaycastは残しています。
+射撃は各Enemy::Raycastの最寄り部位を比較し、最も近いEnemyポインター・部位・距離・交点を選択して一体だけに適用します。同距離では配列で先の個体を選びます。Last Hit Enemyは0始まりです。Destroyed部位はRaycastから除外します。消失した部位の位置を撃つと後方の未破壊部位へ射撃が通ります。Enemy全体がDeadでも残っている未破壊部位は判定を維持します。
 
 ## 分離
 
@@ -29,3 +29,14 @@ HP0後も攻撃回数は増えますが、実HP減少は0です。ESCで解除�
 成果物：プロジェクトの一階層上のgenerated/verified-multi-enemy/{Debug,Release}/CG2_Setup.exe。
 
 Debug / Release x64：両方とも警告0・エラー0でビルド成功。/FSと構成別PDBの設定は変更していません。
+
+2026-09-21修正：Destroyed部位の不可視HitBoxによる遮蔽を解消。Debug枠も除外。全6部位・移動回転拡縮後の前後Enemyへの貫通と未破壊部位の遮蔽を自動テストで確認。
+## 2026-09-21 個体間の色共有修正
+
+Model::BindMaterialForMesh_がObject3dの色をModel共有のperMaterialResourcesへコピーしていました。GPUコマンドは値のコピーではなくCBVアドレスを記録するため、同じModelを後から描いた個体が上書きすると、先に描いた個体もその色になっていました。
+
+Object3dが材質ごとのGPU定数バッファを所有し、個体色×AssetのbaseColorをその領域へ保持する方式へ修正。Modelは指定された個体専用CBVを直接バインドします。通常描画・スキニング描画・テクスチャ上書き描画の経路に適用し、共有Modelの頂点・テクスチャは維持します。DirectXの待機やEnemyのHP判定を変更する回避策は使用していません。
+
+回帰テスト成功。修正版の実行ファイルはgenerated/verified-material-isolation/{Debug,Release}/CG2_Setup.exe（プロジェクトの一階層上）です。
+
+ユーザー実操作で、撃った部位だけ色が変わり他個体への色移りが解消したことを確認済み。Debug / Release x64とも警告0・エラー0。

@@ -109,6 +109,8 @@ inline bool RaycastEnemyParts(const EnemyParts& parts, const Matrix4x4& world,
     if (!std::isfinite(factor)||factor<=0) return false;
     float closest=range;
     for (const auto& part:parts) {
+        // Removed body parts must not occlude targets behind their former position.
+        if (part.DamageState() == EnemyPartDamageState::Destroyed) continue;
         float localDistance;
         if (!RaycastAABB(localOrigin,localDirection,part.bounds,closest*factor,localDistance)) continue;
         const float distance=localDistance/factor;
