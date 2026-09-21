@@ -1,4 +1,4 @@
-#include "GameScene.h"
+﻿#include "GameScene.h"
 #include "GameApp.h"
 #include "Object3dCommon.h"
 #include "ImGuiManagaer.h"
@@ -124,6 +124,11 @@ void GameScene::Update(GameApp& app, float dt) {
     if (stage_.IsPlaying()) UpdateCombat(app, dt, wasCaptured);
     else for (auto& enemy : enemies_) enemy->UpdateVisuals(dt);
     ground_.Update(dt);
+
+    for (auto& visual : weaponVisuals_) {
+        visual->Update(dt);
+    }
+
 }
 
 void GameScene::OnStageClear(GameApp& app) {
