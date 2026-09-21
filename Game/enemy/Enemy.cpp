@@ -28,7 +28,7 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
     object_.SetModel("enemy/boss/boss.gltf");
     object_.StopAnimation();
     object_.SetRotate(rotation_);
-    object_.SetScale({2.0f, 2.0f, 2.0f});
+    object_.SetScale(definition_.VisualScale(scale_));
     object_.SetTranslate(position_);
     object_.SetEnableLighting(1);
     object_.SetDirection({0.3f, -1.0f, 0.5f});
@@ -140,10 +140,33 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
         faceBatch_->SetMaterialColor({.65f,.025f,.025f,1});
         faceBatch_->Update(0);
     }
+    ApplyDefinition(definition_);
     if (useSplitAssets && !splitVisuals_)
         OutputDebugStringA("Enemy: split assets incomplete; using original Boss.\n");
 }
 
+
+void Enemy::ApplyDefinition(const EnemyDefinition& definition) {
+    definition_=definition;
+    ai_={};
+    ai_.settings={definition.detectionRange,definition.attackRange,definition.moveSpeed,
+        definition.attackDamage,definition.attackInterval,definition.IsRanged(),definition.minRange,definition.maxRange};
+    ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
+    typeMarker_.reset();
+    if (!common_ || !dx_) return;
+    if (definition_.typeMarker.enabled) {
+        typeMarker_=std::make_unique<Object3d>();
+        typeMarker_->Initialize(common_,dx_);
+        typeMarker_->SetCamera(camera_);
+        typeMarker_->SetModel("cube/cube.obj");
+        typeMarker_->SetTexture("resources/white1x1.png");
+        typeMarker_->SetEnableLighting(0);
+        const auto& color=definition_.typeMarker.color;
+        typeMarker_->SetMaterialColor({color.x,color.y,color.z,1});
+    }
+    // Publish the same scale to visuals and raycast world matrix immediately after spawn.
+    UpdateVisuals(0);
+}
 
 bool Enemy::Raycast(const Vector3& origin, const Vector3& direction, float maxDistance, RaycastHit& hit) const {
     hit = {};
@@ -233,14 +256,22 @@ void Enemy::UpdateVisuals(float dt) {
     for (auto& part:parts_) part.flashRemaining=std::max(0.0f,part.flashRemaining-std::max(0.0f,dt));
     object_.SetTranslate(position_);
     object_.SetRotate(rotation_);
-    object_.SetScale(scale_);
+    const auto visualScale=definition_.VisualScale(scale_);
+    object_.SetScale(visualScale);
     object_.Update(dt);
+    if (typeMarker_ && !IsDead()) {
+        const auto& marker=definition_.typeMarker;
+        typeMarker_->SetTranslate(EnemyPartTransformPoint(marker.offset,object_.GetWorldMatrix()));
+        typeMarker_->SetRotate(rotation_);
+        typeMarker_->SetScale({marker.scale.x*visualScale.x,marker.scale.y*visualScale.y,marker.scale.z*visualScale.z});
+        typeMarker_->Update(dt);
+    }
     for (size_t i = 0; i < visuals_.size(); ++i) {
         if (!visuals_[i].object) continue;
         auto& obj = *visuals_[i].object;
         obj.SetTranslate(position_);
         obj.SetRotate(rotation_);
-        obj.SetScale(scale_);
+        obj.SetScale(visualScale);
         Vector4 color{1,1,1,1};
         switch (parts_[i].DamageState()) {
         case EnemyPartDamageState::LightDamage: color = {1,.67f,.67f,1}; break;
@@ -257,6 +288,7 @@ void Enemy::SetPartVisible(EnemyPartType type, bool visible) {
     for (auto& visual : visuals_) if (visual.type == type) visual.visible = visible;
 }
 void Enemy::Draw() {
+    if (typeMarker_ && !IsDead()) typeMarker_->Draw();
     DrawFaces();
     for (auto& detached : detachedParts_) detached.object->Draw();
     if (!splitVisuals_) { object_.Draw(); return; }

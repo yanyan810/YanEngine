@@ -1,5 +1,6 @@
 #include "EnemyDefinition.h"
 #include "EnemyAI.h"
+#include "DetachedEnemyPart.h"
 #include "EnemyProjectile.h"
 #include "EnemySpawnSystem.h"
 #include <cassert>
@@ -21,6 +22,50 @@ int main() {
         Save(data); assert(!definitions.Load("enemy-types-test.json"));
         assert(definitions.Find("tank") && definitions.Find("tank")->hpMultiplier==2.5f);
     };
+    // Optional visual fields preserve legacy definitions; malformed data stays transactional.
+    auto legacy=valid;
+    for (auto& item : legacy["enemies"]) { item.erase("visualScale"); item.erase("typeMarker"); }
+    EnemyDefinitions old; Save(legacy); assert(old.Load("enemy-types-test.json"));
+    assert(old.Find("tank")->visualScaleMultiplier.x==1 && !old.Find("tank")->typeMarker.enabled);
+    for (const auto& value : {json::array({0,1,1}),json::array({-1,1,1}),json::array({1,1}),json::array({1,"bad",1})}) {
+        auto invalid=valid; invalid["enemies"][0]["visualScale"]=value; reject(invalid);
+    }
+    for (const auto& field : {"scale","offset","color"}) {
+        auto invalid=valid; invalid["enemies"][1]["typeMarker"][field]=json::array({1,2}); reject(invalid);
+    }
+    for (const auto& field : {"scale","color"}) {
+        auto invalid=valid; invalid["enemies"][1]["typeMarker"][field]=json::array({-1,1,1}); reject(invalid);
+    }
+    auto invalid=valid; invalid["enemies"][1]["typeMarker"]["color"]={1,2,1}; reject(invalid);
+    invalid=valid; invalid["enemies"][1]["typeMarker"]=true; reject(invalid);
+    invalid=valid; invalid["enemies"][1]["typeMarker"]["enabled"]="yes"; reject(invalid);
+    const float expectedScales[]={2,.95f*2,.82f*2,1.28f*2,1.05f*2};
+    size_t visualIndex=0;
+    for (const auto& item : valid["enemies"]) {
+        const auto& d=*definitions.Find(item["id"].get<std::string>());
+        const auto scale=d.VisualScale({2,2,2}); assert(Near(scale.x,expectedScales[visualIndex++]));
+        assert(d.typeMarker.enabled==(d.type!=EnemyType::Normal));
+        const Vector3 position{3,0,7}, rotation{0,.7f,0};
+        const auto world=Matrix4x4::MakeAffineMatrix(scale,rotation,position);
+        const auto parts=MakeEnemyParts({{0,0,0},{1,2.48f,1}});
+        const auto& body=parts[1]; const auto center=(body.bounds.min+body.bounds.max)*.5f;
+        const auto origin=EnemyPartTransformPoint({-2,center.y,center.z},world);
+        const auto target=EnemyPartTransformPoint(center,world);
+        EnemyPartHit hit;
+        assert(RaycastEnemyParts(parts,world,origin,target-origin,20,hit));
+        assert(hit.part==EnemyPartType::Body && Near(hit.distance,2*scale.x));
+        DetachedPartMotion detached;
+        detached.Initialize(body.bounds,position,rotation,scale,{1,0,0},body.type,{},{});
+        const auto detachedWorld=Matrix4x4::MakeAffineMatrix(scale,rotation,detached.Translation());
+        const auto vertex=EnemyPartTransformPoint(body.bounds.max,world);
+        const auto detachedVertex=EnemyPartTransformPoint(body.bounds.max,detachedWorld);
+        assert(EnemyVectorLength(vertex-detachedVertex)<.001f);
+        // Head-top marker is outside the parts and cannot intercept a shot on its own.
+        const auto markerPosition=EnemyPartTransformPoint({0,2.8f,0},world);
+        assert(Near(markerPosition.y,2.8f*scale.y));
+        const auto markerOrigin=EnemyPartTransformPoint({-2,2.8f,0},world);
+        assert(!RaycastEnemyParts(parts,world,markerOrigin,markerPosition-markerOrigin,20,hit));
+    }
     auto bad=valid; bad["enemies"][0]["type"]="Unknown"; reject(bad);
     bad=valid; bad["enemies"][0]["id"]=""; reject(bad);
     bad=valid; bad["enemies"].push_back(bad["enemies"][0]); reject(bad);
@@ -98,7 +143,7 @@ int main() {
     bad=map; bad["enemyRandom"]["seed"]=-1; rejectPool(bad);
     assert(spawns.Load("../../resources/levels/fps_spawns.json",definitions));
     std::map<std::string,int> counts;
-    for (int i=0;i<2000;++i) ++counts[spawns.SelectEnemyId(spawns.Points()[0])];
+    for (int i=0;i<2000;++i) ++counts[spawns.SelectEnemyId(*spawns.FindPoint("SP_B_01"))];
     assert(counts.size()==5);
     auto single=MakeEnemyProjectile(*definitions.Find("bomber"),{0,1.2f,0},{0,0,14});
     auto sliced=single;

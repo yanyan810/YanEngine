@@ -71,7 +71,7 @@ int main() {
         };
         tick(0,{3,0,-6}); assert(generated == 0);
         tick(0,{3,0,4}); tick(1,{3,0,4}); assert(generated == 3);
-        tick(0,{3,0,26}); tick(3.5f,{3,0,26}); assert(generated == 7);
+        tick(0,{3,0,26}); tick(3.5f,{3,0,26}); assert(generated == 9);
         assert(spawns.Triggers()[1].active && spawns.Triggers()[1].spawned == 4);
         tick(0,{3,0,52},true); assert(!stage.IsPlaying() && shots == 0);
         const auto frozenTime = stage.Time();
@@ -80,7 +80,7 @@ int main() {
         const auto frozenCooldown = ai.cooldown;
         const auto frozenSpawn = spawns.Triggers()[1].nextSpawn;
         tick(100,{3,0,52},true);
-        assert(generated == 7 && hp == frozenHP && stage.Time() == frozenTime && shots == 0);
+        assert(generated == 9 && hp == frozenHP && stage.Time() == frozenTime && shots == 0);
         assert(enemyPosition.x == frozenPosition.x && enemyPosition.z == frozenPosition.z && ai.cooldown == frozenCooldown);
         assert(spawns.Triggers()[1].nextSpawn == frozenSpawn);
     }

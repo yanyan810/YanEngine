@@ -45,3 +45,31 @@ Debug / Release x64ビルド：両方とも警告0・エラー0。
 - [ ] enemyPoolから複数種類がSpawnする。
 - [ ] Head / Body破壊で各タイプとも死亡する。
 - [ ] StageClear後にProjectileが残らない。
+
+## 体格と3D Marker
+
+`enemies.json`の`visualScale`をEnemyDefinition.visualScaleMultiplierへ読み込み、Enemyの基本scale_へ成分ごとに掛けます。基本値2.0ならNormal 2.0、Ranged 1.9、Fast 1.64、Tank 2.56、Bomber 2.1です。基本scale_自体は変更しないため、定義の再適用で倍率が累積しません。
+
+本体と6分割モデルは同じ実効Scaleを使います。EnemyPartsはモデルのローカル座標を維持し、Raycast・Debug境界・破片・Face Shatterが実効Scaleを含むWorld変換を使用します。
+
+`typeMarker`でenabled / offset / scale / colorを調整できます。offsetとscaleは敵モデルのローカル座標です。Markerの位置と大きさには敵の実効Scaleを適用し、向きも敵のrotationへ追従します。Ranged/Fast/Bomberは頭上、Tankは肩付近に配置しています。Normalは無効です。フィールド省略時は倍率[1,1,1]・Markerなしとなり、旧JSONも読み込めます。不正な配列、0以下の倍率・Markerサイズ、RGB範囲外の色はロード時に拒否します。
+
+Markerは独立したObject3dで、DamageStateの色更新、EnemyParts、射撃判定、部位破壊・破片処理には含まれません。死亡したフレームから描画しません。Markerの背後に本体がある場合、射撃は本体に命中します。
+
+### 見た目の手元確認
+
+- [ ] Normal：標準サイズ、Markerなし。
+- [ ] Ranged：青Marker。
+- [ ] Fast：明確に小さい体格、黄色Marker。
+- [ ] Tank：明確に大きい体格、肩付近の紫Marker。
+- [ ] Bomber：オレンジMarker。
+- [ ] 被弾時は本体だけがDamageStateに応じて赤くなり、Markerの色と競合しない。
+- [ ] Markerだけを狙った射撃は命中せず、EnemyPartsだけが当たり判定を持つ。
+- [ ] 移動・回転・Scale変更にMarkerが追従し、死亡時に消える。
+- [ ] 各体格で射撃判定と部位破壊・Face Shatterの位置が表示と一致する。
+
+今回もゲーム画面の操作確認は行っていません。新規の体格・変換・Marker設定検証を含め、既存の7テストスイートとDebug / Release x64ビルドを実行しました。
+
+## 一時的な全タイプ確認用スポーン
+
+最初のTrigger_Aは5地点をRoundRobinで巡回し、Normal → Ranged → Fast → Tank → Bomberを各1体、0.5秒間隔で必ず出します。maxAliveは5なので、先に敵を倒す必要はありません。最初のエリアへ入ってから2秒で全種類が出揃います。Trigger_Bは従来の重み付き抽選です。
