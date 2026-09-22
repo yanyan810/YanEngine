@@ -576,6 +576,10 @@
     <ClInclude Include="Game\enemy\EnemyDefinition.h" />
     <ClInclude Include="Game\enemy\EnemyProjectile.h" />
     <ClInclude Include="Game\enemy\EnemyAI.h" />
+    <ClInclude Include="Game\StageLoader.h" />
+    <ClInclude Include="Game\StageWorld.h" />
+    <ClInclude Include="Game\StageProjectile.h" />
+
     <ClInclude Include="Game\enemy\EnemyParts.h" />
   </ItemGroup>
 </Project>

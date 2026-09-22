@@ -6,6 +6,8 @@
 #include "Enemy.h"
 #include "EnemySpawnSystem.h"
 #include "EnemyProjectile.h"
+#include "StageLoader.h"
+#include "StageProjectile.h"
 #include "Sprite.h"
 #include "StageProgress.h"
 #include "StageClearOverlay.h"
@@ -26,6 +28,9 @@ private:
 
     void UpdateADS(const Input& input, float dt);
 
+    StageLoader level_;
+    bool stageLoaded_=false;
+    bool showStageColliders_=false;
     StageProgress stage_;
     StageClearOverlay clearOverlay_;
     bool showGoalDebug_ = true;

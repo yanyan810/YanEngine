@@ -33,8 +33,30 @@ void GameScene::OnEnter(GameApp& app) {
     suppressFireUntilRelease_ = false;
     player_.SetLookSensitivityMultiplier(1.0f);
 
-    if (!weapons_.Load("resources/Data/weapons.json","resources/levels/fps_spawns.json",weaponSeedOverride_))
-        OutputDebugStringA(("Weapon configuration error: " + weapons_.Error() + "\n").c_str());
+    enemyDefinitions_=EnemyDefinitions{};
+    const bool enemiesLoaded=enemyDefinitions_.Load("resources/Data/enemies.json");
+    if (!enemiesLoaded) OutputDebugStringA(("Enemy configuration error: " + enemyDefinitions_.Error() + "\n").c_str());
+    StageLoader nextLevel;
+    WeaponSystem nextWeapons;
+    EnemySpawnSystem nextSpawns;
+    StageProgress nextProgress;
+    const std::string levelPath="resources/levels/stage01/stage01.json";
+    stageLoaded_=enemiesLoaded && nextLevel.Load(levelPath) && nextLevel.ValidateAssets() &&
+        nextWeapons.Load("resources/Data/weapons.json",levelPath,weaponSeedOverride_) &&
+        nextSpawns.Load(levelPath,enemyDefinitions_) && nextProgress.LoadGoals(levelPath);
+    if (stageLoaded_) {
+        level_=std::move(nextLevel); weapons_=std::move(nextWeapons);
+        spawnSystem_=std::move(nextSpawns); stage_=std::move(nextProgress);
+    } else {
+        OutputDebugStringA(("Stage fallback: " + nextLevel.Error()+" "+nextWeapons.Error()+" "+nextSpawns.Error()+" "+nextProgress.Error()+"\n").c_str());
+        level_=StageLoader{}; weapons_=WeaponSystem{}; spawnSystem_=EnemySpawnSystem{}; stage_=StageProgress{};
+        const std::string fallback="resources/levels/fps_spawns.json";
+        if (!weapons_.Load("resources/Data/weapons.json",fallback,weaponSeedOverride_)) OutputDebugStringA(weapons_.Error().c_str());
+        if (enemiesLoaded && !spawnSystem_.Load(fallback,enemyDefinitions_)) OutputDebugStringA(spawnSystem_.Error().c_str());
+        if (!stage_.LoadGoals(fallback)) OutputDebugStringA(stage_.Error().c_str());
+    }
+    player_.SetStage(&level_.collision,level_.playerPosition,level_.playerRotation);
+    weaponVisuals_.clear();
     if (const auto* initial = weapons_.InitialWeapon()) player_.CurrentWeapon().Equip(*initial);
     pelletRandom_.seed(weapons_.ActualSeed() ^ 0x9e3779b9u); // independent of placement lottery
     weaponHUD_.Initialize(app.SpriteCom(),app.Dx());
@@ -55,24 +77,20 @@ void GameScene::OnEnter(GameApp& app) {
     }
     enemies_.clear();
     enemyProjectiles_.Clear(); projectileVisuals_.clear();
-    enemyDefinitions_=EnemyDefinitions{};
-    const bool enemiesLoaded=enemyDefinitions_.Load("resources/Data/enemies.json");
-    if (!enemiesLoaded) OutputDebugStringA(("Enemy configuration error: " + enemyDefinitions_.Error() + "\n").c_str());
-    spawnSystem_ = EnemySpawnSystem{};
-    if (enemiesLoaded && !spawnSystem_.Load("resources/levels/fps_spawns.json",enemyDefinitions_))
-        OutputDebugStringA(("Spawn configuration error: " + spawnSystem_.Error() + "\n").c_str());
-    if (!stage_.LoadGoals("resources/levels/fps_spawns.json"))
-        OutputDebugStringA(("Goal configuration error: " + stage_.Error() + "\n").c_str());
     clearOverlay_.Initialize(app.SpriteCom(), app.Dx());
     selectedEnemy_ = 0; lastHitEnemy_ = -1;
     enemyAttackCount_ = 0; playerDamagedFlash_ = 0; lastEnemyDamage_ = 0;
     ground_.Initialize(app.ObjCom(), app.Dx());
     ground_.SetCamera(&camera_);
-    ground_.SetModel("cube/cube.obj");
-    ground_.SetTexture("resources/white1x1.png");
-    ground_.SetScale({32.0f, 0.25f, 60.0f});
-    ground_.SetTranslate({0.0f, -0.25f, 24.0f});
-    ground_.SetMaterialColor({0.45f, 0.48f, 0.52f, 1.0f});
+    if (stageLoaded_) {
+        ground_.SetModel(level_.model); ground_.StopAnimation();
+        ground_.SetScale({1,1,1}); ground_.SetTranslate({}); ground_.SetRotate({});
+        ground_.SetMaterialColor({1,1,1,1});
+    } else {
+        ground_.SetModel("cube/cube.obj"); ground_.SetTexture("resources/white1x1.png");
+        ground_.SetScale({32,.25f,60}); ground_.SetTranslate({0,-.25f,24});
+        ground_.SetMaterialColor({.45f,.48f,.52f,1});
+    }
     ground_.SetEnableLighting(1);
     ground_.SetDirection({0.3f, -1.0f, 0.5f});
     ground_.SetIntensity(1.0f);
@@ -296,7 +314,8 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
             return false;
         });
     playerDamagedFlash_ = std::max(0.0f, playerDamagedFlash_-dt);
-    const float projectileDamage=enemyProjectiles_.Update(dt,player_.GetTransform().translate);
+    const float projectileDamage=stageLoaded_ ? UpdateStageProjectiles(enemyProjectiles_,dt,player_.GetTransform().translate,level_.collision) :
+        enemyProjectiles_.Update(dt,player_.GetTransform().translate);
     if (projectileDamage>0) {
         const float before=player_.GetHP(); player_.ApplyDamage(projectileDamage);
         lastEnemyDamage_=before-player_.GetHP(); playerDamagedFlash_=.35f;
@@ -314,8 +333,14 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     }
     std::vector<float> enemyDamage(enemies_.size());
     for(size_t i=0;i<enemies_.size();++i) {
-        enemies_[i]->SetPosition(enemies_[i]->GetPosition()+correction[i]);
+        const auto previous=enemies_[i]->GetPosition();
+        enemies_[i]->SetPosition(previous+correction[i]);
         enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
+        if (!enemies_[i]->IsDead()) {
+            const auto scale=enemies_[i]->Definition().visualScaleMultiplier;
+            enemies_[i]->SetPosition(level_.collision.Move(previous,enemies_[i]->GetPosition(),.55f*std::max(scale.x,scale.z),4.96f*scale.y));
+            enemies_[i]->UpdateVisuals(0);
+        }
     }
     // A click used to acquire FPS control is consumed, never a shot.
     for (int shot=0; shot<weaponShots; ++shot)
@@ -344,6 +369,9 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
 
         struct SceneHit { Enemy* enemy=nullptr; Enemy::RaycastHit hit{}; int index=-1; } closest;
         float range=definition.range;
+        StageHit wallHit;
+        const bool wall=level_.collision.Raycast(camera_.GetTranslate(),direction,range,wallHit);
+        if (wall) range=std::max(0.0f,wallHit.distance-.001f);
         for(size_t i=0;i<enemies_.size();++i) {
             Enemy::RaycastHit candidate;
             if (enemies_[i]->Raycast(camera_.GetTranslate(),direction,range,candidate) &&
@@ -584,12 +612,13 @@ void GameScene::DrawImGui(GameApp& app) {
             point.id.c_str(), point.position.x, point.position.y, point.position.z);
         ImGui::TreePop();
     }
+    ImGui::Checkbox("Show Stage Colliders", &showStageColliders_);
     ImGui::End();
-    if ((showSpawnDebug_ || showGoalDebug_) && app.ImGui()->GetSceneImageRect(sceneRect))
+    if ((showSpawnDebug_ || showGoalDebug_ || showStageColliders_) && app.ImGui()->GetSceneImageRect(sceneRect))
         DrawEnemySpawnDebug(spawnSystem_, camera_.GetViewProjectionMatrix(),
             {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
             {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)},
-            showSpawnDebug_, showGoalDebug_ ? &stage_.Goals() : nullptr);
+            showSpawnDebug_, showGoalDebug_ ? &stage_.Goals() : nullptr, showStageColliders_ ? &level_.collision.colliders : nullptr);
 #endif
 #else
     (void)app;
