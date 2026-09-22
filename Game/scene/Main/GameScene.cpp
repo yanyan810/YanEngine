@@ -19,6 +19,10 @@ namespace {
 }
 
 void GameScene::OnEnter(GameApp& app) {
+#ifdef _DEBUG
+    debugHistory_.Clear(); debugFrame_=0; debugStep_=0; debugJson_=DebugJsonEditor{};
+    debugPaused_=debugPauseOnEnter_; debugPauseOnEnter_=false;
+#endif
     app.GetInput()->SetCameraToggleKeyEnabled(false);
 #ifdef USE_IMGUI
     savedMouseFlags_ = ImGui::GetIO().ConfigFlags & kCapturedMouseFlags;
@@ -108,6 +112,9 @@ void GameScene::OnEnter(GameApp& app) {
     crosshairHorizontal_.SetScale({12.0f / width, 2.0f / height, 1.0f});
     crosshairVertical_.SetScale({2.0f / width, 12.0f / height, 1.0f});
     Update(app, 0.0f);
+#ifdef _DEBUG
+    if (debugHistory_.Size()==0) debugHistory_.Push(CaptureDebug());
+#endif
 }
 void GameScene::OnExit(GameApp& app) {
     app.GetInput()->SetCameraControlEnabled(false);
@@ -142,11 +149,51 @@ void GameScene::Update(GameApp& app, float dt) {
     GetClientRect(app.Win()->GetHwnd(), &client);
     clickedView = PtInRect(&client, cursor) && input.IsLeftMouseTrigger();
 #endif
+#ifdef _DEBUG
+    bool typing=false;
+#ifdef USE_IMGUI
+    typing=ImGui::GetIO().WantTextInput || ImGui::IsAnyItemActive();
+#endif
+    if (input.HasFocus() && input.IsKeyTrigger(DIK_F1)) {
+        debugPaused_=!debugPaused_;
+        initialCapturePending_=!debugPaused_;
+        suppressFireUntilRelease_=true;
+    }
+    if (debugPaused_) {
+        input.SetCameraControlEnabled(false); initialCapturePending_=false;
+#ifdef USE_IMGUI
+        ImGui::GetIO().ConfigFlags=(ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
+#endif
+        if (input.HasFocus() && !typing) {
+            if (input.IsKeyTrigger(DIK_COMMA)) debugStep_=-1;
+            else if (input.IsKeyTrigger(DIK_PERIOD)) debugStep_=1;
+        }
+        const int step=debugStep_; debugStep_=0;
+        if (step<0) {
+            if (const auto* state=debugHistory_.Back()) RestoreDebug(app,*state);
+            return;
+        }
+        if (step>0) {
+            if (const auto* state=debugHistory_.Forward()) { RestoreDebug(app,*state); return; }
+            dt=1.0f/60.0f;
+        } else {
+            player_.RefreshDebug(); ground_.Update(0);
+            for (auto& visual : weaponVisuals_) visual->Update(0);
+            for (auto& enemy : enemies_) enemy->UpdateVisuals(0);
+            SyncProjectileVisuals(app);
+            return;
+        }
+    }
+#endif
     if (!stage_.IsPlaying() || !viewReady || input.IsKeyTrigger(DIK_ESCAPE)) {
         input.SetCameraControlEnabled(false);
         if (input.IsKeyTrigger(DIK_ESCAPE)) initialCapturePending_ = false;
     }
     else if (initialCapturePending_ || clickedView) {
+#ifdef _DEBUG
+        if (!debugPaused_)
+#endif
+        {
 
         input.SetCameraControlEnabled(true);
 
@@ -155,6 +202,7 @@ void GameScene::Update(GameApp& app, float dt) {
         }
 
         initialCapturePending_ = false;
+        }
     }
 #ifdef USE_IMGUI
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) |
@@ -192,7 +240,9 @@ void GameScene::Update(GameApp& app, float dt) {
     for (auto& visual : weaponVisuals_) {
         visual->Update(dt);
     }
-
+#ifdef _DEBUG
+    if (dt>0) { ++debugFrame_; debugHistory_.Push(CaptureDebug()); }
+#endif
 }
 
 void GameScene::OnStageClear(GameApp& app) {
@@ -292,7 +342,11 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     const bool controls = wasCaptured && input.IsCameraControlEnabled() && input.HasFocus();
     const bool pickedUp = controls && input.IsKeyTrigger(DIK_E) && weapons_.TryPickup(player_.GetTransform().translate,weapon);
     const bool allowFire = controls && !pickedUp && !suppressFireUntilRelease_;
+#ifdef _DEBUG
+    if (!debugPaused_ && !allowFire) weapon.CancelBurst();
+#else
     if (!allowFire) weapon.CancelBurst();
+#endif
     const int weaponShots = weapon.Step(pickedUp ? 0.0f : dt,
         allowFire && input.IsLeftMouseTrigger(), allowFire && input.IsLeftMousePressed(),
         controls && input.IsKeyTrigger(DIK_R));
@@ -324,11 +378,8 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     std::vector<Vector3> correction(enemies_.size());
     for (size_t i=0;i<enemies_.size();++i) for(size_t j=i+1;j<enemies_.size();++j) {
         if (enemies_[i]->IsDead() || enemies_[j]->IsDead()) continue;
-        auto delta=enemies_[i]->GetPosition()-enemies_[j]->GetPosition(); delta.y=0;
-        const float distance=std::hypot(delta.x,delta.z);
-        if (distance>=1.1f) continue;
-        const auto direction=distance>1e-5f ? delta*(1.0f/distance) : Vector3{1,0,0};
-        const auto offset=direction*(std::min((1.1f-distance)*.5f,std::max(dt,0.0f)*.6f));
+        const auto offset=EnemySeparationOffset(enemies_[i]->GetPosition(),enemies_[i]->Definition().collisionRadius,
+            enemies_[j]->GetPosition(),enemies_[j]->Definition().collisionRadius,dt);
         correction[i]=correction[i]+offset; correction[j]=correction[j]-offset;
     }
     std::vector<float> enemyDamage(enemies_.size());
@@ -337,8 +388,8 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         enemies_[i]->SetPosition(previous+correction[i]);
         enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
         if (!enemies_[i]->IsDead()) {
-            const auto scale=enemies_[i]->Definition().visualScaleMultiplier;
-            enemies_[i]->SetPosition(level_.collision.Move(previous,enemies_[i]->GetPosition(),.55f*std::max(scale.x,scale.z),4.96f*scale.y));
+            const auto& definition=enemies_[i]->Definition();
+            enemies_[i]->SetPosition(level_.collision.Move(previous,enemies_[i]->GetPosition(),definition.collisionRadius,definition.collisionHeight));
             enemies_[i]->UpdateVisuals(0);
         }
     }
@@ -407,20 +458,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         playerDamagedFlash_=.35f;
     }
     for (const auto& enemy : enemies_) stage_.ObserveEnemy(enemy->GetSpawnId(), enemy->IsDead());
-    const auto& projectiles=enemyProjectiles_.projectiles;
-    while (projectileVisuals_.size()<projectiles.size()) {
-        auto visual=std::make_unique<Object3d>();
-        visual->Initialize(app.ObjCom(),app.Dx()); visual->SetCamera(&camera_);
-        visual->SetModel("cube/cube.obj"); visual->SetTexture("resources/white1x1.png");
-        visual->SetEnableLighting(0); projectileVisuals_.push_back(std::move(visual));
-    }
-    projectileVisuals_.resize(projectiles.size());
-    for (size_t i=0;i<projectiles.size();++i) {
-        const auto& p=projectiles[i]; auto& visual=*projectileVisuals_[i];
-        visual.SetTranslate(p.position); visual.SetScale({p.radius,p.radius,p.radius});
-        visual.SetMaterialColor(p.type==EnemyProjectileType::Bomb ? Vector4{1,.3f,.05f,1} : Vector4{0,1,1,1});
-        visual.Update(0);
-    }
+    SyncProjectileVisuals(app);
     const std::string selectedState = enemies_.empty() ? "No Enemy" : EnemyStateName(enemies_[static_cast<size_t>(selectedEnemy_)]->GetState());
     const auto status = std::wstring(L"FPS Foundation | Player HP: ") + std::to_wstring(static_cast<int>(player_.GetHP())) +
         (player_.IsDead() ? L" (Player Dead)" : L"") + L" | Enemy: " +
@@ -443,6 +481,9 @@ void GameScene::DrawRender(GameApp&) {
 
 
 void GameScene::DrawImGui(GameApp& app) {
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    DrawDebugTools(app);
+#endif
 #ifdef USE_IMGUI
     ImGui::Begin("FPS Controls");
     if (!spawnSystem_.Error().empty()) ImGui::TextWrapped("Spawn configuration error: %s", spawnSystem_.Error().c_str());
@@ -642,3 +683,140 @@ void GameScene::DrawOverlay2D(GameApp&) {
     weaponHUD_.Draw(player_.CurrentWeapon(),nearby,!weapons_.Error().empty(),
         static_cast<float>(WinApp::kClientWidth),static_cast<float>(WinApp::kClientHeight),view,projection);
 }
+
+void GameScene::SyncProjectileVisuals(GameApp& app) {
+    const auto& projectiles=enemyProjectiles_.projectiles;
+    while (projectileVisuals_.size()<projectiles.size()) {
+        auto visual=std::make_unique<Object3d>();
+        visual->Initialize(app.ObjCom(),app.Dx()); visual->SetCamera(&camera_);
+        visual->SetModel("cube/cube.obj"); visual->SetTexture("resources/white1x1.png");
+        visual->SetEnableLighting(0); projectileVisuals_.push_back(std::move(visual));
+    }
+    projectileVisuals_.resize(projectiles.size());
+    for (size_t i=0;i<projectiles.size();++i) {
+        const auto& p=projectiles[i]; auto& visual=*projectileVisuals_[i];
+        visual.SetTranslate(p.position); visual.SetScale({p.radius,p.radius,p.radius});
+        visual.SetMaterialColor(p.type==EnemyProjectileType::Bomb ? Vector4{1,.3f,.05f,1} : Vector4{0,1,1,1});
+        visual.Update(0);
+    }
+}
+
+#ifdef _DEBUG
+GameScene::DebugFrame GameScene::CaptureDebug() const {
+    DebugFrame state;
+    state.player=player_.CaptureDebug();
+    for (const auto& enemy : enemies_) state.enemies.push_back(enemy->CaptureDebug());
+    state.projectiles=enemyProjectiles_; state.spawns=spawnSystem_; state.weapons=weapons_; state.stage=stage_;
+    state.pelletRandom=pelletRandom_; state.nextEnemy=nextEnemyId_; state.frame=debugFrame_;
+    state.shots=shotCount_; state.hits=hitCount_; state.attacks=enemyAttackCount_;
+    state.selectedEnemy=selectedEnemy_; state.lastHitEnemy=lastHitEnemy_; state.lastHitPart=lastHitPart_;
+    state.ads=adsBlend_; state.fov=camera_.GetFovY(); state.lastDamage=lastDamage_;
+    state.lastEnemyDamage=lastEnemyDamage_; state.playerFlash=playerDamagedFlash_;
+    return state;
+}
+void GameScene::RestoreDebug(GameApp& app,const DebugFrame& state) {
+    while (enemies_.size()>state.enemies.size()) enemies_.pop_back();
+    while (enemies_.size()<state.enemies.size()) {
+        auto enemy=std::make_unique<Enemy>(); enemy->Initialize(app.ObjCom(),app.Dx(),&camera_,true);
+        enemies_.push_back(std::move(enemy));
+    }
+    for (size_t i=0;i<enemies_.size();++i) enemies_[i]->RestoreDebug(state.enemies[i]);
+    player_.RestoreDebug(state.player); camera_.SetFovY(state.fov); camera_.Update();
+    enemyProjectiles_=state.projectiles; spawnSystem_=state.spawns; weapons_=state.weapons; stage_=state.stage;
+    pelletRandom_=state.pelletRandom; nextEnemyId_=state.nextEnemy; debugFrame_=state.frame;
+    shotCount_=state.shots; hitCount_=state.hits; enemyAttackCount_=state.attacks;
+    selectedEnemy_=state.selectedEnemy; lastHitEnemy_=state.lastHitEnemy; lastHitPart_=state.lastHitPart;
+    adsBlend_=state.ads; lastDamage_=state.lastDamage; lastEnemyDamage_=state.lastEnemyDamage; playerDamagedFlash_=state.playerFlash;
+    for (auto& enemy : enemies_) enemy->UpdateVisuals(0);
+    for (auto& visual : weaponVisuals_) visual->Update(0);
+    SyncProjectileVisuals(app);
+    if (!stage_.IsPlaying()) clearOverlay_.SetResult(stage_,static_cast<float>(WinApp::kClientWidth),static_cast<float>(WinApp::kClientHeight));
+    suppressFireUntilRelease_=true;
+    SetWindowTextW(app.Win()->GetHwnd(),L"FPS Debug | Paused / Rewound");
+}
+#endif
+
+#if defined(_DEBUG) && defined(USE_IMGUI)
+namespace {
+bool DrawJsonNumbers(nlohmann::json& value,const std::string& label) {
+    bool changed=false;
+    ImGui::PushID(label.c_str());
+    if (value.is_object() || value.is_array()) {
+        std::string title=label;
+        if (value.is_object() && value.contains("id") && value["id"].is_string()) title+=" : "+value["id"].get<std::string>();
+        if (ImGui::TreeNode(title.c_str())) {
+            for (auto it=value.begin();it!=value.end();++it) {
+                const auto key=value.is_object() ? it.key() : std::to_string(std::distance(value.begin(),it));
+                changed=DrawJsonNumbers(it.value(),key)||changed;
+            }
+            ImGui::TreePop();
+        }
+    } else if (value.is_boolean()) {
+        bool number=value.get<bool>();
+        if (ImGui::Checkbox(label.c_str(),&number)) { value=number; changed=true; }
+    } else if (value.is_number()) {
+        auto number=value.get<double>();
+        if (ImGui::InputDouble(label.c_str(),&number,0,0,"%.6f") && std::isfinite(number)) {
+            DebugJsonEditor::SetNumber(value,number); changed=true;
+        }
+    } else if (value.is_string()) ImGui::TextWrapped("%s: %s",label.c_str(),value.get_ref<const std::string&>().c_str());
+    ImGui::PopID();
+    return changed;
+}
+}
+void GameScene::DrawDebugTools(GameApp& app) {
+    ImGui::Begin("FPS Debug Tools");
+    if (ImGui::Button(debugPaused_ ? "Resume (F1)" : "Pause (F1)")) {
+        debugPaused_=!debugPaused_; initialCapturePending_=!debugPaused_; suppressFireUntilRelease_=true;
+        if (debugPaused_) {
+            app.GetInput()->SetCameraControlEnabled(false);
+            ImGui::GetIO().ConfigFlags=(ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
+        }
+    }
+    ImGui::Text("Frame: %llu | History: %zu / %zu",static_cast<unsigned long long>(debugFrame_),
+        debugHistory_.Size() ? debugHistory_.Cursor()+1 : 0,debugHistory_.Size());
+    ImGui::TextUnformatted("F1: pause/resume + mouse | ,: back | .: forward (1/60 sec at newest)");
+    ImGui::BeginDisabled(!debugPaused_);
+    if (ImGui::Button("Back (,)")) debugStep_=-1;
+    ImGui::SameLine();
+    if (ImGui::Button("Forward (.)")) debugStep_=1;
+    ImGui::TextUnformatted("Last 300 frames. Resume after rewind starts a new branch.");
+    ImGui::Separator();
+    const std::string levelPath=stageLoaded_ ? "resources/levels/stage01/stage01.json" : "resources/levels/fps_spawns.json";
+    const std::array<std::string,3> files{"resources/Data/enemies.json","resources/Data/weapons.json",levelPath};
+    if (debugJson_.path.empty()) debugJson_.Open(files[static_cast<size_t>(debugJsonSelection_)]);
+    ImGui::BeginDisabled(debugJson_.dirty);
+    int selection=debugJsonSelection_;
+    if (ImGui::Combo("JSON File",&selection,"Enemies\0Weapons\0Stage\0"))
+        if (debugJson_.Open(files[static_cast<size_t>(selection)])) debugJsonSelection_=selection;
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("%s%s",debugJson_.path.c_str(),debugJson_.dirty ? " (unsaved)" : "");
+    ImGui::TextWrapped("Numeric/boolean fields only. Save validates, backs up the file, then restarts paused. Blender Export overwrites Stage JSON edits.");
+    if (ImGui::Button("Reload JSON / Discard edits")) debugJson_.Open(files[static_cast<size_t>(debugJsonSelection_)]);
+    ImGui::SameLine();
+    if (ImGui::Button("Validate, Save & Restart")) {
+        const auto validate=[&](const std::string& temporary) -> std::string {
+            const auto enemyPath=debugJsonSelection_==0 ? temporary : files[0];
+            const auto weaponPath=debugJsonSelection_==1 ? temporary : files[1];
+            const auto stagePath=debugJsonSelection_==2 ? temporary : files[2];
+            EnemyDefinitions definitions; if (!definitions.Load(enemyPath)) return definitions.Error();
+            EnemySpawnSystem spawns; if (!spawns.Load(stagePath,definitions)) return spawns.Error();
+            WeaponSystem weapons; if (!weapons.Load(weaponPath,stagePath,weaponSeedOverride_)) return weapons.Error();
+            StageProgress progress; if (!progress.LoadGoals(stagePath)) return progress.Error();
+            if (stageLoaded_) {
+                StageLoader level; if (!level.Load(stagePath) || !level.ValidateAssets()) return level.Error();
+            }
+            return {};
+        };
+        if (debugJson_.Save(validate)) { debugPauseOnEnter_=true; RequestChangeScene_("Game"); }
+    }
+    if (!debugJson_.error.empty()) ImGui::TextWrapped("Error: %s",debugJson_.error.c_str());
+    if (ImGui::BeginChild("Numeric JSON",ImVec2(0,300),true))
+        debugJson_.dirty=DrawJsonNumbers(debugJson_.document,"Document")||debugJson_.dirty;
+    ImGui::EndChild();
+    ImGui::EndDisabled();
+    ImGui::End();
+}
+#elif defined(_DEBUG)
+void GameScene::DrawDebugTools(GameApp&) {}
+#endif

@@ -27,6 +27,9 @@ void Player::Update(const Input& input, float dt) {
         FPSMotion::Move(transform_, right, forward, dt, settings_);
     }
     if (stageWorld_) transform_.translate=stageWorld_->Move(previous,transform_.translate);
+    SyncVisuals(dt);
+}
+void Player::SyncVisuals(float dt) {
     object_.SetTranslate(transform_.translate + Vector3{0.0f, 1.0f, 0.0f});
     object_.SetRotate({0.0f, transform_.rotate.y, 0.0f});
     camera_->SetTranslate(transform_.translate + Vector3{0.0f, settings_.cameraHeight, 0.0f});

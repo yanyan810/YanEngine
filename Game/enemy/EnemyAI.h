@@ -16,6 +16,15 @@ inline bool EnemyPartsDead(const EnemyParts& parts) {
             part.DamageState() == EnemyPartDamageState::Destroyed) return true;
     return false;
 }
+// Symmetric correction per enemy; radius sum defines minimum XZ separation.
+inline Vector3 EnemySeparationOffset(const Vector3& a,float radiusA,const Vector3& b,float radiusB,float dt) {
+    const Vector3 delta{a.x-b.x,0,a.z-b.z};
+    const float distance=std::hypot(delta.x,delta.z);
+    const float minimum=radiusA+radiusB;
+    if (distance>=minimum || !std::isfinite(dt) || dt<=0) return {};
+    const auto direction=distance>1e-5f ? delta*(1/distance) : Vector3{1,0,0};
+    return direction*std::min((minimum-distance)*.5f,dt*.6f);
+}
 struct EnemyAISettings {
     float detectionRange = 20;
     float attackRange = 1.5f;

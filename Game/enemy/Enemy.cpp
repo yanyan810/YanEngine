@@ -152,6 +152,10 @@ void Enemy::ApplyDefinition(const EnemyDefinition& definition) {
     ai_.settings={definition.detectionRange,definition.attackRange,definition.moveSpeed,
         definition.attackDamage,definition.attackInterval,definition.IsRanged(),definition.minRange,definition.maxRange};
     ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
+    RebuildTypeMarker();
+    if (common_ && dx_) UpdateVisuals(0);
+}
+void Enemy::RebuildTypeMarker() {
     typeMarker_.reset();
     if (!common_ || !dx_) return;
     if (definition_.typeMarker.enabled) {
@@ -164,8 +168,7 @@ void Enemy::ApplyDefinition(const EnemyDefinition& definition) {
         const auto& color=definition_.typeMarker.color;
         typeMarker_->SetMaterialColor({color.x,color.y,color.z,1});
     }
-    // Publish the same scale to visuals and raycast world matrix immediately after spawn.
-    UpdateVisuals(0);
+
 }
 
 bool Enemy::Raycast(const Vector3& origin, const Vector3& direction, float maxDistance, RaycastHit& hit) const {
@@ -306,6 +309,11 @@ void Enemy::DrawImGui() {
 #ifdef USE_IMGUI
     ImGui::Text("Enemy ID: %s | Definition ID: %s | Type: %s", id_.c_str(), definition_.id.c_str(), EnemyTypeName(definition_.type));
     ImGui::Text("HP Multiplier: %.2f", definition_.hpMultiplier);
+    const auto visualScale=definition_.VisualScale(scale_);
+    ImGui::Text("Visual Scale: %.2f, %.2f, %.2f (multiplier)", definition_.visualScaleMultiplier.x, definition_.visualScaleMultiplier.y, definition_.visualScaleMultiplier.z);
+    ImGui::Text("Effective Model Scale: %.2f, %.2f, %.2f", visualScale.x, visualScale.y, visualScale.z);
+    ImGui::Text("Collision Radius: %.3f | Collision Height: %.3f (world)", definition_.collisionRadius, definition_.collisionHeight);
+    ImGui::Checkbox("Show Enemy Movement Collider", &showMovementCollider_);
     if (definition_.IsRanged()) {
         ImGui::Text("Min Range: %.2f | Preferred Range: %.2f | Max Range: %.2f", definition_.minRange, definition_.preferredRange, definition_.maxRange);
         ImGui::Text("Projectile Speed: %.2f", definition_.projectileSpeed);
@@ -367,6 +375,40 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
     if (!hasHitBox_) return;
     auto* draw=ImGui::GetForegroundDrawList();
     draw->PushClipRect({screenMin.x,screenMin.y},{screenMax.x,screenMax.y},true);
+    if (showMovementCollider_ && !IsDead()) {
+        // This upright cylinder represents movement/separation, not the shootable parts.
+        struct Clip { float x,y,z,w; };
+        const auto clip=[&](const Vector3& p) -> Clip {
+            return {p.x*vp.m[0][0]+p.y*vp.m[1][0]+p.z*vp.m[2][0]+vp.m[3][0],
+                p.x*vp.m[0][1]+p.y*vp.m[1][1]+p.z*vp.m[2][1]+vp.m[3][1],
+                p.x*vp.m[0][2]+p.y*vp.m[1][2]+p.z*vp.m[2][2]+vp.m[3][2],
+                p.x*vp.m[0][3]+p.y*vp.m[1][3]+p.z*vp.m[2][3]+vp.m[3][3]};
+        };
+        const auto project=[&](Clip p) -> ImVec2 {
+            return {screenMin.x+(p.x/p.w+1)*.5f*(screenMax.x-screenMin.x),
+                screenMin.y+(1-p.y/p.w)*.5f*(screenMax.y-screenMin.y)};
+        };
+        const auto line=[&](const Vector3& from,const Vector3& to) {
+            auto a=clip(from),b=clip(to);
+            if (a.z<0 && b.z<0) return;
+            if ((a.z<0)!=(b.z<0)) {
+                const float t=a.z/(a.z-b.z);
+                const Clip intersection{a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,0,a.w+(b.w-a.w)*t};
+                if (a.z<0) a=intersection; else b=intersection;
+            }
+            if (a.w>1e-5f && b.w>1e-5f) draw->AddLine(project(a),project(b),IM_COL32(70,255,170,255),1.5f);
+        };
+        constexpr int segments=32;
+        const Vector3 height{0,definition_.collisionHeight,0};
+        for (int i=0;i<segments;++i) {
+            const float angle=static_cast<float>(i)*6.28318530718f/static_cast<float>(segments);
+            const float next=static_cast<float>(i+1)*6.28318530718f/static_cast<float>(segments);
+            const auto a=position_+Vector3{std::cos(angle)*definition_.collisionRadius,0,std::sin(angle)*definition_.collisionRadius};
+            const auto b=position_+Vector3{std::cos(next)*definition_.collisionRadius,0,std::sin(next)*definition_.collisionRadius};
+            line(a,b); line(a+height,b+height);
+            if (i%8==0) line(a,a+height);
+        }
+    }
     const auto matrix=Matrix4x4::Multiply(object_.GetWorldMatrix(),vp);
     for (const auto& part:parts_) {
         if (part.DamageState() == EnemyPartDamageState::Destroyed) continue;
@@ -473,3 +515,50 @@ void Enemy::DrawFaces() {
     faceBatch_->Update(0);
     faceBatch_->Draw();
 }
+
+#ifdef _DEBUG
+Enemy::DebugState Enemy::CaptureDebug() const {
+    DebugState state;
+    state.definition=definition_; state.ai=ai_; state.parts=parts_;
+    state.position=position_; state.rotation=rotation_; state.scale=scale_;
+    state.spawnId=spawnId_; state.trigger=spawnTriggerId_; state.nextOrder=nextSpawnOrder_;
+    state.attacks=attackCount_; state.damage=lastAttackDamage_; state.flash=attackFlash_; state.random=random_;
+    for (size_t i=0;i<visuals_.size();++i) {
+        state.models[i]=visuals_[i].object ? visuals_[i].object->GetModel() : nullptr;
+        state.visible[i]=visuals_[i].visible;
+    }
+    for (const auto& part : detachedParts_) state.detached.push_back({part.object->GetModel(),part.motion,part.spawnOrder});
+    state.faces=faceShards_; state.breakMode=breakMode_; state.detachedSettings=detachedSettings_;
+    state.maxFaces=maxActiveFaces_; state.facesPerBreak=maxFacesPerBreak_; state.faceLifetime=faceLifetime_;
+    state.spread=spreadPower_; state.outward=outwardPower_;
+    return state;
+}
+void Enemy::RestoreDebug(const DebugState& state) {
+    definition_=state.definition; ai_=state.ai; parts_=state.parts;
+    position_=state.position; rotation_=state.rotation; scale_=state.scale;
+    SetSpawnIdentity(state.spawnId,state.trigger); nextSpawnOrder_=state.nextOrder;
+    attackCount_=state.attacks; lastAttackDamage_=state.damage; attackFlash_=state.flash; random_=state.random;
+    const auto create=[&](Model* model) {
+        auto object=std::make_unique<Object3d>(); object->Initialize(common_,dx_); object->SetCamera(camera_);
+        object->SetModel(model); object->StopAnimation(); object->SetEnableLighting(1);
+        object->SetDirection({.3f,-1,.5f}); object->SetIntensity(1); object->SetPointLightIntensity(0); object->SetSpotLightIntensity(0);
+        return object;
+    };
+    for (size_t i=0;i<visuals_.size();++i) {
+        if (!state.models[i]) visuals_[i].object.reset();
+        else if (!visuals_[i].object || visuals_[i].object->GetModel()!=state.models[i]) visuals_[i].object=create(state.models[i]);
+        visuals_[i].type=parts_[i].type; visuals_[i].visible=state.visible[i];
+    }
+    detachedParts_.clear();
+    for (const auto& part : state.detached) {
+        DetachedEnemyPart detached; detached.object=create(part.model); detached.motion=part.motion; detached.spawnOrder=part.order;
+        detached.object->SetScale(part.motion.scale); detached.object->SetMaterialColor({.59f,.06f,.06f,1});
+        detachedParts_.push_back(std::move(detached));
+    }
+    faceShards_=state.faces; breakMode_=state.breakMode; detachedSettings_=state.detachedSettings;
+    maxActiveFaces_=state.maxFaces; maxFacesPerBreak_=state.facesPerBreak; faceLifetime_=state.faceLifetime;
+    spreadPower_=state.spread; outwardPower_=state.outward;
+    RebuildTypeMarker();
+    // Scene updates all restored visuals only after every enemy has been restored.
+}
+#endif

@@ -31,6 +31,9 @@ struct EnemyDefinition {
     float projectileSpeed=12, projectileRadius=.2f, projectileLifetime=5;
     float explosionRadius=4, explosionDamage=25, fuseTime=1.2f;
     float bombGravity=9.8f;
+    // World-space movement cylinder dimensions; independent of visualScale and part hitboxes.
+    float collisionRadius=.55f;
+    float collisionHeight=4.96f;
     Vector3 visualScaleMultiplier{1,1,1};
     EnemyTypeMarker typeMarker{};
     Vector3 VisualScale(const Vector3& base) const {
@@ -61,6 +64,7 @@ public:
                     if (!std::isfinite(value) || (positive ? value<=0 : value<0))
                         throw std::runtime_error(d.id + ": invalid " + key);
                 };
+                number("collisionRadius",d.collisionRadius,true); number("collisionHeight",d.collisionHeight,true);
                 number("detectionRange",d.detectionRange); number("moveSpeed",d.moveSpeed);
                 number("attackRange",d.attackRange); number("attackDamage",d.attackDamage);
                 number("attackInterval",d.attackInterval,true); number("hpMultiplier",d.hpMultiplier,true);
