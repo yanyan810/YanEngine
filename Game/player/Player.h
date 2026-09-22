@@ -19,6 +19,18 @@ public:
     void ApplyDamage(float damage) { if (std::isfinite(damage) && damage > 0) hp_ = std::max(0.0f, hp_-damage); }
     void ResetHPForDebug() { hp_ = 100.0f; }
 #ifdef _DEBUG
+    struct DebugState {
+        Transform transform;
+        FPSMotion::Settings settings;
+        WeaponRuntime weapon;
+        float hp=100, sensitivity=1;
+    };
+    void RefreshDebug() { SyncVisuals(0); }
+    DebugState CaptureDebug() const { return {transform_,settings_,currentWeapon_,hp_,lookSensitivityMultiplier_}; }
+    void RestoreDebug(const DebugState& state) {
+        transform_=state.transform; settings_=state.settings; currentWeapon_=state.weapon;
+        hp_=state.hp; lookSensitivityMultiplier_=state.sensitivity; SyncVisuals(0);
+    }
     void SetPositionForDebug(const Vector3& position) { transform_.translate = position; }
 #endif
     float GetHP() const { return hp_; }
@@ -30,6 +42,7 @@ public:
     }
 
 private:
+    void SyncVisuals(float dt);
     WeaponRuntime currentWeapon_;
     const StageWorld* stageWorld_ = nullptr;
     float hp_ = 100.0f;

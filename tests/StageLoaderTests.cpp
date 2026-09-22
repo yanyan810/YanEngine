@@ -57,6 +57,14 @@ int main() {
     auto stopped=world.Move({0,0,0},{50,0,0}); assert(stopped.x<3.61f && stopped.x>3.5f);
     auto slide=world.Move({0,0,0},{10,0,5}); assert(slide.x<3.61f && Near(slide.z,5));
     auto leave=world.Move(stopped,{0,0,0}); assert(Near(leave.x,0));
+    const auto& tank=*definitions.Find("tank"); const auto& fast=*definitions.Find("fast");
+    const auto tankStop=world.Move({0,0,0},{10,0,0},tank.collisionRadius,tank.collisionHeight);
+    const auto fastStop=world.Move({0,0,0},{10,0,0},fast.collisionRadius,fast.collisionHeight);
+    assert(Near(tankStop.x,4-tank.collisionRadius-.002f));
+    assert(Near(fastStop.x,4-fast.collisionRadius-.002f) && tankStop.x<fastStop.x);
+    StageWorld overhead; overhead.colliders={Box({5,4,0},{1,1,10})};
+    assert(Near(overhead.Move({0,0,0},{10,0,0},fast.collisionRadius,fast.collisionHeight).x,10));
+    assert(overhead.Move({0,0,0},{10,0,0},tank.collisionRadius,tank.collisionHeight).x<4);
     StageWorld none; assert(Near(none.Move({0,0,0},{10,0,5}).x,10));
     world.colliders.push_back(Box({0,-.3f,0},{100,.3f,100}));
     assert(Near(world.Move({0,0,0},{0,0,5}).z,5)); // floor does not impede horizontal movement

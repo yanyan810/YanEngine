@@ -39,6 +39,30 @@ public:
     void DrawImGui();
     const EnemyDefinition& Definition() const { return definition_; }
     void ApplyDefinition(const EnemyDefinition& definition);
+#ifdef _DEBUG
+    struct DebugDetached { Model* model=nullptr; DetachedPartMotion motion; uint64_t order=0; };
+    struct DebugState {
+        EnemyDefinition definition;
+        EnemyAI ai;
+        EnemyParts parts;
+        Vector3 position{},rotation{},scale{};
+        uint64_t spawnId=0,nextOrder=0;
+        std::string trigger;
+        unsigned long long attacks=0;
+        float damage=0,flash=0;
+        std::mt19937 random;
+        std::array<Model*,6> models{};
+        std::array<bool,6> visible{};
+        std::vector<DebugDetached> detached;
+        std::vector<FaceShard> faces;
+        FragmentMode breakMode=FragmentMode::Face;
+        DetachedPartSettings detachedSettings;
+        int maxFaces=256,facesPerBreak=64;
+        float faceLifetime=5,spread=1.5f,outward=1.5f;
+    };
+    DebugState CaptureDebug() const;
+    void RestoreDebug(const DebugState& state);
+#endif
     float Update(float dt, const Vector3& playerPosition);
     void UpdateVisuals(float dt); // Includes fragment lifetime/physics, but no AI or attacks.
     const Vector3& GetPosition() const { return position_; }
@@ -59,6 +83,7 @@ public:
     void Draw();
     void SetPartVisible(EnemyPartType type, bool visible);
 private:
+    void RebuildTypeMarker();
     uint64_t spawnId_ = 0;
     std::string id_;
     std::string spawnTriggerId_;
@@ -99,6 +124,7 @@ private:
     bool splitVisuals_ = false;
     EnemyParts parts_{};
     bool showPartColliders_ = false;
+    bool showMovementCollider_ = false;
     Vector3 position_{3.0f,0.0f,18.0f};
     Vector3 rotation_{0.0f,1.5707963f,0.0f};
     Vector3 scale_{2.0f,2.0f,2.0f};
