@@ -2,11 +2,12 @@
 #if defined(_DEBUG) && defined(USE_IMGUI)
 #include "EnemySpawnSystem.h"
 #include "StageProgress.h"
+#include "StageWorld.h"
 #include "Matrix4x4.h"
 #include "imgui.h"
 
 inline void DrawEnemySpawnDebug(const EnemySpawnSystem& system, const Matrix4x4& vp,
-    ImVec2 minimum, ImVec2 maximum, bool showSpawns = true, const std::vector<GoalTrigger>* goals = nullptr) {
+    ImVec2 minimum, ImVec2 maximum, bool showSpawns = true, const std::vector<GoalTrigger>* goals = nullptr, const std::vector<StageCollider>* colliders = nullptr) {
     auto* draw = ImGui::GetForegroundDrawList();
     draw->PushClipRect(minimum, maximum, true);
     struct Clip { float x, y, z, w; };
@@ -49,6 +50,12 @@ inline void DrawEnemySpawnDebug(const EnemySpawnSystem& system, const Matrix4x4&
     if (showSpawns) for (const auto& point : system.Points()) box(point.position, {.5f,.5f,.5f}, point.id, IM_COL32(80,255,120,255));
     if (goals) for (const auto& goal : *goals)
         box(goal.position, goal.size, "GOAL: " + goal.id, IM_COL32(255,90,225,255));
+    if (colliders) for (const auto& collider : *colliders) {
+        Vector3 corners[8];
+        for (int i=0;i<8;++i) corners[i]=StagePoint({(i&1) ? collider.local.max.x : collider.local.min.x,
+            (i&2) ? collider.local.max.y : collider.local.min.y,(i&4) ? collider.local.max.z : collider.local.min.z},collider.world);
+        for (int i=0;i<8;++i) for (int bit : {1,2,4}) if (!(i&bit)) line(corners[i],corners[i|bit],IM_COL32(255,230,60,255));
+    }
     draw->PopClipRect();
 }
 #endif

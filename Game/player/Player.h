@@ -1,13 +1,17 @@
-﻿#pragma once
+#pragma once
 #include "Object3d.h"
 #include "FPSMotion.h"
 #include "WeaponSystem.h"
+#include "StageWorld.h"
 class Input;
 
 class Player {
 public:
     void Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera);
     void Update(const Input& input, float dt);
+    void SetStage(const StageWorld* world,const Vector3& position,const Vector3& rotation) {
+        stageWorld_=world; transform_.translate=position; transform_.rotate=rotation;
+    }
     const Transform& GetTransform() const { return transform_; }
     FPSMotion::Settings& Settings() { return settings_; }
     WeaponRuntime& CurrentWeapon() { return currentWeapon_; }
@@ -27,6 +31,7 @@ public:
 
 private:
     WeaponRuntime currentWeapon_;
+    const StageWorld* stageWorld_ = nullptr;
     float hp_ = 100.0f;
     Transform transform_{{1.0f, 1.0f, 1.0f}, {}, {3.0f, 0.0f, -6.0f}};
     FPSMotion::Settings settings_;
