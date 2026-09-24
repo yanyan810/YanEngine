@@ -19,6 +19,7 @@
 
 class GameScene : public IScene {
 public:
+    explicit GameScene(bool showroom=false) : showroom_(showroom) {}
     void OnEnter(GameApp& app) override;
     void OnExit(GameApp& app) override;
     void Update(GameApp& app, float dt) override;
@@ -29,7 +30,16 @@ public:
 private:
     void UpdateCombat(GameApp& app, float dt, bool wasCaptured);
     void OnStageClear(GameApp& app);
+
     void SyncProjectileVisuals(GameApp& app);
+    const char* SceneName() const { return showroom_ ? "Showroom" : "Game"; }
+    std::string LevelPath() const { return showroom_ ? "resources/levels/showroom/showroom.json" :
+        stageLoaded_ ? "resources/levels/stage01/stage01.json" : "resources/levels/fps_spawns.json"; }
+    void ResetShowroomEnemies(GameApp& app);
+    void DrawShowroomTools(GameApp& app);
+    bool showroom_=false, freezeEnemies_=true;
+    bool showEnemyLabels_=true, showWeaponLabels_=true, showEnemyMarkers_=true;
+    bool showEnemyCollision_=false, showEnemyParts_=false, resetEnemiesPending_=false;
 #ifdef _DEBUG
     struct DebugFrame {
         Player::DebugState player;
@@ -44,6 +54,7 @@ private:
         int selectedEnemy=0,lastHitEnemy=-1;
         EnemyPartType lastHitPart=EnemyPartType::None;
         float ads=0,fov=0,lastDamage=0,lastEnemyDamage=0,playerFlash=0;
+        bool freezeEnemies=true;
     };
     DebugFrame CaptureDebug() const;
     void RestoreDebug(GameApp& app,const DebugFrame& state);
@@ -55,12 +66,10 @@ private:
     uint64_t debugFrame_=0;
     inline static bool debugPauseOnEnter_=false;
 #endif
-
+    StageLoader level_;
+    bool stageLoaded_=false, showStageColliders_=false;
     void UpdateADS(const Input& input, float dt);
 
-    StageLoader level_;
-    bool stageLoaded_=false;
-    bool showStageColliders_=false;
     StageProgress stage_;
     StageClearOverlay clearOverlay_;
     bool showGoalDebug_ = true;

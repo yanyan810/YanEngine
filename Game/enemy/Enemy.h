@@ -35,11 +35,17 @@ public:
     bool Raycast(const Vector3& origin, const Vector3& direction, float maxDistance, RaycastHit& hit) const;
     void ShowHitFeedback(EnemyPartType part);
     float ApplyDamage(EnemyPartType part, float damage, const Vector3& shotDirection);
-    void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax) const;
+    void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax, bool forceParts=false, bool forceMovement=false) const;
     void DrawImGui();
     const EnemyDefinition& Definition() const { return definition_; }
     void ApplyDefinition(const EnemyDefinition& definition);
 #ifdef _DEBUG
+    Vector3 HeadCenterForDebug() const {
+        for (const auto& part : parts_) if (part.type==EnemyPartType::Head)
+            return EnemyPartTransformPoint((part.bounds.min+part.bounds.max)*.5f,
+                Matrix4x4::MakeAffineMatrix(definition_.VisualScale(scale_),rotation_,position_));
+        return position_;
+    }
     struct DebugDetached { Model* model=nullptr; DetachedPartMotion motion; uint64_t order=0; };
     struct DebugState {
         EnemyDefinition definition;
@@ -80,9 +86,12 @@ public:
     void ConfirmAttack(float actualDamage) { attackCount_ += ai_.attacksThisUpdate; lastAttackDamage_ = actualDamage; attackFlash_ = .35f; }
     bool IsDead() const { return EnemyPartsDead(parts_); }
     EnemyState GetState() const { return IsDead() ? EnemyState::Dead : ai_.state; }
-    void Draw();
+    void Draw(bool showMarker=true);
     void SetPartVisible(EnemyPartType type, bool visible);
 private:
+#ifdef _DEBUG
+    std::string dimensionFileStatus_;
+#endif
     void RebuildTypeMarker();
     uint64_t spawnId_ = 0;
     std::string id_;

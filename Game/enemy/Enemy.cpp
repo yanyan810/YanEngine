@@ -1,3 +1,6 @@
+#ifdef _DEBUG
+#include "DebugEnemyTuning.h"
+#endif
 #include "Enemy.h"
 #include "Raycast.h"
 #include <nlohmann/json.hpp>
@@ -290,8 +293,8 @@ void Enemy::UpdateVisuals(float dt) {
 void Enemy::SetPartVisible(EnemyPartType type, bool visible) {
     for (auto& visual : visuals_) if (visual.type == type) visual.visible = visible;
 }
-void Enemy::Draw() {
-    if (typeMarker_ && !IsDead()) typeMarker_->Draw();
+void Enemy::Draw(bool showMarker) {
+    if (showMarker && typeMarker_ && !IsDead()) typeMarker_->Draw();
     DrawFaces();
     for (auto& detached : detachedParts_) detached.object->Draw();
     if (!splitVisuals_) { object_.Draw(); return; }
@@ -309,6 +312,34 @@ void Enemy::DrawImGui() {
 #ifdef USE_IMGUI
     ImGui::Text("Enemy ID: %s | Definition ID: %s | Type: %s", id_.c_str(), definition_.id.c_str(), EnemyTypeName(definition_.type));
     ImGui::Text("HP Multiplier: %.2f", definition_.hpMultiplier);
+#ifdef _DEBUG
+    // Change only dimensions: ApplyDefinition would reset HP and AI state.
+    float uniform=definition_.visualScaleMultiplier.x;
+    if (ImGui::DragFloat("Visual Scale (Uniform)",&uniform,.005f,.01f,5.0f,"%.3f",ImGuiSliderFlags_AlwaysClamp) && std::isfinite(uniform))
+        definition_.visualScaleMultiplier={uniform,uniform,uniform};
+    float components[]{definition_.visualScaleMultiplier.x,definition_.visualScaleMultiplier.y,definition_.visualScaleMultiplier.z};
+    if (ImGui::DragFloat3("Visual Scale XYZ",components,.005f,.01f,5.0f,"%.3f",ImGuiSliderFlags_AlwaysClamp) &&
+        std::isfinite(components[0]) && std::isfinite(components[1]) && std::isfinite(components[2]))
+        definition_.visualScaleMultiplier={components[0],components[1],components[2]};
+    float radius=definition_.collisionRadius,height=definition_.collisionHeight;
+    if (ImGui::DragFloat("Collision Radius",&radius,.01f,.01f,20.0f,"%.3f",ImGuiSliderFlags_AlwaysClamp) && std::isfinite(radius))
+        definition_.collisionRadius=radius;
+    if (ImGui::DragFloat("Collision Height",&height,.01f,.01f,20.0f,"%.3f",ImGuiSliderFlags_AlwaysClamp) && std::isfinite(height))
+        definition_.collisionHeight=height;
+    if (ImGui::Button("Save Dimensions to JSON")) {
+        std::string error;
+        dimensionFileStatus_=SaveEnemyDimensions("resources/Data/enemies.json",definition_,error) ?
+            "Saved dimensions for "+definition_.id+". Restart applies them to all instances." : "Save failed: "+error;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load Dimensions from JSON")) {
+        std::string error;
+        dimensionFileStatus_=LoadEnemyDimensions("resources/Data/enemies.json",definition_,error) ?
+            "Loaded dimensions for "+definition_.id : "Load failed: "+error;
+    }
+    if (!dimensionFileStatus_.empty()) ImGui::TextWrapped("%s",dimensionFileStatus_.c_str());
+    ImGui::TextWrapped("Live preview / Load: selected enemy only, including while F1-paused. Save: visualScale + collisionRadius + collisionHeight for this type in resources/Data/enemies.json. HP and AI are preserved.");
+#endif
     const auto visualScale=definition_.VisualScale(scale_);
     ImGui::Text("Visual Scale: %.2f, %.2f, %.2f (multiplier)", definition_.visualScaleMultiplier.x, definition_.visualScaleMultiplier.y, definition_.visualScaleMultiplier.z);
     ImGui::Text("Effective Model Scale: %.2f, %.2f, %.2f", visualScale.x, visualScale.y, visualScale.z);
@@ -370,12 +401,12 @@ void Enemy::DrawImGui() {
     }
 #endif
 }
-void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vector2& screenMax) const {
+void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vector2& screenMax, bool forceParts, bool forceMovement) const {
 #ifdef USE_IMGUI
     if (!hasHitBox_) return;
     auto* draw=ImGui::GetForegroundDrawList();
     draw->PushClipRect({screenMin.x,screenMin.y},{screenMax.x,screenMax.y},true);
-    if (showMovementCollider_ && !IsDead()) {
+    if ((showMovementCollider_ || forceMovement) && !IsDead()) {
         // This upright cylinder represents movement/separation, not the shootable parts.
         struct Clip { float x,y,z,w; };
         const auto clip=[&](const Vector3& p) -> Clip {
@@ -412,7 +443,7 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
     const auto matrix=Matrix4x4::Multiply(object_.GetWorldMatrix(),vp);
     for (const auto& part:parts_) {
         if (part.DamageState() == EnemyPartDamageState::Destroyed) continue;
-        if (!showPartColliders_ && part.flashRemaining<=0) continue;
+        if (!(showPartColliders_ || forceParts) && part.flashRemaining<=0) continue;
         struct Clip { float x,y,z,w; } corners[8];
         for (int i=0;i<8;++i) {
             const Vector3 p{(i&1)?part.bounds.max.x:part.bounds.min.x,
@@ -444,12 +475,12 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
             }
             if(a.w>1e-5f && b.w>1e-5f) draw->AddLine(project(a),project(b),color,part.flashRemaining>0?3.0f:1.0f);
         }
-        if(showPartColliders_ && corners[7].z>=0 && corners[7].w>1e-5f)
+        if((showPartColliders_ || forceParts) && corners[7].z>=0 && corners[7].w>1e-5f)
             draw->AddText(project(corners[7]),color,EnemyPartName(part.type));
     }
     draw->PopClipRect();
 #else
-    (void)vp; (void)screenMin; (void)screenMax;
+    (void)forceParts; (void)forceMovement; (void)vp; (void)screenMin; (void)screenMax;
 #endif
 }
 

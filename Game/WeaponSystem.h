@@ -256,6 +256,7 @@ public:
         }
         return nearest; // ties use JSON order
     }
+    void ResetPickups() { for (auto& pickup : pickups_) { pickup.pickedUp=false; pickup.visible=true; } }
     bool TryPickup(const Vector3& player, WeaponRuntime& weapon) {
         const auto index = Nearest(player);
         if (!index) return false;

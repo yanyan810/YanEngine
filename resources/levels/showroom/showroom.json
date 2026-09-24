@@ -1,0 +1,413 @@
+{
+  "version": 1,
+  "stage": {
+    "id": "showroom",
+    "model": "levels/showroom/showroom.gltf"
+  },
+  "playerSpawn": {
+    "position": [
+      -2.0,
+      0.0,
+      -14.0
+    ],
+    "rotation": [
+      0.0,
+      -0.0,
+      0.0
+    ]
+  },
+  "colliders": [
+    {
+      "id": "Floor",
+      "position": [
+        0.0,
+        -0.25,
+        12.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        24.0,
+        0.25,
+        28.0
+      ],
+      "localBounds": {
+        "min": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "max": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "Wall_Back",
+      "position": [
+        0.0,
+        3.0,
+        -16.25
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        24.0,
+        3.0,
+        0.25
+      ],
+      "localBounds": {
+        "min": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "max": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "Wall_Left",
+      "position": [
+        -24.25,
+        3.0,
+        12.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        0.25,
+        3.0,
+        28.0
+      ],
+      "localBounds": {
+        "min": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "max": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "Wall_Right",
+      "position": [
+        24.25,
+        3.0,
+        12.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        0.25,
+        3.0,
+        28.0
+      ],
+      "localBounds": {
+        "min": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "max": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "Wall_Target",
+      "position": [
+        0.0,
+        3.0,
+        40.25
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        24.0,
+        3.0,
+        0.25
+      ],
+      "localBounds": {
+        "min": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "max": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "enemyRandom": {
+    "useFixedSeed": false,
+    "seed": 12345
+  },
+  "spawnPoints": [
+    {
+      "id": "Enemy_00_normal",
+      "position": [
+        -2.0,
+        0.0,
+        14.0
+      ],
+      "rotation": [
+        0.0,
+        -1.570796251296997,
+        0.0
+      ],
+      "enemyPool": [
+        {
+          "id": "normal",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Enemy_01_ranged",
+      "position": [
+        2.0,
+        0.0,
+        14.0
+      ],
+      "rotation": [
+        0.0,
+        -1.570796251296997,
+        0.0
+      ],
+      "enemyPool": [
+        {
+          "id": "ranged",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Enemy_02_fast",
+      "position": [
+        6.0,
+        0.0,
+        14.0
+      ],
+      "rotation": [
+        0.0,
+        -1.570796251296997,
+        0.0
+      ],
+      "enemyPool": [
+        {
+          "id": "fast",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Enemy_03_tank",
+      "position": [
+        10.0,
+        0.0,
+        14.0
+      ],
+      "rotation": [
+        0.0,
+        -1.570796251296997,
+        0.0
+      ],
+      "enemyPool": [
+        {
+          "id": "tank",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Enemy_04_bomber",
+      "position": [
+        14.0,
+        0.0,
+        14.0
+      ],
+      "rotation": [
+        0.0,
+        -1.570796251296997,
+        0.0
+      ],
+      "enemyPool": [
+        {
+          "id": "bomber",
+          "weight": 1.0
+        }
+      ]
+    }
+  ],
+  "spawnTriggers": [],
+  "weaponRandom": {
+    "useFixedSeed": false,
+    "seed": 12345
+  },
+  "weaponSpawnPoints": [
+    {
+      "id": "Weapon_00_pistol",
+      "position": [
+        -18.0,
+        0.8999999761581421,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "pistol",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Weapon_01_smg",
+      "position": [
+        -14.0,
+        0.8999999761581421,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "smg",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Weapon_02_rifle",
+      "position": [
+        -10.0,
+        0.8999999761581421,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "rifle",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Weapon_03_shotgun",
+      "position": [
+        -6.0,
+        0.8999999761581421,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "shotgun",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Weapon_04_pump_shotgun",
+      "position": [
+        -18.0,
+        0.8999999761581421,
+        6.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "pump_shotgun",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Weapon_05_auto_shotgun",
+      "position": [
+        -14.0,
+        0.8999999761581421,
+        6.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "auto_shotgun",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "Weapon_06_burst_rifle",
+      "position": [
+        -10.0,
+        0.8999999761581421,
+        6.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "weaponPool": [
+        {
+          "id": "burst_rifle",
+          "weight": 1.0
+        }
+      ]
+    }
+  ],
+  "goalTriggers": []
+}

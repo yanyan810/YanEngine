@@ -1,3 +1,4 @@
+#include "DebugEnemyTuning.h"
 #include "DebugTimeline.h"
 #include "DebugJsonEditor.h"
 #include "EnemyAI.h"
@@ -84,5 +85,29 @@ int main() {
     assert(editor.Save(validate) && Read(path)!=original && Read(path)!=changed);
     assert(editor.Open(path) && !editor.dirty);
     assert(!editor.Open("absent-debug-editor-file.json") && editor.path==path);
+    EnemyDefinitions beforeDimensions; assert(beforeDimensions.Load(path));
+    auto tuning=*beforeDimensions.Find("normal");
+    tuning.visualScaleMultiplier={.71f,.72f,.73f}; tuning.collisionRadius=.43f; tuning.collisionHeight=3.7f;
+    std::string dimensionError;
+    const auto beforeJson=json::parse(Read(path));
+    assert(SaveEnemyDimensions(path,tuning,dimensionError));
+    auto expected=beforeJson;
+    for (auto& item : expected["enemies"]) if (item["id"]=="normal") {
+        item["visualScale"]={.71f,.72f,.73f}; item["collisionRadius"]=.43f; item["collisionHeight"]=3.7f;
+    }
+    assert(json::parse(Read(path))==expected); // Other fields and enemy types are untouched.
+    assert(json::parse(Read(path+".debug-backup"))==beforeJson);
+    tuning.visualScaleMultiplier={1,1,1}; tuning.attackDamage=987;
+    assert(LoadEnemyDimensions(path,tuning,dimensionError));
+    assert(tuning.visualScaleMultiplier.y==.72f && tuning.collisionRadius==.43f && tuning.collisionHeight==3.7f);
+    assert(tuning.attackDamage==987); // Loading dimensions never reapplies combat settings.
+    const auto savedDimensions=Read(path);
+    tuning.collisionRadius=-1;
+    assert(!SaveEnemyDimensions(path,tuning,dimensionError) && Read(path)==savedDimensions);
+    tuning.id="missing";
+    assert(!SaveEnemyDimensions(path,tuning,dimensionError) && Read(path)==savedDimensions);
+    assert(!LoadEnemyDimensions(path,tuning,dimensionError) && tuning.collisionRadius==-1);
+    assert(!LoadEnemyDimensions("missing-dimensions.json",tuning,dimensionError));
+    std::cout<<"Enemy dimension persistence passed: save/load, backup, unrelated fields preserved, invalid/missing rejection.\n";
     std::cout<<"Debug tools tests passed: rewind/forward, death/AI/spawn/projectile/fragment/weapon/stage/random restoration, branch/capacity, numeric edits, validation/atomic save/backup/external conflict.\n";
 }

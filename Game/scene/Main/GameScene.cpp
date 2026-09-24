@@ -44,7 +44,7 @@ void GameScene::OnEnter(GameApp& app) {
     WeaponSystem nextWeapons;
     EnemySpawnSystem nextSpawns;
     StageProgress nextProgress;
-    const std::string levelPath="resources/levels/stage01/stage01.json";
+    const std::string levelPath=showroom_ ? "resources/levels/showroom/showroom.json" : "resources/levels/stage01/stage01.json";
     stageLoaded_=enemiesLoaded && nextLevel.Load(levelPath) && nextLevel.ValidateAssets() &&
         nextWeapons.Load("resources/Data/weapons.json",levelPath,weaponSeedOverride_) &&
         nextSpawns.Load(levelPath,enemyDefinitions_) && nextProgress.LoadGoals(levelPath);
@@ -55,9 +55,9 @@ void GameScene::OnEnter(GameApp& app) {
         OutputDebugStringA(("Stage fallback: " + nextLevel.Error()+" "+nextWeapons.Error()+" "+nextSpawns.Error()+" "+nextProgress.Error()+"\n").c_str());
         level_=StageLoader{}; weapons_=WeaponSystem{}; spawnSystem_=EnemySpawnSystem{}; stage_=StageProgress{};
         const std::string fallback="resources/levels/fps_spawns.json";
-        if (!weapons_.Load("resources/Data/weapons.json",fallback,weaponSeedOverride_)) OutputDebugStringA(weapons_.Error().c_str());
-        if (enemiesLoaded && !spawnSystem_.Load(fallback,enemyDefinitions_)) OutputDebugStringA(spawnSystem_.Error().c_str());
-        if (!stage_.LoadGoals(fallback)) OutputDebugStringA(stage_.Error().c_str());
+        if (!showroom_ && !weapons_.Load("resources/Data/weapons.json",fallback,weaponSeedOverride_)) OutputDebugStringA(weapons_.Error().c_str());
+        if (!showroom_ && enemiesLoaded && !spawnSystem_.Load(fallback,enemyDefinitions_)) OutputDebugStringA(spawnSystem_.Error().c_str());
+        if (!showroom_ && !stage_.LoadGoals(fallback)) OutputDebugStringA(stage_.Error().c_str());
     }
     player_.SetStage(&level_.collision,level_.playerPosition,level_.playerRotation);
     weaponVisuals_.clear();
@@ -111,6 +111,7 @@ void GameScene::OnEnter(GameApp& app) {
     const float height = static_cast<float>(texture.height);
     crosshairHorizontal_.SetScale({12.0f / width, 2.0f / height, 1.0f});
     crosshairVertical_.SetScale({2.0f / width, 12.0f / height, 1.0f});
+    if (showroom_) { freezeEnemies_=true; ResetShowroomEnemies(app); }
     Update(app, 0.0f);
 #ifdef _DEBUG
     if (debugHistory_.Size()==0) debugHistory_.Push(CaptureDebug());
@@ -130,6 +131,13 @@ void GameScene::OnExit(GameApp& app) {
 void GameScene::Update(GameApp& app, float dt) {
     // SceneManager consumes this request after Update, safely outside ImGui drawing.
     if (!NextScene().empty()) return;
+    if (showroom_ && resetEnemiesPending_) {
+        app.Dx()->WaitForGPU();
+        ResetShowroomEnemies(app); resetEnemiesPending_=false;
+#ifdef _DEBUG
+        debugHistory_.Clear(); debugHistory_.Push(CaptureDebug());
+#endif
+    }
     dt = std::isfinite(dt) ? std::max(dt, 0.0f) : 0.0f;
     Input& input = *app.GetInput();
     const bool wasCaptured = input.IsCameraControlEnabled();
@@ -225,7 +233,7 @@ void GameScene::Update(GameApp& app, float dt) {
 
         player_.Update(input, dt);
 
-        if (stage_.Update(
+        if (!showroom_ && stage_.Update(
             dt,
             player_.GetTransform().translate)) {
 
@@ -350,7 +358,8 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     const int weaponShots = weapon.Step(pickedUp ? 0.0f : dt,
         allowFire && input.IsLeftMouseTrigger(), allowFire && input.IsLeftMousePressed(),
         controls && input.IsKeyTrigger(DIK_R));
-    spawnSystem_.Update(dt, player_.GetTransform().translate,
+    if (showroom_ && pickedUp) weapons_.ResetPickups();
+    if (!showroom_) spawnSystem_.Update(dt, player_.GetTransform().translate,
         [&](const EnemySpawnPoint& point, const std::string& trigger) {
             auto enemy = std::make_unique<Enemy>();
             const uint64_t id = nextEnemyId_++;
@@ -376,7 +385,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     }
     // Symmetric XZ separation from a snapshot; dead bodies do not push living enemies.
     std::vector<Vector3> correction(enemies_.size());
-    for (size_t i=0;i<enemies_.size();++i) for(size_t j=i+1;j<enemies_.size();++j) {
+    if (!showroom_ || !freezeEnemies_) for (size_t i=0;i<enemies_.size();++i) for(size_t j=i+1;j<enemies_.size();++j) {
         if (enemies_[i]->IsDead() || enemies_[j]->IsDead()) continue;
         const auto offset=EnemySeparationOffset(enemies_[i]->GetPosition(),enemies_[i]->Definition().collisionRadius,
             enemies_[j]->GetPosition(),enemies_[j]->Definition().collisionRadius,dt);
@@ -384,6 +393,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     }
     std::vector<float> enemyDamage(enemies_.size());
     for(size_t i=0;i<enemies_.size();++i) {
+        if (showroom_ && freezeEnemies_) { enemies_[i]->UpdateVisuals(dt); continue; }
         const auto previous=enemies_[i]->GetPosition();
         enemies_[i]->SetPosition(previous+correction[i]);
         enemyDamage[i]=enemies_[i]->Update(dt,player_.GetTransform().translate);
@@ -442,7 +452,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
 
     }
     for(size_t i=0;i<enemies_.size();++i) {
-        if (enemies_[i]->IsDead()) continue;
+        if (enemies_[i]->IsDead() || (showroom_ && freezeEnemies_)) continue;
         if (enemies_[i]->Definition().IsRanged() && enemies_[i]->PendingAttackCount()>0) {
             enemyProjectiles_.projectiles.push_back(MakeEnemyProjectile(enemies_[i]->Definition(),
                 enemies_[i]->GetPosition()+Vector3{0,1.2f,0},player_.GetTransform().translate));
@@ -475,7 +485,7 @@ void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
     for (size_t i=0; i<weaponVisuals_.size(); ++i)
         if (weapons_.Pickups()[i].visible) weaponVisuals_[i]->Draw();
-    for(auto& enemy : enemies_) enemy->Draw();
+    for(auto& enemy : enemies_) enemy->Draw(!showroom_ || showEnemyMarkers_);
     for(auto& visual : projectileVisuals_) visual->Draw();
 }
 
@@ -483,9 +493,13 @@ void GameScene::DrawRender(GameApp&) {
 void GameScene::DrawImGui(GameApp& app) {
 #if defined(_DEBUG) && defined(USE_IMGUI)
     DrawDebugTools(app);
+    if (showroom_) DrawShowroomTools(app);
 #endif
 #ifdef USE_IMGUI
     ImGui::Begin("FPS Controls");
+#ifdef _DEBUG
+    if (ImGui::Button(showroom_ ? "Return to Game" : "Open Showroom")) RequestChangeScene_(showroom_ ? "Game" : "Showroom");
+#endif
     if (!spawnSystem_.Error().empty()) ImGui::TextWrapped("Spawn configuration error: %s", spawnSystem_.Error().c_str());
     const bool captured = app.GetInput()->IsCameraControlEnabled();
     ImGui::TextUnformatted(!stage_.IsPlaying() ? "Stage cleared. Gameplay stopped; debug controls remain available." :
@@ -525,7 +539,7 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::EndDisabled();
     ImGui::End();
     RECT sceneRect{};
-    if(!enemies_.empty() && app.ImGui()->GetSceneImageRect(sceneRect)) enemies_[static_cast<size_t>(selectedEnemy_)]->DrawPartDebug(camera_.GetViewProjectionMatrix(),
+    if(!showroom_ && !enemies_.empty() && app.ImGui()->GetSceneImageRect(sceneRect)) enemies_[static_cast<size_t>(selectedEnemy_)]->DrawPartDebug(camera_.GetViewProjectionMatrix(),
         {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
         {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
 #ifdef _DEBUG
@@ -603,6 +617,7 @@ void GameScene::DrawImGui(GameApp& app) {
         ImGui::TreePop();
     }
     ImGui::End();
+    if (!showroom_) {
     ImGui::Begin("Stage Progress");
     ImGui::Text("Stage State: %s", stage_.IsPlaying() ? "Playing" : "Cleared");
     ImGui::Text("%s: %s", stage_.IsPlaying() ? "Elapsed Time" : "Clear Time", StageProgress::FormatTime(stage_.Time()).c_str());
@@ -655,11 +670,12 @@ void GameScene::DrawImGui(GameApp& app) {
     }
     ImGui::Checkbox("Show Stage Colliders", &showStageColliders_);
     ImGui::End();
+    }
     if ((showSpawnDebug_ || showGoalDebug_ || showStageColliders_) && app.ImGui()->GetSceneImageRect(sceneRect))
         DrawEnemySpawnDebug(spawnSystem_, camera_.GetViewProjectionMatrix(),
             {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
             {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)},
-            showSpawnDebug_, showGoalDebug_ ? &stage_.Goals() : nullptr, showStageColliders_ ? &level_.collision.colliders : nullptr);
+            !showroom_ && showSpawnDebug_, !showroom_ && showGoalDebug_ ? &stage_.Goals() : nullptr, showStageColliders_ ? &level_.collision.colliders : nullptr);
 #endif
 #else
     (void)app;
@@ -704,6 +720,7 @@ void GameScene::SyncProjectileVisuals(GameApp& app) {
 #ifdef _DEBUG
 GameScene::DebugFrame GameScene::CaptureDebug() const {
     DebugFrame state;
+    state.freezeEnemies=freezeEnemies_;
     state.player=player_.CaptureDebug();
     for (const auto& enemy : enemies_) state.enemies.push_back(enemy->CaptureDebug());
     state.projectiles=enemyProjectiles_; state.spawns=spawnSystem_; state.weapons=weapons_; state.stage=stage_;
@@ -715,6 +732,7 @@ GameScene::DebugFrame GameScene::CaptureDebug() const {
     return state;
 }
 void GameScene::RestoreDebug(GameApp& app,const DebugFrame& state) {
+    freezeEnemies_=state.freezeEnemies;
     while (enemies_.size()>state.enemies.size()) enemies_.pop_back();
     while (enemies_.size()<state.enemies.size()) {
         auto enemy=std::make_unique<Enemy>(); enemy->Initialize(app.ObjCom(),app.Dx(),&camera_,true);
@@ -782,7 +800,7 @@ void GameScene::DrawDebugTools(GameApp& app) {
     if (ImGui::Button("Forward (.)")) debugStep_=1;
     ImGui::TextUnformatted("Last 300 frames. Resume after rewind starts a new branch.");
     ImGui::Separator();
-    const std::string levelPath=stageLoaded_ ? "resources/levels/stage01/stage01.json" : "resources/levels/fps_spawns.json";
+    const std::string levelPath=LevelPath();
     const std::array<std::string,3> files{"resources/Data/enemies.json","resources/Data/weapons.json",levelPath};
     if (debugJson_.path.empty()) debugJson_.Open(files[static_cast<size_t>(debugJsonSelection_)]);
     ImGui::BeginDisabled(debugJson_.dirty);
@@ -808,7 +826,7 @@ void GameScene::DrawDebugTools(GameApp& app) {
             }
             return {};
         };
-        if (debugJson_.Save(validate)) { debugPauseOnEnter_=true; RequestChangeScene_("Game"); }
+        if (debugJson_.Save(validate)) { debugPauseOnEnter_=true; RequestChangeScene_(SceneName()); }
     }
     if (!debugJson_.error.empty()) ImGui::TextWrapped("Error: %s",debugJson_.error.c_str());
     if (ImGui::BeginChild("Numeric JSON",ImVec2(0,300),true))
@@ -820,3 +838,114 @@ void GameScene::DrawDebugTools(GameApp& app) {
 #elif defined(_DEBUG)
 void GameScene::DrawDebugTools(GameApp&) {}
 #endif
+
+void GameScene::ResetShowroomEnemies(GameApp& app) {
+    enemies_.clear(); enemyProjectiles_.Clear(); projectileVisuals_.clear();
+    nextEnemyId_=0; selectedEnemy_=0; lastHitEnemy_=-1; lastHitPart_=EnemyPartType::None;
+    enemyAttackCount_=0; playerDamagedFlash_=0; lastEnemyDamage_=0;
+    player_.ResetHPForDebug();
+    // Showroom points are placed immediately, independent of trigger activation/timing.
+    for (const auto& point : spawnSystem_.Points()) {
+        if (point.enemyPool.empty()) continue;
+        const auto* definition=enemyDefinitions_.Find(point.enemyPool.front().id);
+        if (!definition) continue;
+        auto enemy=std::make_unique<Enemy>();
+        enemy->SetSpawnIdentity(nextEnemyId_++,point.id);
+        enemy->SetPosition(point.position); enemy->SetRotation(point.rotation);
+        enemy->Initialize(app.ObjCom(),app.Dx(),&camera_,true);
+        enemy->ApplyDefinition(*definition);
+        enemies_.push_back(std::move(enemy));
+    }
+}
+void GameScene::DrawShowroomTools(GameApp& app) {
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    ImGui::Begin("Showroom");
+    ImGui::TextUnformatted("F1: pause + mouse | ESC: mouse only | E: reusable pickup | R: reload | RMB: ADS");
+    ImGui::TextUnformatted("AI starts frozen. Damage / fragments still work. Fired projectiles continue while AI is frozen.");
+    if (!stageLoaded_) ImGui::TextUnformatted("Showroom assets failed to load. Check debugger output and restart.");
+    ImGui::BeginDisabled(app.GetInput()->IsCameraControlEnabled());
+    ImGui::Checkbox("Freeze Enemies",&freezeEnemies_);
+    ImGui::SameLine();
+    if (ImGui::Button("Enable Enemy AI")) freezeEnemies_=false;
+    if (ImGui::Button("Reset Enemies")) resetEnemiesPending_=true;
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Pickups")) weapons_.ResetPickups();
+    if (ImGui::Button("Restart Scene")) RequestChangeScene_(SceneName());
+    ImGui::SameLine();
+    if (ImGui::Button("Return to Game##showroom")) RequestChangeScene_("Game");
+    const auto teleport=[&](const char* label,const Vector3& position,const Vector3& rotation) {
+        if (ImGui::Button(label)) {
+            player_.SetStage(&level_.collision,position,rotation); player_.RefreshDebug();
+            suppressFireUntilRelease_=true;
+        }
+    };
+    teleport("Teleport to Start",level_.playerPosition,level_.playerRotation);
+    if (!weapons_.Points().empty()) {
+        const auto p=weapons_.Points().front().position;
+        teleport("Teleport to Weapon Area",{p.x,0,p.z-2},{});
+    }
+    if (!spawnSystem_.Points().empty()) {
+        const auto p=spawnSystem_.Points().front().position;
+        teleport("Teleport to Enemy Area",{p.x,0,p.z-4},{});
+        teleport("Teleport to Firing Line (15m)",{p.x,0,p.z-15},{});
+    }
+    ImGui::Checkbox("Show Enemy Labels",&showEnemyLabels_);
+    ImGui::Checkbox("Show Enemy Markers",&showEnemyMarkers_);
+    ImGui::Checkbox("Show Enemy Collision",&showEnemyCollision_);
+    ImGui::Checkbox("Show Enemy Part Hit Boxes",&showEnemyParts_);
+    ImGui::Checkbox("Show Stage Colliders##showroom",&showStageColliders_);
+    ImGui::Checkbox("Show Weapon Pickup Labels",&showWeaponLabels_);
+    ImGui::EndDisabled();
+    const float eye=camera_.GetTranslate().y;
+    ImGui::Text("Player eye Y: %.2f | Eye offset: %.2f",eye,player_.Settings().cameraHeight);
+    ImGui::TextUnformatted("Enemy lineup (left to right). Head Y uses the actual transformed head part center.");
+    for (const auto& enemy : enemies_) {
+        const auto& d=enemy->Definition(); const auto v=d.visualScaleMultiplier;
+        ImGui::Text("%s / %s (%s) | %s",enemy->GetId().c_str(),d.id.c_str(),EnemyTypeName(d.type),enemy->IsDead()?"Dead":"Alive");
+        ImGui::Text("Visual Scale: %.2f %.2f %.2f | Collision Radius: %.2f | Collision Height: %.2f",
+            v.x,v.y,v.z,d.collisionRadius,d.collisionHeight);
+        const float head=enemy->HeadCenterForDebug().y;
+        ImGui::Text("Head Y: %.2f | Head minus eye: %+.2f",head,head-eye);
+    }
+    ImGui::Separator(); ImGui::TextUnformatted("Weapon lineup: E nearby or use Equip Weapon (Debug) in Weapon System.");
+    for (const auto& pickup : weapons_.Pickups()) {
+        const auto& p=pickup.position;
+        ImGui::Text("%s: (%.1f, %.1f, %.1f)",pickup.weaponId.c_str(),p.x,p.y,p.z);
+        ImGui::PushID(pickup.spawnPointId.c_str());
+        ImGui::BeginDisabled(app.GetInput()->IsCameraControlEnabled());
+        if (ImGui::Button("Equip")) {
+            if (const auto* d=weapons_.Find(pickup.weaponId)) player_.CurrentWeapon().Equip(*d);
+            suppressFireUntilRelease_=true;
+        }
+        ImGui::EndDisabled(); ImGui::PopID();
+    }
+    ImGui::End();
+    RECT rect{};
+    if (!app.ImGui()->GetSceneImageRect(rect)) return;
+    const Vector2 lo{static_cast<float>(rect.left),static_cast<float>(rect.top)};
+    const Vector2 hi{static_cast<float>(rect.right),static_cast<float>(rect.bottom)};
+    const auto vp=camera_.GetViewProjectionMatrix();
+    auto* draw=ImGui::GetForegroundDrawList();
+    draw->PushClipRect({lo.x,lo.y},{hi.x,hi.y},true);
+    const auto label=[&](const Vector3& p,const std::string& text) {
+        const float w=p.x*vp.m[0][3]+p.y*vp.m[1][3]+p.z*vp.m[2][3]+vp.m[3][3];
+        const float z=p.x*vp.m[0][2]+p.y*vp.m[1][2]+p.z*vp.m[2][2]+vp.m[3][2];
+        if (w<=1e-5f || z<0) return;
+        const float x=p.x*vp.m[0][0]+p.y*vp.m[1][0]+p.z*vp.m[2][0]+vp.m[3][0];
+        const float y=p.x*vp.m[0][1]+p.y*vp.m[1][1]+p.z*vp.m[2][1]+vp.m[3][1];
+        const ImVec2 point{lo.x+(x/w+1)*.5f*(hi.x-lo.x),lo.y+(1-y/w)*.5f*(hi.y-lo.y)};
+        const auto size=ImGui::CalcTextSize(text.c_str());
+        draw->AddRectFilled({point.x-3,point.y-2},{point.x+size.x+3,point.y+size.y+2},IM_COL32(20,20,20,210));
+        draw->AddText(point,IM_COL32(255,255,255,255),text.c_str());
+    };
+    if (showWeaponLabels_) for (const auto& p : weapons_.Pickups()) label(p.position+Vector3{0,.5f,0},p.weaponId);
+    for (const auto& enemy : enemies_) {
+        if (showEnemyLabels_) label(enemy->GetPosition()+Vector3{0,enemy->Definition().collisionHeight+.6f,0},
+            enemy->Definition().id+" / "+enemy->GetId()+(enemy->IsDead()?" [Dead]":""));
+        enemy->DrawPartDebug(vp,lo,hi,showEnemyParts_,showEnemyCollision_);
+    }
+    draw->PopClipRect();
+#else
+    (void)app;
+#endif
+}

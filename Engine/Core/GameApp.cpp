@@ -1,4 +1,7 @@
 #include "scene/Main/GameScene.h"
+#ifdef _DEBUG
+#include "scene/Main/ShowroomScene.h"
+#endif
 #include "GameApp.h"
 #include "SceneManager.h"
 
@@ -143,6 +146,9 @@ bool GameApp::Initialize_() {
     // SceneManager
     sceneMgr_ = std::make_unique<SceneManager>();
     sceneMgr_->Register("Game", [] { return std::make_unique<GameScene>(); });
+    #ifdef _DEBUG
+    sceneMgr_->Register("Showroom", [] { return std::make_unique<ShowroomScene>(); });
+    #endif
     sceneMgr_->Change(*this, "Game");
 
     OutputDebugStringA("[GameApp] Initialize END\n");
