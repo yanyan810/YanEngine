@@ -24,8 +24,24 @@ int main() {
     };
     // Optional visual fields preserve legacy definitions; malformed data stays transactional.
     auto legacy=valid;
-    for (auto& item : legacy["enemies"]) { item.erase("visualScale"); item.erase("typeMarker"); }
+    for (auto& item : legacy["enemies"]) { item.erase("visualScale"); item.erase("typeMarker"); item.erase("collisionRadius"); item.erase("collisionHeight"); }
     EnemyDefinitions old; Save(legacy); assert(old.Load("enemy-types-test.json"));
+    assert(Near(old.Find("tank")->collisionRadius,.55f) && Near(old.Find("tank")->collisionHeight,4.96f));
+    for (const auto* field : {"collisionRadius","collisionHeight"}) {
+        for (auto value : {json(-1),json(0),json("bad"),json(nullptr)}) {
+            auto invalidCollision=valid; invalidCollision["enemies"][0][field]=value; reject(invalidCollision);
+        }
+    }
+    const auto& tank=*definitions.Find("tank"); const auto& fast=*definitions.Find("fast");
+    assert(Near(tank.collisionRadius,.45f) && Near(tank.collisionHeight,4.07f));
+    assert(Near(fast.collisionRadius,.29f) && Near(fast.collisionHeight,2.58f));
+    const auto offset=EnemySeparationOffset({},tank.collisionRadius,{.5f,0,0},fast.collisionRadius,1);
+    assert(Near(.5f-2*offset.x,tank.collisionRadius+fast.collisionRadius));
+    assert(EnemySeparationOffset({},fast.collisionRadius,{.7f,0,0},fast.collisionRadius,1).x==0);
+    assert(Near(EnemySeparationOffset({},.8f,{1.2f,0,0},.8f,1).x,-.2f));
+    assert(Near(EnemySeparationOffset({},.45f,{},.29f,1).x,.37f));
+    auto altered=tank; altered.visualScaleMultiplier={4,3,2};
+    assert(altered.collisionRadius==tank.collisionRadius && altered.collisionHeight==tank.collisionHeight);
     assert(old.Find("tank")->visualScaleMultiplier.x==1 && !old.Find("tank")->typeMarker.enabled);
     for (const auto& value : {json::array({0,1,1}),json::array({-1,1,1}),json::array({1,1}),json::array({1,"bad",1})}) {
         auto invalid=valid; invalid["enemies"][0]["visualScale"]=value; reject(invalid);
@@ -39,7 +55,7 @@ int main() {
     auto invalid=valid; invalid["enemies"][1]["typeMarker"]["color"]={1,2,1}; reject(invalid);
     invalid=valid; invalid["enemies"][1]["typeMarker"]=true; reject(invalid);
     invalid=valid; invalid["enemies"][1]["typeMarker"]["enabled"]="yes"; reject(invalid);
-    const float expectedScales[]={2,.95f*2,.82f*2,1.28f*2,1.05f*2};
+    const float expectedScales[]={.65f*2,.62f*2,.52f*2,.82f*2,.68f*2};
     size_t visualIndex=0;
     for (const auto& item : valid["enemies"]) {
         const auto& d=*definitions.Find(item["id"].get<std::string>());
@@ -72,7 +88,7 @@ int main() {
     for (auto key : {"detectionRange","moveSpeed","attackRange","attackDamage","minRange","preferredRange","maxRange","explosionDamage","fuseTime"}) {
         bad=valid; bad["enemies"][0][key]=-1; reject(bad);
     }
-    for (auto key : {"attackInterval","hpMultiplier","projectileSpeed","projectileRadius","projectileLifetime","explosionRadius","bombGravity"}) {
+    for (auto key : {"attackInterval","hpMultiplier","projectileSpeed","projectileRadius","projectileLifetime","explosionRadius","bombGravity","collisionRadius","collisionHeight"}) {
         bad=valid; bad["enemies"][0][key]=0; reject(bad);
     }
     bad=valid; bad["enemies"][1]["minRange"]=100; reject(bad);

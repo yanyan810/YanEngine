@@ -1,21 +1,23 @@
 {
   "enemies": [
     {
-      "id": "normal",
-      "displayName": "Normal",
-      "type": "Normal",
-      "detectionRange": 20,
-      "moveSpeed": 2.5,
-      "attackRange": 1.5,
       "attackDamage": 10,
       "attackInterval": 1,
+      "attackRange": 1.5,
+      "collisionHeight": 3.2200000286102295,
+      "collisionRadius": 0.36000001430511475,
+      "detectionRange": 20,
+      "displayName": "Normal",
       "hpMultiplier": 1,
-      "visualScale": [
-        1,
-        1,
-        1
-      ],
+      "id": "normal",
+      "moveSpeed": 2.5,
+      "type": "Normal",
       "typeMarker": {
+        "color": [
+          1,
+          1,
+          1
+        ],
         "enabled": false,
         "offset": [
           0,
@@ -26,70 +28,38 @@
           0.15,
           0.15,
           0.15
-        ],
-        "color": [
-          1,
-          1,
-          1
         ]
-      }
+      },
+      "visualScale": [
+        0.42500001192092896,
+        0.42500001192092896,
+        0.42500001192092896
+      ]
     },
     {
-      "id": "ranged",
-      "displayName": "Ranged",
-      "type": "Ranged",
-      "detectionRange": 30,
-      "moveSpeed": 2,
-      "attackRange": 18,
       "attackDamage": 8,
       "attackInterval": 1.4,
+      "attackRange": 18,
+      "collisionHeight": 3.0799999237060547,
+      "collisionRadius": 0.3400000035762787,
+      "detectionRange": 30,
+      "displayName": "Ranged",
       "hpMultiplier": 1,
-      "preferredRange": 12,
-      "minRange": 7,
+      "id": "ranged",
       "maxRange": 16,
-      "projectileSpeed": 12,
-      "projectileRadius": 0.2,
+      "minRange": 7,
+      "moveSpeed": 2,
+      "preferredRange": 12,
       "projectileLifetime": 5,
-      "visualScale": [
-        0.95,
-        0.95,
-        0.95
-      ],
+      "projectileRadius": 0.2,
+      "projectileSpeed": 12,
+      "type": "Ranged",
       "typeMarker": {
-        "enabled": true,
-        "offset": [
-          0,
-          2.8,
-          0
-        ],
-        "scale": [
-          0.15,
-          0.15,
-          0.15
-        ],
         "color": [
           0.1,
           0.4,
           1
-        ]
-      }
-    },
-    {
-      "id": "fast",
-      "displayName": "Fast",
-      "type": "Fast",
-      "detectionRange": 25,
-      "moveSpeed": 5,
-      "attackRange": 1.2,
-      "attackDamage": 7,
-      "attackInterval": 0.7,
-      "hpMultiplier": 0.7,
-      "visualScale": [
-        0.82,
-        0.82,
-        0.82
-      ],
-      "typeMarker": {
+        ],
         "enabled": true,
         "offset": [
           0,
@@ -100,30 +70,68 @@
           0.15,
           0.15,
           0.15
-        ],
+        ]
+      },
+      "visualScale": [
+        0.42500001192092896,
+        0.42500001192092896,
+        0.42500001192092896
+      ]
+    },
+    {
+      "attackDamage": 7,
+      "attackInterval": 0.7,
+      "attackRange": 1.2,
+      "collisionHeight": 2.5799999237060547,
+      "collisionRadius": 0.28999999165534973,
+      "detectionRange": 25,
+      "displayName": "Fast",
+      "hpMultiplier": 0.7,
+      "id": "fast",
+      "moveSpeed": 5,
+      "type": "Fast",
+      "typeMarker": {
         "color": [
           1,
           0.85,
           0.05
+        ],
+        "enabled": true,
+        "offset": [
+          0,
+          2.8,
+          0
+        ],
+        "scale": [
+          0.15,
+          0.15,
+          0.15
         ]
-      }
+      },
+      "visualScale": [
+        0.36500000953674316,
+        0.36500000953674316,
+        0.36500000953674316
+      ]
     },
     {
-      "id": "tank",
-      "displayName": "Tank",
-      "type": "Tank",
-      "detectionRange": 22,
-      "moveSpeed": 1.2,
-      "attackRange": 1.8,
       "attackDamage": 20,
       "attackInterval": 1.6,
+      "attackRange": 1.8,
+      "collisionHeight": 4.070000171661377,
+      "collisionRadius": 0.44999998807907104,
+      "detectionRange": 22,
+      "displayName": "Tank",
       "hpMultiplier": 2.5,
-      "visualScale": [
-        1.28,
-        1.28,
-        1.28
-      ],
+      "id": "tank",
+      "moveSpeed": 1.2,
+      "type": "Tank",
       "typeMarker": {
+        "color": [
+          0.6,
+          0.2,
+          1
+        ],
         "enabled": true,
         "offset": [
           -0.12,
@@ -134,39 +142,41 @@
           0.2,
           0.2,
           0.2
-        ],
-        "color": [
-          0.6,
-          0.2,
-          1
         ]
-      }
+      },
+      "visualScale": [
+        0.5350000262260437,
+        0.5350000262260437,
+        0.5350000262260437
+      ]
     },
     {
-      "id": "bomber",
-      "displayName": "Bomber",
-      "type": "Bomber",
-      "detectionRange": 28,
-      "moveSpeed": 1.8,
-      "attackRange": 20,
       "attackDamage": 0,
       "attackInterval": 2.5,
-      "hpMultiplier": 1.2,
-      "preferredRange": 14,
-      "minRange": 9,
-      "maxRange": 18,
-      "projectileSpeed": 8,
-      "projectileRadius": 0.3,
-      "projectileLifetime": 6,
-      "explosionRadius": 4,
+      "attackRange": 20,
+      "collisionHeight": 3.369999885559082,
+      "collisionRadius": 0.3700000047683716,
+      "detectionRange": 28,
+      "displayName": "Bomber",
       "explosionDamage": 25,
+      "explosionRadius": 4,
       "fuseTime": 1.2,
-      "visualScale": [
-        1.05,
-        1.05,
-        1.05
-      ],
+      "hpMultiplier": 1.2,
+      "id": "bomber",
+      "maxRange": 18,
+      "minRange": 9,
+      "moveSpeed": 1.8,
+      "preferredRange": 14,
+      "projectileLifetime": 6,
+      "projectileRadius": 0.3,
+      "projectileSpeed": 8,
+      "type": "Bomber",
       "typeMarker": {
+        "color": [
+          1,
+          0.3,
+          0.05
+        ],
         "enabled": true,
         "offset": [
           0,
@@ -177,13 +187,13 @@
           0.17,
           0.17,
           0.17
-        ],
-        "color": [
-          1,
-          0.3,
-          0.05
         ]
-      }
+      },
+      "visualScale": [
+        0.41499999165534973,
+        0.41499999165534973,
+        0.41499999165534973
+      ]
     }
   ]
 }
