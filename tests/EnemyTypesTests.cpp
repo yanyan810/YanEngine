@@ -55,11 +55,14 @@ int main() {
     auto invalid=valid; invalid["enemies"][1]["typeMarker"]["color"]={1,2,1}; reject(invalid);
     invalid=valid; invalid["enemies"][1]["typeMarker"]=true; reject(invalid);
     invalid=valid; invalid["enemies"][1]["typeMarker"]["enabled"]="yes"; reject(invalid);
-    const float expectedScales[]={.65f*2,.62f*2,.52f*2,.82f*2,.68f*2};
-    size_t visualIndex=0;
+    // Saved tuning values are editable; verify JSON-to-world scaling, not old defaults.
     for (const auto& item : valid["enemies"]) {
         const auto& d=*definitions.Find(item["id"].get<std::string>());
-        const auto scale=d.VisualScale({2,2,2}); assert(Near(scale.x,expectedScales[visualIndex++]));
+        const auto scale=d.VisualScale({2,2,2});
+        const auto& expected=item.at("visualScale");
+        assert(Near(scale.x,2*expected.at(0).get<float>()));
+        assert(Near(scale.y,2*expected.at(1).get<float>()));
+        assert(Near(scale.z,2*expected.at(2).get<float>()));
         assert(d.typeMarker.enabled==(d.type!=EnemyType::Normal));
         const Vector3 position{3,0,7}, rotation{0,.7f,0};
         const auto world=Matrix4x4::MakeAffineMatrix(scale,rotation,position);
