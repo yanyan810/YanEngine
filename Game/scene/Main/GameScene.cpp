@@ -1,4 +1,4 @@
-﻿#include "GameScene.h"
+#include "GameScene.h"
 #include "GameApp.h"
 #include "Object3dCommon.h"
 #include "ImGuiManagaer.h"
@@ -64,6 +64,7 @@ void GameScene::OnEnter(GameApp& app) {
     if (const auto* initial = weapons_.InitialWeapon()) player_.CurrentWeapon().Equip(*initial);
     pelletRandom_.seed(weapons_.ActualSeed() ^ 0x9e3779b9u); // independent of placement lottery
     gameHUD_.Initialize(app.SpriteCom(),app.Dx());
+    bullets_.Initialize(app.ObjCom(),app.Dx(),&camera_);
     for (const auto& pickup : weapons_.Pickups()) {
         auto visual = std::make_unique<Object3d>();
         visual->Initialize(app.ObjCom(),app.Dx());
@@ -80,7 +81,7 @@ void GameScene::OnEnter(GameApp& app) {
         weaponVisuals_.push_back(std::move(visual));
     }
     enemies_.clear();
-    enemyProjectiles_.Clear(); projectileVisuals_.clear();
+    enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     clearOverlay_.Initialize(app.SpriteCom(), app.Dx());
     selectedEnemy_ = 0; lastHitEnemy_ = -1;
     enemyAttackCount_ = 0; playerDamagedFlash_ = 0; lastEnemyDamage_ = 0;
@@ -125,12 +126,13 @@ void GameScene::OnExit(GameApp& app) {
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
 #endif
     enemies_.clear();
-    enemyProjectiles_.Clear(); projectileVisuals_.clear();
+    enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     app.ObjCom()->SetDefaultCamera(nullptr);
 }
 void GameScene::Update(GameApp& app, float dt) {
     // SceneManager consumes this request after Update, safely outside ImGui drawing.
     if (!NextScene().empty()) return;
+    if (player_.GetHP() <= 0) { RequestChangeScene_("GameOver"); return; }
     if (showroom_ && resetEnemiesPending_) {
         app.Dx()->WaitForGPU();
         ResetShowroomEnemies(app); resetEnemiesPending_=false;
@@ -243,6 +245,8 @@ void GameScene::Update(GameApp& app, float dt) {
 
     if (stage_.IsPlaying()) UpdateCombat(app, dt, wasCaptured);
     else for (auto& enemy : enemies_) enemy->UpdateVisuals(dt);
+    // Combat applies all damage before SceneManager consumes the transition.
+    if (player_.GetHP() <= 0) { RequestChangeScene_("GameOver"); return; }
     ground_.Update(dt);
 
     for (auto& visual : weaponVisuals_) {
@@ -254,7 +258,7 @@ void GameScene::Update(GameApp& app, float dt) {
 }
 
 void GameScene::OnStageClear(GameApp& app) {
-    enemyProjectiles_.Clear(); projectileVisuals_.clear();
+    enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     initialCapturePending_ = false;
     app.GetInput()->SetCameraControlEnabled(false);
 #ifdef USE_IMGUI
@@ -403,53 +407,13 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
             enemies_[i]->UpdateVisuals(0);
         }
     }
-    // A click used to acquire FPS control is consumed, never a shot.
-    for (int shot=0; shot<weaponShots; ++shot)
-    {
+    // Only bullets already in flight advance this frame. New shots start at the muzzle
+    // and cannot damage anything until a subsequent movement sweep reaches it.
+    // 既存の弾を先に更新し、新しい弾は銃口から描画することで、生成と同時の移動・命中を避ける。
+    bullets_.Update(dt,level_.collision,enemies_,[this](const BulletEnemyImpact& impact) { OnBulletImpact(impact); });
+    for (int shot=0; shot<weaponShots; ++shot) {
         ++shotCount_;
-        const auto& definition = weapon.Definition();
-        const auto& world = camera_.GetWorldMatrix();
-        const Vector3 forward{world.m[2][0], world.m[2][1], world.m[2][2]};
-        const Vector3 right{world.m[0][0],world.m[0][1],world.m[0][2]};
-        const Vector3 up{world.m[1][0],world.m[1][1],world.m[1][2]};
-        for (int pellet=0; pellet<definition.pelletCount; ++pellet) {
-            const float currentSpread =
-                definition.hipSpreadDegrees +
-                (
-                    definition.adsSpreadDegrees -
-                    definition.hipSpreadDegrees
-                    ) * adsBlend_;
-
-            const auto direction =
-                WeaponPelletDirection(
-                    forward,
-                    right,
-                    up,
-                    currentSpread,
-                    pelletRandom_);
-
-        struct SceneHit { Enemy* enemy=nullptr; Enemy::RaycastHit hit{}; int index=-1; } closest;
-        float range=definition.range;
-        StageHit wallHit;
-        const bool wall=level_.collision.Raycast(camera_.GetTranslate(),direction,range,wallHit);
-        if (wall) range=std::max(0.0f,wallHit.distance-.001f);
-        for(size_t i=0;i<enemies_.size();++i) {
-            Enemy::RaycastHit candidate;
-            if (enemies_[i]->Raycast(camera_.GetTranslate(),direction,range,candidate) &&
-                (!closest.enemy || candidate.distance<range)) {
-                range=candidate.distance;
-                closest={enemies_[i].get(),candidate,static_cast<int>(i)};
-            }
-        }
-        if (closest.enemy) {
-            ++hitCount_;
-            lastHitPart_=closest.hit.part;
-            lastHitEnemy_=closest.index;
-            lastDamage_=closest.enemy->ApplyDamage(closest.hit.part,definition.damage,direction);
-            closest.enemy->ShowHitFeedback(closest.hit.part);
-        }
-        }
-
+        bullets_.Spawn(weapon.Definition(),camera_.GetWorldMatrix(),adsBlend_,pelletRandom_,level_.collision,enemies_);
     }
     for(size_t i=0;i<enemies_.size();++i) {
         if (enemies_[i]->IsDead() || (showroom_ && freezeEnemies_)) continue;
@@ -481,12 +445,32 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     SetWindowTextW(app.Win()->GetHwnd(), fullStatus.c_str());
 }
 
+void GameScene::OnBulletImpact(const BulletEnemyImpact& impact) {
+    ++hitCount_;
+    lastHitPart_=impact.part;
+    lastHitEnemy_=static_cast<int>(impact.enemyIndex);
+    lastDamage_=impact.result.damage;
+    if (!impact.result.explosion) return;
+    const auto& blast=*impact.result.explosion;
+    const float blastDamage=EnemyExplosionDamage(blast,player_.GetTransform().translate,.4f,1.8f);
+    if (blastDamage>0) {
+        const float before=player_.GetHP();
+        player_.ApplyDamage(blastDamage);
+        lastEnemyDamage_=before-player_.GetHP();
+        playerDamagedFlash_=.35f;
+    }
+    for (size_t i=0;i<enemies_.size();++i)
+        if (i!=impact.enemyIndex) enemies_[i]->ApplyExplosionDamage(blast);
+}
 void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
     for (size_t i=0; i<weaponVisuals_.size(); ++i)
         if (weapons_.Pickups()[i].visible) weaponVisuals_[i]->Draw();
     for(auto& enemy : enemies_) enemy->Draw(!showroom_ || showEnemyMarkers_);
     for(auto& visual : projectileVisuals_) visual->Draw();
+    bullets_.Draw();
+    // 半透明の爆発球は不透明な敵・弾の後に描き、Releaseでも範囲を見せる。
+    for (auto& enemy : enemies_) enemy->DrawExplosion();
 }
 
 
@@ -539,9 +523,10 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::EndDisabled();
     ImGui::End();
     RECT sceneRect{};
-    if(!showroom_ && !enemies_.empty() && app.ImGui()->GetSceneImageRect(sceneRect)) enemies_[static_cast<size_t>(selectedEnemy_)]->DrawPartDebug(camera_.GetViewProjectionMatrix(),
+    if(!showroom_ && app.ImGui()->GetSceneImageRect(sceneRect))
+        for (size_t i=0; i<enemies_.size(); ++i) enemies_[i]->DrawPartDebug(camera_.GetViewProjectionMatrix(),
         {static_cast<float>(sceneRect.left),static_cast<float>(sceneRect.top)},
-        {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)});
+        {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)}, false, false, i != static_cast<size_t>(selectedEnemy_));
 #ifdef _DEBUG
     ImGui::Begin("Weapon System");
     auto& weapon = player_.CurrentWeapon();
@@ -565,6 +550,7 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::Text("Current: %s (%s)",definition.displayName.c_str(),definition.id.c_str());
     ImGui::Text("Magazine: %d / %d | Reserve: %d / %d",weapon.Magazine(),definition.magazineSize,weapon.Reserve(),definition.maxReserveAmmo);
     ImGui::Text("Damage/pellet: %.1f | Range: %.1f | Interval: %.2f",definition.damage,definition.range,definition.fireInterval);
+    ImGui::Text("Bullet speed: %.1f | Lifetime: %.2f | Active: %zu",definition.bulletSpeed,definition.bulletLifeTime,bullets_.Count());
   
     const float rpm =
         definition.fireInterval > 0.0f
@@ -723,6 +709,7 @@ GameScene::DebugFrame GameScene::CaptureDebug() const {
     state.freezeEnemies=freezeEnemies_;
     state.player=player_.CaptureDebug();
     for (const auto& enemy : enemies_) state.enemies.push_back(enemy->CaptureDebug());
+    state.bullets=bullets_.Capture();
     state.projectiles=enemyProjectiles_; state.spawns=spawnSystem_; state.weapons=weapons_; state.stage=stage_;
     state.pelletRandom=pelletRandom_; state.nextEnemy=nextEnemyId_; state.frame=debugFrame_;
     state.shots=shotCount_; state.hits=hitCount_; state.attacks=enemyAttackCount_;
@@ -740,6 +727,7 @@ void GameScene::RestoreDebug(GameApp& app,const DebugFrame& state) {
     }
     for (size_t i=0;i<enemies_.size();++i) enemies_[i]->RestoreDebug(state.enemies[i]);
     player_.RestoreDebug(state.player); camera_.SetFovY(state.fov); camera_.Update();
+    bullets_.Restore(state.bullets);
     enemyProjectiles_=state.projectiles; spawnSystem_=state.spawns; weapons_=state.weapons; stage_=state.stage;
     pelletRandom_=state.pelletRandom; nextEnemyId_=state.nextEnemy; debugFrame_=state.frame;
     shotCount_=state.shots; hitCount_=state.hits; enemyAttackCount_=state.attacks;
@@ -840,7 +828,7 @@ void GameScene::DrawDebugTools(GameApp&) {}
 #endif
 
 void GameScene::ResetShowroomEnemies(GameApp& app) {
-    enemies_.clear(); enemyProjectiles_.Clear(); projectileVisuals_.clear();
+    enemies_.clear(); enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     nextEnemyId_=0; selectedEnemy_=0; lastHitEnemy_=-1; lastHitPart_=EnemyPartType::None;
     enemyAttackCount_=0; playerDamagedFlash_=0; lastEnemyDamage_=0;
     player_.ResetHPForDebug();

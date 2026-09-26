@@ -13,8 +13,8 @@ void GameHUD::Initialize(SpriteCommon* common, DirectXCommon* dx) {
     }
     const auto& white = TextureManager::GetInstance()->GetMetaData("resources/white1x1.png");
     whiteSize_ = {static_cast<float>(white.width), static_cast<float>(white.height)};
-    hpBackground_.SetColor({.06f, .08f, .12f, .9f});
-    hpBar_.SetColor({.25f, .85f, .45f, 1});
+    hpBackground_.SetColor({.75f, .75f, .75f, 1});
+    hpBar_.SetColor({0, 0, 0, 1});
 }
 
 void GameHUD::Update(const Player& player, const WeaponSystem& weapons, float width, float height) {
@@ -29,9 +29,9 @@ void GameHUD::Update(const Player& player, const WeaponSystem& weapons, float wi
     hpBackground_.SetScale({280 * scale / whiteSize_.x, 20 * scale / whiteSize_.y, 1});
     hpBar_.SetScale({280 * scale * (hp_ / maxHP) / whiteSize_.x, 20 * scale / whiteSize_.y, 1});
     font_.Reset();
-    font_.DrawText("HP", x, height - 136 * scale, 20 * scale, {1, 1, 1, 1});
+    font_.DrawText("HP", x, height - 136 * scale, 20 * scale, {0, 0, 0, 1});
     font_.DrawText(std::to_string(static_cast<int>(std::ceil(hp_))) + " / 100",
-        x, height - 60 * scale, 20 * scale, {1, 1, 1, 1});
+        x, height - 60 * scale, 20 * scale, {0, 0, 0, 1});
     const auto nearest = weapons.Nearest(player.GetTransform().translate);
     const auto* nearby = nearest ? weapons.Find(weapons.Pickups()[*nearest].weaponId) : nullptr;
     weaponHUD_.Update(player.CurrentWeapon(), nearby, width, height);

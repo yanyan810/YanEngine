@@ -1,4 +1,7 @@
-#include "scene/Main/GameScene.h"
+﻿#include "scene/Main/GameScene.h"
+#include "scene/Flow/TitleScene.h"
+#include "scene/Flow/GameOverScene.h"
+#include "Enemy.h"
 #ifdef _DEBUG
 #include "scene/Main/ShowroomScene.h"
 #endif
@@ -68,7 +71,7 @@ bool GameApp::Initialize_() {
 
     win_ = std::make_unique<WinApp>();
     win_->Initialize();
-    SetWindowTextW(win_->GetHwnd(), L"FPS Foundation");
+    SetWindowTextW(win_->GetHwnd(), L"アンアライブ");
 
     dx_ = std::make_unique<DirectXCommon>();
     dx_->Initialize(win_.get());
@@ -117,6 +120,10 @@ bool GameApp::Initialize_() {
     skinCom_->Initialize(dx_.get());
     objCommon_->SetSkinningCommon(skinCom_.get());
 
+    // Load enemy models, textures and destruction data before gameplay starts.
+    // ゲーム中の初回出現で読み込み待ちが発生しないよう、共通リソースの準備後に先読みする。
+    Enemy::PreloadAssets();
+
     // ★ Input は Scene を動かす前に作る（最重要）
     input_ = std::make_unique<Input>();
     input_->Initialize(win_.get());
@@ -145,11 +152,13 @@ bool GameApp::Initialize_() {
 
     // SceneManager
     sceneMgr_ = std::make_unique<SceneManager>();
+    sceneMgr_->Register("Title", [] { return std::make_unique<TitleScene>(); });
+    sceneMgr_->Register("GameOver", [] { return std::make_unique<GameOverScene>(); });
     sceneMgr_->Register("Game", [] { return std::make_unique<GameScene>(); });
     #ifdef _DEBUG
     sceneMgr_->Register("Showroom", [] { return std::make_unique<ShowroomScene>(); });
     #endif
-    sceneMgr_->Change(*this, "Game");
+    sceneMgr_->Change(*this, "Title");
 
     OutputDebugStringA("[GameApp] Initialize END\n");
     return true;
@@ -160,6 +169,7 @@ void GameApp::Finalize_() {
     if (dx_) dx_->WaitForGPU();
     if (sceneMgr_ && sceneMgr_->Current()) sceneMgr_->Current()->OnExit(*this);
     sceneMgr_.reset();
+    Enemy::ReleasePreloadedAssets();
 
     if (imgui_) imgui_->Shutdown();
     if (debugAI_) debugAI_->Shutdown();

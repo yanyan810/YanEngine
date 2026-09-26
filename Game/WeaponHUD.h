@@ -32,12 +32,12 @@ public:
         if (nearby) {
             const std::string_view prompt = "PRESS E TO PICK UP";
             font_.DrawText(prompt, width * .5f - static_cast<float>(prompt.size()) * 8 * scale,
-                height * .70f, 16 * scale, {1, 1, .5f, 1});
+                height * .70f, 16 * scale, {0, 0, 0, 1});
             const float advance = std::min(20.0f, 800.0f /
                 static_cast<float>(std::max(size_t{1}, nearby->displayName.size()))) * scale;
             font_.DrawText(nearby->displayName,
                 width * .5f - static_cast<float>(nearby->displayName.size()) * advance * .5f,
-                height * .70f + 30 * scale, advance, {1, 1, 1, 1});
+                height * .70f + 30 * scale, advance, {0, 0, 0, 1});
         }
     }
     void Draw(const Matrix4x4& view, const Matrix4x4& projection) {

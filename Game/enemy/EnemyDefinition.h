@@ -39,7 +39,7 @@ struct EnemyDefinition {
     Vector3 VisualScale(const Vector3& base) const {
         return {base.x*visualScaleMultiplier.x,base.y*visualScaleMultiplier.y,base.z*visualScaleMultiplier.z};
     }
-    bool IsRanged() const { return type==EnemyType::Ranged || type==EnemyType::Bomber; }
+    bool IsRanged() const { return type==EnemyType::Ranged; }
 };
 class EnemyDefinitions {
 public:

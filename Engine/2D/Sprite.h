@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <d3d12.h>
 #include <wrl.h>
 #include "Vector3.h"
@@ -35,6 +35,8 @@ public:
 	void SetRotation(const Vector3& r) { rotate_ = r; }
 
 	const Vector4& GetColor() const { return color_; }
+	// Render a monochrome alpha mask using SetColor, ignoring the texture RGB.
+	void SetUseTextureAlphaOnly(bool enabled) { if (materialData_) materialData_->useTextureAlphaOnly = enabled ? 1 : 0; }
 	void SetColor(const Vector4& c) { color_ = c; if (materialData_) materialData_->color = c; }
 
 	// 便利：Z回転だけ度数で扱いたいとき
@@ -83,7 +85,9 @@ private:
 	struct Material {
 		Vector4 color;
 		int32_t enableLighting;
-		float padding[3];
+		int32_t useTextureAlphaOnly;
+		// HLSL側の定数バッファ配置に合わせ、後続の行列を16バイト境界に保つ。
+		float padding[2];
 		Matrix4x4 uvTransform;
 	};
 

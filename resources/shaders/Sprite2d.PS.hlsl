@@ -3,6 +3,7 @@ struct Material
 {
     float4 color;
     int enableLighting;
+    int useTextureAlphaOnly;
     float4x4 uvTransform;
 };
 
@@ -37,7 +38,12 @@ PixelSharderOutput main(VertexShaderOutput input)
         discard;
     }
         
-        if (gMaterial.enableLighting != 0)
+        if (gMaterial.useTextureAlphaOnly != 0)
+    {
+        // 黒い文字画像も指定色で描けるよう、輪郭の透過率だけを利用してRGBは材質色を保つ。
+        output.color.a *= textureColor.a;
+    }
+    else if (gMaterial.enableLighting != 0)
     {
         float NdotL = dot(normalize(input.normal), -gDirectionalLight.direction);
         float lighting = 1.0f;

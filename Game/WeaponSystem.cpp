@@ -1,4 +1,4 @@
-﻿#include "WeaponSystem.h"
+#include "WeaponSystem.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <set>
@@ -65,6 +65,9 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
             }
 
             definition.range = Number(item.at("range"),.001f,100000);
+            // 既存の武器JSONも読み込めるよう、新しい弾パラメータは省略時に定義の初期値を使う。
+            if (item.contains("bulletSpeed")) definition.bulletSpeed = Number(item.at("bulletSpeed"),.001f,100000);
+            if (item.contains("bulletLifeTime")) definition.bulletLifeTime = Number(item.at("bulletLifeTime"),.001f,60);
             definition.magazineSize = Integer(item.at("magazineSize"),1,100000);
             definition.reserveAmmo = Integer(item.at("reserveAmmo"),0,1000000);
             definition.maxReserveAmmo = item.contains("maxReserveAmmo") ? Integer(item.at("maxReserveAmmo"),0,1000000) : definition.reserveAmmo;
