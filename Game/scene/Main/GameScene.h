@@ -12,6 +12,7 @@
 #include "StageProgress.h"
 #include "StageClearOverlay.h"
 #include "GameHUD.h"
+#include "BulletManager.h"
 #ifdef _DEBUG
 #include "DebugTimeline.h"
 #include "DebugJsonEditor.h"
@@ -29,6 +30,7 @@ public:
     void DrawOverlay2D(GameApp& app) override;
 private:
     void UpdateCombat(GameApp& app, float dt, bool wasCaptured);
+    void OnBulletImpact(const BulletEnemyImpact& impact);
     void OnStageClear(GameApp& app);
 
     void SyncProjectileVisuals(GameApp& app);
@@ -45,6 +47,7 @@ private:
         Player::DebugState player;
         std::vector<Enemy::DebugState> enemies;
         EnemyProjectileSystem projectiles;
+        BulletSimulation bullets;
         EnemySpawnSystem spawns;
         WeaponSystem weapons;
         StageProgress stage;
@@ -89,6 +92,7 @@ private:
     std::vector<std::unique_ptr<Enemy>> enemies_;
     EnemyDefinitions enemyDefinitions_;
     EnemyProjectileSystem enemyProjectiles_;
+    BulletManager bullets_;
     std::vector<std::unique_ptr<Object3d>> projectileVisuals_;
     EnemySpawnSystem spawnSystem_;
     uint64_t nextEnemyId_ = 0;

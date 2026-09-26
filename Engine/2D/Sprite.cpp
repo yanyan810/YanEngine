@@ -1,4 +1,4 @@
-﻿#include "Sprite.h"
+#include "Sprite.h"
 #include "SpriteCommon.h"
 #include "DirectXCommon.h"
 #include <cassert>
@@ -46,6 +46,7 @@ void Sprite::Initialize(SpriteCommon* spriteCommon, DirectXCommon* dx, std::stri
     materialResource_->Map(0, nullptr, reinterpret_cast<void**>(&materialData_));
     materialData_->color = color_;
     materialData_->enableLighting = false;
+    materialData_->useTextureAlphaOnly = 0;
     materialData_->uvTransform = Matrix4x4::MakeIdentity4x4();
 
     // === 変換（※重複を削除して1回だけ作る）

@@ -549,6 +549,10 @@
     <ClCompile Include="Game\enemy\EnemySpawnSystem.cpp" />
     <ClCompile Include="Game\StageProgress.cpp" />
     <ClCompile Include="Game\WeaponSystem.cpp" />
+    <ClCompile Include="Game\Bullet.cpp" />
+    <ClInclude Include="Game\Bullet.h" />
+    <ClCompile Include="Game\BulletManager.cpp" />
+    <ClInclude Include="Game\BulletManager.h" />
     <ClInclude Include="Game\WeaponSystem.h" />
     <ClInclude Include="Game\WeaponHUD.h" />
     <ClInclude Include="Game\UIFont.h" />
@@ -558,9 +562,14 @@
     <ClInclude Include="Game\StageProgress.h" />
     <ClInclude Include="Game\StageClearOverlay.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />
+    <ClInclude Include="Game\enemy\EnemyExplosion.h" />
     <ClInclude Include="Game\enemy\EnemySpawnSystem.h" />
     <ClInclude Include="Game\enemy\EnemySpawnDebug.h" />
     <ClCompile Include="Game\scene\Main\GameScene.cpp" />
+    <ClCompile Include="Game\scene\Flow\TitleScene.cpp" />
+    <ClCompile Include="Game\scene\Flow\GameOverScene.cpp" />
+    <ClInclude Include="Game\scene\Flow\GameOverScene.h" />
+    <ClInclude Include="Game\scene\Flow\TitleScene.h" />
     <ClInclude Include="Game\scene\Main\GameScene.h" />
   </ItemGroup>
   <Target Name="CopyShaderCompilerRuntime" BeforeTargets="Link">

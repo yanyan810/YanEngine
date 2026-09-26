@@ -2,77 +2,35 @@
 #include "DebugEnemyTuning.h"
 #endif
 #include "Enemy.h"
+#include "GeometryGenerator.h"
 #include "Raycast.h"
 #include <nlohmann/json.hpp>
-Enemy::~Enemy() {
-    std::erase(fragmentOwners_, this);
-}
-void Enemy::MakeFragmentRoom() {
-    size_t total = 0;
-    Enemy* oldest = nullptr;
-    for (auto* owner : fragmentOwners_) {
-        total += owner->detachedParts_.size();
-        if (!owner->detachedParts_.empty() && (!oldest ||
-            owner->detachedParts_.front().spawnOrder < oldest->detachedParts_.front().spawnOrder)) oldest = owner;
-    }
-    if (total >= kMaxFragments && oldest) oldest->detachedParts_.erase(oldest->detachedParts_.begin());
-}
-void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera, bool useSplitAssets) {
-    ai_ = {};
-    attackCount_ = 0; lastAttackDamage_ = 0; attackFlash_ = 0;
-    detachedParts_.clear();
-    faceShards_.clear();
-    for (auto& faces : faceData_) faces.clear();
-    if (std::find(fragmentOwners_.begin(), fragmentOwners_.end(), this) == fragmentOwners_.end()) fragmentOwners_.push_back(this);
-    common_ = common; dx_ = dx; camera_ = camera;
-    for (auto& files : fragmentFiles_) files.clear();
-    object_.Initialize(common, dx);
-    object_.SetCamera(camera);
-    object_.SetModel("enemy/boss/boss.gltf");
-    object_.StopAnimation();
-    object_.SetRotate(rotation_);
-    object_.SetScale(definition_.VisualScale(scale_));
-    object_.SetTranslate(position_);
-    object_.SetEnableLighting(1);
-    object_.SetDirection({0.3f, -1.0f, 0.5f});
-    object_.SetIntensity(1.0f);
-    object_.SetPointLightIntensity(0.0f);
-    object_.SetSpotLightIntensity(0.0f);
-    AABB bounds{};
-    hasHitBox_ = object_.GetModel() && object_.GetModel()->GetLocalAABB(bounds);
-    if (hasHitBox_) parts_ = MakeEnemyParts(bounds);
-    // Opt-in: exported static parts must share the original Boss local coordinates.
-    const std::array<const char*, 6> files{{
+namespace {
+    constexpr const char* kBossModelPath = "enemy/boss/boss.gltf";
+    constexpr std::array<const char*, 6> kPartModelPaths{{
         "enemy/boss/parts/boss_head.gltf", "enemy/boss/parts/boss_body.gltf",
         "enemy/boss/parts/boss_left_arm.gltf", "enemy/boss/parts/boss_right_arm.gltf",
         "enemy/boss/parts/boss_left_leg.gltf", "enemy/boss/parts/boss_right_leg.gltf"}};
-    splitVisuals_ = useSplitAssets && hasHitBox_;
-    for (const auto* file : files) {
+}
+
+void Enemy::PreloadAssets() {
+    // 全個体で共通のデータを一度だけ読み込み、敵の出現ごとのファイル読み込みを避ける。
+    if (assetsPreloaded_) return;
+    auto* models = ModelManager::GetInstance();
+    models->LoadModel(kBossModelPath);
+    models->LoadModel("cube/cube.obj"); // Enemy type markers.
+    TextureManager::GetInstance()->LoadTexture("resources/white1x1.png");
+    splitAssetsAvailable_ = true;
+    for (const auto* file : kPartModelPaths) {
         std::error_code error;
         if (!std::filesystem::is_regular_file(std::filesystem::path("resources") / file, error))
-            splitVisuals_ = false;
+            splitAssetsAvailable_ = false;
     }
-    for (size_t i = 0; i < visuals_.size(); ++i) {
-        auto& visual = visuals_[i];
-        visual.type = parts_[i].type;
-        visual.visible = true;
-        visual.object.reset();
-        if (!splitVisuals_) continue;
-        visual.object = std::make_unique<Object3d>();
-        auto& obj = *visual.object;
-        obj.Initialize(common, dx);
-        obj.SetCamera(camera);
-        obj.SetModel(files[i]);
-        obj.StopAnimation();
-        obj.SetEnableLighting(1);
-        obj.SetDirection({0.3f, -1.0f, 0.5f});
-        obj.SetIntensity(1.0f);
-        obj.SetPointLightIntensity(0.0f);
-        obj.SetSpotLightIntensity(0.0f);
-    }
+    if (splitAssetsAvailable_)
+        for (const auto* file : kPartModelPaths) models->LoadModel(file);
     // Missing manifest, glTF or external buffer disables fragments only for that part.
     const std::array<const char*,6> keys{{"head","body","left_arm","right_arm","left_leg","right_leg"}};
-    if (splitVisuals_) {
+    if (splitAssetsAvailable_) {
         try {
             std::ifstream input("resources/enemy/boss/fragments/manifest.json");
             const auto manifest = nlohmann::json::parse(input);
@@ -98,7 +56,7 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
             }
         } catch (const std::exception&) { /* All parts keep their whole-part fallback. */ }
     }
-    if (splitVisuals_) {
+    if (splitAssetsAvailable_) {
         try {
             std::ifstream input("resources/enemy/boss/faces/faces.json");
             const auto data = nlohmann::json::parse(input);
@@ -122,6 +80,74 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
                 } catch (const std::exception&) { }
             }
         } catch (const std::exception&) { /* Face -> Chunk -> whole part. */ }
+    }
+    assetsPreloaded_ = true;
+}
+
+void Enemy::ReleasePreloadedAssets() {
+    // GameApp calls this only after all scenes/enemies have been destroyed.
+    for (auto& faces : faceData_) faces = {};
+    for (auto& files : fragmentFiles_) files = {};
+    assetsPreloaded_ = false;
+    splitAssetsAvailable_ = false;
+}
+Enemy::~Enemy() {
+    std::erase(fragmentOwners_, this);
+}
+void Enemy::MakeFragmentRoom() {
+    size_t total = 0;
+    Enemy* oldest = nullptr;
+    for (auto* owner : fragmentOwners_) {
+        total += owner->detachedParts_.size();
+        if (!owner->detachedParts_.empty() && (!oldest ||
+            owner->detachedParts_.front().spawnOrder < oldest->detachedParts_.front().spawnOrder)) oldest = owner;
+    }
+    if (total >= kMaxFragments && oldest) oldest->detachedParts_.erase(oldest->detachedParts_.begin());
+}
+void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera, bool useSplitAssets) {
+    ai_ = {};
+    attackCount_ = 0; lastAttackDamage_ = 0; attackFlash_ = 0;
+    detachedParts_.clear();
+    faceShards_.clear();
+    PreloadAssets(); // Normally already prepared by GameApp; also supports standalone scene entry.
+    if (std::find(fragmentOwners_.begin(), fragmentOwners_.end(), this) == fragmentOwners_.end()) fragmentOwners_.push_back(this);
+    common_ = common; dx_ = dx; camera_ = camera;
+    object_.Initialize(common, dx);
+    object_.SetCamera(camera);
+    object_.SetModel(kBossModelPath);
+    object_.StopAnimation();
+    object_.SetRotate(rotation_);
+    object_.SetScale(definition_.VisualScale(scale_));
+    object_.SetTranslate(position_);
+    object_.SetEnableLighting(1);
+    object_.SetDirection({0.3f, -1.0f, 0.5f});
+    object_.SetIntensity(1.0f);
+    object_.SetPointLightIntensity(0.0f);
+    object_.SetSpotLightIntensity(0.0f);
+    AABB bounds{};
+    hasHitBox_ = object_.GetModel() && object_.GetModel()->GetLocalAABB(bounds);
+    if (hasHitBox_) parts_ = MakeEnemyParts(bounds);
+    // 部位モデルが一式そろわない場合は全身モデルを使い、欠けた姿で表示されるのを防ぐ。
+    splitVisuals_ = useSplitAssets && hasHitBox_ && splitAssetsAvailable_;
+    for (size_t i = 0; i < visuals_.size(); ++i) {
+        auto& visual = visuals_[i];
+        visual.type = parts_[i].type;
+        visual.visible = true;
+        visual.object.reset();
+        if (!splitVisuals_) continue;
+        visual.object = std::make_unique<Object3d>();
+        auto& obj = *visual.object;
+        obj.Initialize(common, dx);
+        obj.SetCamera(camera);
+        obj.SetModel(kPartModelPaths[i]);
+        obj.StopAnimation();
+        obj.SetEnableLighting(1);
+        obj.SetDirection({0.3f, -1.0f, 0.5f});
+        obj.SetIntensity(1.0f);
+        obj.SetPointLightIntensity(0.0f);
+        obj.SetSpotLightIntensity(0.0f);
+    }
+    if (splitVisuals_) {
         Model::ModelData geometry;
         geometry.materials.push_back({"resources/white1x1.png"});
         Model::MeshData mesh;
@@ -143,6 +169,8 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
         faceBatch_->SetMaterialColor({.65f,.025f,.025f,1});
         faceBatch_->Update(0);
     }
+    explosionTime_ = 0;
+    blastHitTime_ = lastBlastDamage_ = 0;
     ApplyDefinition(definition_);
     if (useSplitAssets && !splitVisuals_)
         OutputDebugStringA("Enemy: split assets incomplete; using original Boss.\n");
@@ -155,8 +183,32 @@ void Enemy::ApplyDefinition(const EnemyDefinition& definition) {
     ai_.settings={definition.detectionRange,definition.attackRange,definition.moveSpeed,
         definition.attackDamage,definition.attackInterval,definition.IsRanged(),definition.minRange,definition.maxRange};
     ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
+    PrepareExplosionVisual();
     RebuildTypeMarker();
     if (common_ && dx_) UpdateVisuals(0);
+}
+void Enemy::PrepareExplosionVisual() {
+    // 起爆フレームにGPUリソースを生成しないよう、範囲表示用の球を先に用意する。
+    if (common_ && dx_ && definition_.type == EnemyType::Bomber && !explosionVisual_) {
+        Model::ModelData geometry;
+        geometry.materials.push_back({"resources/white1x1.png"});
+        Model::MeshData mesh;
+        mesh.vertices = GeometryGenerator::GenerateSphereTriList(32, 16, 1.0f);
+        mesh.indexCount = static_cast<uint32_t>(mesh.vertices.size());
+        geometry.indices.resize(mesh.vertices.size());
+        for (uint32_t i=0; i<geometry.indices.size(); ++i) geometry.indices[i]=i;
+        geometry.meshes.push_back(std::move(mesh));
+        geometry.rootNode.meshIndices.push_back(0);
+        explosionModelCommon_.Initialize(dx_);
+        explosionModel_ = std::make_unique<Model>();
+        explosionModel_->InitializeFromModelData(&explosionModelCommon_, geometry);
+        explosionVisual_ = std::make_unique<Object3d>();
+        explosionVisual_->Initialize(common_, dx_);
+        explosionVisual_->SetCamera(camera_);
+        explosionVisual_->SetModel(explosionModel_.get());
+        explosionVisual_->SetEnableLighting(0);
+        explosionVisual_->SetBlendMode(Object3dCommon::BlendMode::kBlendModeAdd);
+    }
 }
 void Enemy::RebuildTypeMarker() {
     typeMarker_.reset();
@@ -178,6 +230,61 @@ bool Enemy::Raycast(const Vector3& origin, const Vector3& direction, float maxDi
     hit = {};
     return hasHitBox_ && RaycastEnemyParts(parts_,object_.GetWorldMatrix(),origin,direction,maxDistance,hit);
 }
+// 表示と起爆で同じ中心を使い、モデルの拡縮や部位位置による範囲のずれを防ぐ。
+Vector3 Enemy::ExplosionCenter() const {
+    Vector3 center = position_ + Vector3{0, definition_.collisionHeight * .5f, 0};
+    for (const auto& body : parts_) {
+        if (body.type == EnemyPartType::Body) {
+            center = EnemyPartTransformPoint((body.bounds.min + body.bounds.max) * .5f,
+                object_.GetWorldMatrix());
+            break;
+        }
+    }
+    return center;
+}
+
+EnemyBulletHitResult Enemy::ApplyBulletDamage(EnemyPartType part, float damage, const Vector3& direction) {
+    // Check before applying damage so even a lethal body shot triggers the explosion.
+    // 致死ダメージで死亡状態になった後では起爆条件を満たせないため、被弾前の状態で判定する。
+    const bool detonate = IsBomberDetonationHit(definition_.type, part, damage, IsDead());
+    EnemyBulletHitResult result;
+    result.damage = ApplyDamage(part, damage, direction);
+    if (!detonate) return result;
+
+    const auto center = ExplosionCenter();
+    result.explosion = EnemyExplosion{center, definition_.explosionRadius, definition_.explosionDamage};
+    // 表示は実際に起爆した時だけ開始する。頭部破壊後の胴体への追撃ではここに到達しない。
+    explosionCenter_ = center;
+    explosionTime_ = kExplosionDuration;
+    // Reuse the existing destruction visuals. Destroying all parts also prevents
+    // subsequent pellets/corpse shots from triggering another explosion.
+    for (const auto& bodyPart : parts_) {
+        const auto partCenter = EnemyPartTransformPoint((bodyPart.bounds.min + bodyPart.bounds.max) * .5f,
+            object_.GetWorldMatrix());
+        const auto outward = partCenter - center;
+        const float length = std::hypot(outward.x, outward.y, outward.z);
+        ApplyDamage(bodyPart.type, bodyPart.hp, length > 1e-5f ? outward * (1 / length) : direction);
+    }
+    return result;
+}
+
+void Enemy::ApplyExplosionDamage(const EnemyExplosion& explosion) {
+    if (IsDead()) return;
+    const float damage = EnemyExplosionDamage(explosion, position_,
+        definition_.collisionRadius, definition_.collisionHeight);
+    if (damage <= 0) return;
+    const auto outward = position_ + Vector3{0, definition_.collisionHeight * .5f, 0} - explosion.center;
+    const float length = std::hypot(outward.x, outward.y, outward.z);
+    // Blast damage uses the ordinary damage path, so other Bombers do not chain-detonate.
+    lastBlastDamage_ = ApplyDamage(EnemyPartType::Body, damage,
+        length > 1e-5f ? outward * (1 / length) : Vector3{0, 1, 0});
+    if (lastBlastDamage_ <= 0) return;
+    // Debugの当たり判定枠に頼らず、Releaseでも被爆した個体を判別できるよう全身を強調する。
+    blastHitTime_ = .9f;
+    ShowHitFeedback(EnemyPartType::Body);
+    UpdateVisuals(0); // 命中したフレームの描画から反映し、次のAI更新を待たない。
+}
+
 float Enemy::ApplyDamage(EnemyPartType type, float damage, const Vector3& shotDirection) {
     const float lost = DamageEnemyPart(parts_, type, damage);
     if (lost <= 0 || !splitVisuals_) return lost;
@@ -248,6 +355,8 @@ float Enemy::Update(float dt, const Vector3& playerPosition) {
     return attackDamage;
 }
 void Enemy::UpdateVisuals(float dt) {
+    blastHitTime_ = std::max(0.0f, blastHitTime_ - std::max(0.0f, dt));
+    explosionTime_ = std::max(0.0f, explosionTime_ - std::max(0.0f, dt));
     attackFlash_ = std::max(0.0f, attackFlash_-dt);
     for (auto& face : faceShards_) face.motion.Update(dt);
     std::erase_if(faceShards_, [](const auto& face) { return !face.motion.Active(); });
@@ -264,6 +373,8 @@ void Enemy::UpdateVisuals(float dt) {
     object_.SetRotate(rotation_);
     const auto visualScale=definition_.VisualScale(scale_);
     object_.SetScale(visualScale);
+    object_.SetMaterialColor(blastHitTime_ > 0 ? Vector4{1, .08f, .02f, 1} : Vector4{1,1,1,1});
+    object_.SetEnableLighting(blastHitTime_ > 0 ? 0 : 1);
     object_.Update(dt);
     if (typeMarker_ && !IsDead()) {
         const auto& marker=definition_.typeMarker;
@@ -285,6 +396,8 @@ void Enemy::UpdateVisuals(float dt) {
         case EnemyPartDamageState::Critical: color = {.59f,.06f,.06f,1}; break;
         default: break;
         }
+        if (blastHitTime_ > 0) color = {1, .08f, .02f, 1};
+        obj.SetEnableLighting(blastHitTime_ > 0 ? 0 : 1);
         obj.SetMaterialColor(color);
         obj.Update(dt);
     }
@@ -293,11 +406,25 @@ void Enemy::UpdateVisuals(float dt) {
 void Enemy::SetPartVisible(EnemyPartType type, bool visible) {
     for (auto& visual : visuals_) if (visual.type == type) visual.visible = visible;
 }
+void Enemy::DrawExplosion() {
+    if (!explosionVisual_ || explosionTime_ <= 0) return;
+    // 半径を拡大する演出にすると判定範囲と食い違うため、大きさは固定して透明度だけ下げる。
+    const float radius = definition_.explosionRadius;
+    explosionVisual_->SetTranslate(explosionCenter_);
+    explosionVisual_->SetScale({radius, radius, radius});
+    explosionVisual_->SetMaterialColor({1.0f, .3f, .025f, .3f * explosionTime_ / kExplosionDuration});
+    explosionVisual_->Update(0);
+    explosionVisual_->Draw();
+}
+
 void Enemy::Draw(bool showMarker) {
     if (showMarker && typeMarker_ && !IsDead()) typeMarker_->Draw();
     DrawFaces();
     for (auto& detached : detachedParts_) detached.object->Draw();
-    if (!splitVisuals_) { object_.Draw(); return; }
+    if (!splitVisuals_) {
+        if (std::any_of(parts_.begin(), parts_.end(), [](const auto& part) { return part.hp > 0; })) object_.Draw();
+        return;
+    }
     for (size_t i = 0; i < visuals_.size(); ++i) {
         const auto& visual = visuals_[i];
         if (visual.object && visual.visible && parts_[i].DamageState() != EnemyPartDamageState::Destroyed)
@@ -312,6 +439,8 @@ void Enemy::DrawImGui() {
 #ifdef USE_IMGUI
     ImGui::Text("Enemy ID: %s | Definition ID: %s | Type: %s", id_.c_str(), definition_.id.c_str(), EnemyTypeName(definition_.type));
     ImGui::Text("HP Multiplier: %.2f", definition_.hpMultiplier);
+    for (const auto& part : parts_) if (part.type == EnemyPartType::Body)
+        ImGui::Text("Body HP: %.0f / %.0f | Last blast damage received: %.0f", part.hp, part.maxHp, lastBlastDamage_);
 #ifdef _DEBUG
     // Change only dimensions: ApplyDefinition would reset HP and AI state.
     float uniform=definition_.visualScaleMultiplier.x;
@@ -349,8 +478,10 @@ void Enemy::DrawImGui() {
         ImGui::Text("Min Range: %.2f | Preferred Range: %.2f | Max Range: %.2f", definition_.minRange, definition_.preferredRange, definition_.maxRange);
         ImGui::Text("Projectile Speed: %.2f", definition_.projectileSpeed);
     }
-    if (definition_.type==EnemyType::Bomber)
-        ImGui::Text("Explosion Radius: %.2f | Explosion Damage: %.2f | Fuse Time: %.2f", definition_.explosionRadius, definition_.explosionDamage, definition_.fuseTime);
+    if (definition_.type==EnemyType::Bomber) {
+        ImGui::Checkbox("Show Explosion Range (orange)", &showExplosionRange_);
+        ImGui::Text("Body shot detonates | Explosion Radius: %.2f | Damage: %.2f (player + enemies)", definition_.explosionRadius, definition_.explosionDamage);
+    }
     ImGui::Text("Enemy State: %s | Distance: %.2f", EnemyStateName(GetState()), ai_.distance);
     ImGui::Text("Last Enemy Attack: %s | Attack Count: %llu", attackFlash_ > 0 ? "HIT" : "-", attackCount_);
     ImGui::Text("Last applied damage: %.0f | Attack Cooldown: %.2f", lastAttackDamage_, ai_.cooldown);
@@ -401,12 +532,14 @@ void Enemy::DrawImGui() {
     }
 #endif
 }
-void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vector2& screenMax, bool forceParts, bool forceMovement) const {
+void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vector2& screenMax, bool forceParts, bool forceMovement, bool rangeOnly) const {
 #ifdef USE_IMGUI
     if (!hasHitBox_) return;
     auto* draw=ImGui::GetForegroundDrawList();
     draw->PushClipRect({screenMin.x,screenMin.y},{screenMax.x,screenMax.y},true);
-    if ((showMovementCollider_ || forceMovement) && !IsDead()) {
+    const bool movement = !rangeOnly && (showMovementCollider_ || forceMovement) && !IsDead();
+    const bool explosion = showExplosionRange_ && definition_.type == EnemyType::Bomber && !IsDead();
+    if (movement || explosion) {
         // This upright cylinder represents movement/separation, not the shootable parts.
         struct Clip { float x,y,z,w; };
         const auto clip=[&](const Vector3& p) -> Clip {
@@ -419,7 +552,7 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
             return {screenMin.x+(p.x/p.w+1)*.5f*(screenMax.x-screenMin.x),
                 screenMin.y+(1-p.y/p.w)*.5f*(screenMax.y-screenMin.y)};
         };
-        const auto line=[&](const Vector3& from,const Vector3& to) {
+        const auto line=[&](const Vector3& from,const Vector3& to, ImU32 color) {
             auto a=clip(from),b=clip(to);
             if (a.z<0 && b.z<0) return;
             if ((a.z<0)!=(b.z<0)) {
@@ -427,8 +560,9 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
                 const Clip intersection{a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,0,a.w+(b.w-a.w)*t};
                 if (a.z<0) a=intersection; else b=intersection;
             }
-            if (a.w>1e-5f && b.w>1e-5f) draw->AddLine(project(a),project(b),IM_COL32(70,255,170,255),1.5f);
+            if (a.w>1e-5f && b.w>1e-5f) draw->AddLine(project(a),project(b),color,1.5f);
         };
+        if (movement) {
         constexpr int segments=32;
         const Vector3 height{0,definition_.collisionHeight,0};
         for (int i=0;i<segments;++i) {
@@ -436,10 +570,28 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
             const float next=static_cast<float>(i+1)*6.28318530718f/static_cast<float>(segments);
             const auto a=position_+Vector3{std::cos(angle)*definition_.collisionRadius,0,std::sin(angle)*definition_.collisionRadius};
             const auto b=position_+Vector3{std::cos(next)*definition_.collisionRadius,0,std::sin(next)*definition_.collisionRadius};
-            line(a,b); line(a+height,b+height);
-            if (i%8==0) line(a,a+height);
+            line(a,b,IM_COL32(70,255,170,255)); line(a+height,b+height,IM_COL32(70,255,170,255));
+            if (i%8==0) line(a,a+height,IM_COL32(70,255,170,255));
+        }
+        }
+        if (explosion) {
+            // 判定は球なので水平円だけでなく縦の円も描き、高低差を含む範囲を示す。
+            const auto center = ExplosionCenter();
+            const float radius = definition_.explosionRadius;
+            constexpr int segments = 64;
+            for (int i = 0; i < segments; ++i) {
+                const float a = static_cast<float>(i) * 6.28318530718f / segments;
+                const float b = static_cast<float>(i + 1) * 6.28318530718f / segments;
+                const float x = std::cos(a)*radius, y = std::sin(a)*radius;
+                const float nx = std::cos(b)*radius, ny = std::sin(b)*radius;
+                const ImU32 color = IM_COL32(255,150,40,230);
+                line(center+Vector3{x,0,y},center+Vector3{nx,0,ny},color);
+                line(center+Vector3{x,y,0},center+Vector3{nx,ny,0},color);
+                line(center+Vector3{0,x,y},center+Vector3{0,nx,ny},color);
+            }
         }
     }
+    if (rangeOnly) { draw->PopClipRect(); return; }
     const auto matrix=Matrix4x4::Multiply(object_.GetWorldMatrix(),vp);
     for (const auto& part:parts_) {
         if (part.DamageState() == EnemyPartDamageState::Destroyed) continue;
@@ -480,7 +632,7 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
     }
     draw->PopClipRect();
 #else
-    (void)forceParts; (void)forceMovement; (void)vp; (void)screenMin; (void)screenMax;
+    (void)rangeOnly; (void)forceParts; (void)forceMovement; (void)vp; (void)screenMin; (void)screenMax;
 #endif
 }
 
@@ -553,6 +705,8 @@ Enemy::DebugState Enemy::CaptureDebug() const {
     state.definition=definition_; state.ai=ai_; state.parts=parts_;
     state.position=position_; state.rotation=rotation_; state.scale=scale_;
     state.spawnId=spawnId_; state.trigger=spawnTriggerId_; state.nextOrder=nextSpawnOrder_;
+    state.blastHitTime=blastHitTime_; state.lastBlastDamage=lastBlastDamage_;
+    state.explosionTime=explosionTime_; state.explosionCenter=explosionCenter_;
     state.attacks=attackCount_; state.damage=lastAttackDamage_; state.flash=attackFlash_; state.random=random_;
     for (size_t i=0;i<visuals_.size();++i) {
         state.models[i]=visuals_[i].object ? visuals_[i].object->GetModel() : nullptr;
@@ -568,6 +722,8 @@ void Enemy::RestoreDebug(const DebugState& state) {
     definition_=state.definition; ai_=state.ai; parts_=state.parts;
     position_=state.position; rotation_=state.rotation; scale_=state.scale;
     SetSpawnIdentity(state.spawnId,state.trigger); nextSpawnOrder_=state.nextOrder;
+    blastHitTime_=state.blastHitTime; lastBlastDamage_=state.lastBlastDamage;
+    explosionTime_=state.explosionTime; explosionCenter_=state.explosionCenter;
     attackCount_=state.attacks; lastAttackDamage_=state.damage; attackFlash_=state.flash; random_=state.random;
     const auto create=[&](Model* model) {
         auto object=std::make_unique<Object3d>(); object->Initialize(common_,dx_); object->SetCamera(camera_);
@@ -589,6 +745,7 @@ void Enemy::RestoreDebug(const DebugState& state) {
     faceShards_=state.faces; breakMode_=state.breakMode; detachedSettings_=state.detachedSettings;
     maxActiveFaces_=state.maxFaces; maxFacesPerBreak_=state.facesPerBreak; faceLifetime_=state.faceLifetime;
     spreadPower_=state.spread; outwardPower_=state.outward;
+    PrepareExplosionVisual();
     RebuildTypeMarker();
     // Scene updates all restored visuals only after every enemy has been restored.
 }

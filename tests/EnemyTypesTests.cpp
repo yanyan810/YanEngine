@@ -2,6 +2,7 @@
 #include "EnemyAI.h"
 #include "DetachedEnemyPart.h"
 #include "EnemyProjectile.h"
+#include "EnemyExplosion.h"
 #include "EnemySpawnSystem.h"
 #include <cassert>
 #include <fstream>
@@ -109,9 +110,9 @@ int main() {
     }
     assert(definitions.Find("fast")->moveSpeed>definitions.Find("normal")->moveSpeed);
     assert(definitions.Find("tank")->hpMultiplier>definitions.Find("normal")->hpMultiplier);
-    for (auto id : {"ranged","bomber"}) {
+    for (auto id : {"ranged"}) {
         const auto& d=*definitions.Find(id);
-        EnemyAI ai; ai.settings={d.detectionRange,d.attackRange,d.moveSpeed,d.attackDamage,d.attackInterval,true,d.minRange,d.maxRange};
+        EnemyAI ai; ai.settings={d.detectionRange,d.attackRange,d.moveSpeed,d.attackDamage,d.attackInterval,d.IsRanged(),d.minRange,d.maxRange};
         Vector3 pos{}, rot{};
         ai.Update(pos,rot,{0,0,d.maxRange+2},.1f,false); assert(pos.z>0 && ai.attacksThisUpdate==0);
         pos={}; ai.Update(pos,rot,{0,0,d.minRange-2},.1f,false); assert(pos.z<0 && ai.attacksThisUpdate==0);
@@ -119,6 +120,88 @@ int main() {
         ai.Update(pos,rot,{0,0,d.preferredRange},.01f,false); assert(ai.attacksThisUpdate==0);
         ai.Update(pos,rot,{0,0,d.preferredRange},10,true); assert(ai.attacksThisUpdate==0 && ai.state==EnemyState::Dead);
     }
+    // Bomber now uses normal pursuit, including inside its former retreat range.
+    const auto& bomber=*definitions.Find("bomber");
+    assert(!bomber.IsRanged() && definitions.Find("ranged")->IsRanged());
+    assert(bomber.moveSpeed>0 && Near(bomber.moveSpeed,definitions.Find("normal")->moveSpeed));
+    EnemyAI slow; slow.settings={bomber.detectionRange,bomber.attackRange,bomber.moveSpeed,
+        bomber.attackDamage,bomber.attackInterval,bomber.IsRanged(),bomber.minRange,bomber.maxRange};
+    Vector3 slowPosition{},slowRotation{};
+    slow.Update(slowPosition,slowRotation,{0,0,5},1,false);
+    assert(Near(slowPosition.z,bomber.moveSpeed) && slow.state==EnemyState::Chase);
+    slow.Update(slowPosition,slowRotation,{0,0,5},10,false);
+    assert(Near(5-slowPosition.z,bomber.attackRange));
+    const auto stopped=slowPosition;
+    slow.Update(slowPosition,slowRotation,{0,0,20},1,true);
+    assert(slowPosition.z==stopped.z && slow.state==EnemyState::Dead);
+
+    assert(IsBomberDetonationHit(EnemyType::Bomber,EnemyPartType::Body,1,false));
+    assert(IsBomberDetonationHit(EnemyType::Bomber,EnemyPartType::Body,10000,false));
+    for (auto part : {EnemyPartType::Head,EnemyPartType::LeftArm,EnemyPartType::RightArm,
+        EnemyPartType::LeftLeg,EnemyPartType::RightLeg,EnemyPartType::None})
+        assert(!IsBomberDetonationHit(EnemyType::Bomber,part,10,false));
+    for (auto type : {EnemyType::Normal,EnemyType::Ranged,EnemyType::Fast,EnemyType::Tank})
+        assert(!IsBomberDetonationHit(type,EnemyPartType::Body,10,false));
+    for (float damage : {0.0f,-1.0f,std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()})
+        assert(!IsBomberDetonationHit(EnemyType::Bomber,EnemyPartType::Body,damage,false));
+    assert(!IsBomberDetonationHit(EnemyType::Bomber,EnemyPartType::Body,10,true));
+    auto exploded=MakeEnemyParts({{0,0,0},{1,2,1}});
+    DamageEnemyPart(exploded,EnemyPartType::Body,10000);
+    assert(!IsBomberDetonationHit(EnemyType::Bomber,EnemyPartType::Body,10,EnemyPartsDead(exploded)));
+
+    // 頭部で倒した後に胴体へ何度当てても起爆しない（散弾の後続弾も含む）。
+    auto headKilled=MakeEnemyParts({{0,0,0},{1,2,1}});
+    DamageEnemyPart(headKilled,EnemyPartType::Head,10000);
+    assert(EnemyPartsDead(headKilled));
+    for (int i=0; i<3; ++i) {
+        assert(!IsBomberDetonationHit(EnemyType::Bomber,EnemyPartType::Body,50,EnemyPartsDead(headKilled)));
+        DamageEnemyPart(headKilled,EnemyPartType::Body,50);
+    }
+    // 実際の設定値で、中心・中間・範囲端のいずれも通常系の敵を一撃で倒せること。
+    const EnemyExplosion configuredBlast{{0,1,0},bomber.explosionRadius,bomber.explosionDamage};
+    for (auto id : {"normal", "ranged", "fast"}) {
+        const auto& target=*definitions.Find(id);
+        for (float distance : {0.0f, bomber.explosionRadius*.5f, bomber.explosionRadius}) {
+            auto parts=MakeEnemyParts({{0,0,0},{1,2,1}});
+            ApplyEnemyHpMultiplier(parts,target.hpMultiplier);
+            const float damage=EnemyExplosionDamage(configuredBlast,{distance,0,0},
+                target.collisionRadius,target.collisionHeight);
+            assert(damage==bomber.explosionDamage);
+            DamageEnemyPart(parts,EnemyPartType::Body,damage);
+            assert(EnemyPartsDead(parts));
+        }
+        assert(EnemyExplosionDamage(configuredBlast,
+            {bomber.explosionRadius+target.collisionRadius+.01f,0,0},
+            target.collisionRadius,target.collisionHeight)==0);
+    }
+    const EnemyExplosion blast{{0,1,0},4,25};
+    assert(EnemyExplosionDamage(blast,{0,0,0},.4f,1.8f)==25); // Player at the center.
+    assert(EnemyExplosionDamage(blast,{4.5f,0,0},.5f,2)==25); // Cylinder touches blast boundary.
+    assert(EnemyExplosionDamage(blast,{4.51f,0,0},.5f,2)==0);
+    assert(EnemyExplosionDamage(blast,{0,6,0},.5f,2)==0); // Different floor.
+    assert(EnemyExplosionDamage(blast,{0,-5,0},.5f,1)==0);
+    for (auto id : {"normal","ranged","fast","tank","bomber"}) {
+        const auto& target=*definitions.Find(id);
+        assert(EnemyExplosionDamage(blast,{1,0,0},target.collisionRadius,target.collisionHeight)==25);
+        assert(EnemyExplosionDamage(blast,{10,0,0},target.collisionRadius,target.collisionHeight)==0);
+    }
+    // 周囲の敵へ爆風を適用したときのHP遷移と、範囲外・死亡済みの扱いを確認する。
+    auto nearby=MakeEnemyParts({{0,0,0},{1,2,1}});
+    auto outsideBlast=nearby;
+    const auto applyBlast=[&](EnemyParts& target, const Vector3& feet) {
+        if (EnemyPartsDead(target)) return 0.0f;
+        return DamageEnemyPart(target, EnemyPartType::Body, EnemyExplosionDamage(blast,feet,.4f,2));
+    };
+    for (int i=1; i<=4; ++i) {
+        assert(applyBlast(nearby,{1,0,0})==25);
+        assert(nearby[1].hp==100-i*25);
+        assert(EnemyPartsDead(nearby)==(i==4));
+        assert(applyBlast(outsideBlast,{10,0,0})==0 && outsideBlast[1].hp==100);
+    }
+    assert(applyBlast(nearby,{1,0,0})==0);
+    assert(EnemyExplosionDamage({{},4,0},{},.5f,2)==0);
+    std::cout<<"Bomber tests passed: normal-speed pursuit, no ranged mode, body-only live bullet trigger, lethal/dead hits, radial player/enemy damage and vertical/radius boundaries.\n";
+
     auto bullet=MakeEnemyProjectile(*definitions.Find("ranged"),{0,1,0},{0,0,12});
     assert(StepEnemyProjectile(bullet,.25f,{100,0,0})==0 && Near(bullet.position.z,3));
     assert(StepEnemyProjectile(bullet,1,{0,0,9})==8 && !bullet.active);
@@ -132,7 +215,7 @@ int main() {
     assert(Near(bomb.position.z,14) && Near(bomb.fuseRemaining,1.2f));
     const auto outside=bomb;
     assert(StepEnemyProjectile(bomb,1,{0,0,14})==0 && bomb.active && Near(bomb.position.z,14));
-    assert(StepEnemyProjectile(bomb,.21f,{0,0,14})==25 && !bomb.active);
+    assert(StepEnemyProjectile(bomb,.21f,{0,0,14})==bomber.explosionDamage && !bomb.active);
     assert(StepEnemyProjectile(bomb,1,{0,0,14})==0);
     bomb=outside; assert(StepEnemyProjectile(bomb,1.21f,{0,0,30})==0 && !bomb.active);
     bomb=outside; bomb.lifetime=.1f; assert(StepEnemyProjectile(bomb,10,{0,0,14})==0 && !bomb.active);

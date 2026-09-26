@@ -64,6 +64,8 @@ struct WeaponDefinition {
     float damage = 0;
     float fireInterval = 0;
     float range = 0;
+    float bulletSpeed = 120.0f;
+    float bulletLifeTime = 3.0f;
 
     int magazineSize = 0;
     int reserveAmmo = 0;

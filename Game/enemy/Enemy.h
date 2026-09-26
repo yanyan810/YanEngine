@@ -3,6 +3,7 @@
 #include "EnemyParts.h"
 #include "EnemyAI.h"
 #include "EnemyDefinition.h"
+#include "EnemyExplosion.h"
 #include "DetachedEnemyPart.h"
 #include <random>
 
@@ -29,13 +30,18 @@ using DetachedEnemyFragment = DetachedEnemyPart; // Same object ownership and ph
 // Uses only the Boss model resource; no legacy AI, attacks or animation playback.
 class Enemy {
 public:
+    // Call on the main thread after ModelManager/TextureManager initialization.
+    static void PreloadAssets();
+    static void ReleasePreloadedAssets();
     ~Enemy();
     void Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera, bool useSplitAssets = false);
     using RaycastHit = EnemyPartHit;
     bool Raycast(const Vector3& origin, const Vector3& direction, float maxDistance, RaycastHit& hit) const;
     void ShowHitFeedback(EnemyPartType part);
     float ApplyDamage(EnemyPartType part, float damage, const Vector3& shotDirection);
-    void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax, bool forceParts=false, bool forceMovement=false) const;
+    EnemyBulletHitResult ApplyBulletDamage(EnemyPartType part, float damage, const Vector3& direction);
+    void ApplyExplosionDamage(const EnemyExplosion& explosion);
+    void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax, bool forceParts=false, bool forceMovement=false, bool rangeOnly=false) const;
     void DrawImGui();
     const EnemyDefinition& Definition() const { return definition_; }
     void ApplyDefinition(const EnemyDefinition& definition);
@@ -56,6 +62,9 @@ public:
         std::string trigger;
         unsigned long long attacks=0;
         float damage=0,flash=0;
+        float explosionTime=0;
+        float blastHitTime=0, lastBlastDamage=0;
+        Vector3 explosionCenter{};
         std::mt19937 random;
         std::array<Model*,6> models{};
         std::array<bool,6> visible{};
@@ -87,11 +96,14 @@ public:
     bool IsDead() const { return EnemyPartsDead(parts_); }
     EnemyState GetState() const { return IsDead() ? EnemyState::Dead : ai_.state; }
     void Draw(bool showMarker=true);
+    void DrawExplosion();
     void SetPartVisible(EnemyPartType type, bool visible);
 private:
 #ifdef _DEBUG
     std::string dimensionFileStatus_;
 #endif
+    void PrepareExplosionVisual();
+    Vector3 ExplosionCenter() const;
     void RebuildTypeMarker();
     uint64_t spawnId_ = 0;
     std::string id_;
@@ -102,9 +114,19 @@ private:
     float lastAttackDamage_ = 0;
     float attackFlash_ = 0;
     Object3d object_;
+    ModelCommon explosionModelCommon_;
+    std::unique_ptr<Model> explosionModel_;
+    std::unique_ptr<Object3d> explosionVisual_;
+    float explosionTime_ = 0;
+    float blastHitTime_ = 0, lastBlastDamage_ = 0;
+    Vector3 explosionCenter_{};
+    static constexpr float kExplosionDuration = .7f;
     std::unique_ptr<Object3d> typeMarker_; // Visual only: never included in EnemyParts or fragments.
     FragmentMode breakMode_ = FragmentMode::Face;
-    std::array<std::vector<std::array<Vector3,3>>,6> faceData_{};
+    // Immutable between startup preload and shutdown; shared by every enemy.
+    inline static bool assetsPreloaded_ = false;
+    inline static bool splitAssetsAvailable_ = false;
+    inline static std::array<std::vector<std::array<Vector3,3>>,6> faceData_{};
     std::vector<FaceShard> faceShards_;
     ModelCommon faceModelCommon_;
     std::unique_ptr<Model> faceModel_;
@@ -119,7 +141,7 @@ private:
     Object3dCommon* common_ = nullptr;
     DirectXCommon* dx_ = nullptr;
     Camera* camera_ = nullptr;
-    std::array<std::vector<std::string>, 6> fragmentFiles_{};
+    inline static std::array<std::vector<std::string>, 6> fragmentFiles_{};
     float spreadPower_ = 1.5f;
     float outwardPower_ = 1.5f;
     static constexpr size_t kMaxFragments = 128;
@@ -134,6 +156,7 @@ private:
     EnemyParts parts_{};
     bool showPartColliders_ = false;
     bool showMovementCollider_ = false;
+    bool showExplosionRange_ = true;
     Vector3 position_{3.0f,0.0f,18.0f};
     Vector3 rotation_{0.0f,1.5707963f,0.0f};
     Vector3 scale_{2.0f,2.0f,2.0f};
