@@ -551,6 +551,10 @@
     <ClCompile Include="Game\WeaponSystem.cpp" />
     <ClInclude Include="Game\WeaponSystem.h" />
     <ClInclude Include="Game\WeaponHUD.h" />
+    <ClInclude Include="Game\UIFont.h" />
+    <ClCompile Include="Game\UIFont.cpp" />
+    <ClInclude Include="Game\GameHUD.h" />
+    <ClCompile Include="Game\GameHUD.cpp" />
     <ClInclude Include="Game\StageProgress.h" />
     <ClInclude Include="Game\StageClearOverlay.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />
