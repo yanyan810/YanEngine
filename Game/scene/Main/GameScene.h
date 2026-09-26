@@ -11,7 +11,7 @@
 #include "Sprite.h"
 #include "StageProgress.h"
 #include "StageClearOverlay.h"
-#include "WeaponHUD.h"
+#include "GameHUD.h"
 #ifdef _DEBUG
 #include "DebugTimeline.h"
 #include "DebugJsonEditor.h"
@@ -78,7 +78,7 @@ private:
     unsigned long long hitCount_ = 0;
     float lastDamage_ = 0.0f;
     WeaponSystem weapons_;
-    WeaponHUD weaponHUD_;
+    GameHUD gameHUD_;
     std::vector<std::unique_ptr<Object3d>> weaponVisuals_;
     std::mt19937 pelletRandom_{std::random_device{}()};
     inline static std::optional<WeaponRandomSettings> weaponSeedOverride_;

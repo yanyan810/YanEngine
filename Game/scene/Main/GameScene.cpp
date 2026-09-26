@@ -1,4 +1,4 @@
-#include "GameScene.h"
+﻿#include "GameScene.h"
 #include "GameApp.h"
 #include "Object3dCommon.h"
 #include "ImGuiManagaer.h"
@@ -63,7 +63,7 @@ void GameScene::OnEnter(GameApp& app) {
     weaponVisuals_.clear();
     if (const auto* initial = weapons_.InitialWeapon()) player_.CurrentWeapon().Equip(*initial);
     pelletRandom_.seed(weapons_.ActualSeed() ^ 0x9e3779b9u); // independent of placement lottery
-    weaponHUD_.Initialize(app.SpriteCom(),app.Dx());
+    gameHUD_.Initialize(app.SpriteCom(),app.Dx());
     for (const auto& pickup : weapons_.Pickups()) {
         auto visual = std::make_unique<Object3d>();
         visual->Initialize(app.ObjCom(),app.Dx());
@@ -507,7 +507,7 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::Text("Shot Count: %llu | Hit Count: %llu", shotCount_, hitCount_);
     ImGui::Text("Last Hit Enemy: %d | Last Hit Part: %s", lastHitEnemy_, EnemyPartName(lastHitPart_));
     ImGui::Text("Last Damage: %.0f (actual HP lost)", lastDamage_);
-    ImGui::Text("Player HP: %.0f / 100 %s", player_.GetHP(), player_.IsDead() ? "Player Dead" : "");
+
     const auto alive=std::count_if(enemies_.begin(),enemies_.end(),[](const auto& e){return !e->IsDead();});
     ImGui::Text("Enemy Count: %zu | Alive: %d", enemies_.size(), static_cast<int>(alive));
     ImGui::Text("Last Enemy Attack: %s | Attack Count: %llu | Last Damage: %.0f",
@@ -694,10 +694,10 @@ void GameScene::DrawOverlay2D(GameApp&) {
     crosshairVertical_.Update(view, projection);
     crosshairHorizontal_.Draw();
     crosshairVertical_.Draw();
-    const auto nearest = weapons_.Nearest(player_.GetTransform().translate);
-    const auto* nearby = nearest ? weapons_.Find(weapons_.Pickups()[*nearest].weaponId) : nullptr;
-    weaponHUD_.Draw(player_.CurrentWeapon(),nearby,!weapons_.Error().empty(),
-        static_cast<float>(WinApp::kClientWidth),static_cast<float>(WinApp::kClientHeight),view,projection);
+    // Refresh here so debug rewind, HP reset and weapon changes appear even while paused.
+    gameHUD_.Update(player_, weapons_, static_cast<float>(WinApp::kClientWidth),
+        static_cast<float>(WinApp::kClientHeight));
+    gameHUD_.Draw(view, projection);
 }
 
 void GameScene::SyncProjectileVisuals(GameApp& app) {
