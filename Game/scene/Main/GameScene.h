@@ -16,6 +16,9 @@
 #ifdef _DEBUG
 #include "DebugTimeline.h"
 #include "DebugJsonEditor.h"
+#ifdef USE_IMGUI
+#include "WeaponEditorUI.h"
+#endif
 #endif
 
 class GameScene : public IScene {
@@ -64,6 +67,10 @@ private:
     void DrawDebugTools(GameApp& app);
     DebugTimeline<DebugFrame> debugHistory_;
     DebugJsonEditor debugJson_;
+#ifdef USE_IMGUI
+    WeaponEditorUI weaponEditor_;
+#endif
+    void EquipWeaponForDebug(const WeaponDefinition& definition);
     bool debugPaused_=false;
     int debugStep_=0,debugJsonSelection_=0;
     uint64_t debugFrame_=0;

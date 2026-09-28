@@ -30,7 +30,7 @@ Object Typeなどの設定は.blendへ保存されます。変更後は **Ctrl+S
 
 付属.blendのProject Rootは `//../../../` です。.blendから見た相対パスなので、プロジェクトごと別のPCへ移動できます。.blendだけ別の場所へ移す場合はProject Rootを実際のプロジェクトフォルダーに直してください。
 
-出力先の末尾フォルダー名はStage IDと同じにします。Project Root設定時は `Project Root/resources/levels/Stage ID` へ出力します。Project Rootを空にして、絶対パスのOutput Directoryへ出すことも可能ですが、その場合はEnemy/Weapon IDの存在確認を省略します。
+出力先の末尾フォルダー名はStage IDと同じにします。Project Root設定時は `Project Root/resources/levels/Stage ID` へ出力します。Enemy / Weapon Spawnがある場合は、定義の読み込みと検証のためProject Rootが必須です。定義が読めない場合も保存済みIDは変更しません。
 
 現在のGameSceneが起動時に読むのは `resources/levels/stage01/stage01.json` です。まずはStage IDをstage01のままで編集してください。別IDへ出したステージを起動するにはGameSceneのlevelPathを変更します。
 
@@ -90,7 +90,9 @@ Enemy Spawnそのものはゲームに表示されません。IDは他の有効�
 
 例：normal=5、fast=2、ranged=2、tank=1、bomber=1。
 
-IDは `resources/Data/enemies.json` のidです。任意のIDを文字入力できます。Project Root設定時はそのファイルと照合するので、入力間違いはExport時に検出されます。weightは0以上、合計は0より大きい値にします。空Poolはエラーです。確実に1種類だけ出すには、そのID・Weight=1の行だけを残します。
+IDはProject Rootの `resources/Data/enemies.json` から選択します。メニューには `Normal (normal)` のように表示名とIDが表示されます。Weightは0以上、合計は0より大きい値にします。空Poolはエラーです。確実に1種類だけ出すには、そのID・Weight=1の行だけを残します。
+
+JSONの変更はパネル再描画時に再読み込みされます。すぐ反映したい場合は **Refresh Definitions** を押してください。候補はJSONから生成するため、アドオンのコード変更は不要です。既存.blendのIDはそのまま保持します。削除された定義は **Missing / Unknown** と表示し、自動置換せずValidate / Exportでエラーにします。
 
 ### 8. Spawn Triggerを置く
 
@@ -123,9 +125,31 @@ Trigger／Goalは既存の軸平行AABBです。斜め回転はエラーにし�
 
 1. Emptyを追加し、Object Typeを **Weapon Spawn** にします。
 2. IDと位置・回転を設定します。
-3. Add EntryからWeapon Poolを入力します。
+3. 個別の候補とWeightを設定する場合は **Add Entry** から **Weapon Pool (Manual Pool)** を追加します。
 
-例：pistol=3、smg=2、rifle=2、pump_shotgun=1。IDは `resources/Data/weapons.json` と照合します。Poolの合計Weightは0より大きくしてください。武器の見た目・取得方式・弾数は既存WeaponSystemが担当します。
+例：pistol=3、smg=2、rifle=2、pump_shotgun=1。選択メニューは `resources/Data/weapons.json` から生成し、名前・ID・Slot・★Rarity・Typeを表示します。Weightの編集とマイナスボタンでの行削除ができます。武器の見た目・取得方式・弾数は既存WeaponSystemが担当します。
+
+**Weapon Filter** でSlot（All / Main / Sub）、Min Rarity / Max Rarity（★1～★5）、Typeを指定します。Typeのチェックは複数選択でき、候補はweapons.jsonから取得します。選択なしはAll、Allボタンで選択を解除します。複数Typeはどれかに一致すれば対象です。削除されたTypeも警告付きで保持され、クリックして解除できます。
+
+**Matched Weapons** に実際の抽選元をFilterで絞り込んだ武器数と一覧を表示します。Manual Poolがあればその中だけを絞り込み、各行のWeightで抽選します。Manual Poolが空なら全定義を絞り込み、武器定義のWeight（省略時1）で抽選します。候補0件または候補のWeight合計0は警告・検証エラーです。
+
+Exportは既存の `filter.slot` / `minRarity` / `maxRarity` / `types` を使います。SlotのAllはslot省略、TypeのAllはtypes省略です。Manual Poolが空の場合は `weaponPool` 自体を省略し、ゲームの全武器抽選を使用します。既存.blendではFilter初期値がAll・★1～★5なので、従来のPoolとWeightをそのまま使います。
+
+#### Weapon CatalogでManual Poolを作る
+
+Weapon Spawnを選択して **Open Weapon Catalog** を押すと、武器ID・★Rarity・Slot・Typeを表示するスクロール可能なカタログを開きます。武器とTypeはProject Rootのweapons.jsonから読み込みます。
+
+1. カタログのSlot / Rarity / Typeで表示を絞り込みます。これは検索用で、SpawnのDynamic Filterには保存されません。
+2. 各武器をチェックします。既存Manual Poolの武器は最初からチェックされています。**Select All Visible** は表示中だけ選択、**Clear Visible** は表示中だけ解除、**Clear All** は非表示分も含めて解除します。
+3. **Apply to Weapon Spawn** で、非表示分を含むすべてのチェックをManual Poolへ反映します。チェックを外したIDはPoolから外れ、新規IDはWeight=1になります。残したIDは既存Weight・行順を維持します。Dynamic Filterは変更しません。ApplyはUndoで戻せます。
+
+Applyせずにポップアップを閉じればSpawnは変更されません。再度開くと現在のManual Poolから選択を作り直します。全チェックを外してApplyすると空Manual Poolになり、ゲームでは全武器をDynamic Filterで絞り込む方式になります。
+
+**View Matched in Catalog** は、現在保存されているManual PoolとDynamic Filterを併用した実際の候補だけを表示します。**Only Spawn Matches** を外せば全武器の閲覧に戻れます。表示Filterを追加すると、その候補をさらに絞れます。カタログ内のチェック変更だけではMatchedの対象は変わりません。
+
+JSON変更後はカタログの **Reload** またはカタログを開き直すことで更新できます。Reloadは既存チェックを保持し、新しい武器は未選択で追加します。削除された選択済みIDは **Missing / Unknown** として残ります。既存Poolの不明IDも勝手に削除せず、チェックを外してApplyした場合に削除します。
+
+Dynamic Filterは条件を保存するので、Manual Poolが空なら将来追加された一致武器も候補になります。Catalogで作ったManual PoolはIDを保存するため、将来追加された武器は自動追加されません。
 
 ### 11. Goalを置く
 
@@ -135,7 +159,7 @@ Cube Emptyを追加し、Object Typeを **Goal** にします。ゴールにし�
 
 パネル下部の **Validate Level** で確認します。エラー時はBlenderのメッセージを確認し、該当Objectを修正してください。
 
-Player Spawn数、Duplicate ID、Group参照、空Pool・全Weight=0、不明ID、体積0、NaN/Infinity、Gameplay Transformのシアーなどを検証します。**Ignore** のObjectはゲーム用の出力・検証対象から除外します。
+Player Spawn数、Duplicate ID、Group参照、Enemyの空Pool・全Weight=0、不明ID、Min Rarity > Max Rarity、Filter後に正のWeightの武器候補がない場合、体積0、NaN/Infinity、Gameplay Transformのシアーなどを検証します。**Ignore** のObjectはゲーム用の出力・検証対象から除外します。
 
 ### 13. Export Levelを押す
 
