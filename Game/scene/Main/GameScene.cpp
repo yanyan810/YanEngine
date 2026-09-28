@@ -548,6 +548,7 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::TextUnformatted("ESC to select. Equipping resets ammo, reload, burst and cooldown.");
     const auto& definition = weapon.Definition();
     ImGui::Text("Current: %s (%s)",definition.displayName.c_str(),definition.id.c_str());
+    ImGui::Text("Type: %s | Slot: %s | Rarity: %d/5",definition.type.c_str(),WeaponSlotName(definition.slot),definition.rarity);
     ImGui::Text("Magazine: %d / %d | Reserve: %d / %d",weapon.Magazine(),definition.magazineSize,weapon.Reserve(),definition.maxReserveAmmo);
     ImGui::Text("Damage/pellet: %.1f | Range: %.1f | Interval: %.2f",definition.damage,definition.range,definition.fireInterval);
     ImGui::Text("Bullet speed: %.1f | Lifetime: %.2f | Active: %zu",definition.bulletSpeed,definition.bulletLifeTime,bullets_.Count());
@@ -596,6 +597,8 @@ void GameScene::DrawImGui(GameApp& app) {
         const auto& point = weapons_.Points()[i];
         if (!ImGui::TreeNode(point.id.c_str())) continue;
         ImGui::Text("Position: %.1f, %.1f, %.1f",point.position.x,point.position.y,point.position.z);
+        ImGui::Text("Filter: %s | Rarity: %d-%d",point.filter.slot ? WeaponSlotName(*point.filter.slot) : "Any",point.filter.minRarity,point.filter.maxRarity);
+        for (const auto& type : point.filter.types) ImGui::BulletText("Allowed type: %s",type.c_str());
         for (const auto& candidate : point.weaponPool) ImGui::BulletText("%s (weight %.1f)",candidate.id.c_str(),candidate.weight);
         const auto& pickup = weapons_.Pickups()[i];
         ImGui::Text("Selected: %s | %s %s",pickup.weaponId.c_str(),pickup.pickedUp?"Picked up":"Available",

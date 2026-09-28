@@ -72,3 +72,66 @@ ammoPerShot、pelletCount、burstCount、magazineSizeは正整数。Burst間隔�
 8. **ADS/部位/クリア**：RMB長押しで視点が揺れずFOV・感度・Spreadが変わる。各武器で部位HPとFace/Chunk破壊が動く。Goal後は弾数・Reload/Burstが進まない。
 
 自動検証は `tools/test-weapons.ps1`。武器関連に加え、Stage/Spawn/Enemy部位・AI・破片/FPS/Raycastの既存テストを実行します。描画・操作感は自動テストの検証範囲に含めません。
+
+
+## 武器枠・種類・レアリティとスポーン条件
+
+武器定義に次の独立したメタデータを設定できます。射撃・リロード・ダメージ計算には影響しません。
+
+| フィールド | 値 | 省略時 |
+|---|---|---|
+| `slot` | `Main` または `Sub` | `Main` |
+| `type` | `AssaultRifle` / `SMG` / `Shotgun` / `Pistol` / `Revolver` / `Melee` などの空でない文字列 | `Unknown` |
+| `rarity` | ★1～★5に対応する整数1～5 | 1 |
+| `weight` | 全武器から抽選する場合の重み（0～1e9） | 1 |
+
+`slot` は種類とは別に指定します。TypeからSlotを推測したり、レアリティに応じて性能を自動補正したりしません。Typeを追加するだけならC++の変更は不要です（大文字小文字を区別します）。`Melee`という分類の指定だけでは近接攻撃処理は追加されません。Main/Subの2本同時所持や持ち替えは今回の分類追加に含まず、Eで現在の装備を交換する仕様を維持しています。
+
+同梱データはPistol＝Sub ★1、SMG＝Main ★2、AssaultRifle＝Main ★3、Shotgun＝Main ★2、Pump Shotgun＝Main ★3、Auto Shotgun＝Main ★4、Burst Rifle＝Main ★3です。各値はJSONで変更できます。
+
+武器定義への追加例（既存の性能フィールドと併記）：
+
+```json
+{ "type": "Pistol", "slot": "Sub", "rarity": 1, "weight": 1 }
+```
+
+スポーン地点は `filter` で制約します。序盤のSub武器を全武器から抽選する例：
+
+```json
+{
+  "id": "EarlySub",
+  "position": [3, 0.5, -2],
+  "filter": { "slot": "Sub", "minRarity": 1, "maxRarity": 2 }
+}
+```
+
+- `filter` 省略：全枠・★1～★5・全Type。
+- `slot` 省略：Main/Subの両方。指定時はその枠だけ。
+- `minRarity` / `maxRarity` 省略：それぞれ1 / 5。両端を含みます。
+- `types` 省略または空配列：全Type。`["Shotgun"]` ならShotgun限定。複数指定はOR条件。
+- 枠・レアリティ・Typeの条件同士はANDで結合します。
+
+Main限定は `{"slot":"Main"}`、★3以上は `{"minRarity":3}`、★1～★2は `{"minRarity":1,"maxRarity":2}`、Shotgun限定は `{"types":["Shotgun"]}` と指定します。
+
+既存の重み付き候補と組み合わせる例：
+
+```json
+{
+  "id": "MainRare",
+  "position": [3, 0.5, 20],
+  "filter": { "slot": "Main", "minRarity": 3 },
+  "weaponPool": [
+    { "id": "pistol", "weight": 10 },
+    { "id": "rifle", "weight": 3 },
+    { "id": "pump_shotgun", "weight": 1 }
+  ]
+}
+```
+
+この例ではPistolを除外し、RifleとPump Shotgunを3:1で抽選します。
+
+`weaponPool` があればその候補・重みを使います（文字列IDや重み省略は従来どおり1）。武器定義のweightと乗算しません。`weaponPool` を省略した場合だけ全武器と定義側weightを使います。指定した空poolは従来どおりエラーです。絞り込み後の候補に対して1回だけ重み付き抽選を行い、weight=0は選びません。条件なしの既存poolは並び順と重みを保ち、同じSeedで同じ結果になります。
+
+候補なし・一致候補の重みがすべて0・範囲逆転・不正Slot・範囲外/小数のレアリティ・filter内の未知フィールドはエラーになります。スポーンIDを含むエラーを返し、読み込み済みの有効な状態は保持します。無関係な候補で代替しません。DebugのWeapon Systemで装備の分類、地点の条件、絞り込み後の候補を確認できます。
+
+設定対象は使用するレベルJSONの `weaponSpawnPoints` です。既存ステージの候補設定は変更していません。BlenderエクスポーターのUIには新条件を追加していないため、エクスポート後にJSONで設定してください（再エクスポート時には再適用が必要です）。

@@ -25,6 +25,41 @@ int Integer(const json& value, int minimum, int maximum) {
     if (result < minimum || result > maximum) throw std::runtime_error("Ammo/pellet count out of range");
     return static_cast<int>(result);
 }
+WeaponSlot Slot(const json& value) {
+    if (value == "Main") return WeaponSlot::Main;
+    if (value == "Sub") return WeaponSlot::Sub;
+    throw std::runtime_error("slot must be Main or Sub");
+}
+double Weight(const json& value) {
+    if (!value.is_number()) throw std::runtime_error("Weapon weight must be numeric");
+    const double result = value.get<double>();
+    if (!std::isfinite(result) || result < 0 || result > 1e9)
+        throw std::runtime_error("Invalid weapon weight");
+    return result;
+}
+WeaponSpawnFilter Filter(const json& value) {
+    if (!value.is_object()) throw std::runtime_error("Weapon filter must be an object");
+    WeaponSpawnFilter filter;
+    // 誤字で条件が無視されて意図しない武器が出るのを防ぐ。
+    for (const auto& [key, ignored] : value.items()) {
+        (void)ignored;
+        if (key != "slot" && key != "minRarity" && key != "maxRarity" && key != "types")
+            throw std::runtime_error("Unknown weapon filter field: " + key);
+    }
+    if (value.contains("slot")) filter.slot = Slot(value.at("slot"));
+    filter.minRarity = Integer(value.value("minRarity", json(1)), 1, 5);
+    filter.maxRarity = Integer(value.value("maxRarity", json(5)), 1, 5);
+    if (filter.minRarity > filter.maxRarity) throw std::runtime_error("minRarity exceeds maxRarity");
+    if (value.contains("types")) {
+        if (!value.at("types").is_array()) throw std::runtime_error("filter.types must be an array");
+        for (const auto& type : value.at("types")) {
+            const auto name = type.get<std::string>();
+            if (name.empty()) throw std::runtime_error("Empty weapon filter type");
+            filter.types.push_back(name);
+        }
+    }
+    return filter;
+}
 Vector3 Vector(const json& value) {
     if (!value.is_array() || value.size()!=3) throw std::runtime_error("Expected 3-component vector");
     return {Number(value[0],-1e6f,1e6f), Number(value[1],-1e6f,1e6f), Number(value[2],-1e6f,1e6f)};
@@ -44,6 +79,11 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
             if (definition.id.empty() || !ids.insert(definition.id).second) throw std::runtime_error("Empty/duplicate weapon ID: " + definition.id);
             definition.displayName = item.at("displayName").get<std::string>();
             if (definition.displayName.empty() || definition.displayName.size()>48) throw std::runtime_error("Invalid weapon name: " + definition.id);
+            definition.type = item.value("type", std::string("Unknown"));
+            if (definition.type.empty()) throw std::runtime_error("Empty weapon type: " + definition.id);
+            if (item.contains("slot")) definition.slot = Slot(item.at("slot"));
+            definition.rarity = Integer(item.value("rarity", json(1)), 1, 5);
+            definition.spawnWeight = Weight(item.value("weight", json(1)));
             definition.damage = Number(item.at("damage"),.001f,100000);
             definition.fireInterval = Number(item.at("fireInterval"),.001f,3600);
 
@@ -153,21 +193,38 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
                 if (point.id.empty() || !ids.insert(point.id).second) throw std::runtime_error("Empty/duplicate weapon point: " + point.id);
                 point.position = Vector(item.at("position"));
                 if (item.contains("rotation")) point.rotation = Vector(item.at("rotation"));
-                const auto& pool = item.at("weaponPool");
-                if (!pool.is_array() || pool.empty()) throw std::runtime_error("Empty/invalid weapon pool: " + point.id);
+                try {
+                    if (item.contains("filter")) point.filter = Filter(item.at("filter"));
+                    std::vector<WeaponPoolEntry> sourcePool;
+                    if (item.contains("weaponPool")) {
+                        const auto& pool = item.at("weaponPool");
+                        if (!pool.is_array() || pool.empty()) throw std::runtime_error("Empty/invalid weapon pool");
+                        // 従来の候補順・省略時weight=1を保ち、既存の固定Seed抽選を変えない。
+                        for (const auto& candidate : pool) {
+                            WeaponPoolEntry entry;
+                            entry.id = candidate.is_string() ? candidate.get<std::string>() : candidate.at("id").get<std::string>();
+                            if (!loaded.Find(entry.id)) throw std::runtime_error("Unknown pool weapon: " + entry.id);
+                            if (!candidate.is_string()) entry.weight = Weight(candidate.value("weight",json(1)));
+                            sourcePool.push_back(std::move(entry));
+                        }
+                    } else {
+                        for (const auto& weapon : loaded.definitions_)
+                            sourcePool.push_back({weapon.id,weapon.spawnWeight});
+                    }
+                    // 条件の判定を抽選より先に行い、除外された武器の重みを確率に含めない。
+                    for (const auto& entry : sourcePool)
+                        if (point.filter.Matches(*loaded.Find(entry.id))) point.weaponPool.push_back(entry);
+                } catch (const std::exception& exception) {
+                    throw std::runtime_error("Weapon spawn " + point.id + ": " + exception.what());
+                }
                 std::vector<double> weights;
                 double total = 0;
-                for (const auto& candidate : pool) {
-                    WeaponPoolEntry entry;
-                    entry.id = candidate.is_string() ? candidate.get<std::string>() : candidate.at("id").get<std::string>();
-                    if (!loaded.Find(entry.id)) throw std::runtime_error("Unknown pool weapon: " + entry.id);
-                    if (!candidate.is_string()) entry.weight = candidate.value("weight",1.0);
-                    if (!std::isfinite(entry.weight) || entry.weight<0 || entry.weight>1e9) throw std::runtime_error("Invalid pool weight");
+                for (const auto& entry : point.weaponPool) {
                     weights.push_back(entry.weight);
                     total += entry.weight;
-                    point.weaponPool.push_back(std::move(entry));
                 }
-                if (total<=0 || !std::isfinite(total)) throw std::runtime_error("Weapon pool needs a positive weight");
+                if (total<=0 || !std::isfinite(total))
+                    throw std::runtime_error("Weapon spawn " + point.id + ": no positive-weight candidates match filter");
                 const size_t selected = std::discrete_distribution<size_t>(weights.begin(),weights.end())(random);
                 loaded.pickups_.push_back({point.id,point.weaponPool[selected].id,point.position,point.rotation,true,false});
                 loaded.points_.push_back(std::move(point));
