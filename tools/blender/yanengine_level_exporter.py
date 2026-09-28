@@ -1,5 +1,5 @@
 """YanEngine level authoring. Blender 4.4+; install this file as a legacy add-on."""
-bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 0, 0),
+bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 2, 0),
            "blender": (4, 4, 0), "location": "View3D > Sidebar > YanEngine Level", "category": "Import-Export"}
 import bpy
 from bpy.props import BoolProperty, StringProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty, CollectionProperty
@@ -94,14 +94,81 @@ def pool_data(pool, label, known=None):
     return entries
 
 
-def known_ids(scene, filename, key):
+_definition_cache = {}
+
+
+def definitions(scene, key):
     root = scene.yan_level.project_root
     if not root:
-        return None  # Standalone add-on: IDs stay editable without an engine checkout.
-    path = Path(bpy.path.abspath(root)) / 'resources' / 'Data' / filename
-    if not path.is_file():
-        raise ValueError(f"Definition file missing: {path}")
-    return {entry['id'] for entry in json.loads(path.read_text(encoding='utf-8'))[key]}
+        raise ValueError('Set Project Root to load Enemy / Weapon definitions')
+    path = Path(bpy.path.abspath(root)) / 'resources' / 'Data' / f'{key}.json'
+    try:
+        stat = path.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+        cached = _definition_cache.get(str(path))
+        if cached and cached[0] == stamp:
+            return cached[1]
+        rows = json.loads(path.read_text(encoding='utf-8-sig'))[key]
+        if not isinstance(rows, list):
+            raise ValueError(f'{key} must be an array')
+        result = {}
+        for entry in rows:
+            identifier = entry['id']
+            if not isinstance(identifier, str) or not identifier.strip() or identifier in result:
+                raise ValueError(f'Empty or duplicate ID: {identifier}')
+            if key == 'weapons':
+                for field, default in (('slot', 'Main'), ('rarity', 1), ('type', 'Unknown'), ('weight', 1)):
+                    entry.setdefault(field, default)
+                if entry['slot'] not in {'Main', 'Sub'} or type(entry['rarity']) is not int or not 1 <= entry['rarity'] <= 5:
+                    raise ValueError(f'{identifier}: invalid slot or rarity')
+                if not isinstance(entry['type'], str) or not entry['type']:
+                    raise ValueError(f'{identifier}: invalid type')
+                if not isinstance(entry['weight'], (int, float)) or not math.isfinite(entry['weight']) or not 0 <= entry['weight'] <= 1e9:
+                    raise ValueError(f'{identifier}: invalid weight')
+            result[identifier] = entry
+        _definition_cache[str(path)] = (stamp, result)
+        return result
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError(f'Cannot load {path}: {error}') from error
+
+
+def definition_label(entry, weapon=False):
+    identifier = entry['id']
+    name = entry.get('displayName') or identifier
+    label = f'{name} ({identifier})' if name != identifier else identifier
+    if weapon:
+        label += f" / {entry.get('slot', '?')} / ★{entry.get('rarity', '?')} / {entry.get('type', '?')}"
+    return label
+
+
+def weapon_filter(cfg):
+    low, high = int(cfg.min_rarity), int(cfg.max_rarity)
+    if low > high:
+        raise ValueError('Min Rarity must be <= Max Rarity')
+    result = {'minRarity': low, 'maxRarity': high}
+    if cfg.weapon_slot != 'ALL':
+        result['slot'] = cfg.weapon_slot
+    if cfg.weapon_types:
+        result['types'] = [entry.name for entry in cfg.weapon_types]
+    return result
+
+
+def matched_weapons(cfg, weapons):
+    """Return effective pool (including zero weights), in runtime candidate order."""
+    filters = weapon_filter(cfg)
+    source = pool_data(cfg.pool, 'Weapon Pool', weapons) if cfg.pool else [
+        {'id': key, 'weight': entry.get('weight', 1)} for key, entry in weapons.items()]
+    matches = []
+    for candidate in source:
+        weapon = weapons[candidate['id']]
+        if ('slot' not in filters or weapon['slot'] == filters['slot']) and \
+                filters['minRarity'] <= weapon['rarity'] <= filters['maxRarity'] and \
+                ('types' not in filters or weapon['type'] in filters['types']):
+            finite([candidate['weight']], 'Weapon weight')
+            if candidate['weight'] < 0:
+                raise ValueError('Negative weapon weight')
+            matches.append(candidate)
+    return matches
 
 
 def build_level(scene, depsgraph):
@@ -120,8 +187,8 @@ def build_level(scene, depsgraph):
     players = [o for o in objects if o.yan_level.role == 'PLAYER']
     if len(players) != 1:
         raise ValueError(f"Exactly one Player Spawn required (found {len(players)})")
-    enemies = known_ids(scene, 'enemies.json', 'enemies')
-    weapons = known_ids(scene, 'weapons.json', 'weapons')
+    enemies = definitions(scene, 'enemies') if any(o.yan_level.role == 'ENEMY' for o in objects) else {}
+    weapons = definitions(scene, 'weapons') if any(o.yan_level.role == 'WEAPON' for o in objects) else {}
     data = {"version": 1, "stage": {"id": stage_id, "model": f"levels/{stage_id}/{stage_id}.gltf"},
             "playerSpawn": {}, "colliders": [], "enemyRandom": {"useFixedSeed": settings.fixed_seed, "seed": settings.seed},
             "spawnPoints": [], "spawnTriggers": [], "weaponRandom": {"useFixedSeed": settings.fixed_seed, "seed": settings.seed},
@@ -155,7 +222,13 @@ def build_level(scene, depsgraph):
                 groups.setdefault(cfg.group.strip(), []).append(key)
                 data['spawnPoints'].append(dict(id=key, **pose, enemyPool=pool_data(cfg.pool, key, enemies)))
             else:
-                data['weaponSpawnPoints'].append(dict(id=key, **pose, weaponPool=pool_data(cfg.pool, key, weapons)))
+                candidates = matched_weapons(cfg, weapons)
+                if not candidates or sum(p['weight'] for p in candidates) <= 0:
+                    raise ValueError(f'{key}: no positive-weight weapons match Filter')
+                point = dict(id=key, **pose, filter=weapon_filter(cfg))
+                if cfg.pool:
+                    point['weaponPool'] = pool_data(cfg.pool, key, weapons)
+                data['weaponSpawnPoints'].append(point)
         elif cfg.role == 'GOAL':
             data['goalTriggers'].append(dict(id=key, **trigger_volume(obj, depsgraph)))
     for obj in objects:
@@ -281,6 +354,11 @@ class YAN_PoolEntry(bpy.types.PropertyGroup):
     weight: FloatProperty(name="Weight", default=1, min=0)
 
 
+class YAN_WeaponType(bpy.types.PropertyGroup):
+    # Store actual strings, never enum indices/bit masks tied to definition order.
+    name: StringProperty()
+
+
 class YAN_ObjectSettings(bpy.types.PropertyGroup):
     role: EnumProperty(name="YanEngine Object Type", default='IGNORE', update=role_changed, items=[
         ('STATIC', 'Static Mesh', ''), ('COLLIDER', 'Collider', ''), ('PLAYER', 'Player Spawn', ''),
@@ -291,6 +369,10 @@ class YAN_ObjectSettings(bpy.types.PropertyGroup):
     collision: EnumProperty(name="Collision", items=[('NONE', 'None', ''), ('BOX', 'Box', ''), ('CUSTOM', 'Custom', '')])
     custom_collider: PointerProperty(name="Collider Object", type=bpy.types.Object)
     pool: CollectionProperty(type=YAN_PoolEntry)
+    weapon_slot: EnumProperty(name='Slot', items=[('ALL', 'All', ''), ('Main', 'Main', ''), ('Sub', 'Sub', '')], default='ALL')
+    min_rarity: EnumProperty(name='Min Rarity', items=[(str(i), f'★{i}', '') for i in range(1, 6)], default='1')
+    max_rarity: EnumProperty(name='Max Rarity', items=[(str(i), f'★{i}', '') for i in range(1, 6)], default='5')
+    weapon_types: CollectionProperty(type=YAN_WeaponType)
     spawn_count: IntProperty(name="Spawn Count", default=5, min=1, max=10000)
     spawn_interval: FloatProperty(name="Spawn Interval", default=.5, min=0)
     initial_delay: FloatProperty(name="Initial Delay", default=0, min=0)
@@ -307,6 +389,232 @@ class YAN_SceneSettings(bpy.types.PropertyGroup):
     seed: IntProperty(name="Seed", default=12345, min=0)
 
 
+class YAN_CatalogEntry(bpy.types.PropertyGroup):
+    identifier: StringProperty()
+    selected: BoolProperty(name='Select', default=False)
+    slot: StringProperty()
+    rarity: IntProperty()
+    weapon_type: StringProperty()
+    missing: BoolProperty()
+    matched: BoolProperty()
+
+
+class YAN_CatalogState(bpy.types.PropertyGroup):
+    # WindowManager-only draft: no authoring properties change until Apply.
+    target: PointerProperty(type=bpy.types.Object)
+    scene: PointerProperty(type=bpy.types.Scene)
+    entries: CollectionProperty(type=YAN_CatalogEntry)
+    active_index: IntProperty()
+    slot: EnumProperty(name='Slot', items=[('ALL', 'All', ''), ('Main', 'Main', ''), ('Sub', 'Sub', '')])
+    rarity: EnumProperty(name='Rarity', items=[('ALL', 'All', '')] + [(str(i), f'★{i}', '') for i in range(1, 6)])
+    weapon_type: StringProperty(default='')
+    matched_only: BoolProperty(name='Only Spawn Matches', description='Use the current saved Manual Pool and Dynamic Filter; draft checks do not affect this view')
+    match_error: StringProperty()
+
+
+def catalog_target(context, state):
+    target = state.target
+    if state.scene != context.scene or target is None or context.object != target or target.yan_level.role != 'WEAPON':
+        raise ValueError('Select the original Weapon Spawn, or reopen Catalog for the new selection')
+    return target
+
+
+def reload_catalog(context, state, initial=False):
+    target = catalog_target(context, state)
+    weapons = definitions(context.scene, 'weapons')
+    selected = {p.identifier.strip() for p in target.yan_level.pool} if initial else {
+        row.identifier for row in state.entries if row.selected}
+    # Retain missing legacy IDs (and deleted draft selections) as explicit checkboxes.
+    identifiers = set(weapons) | selected | {p.identifier.strip() for p in target.yan_level.pool}
+    try:
+        matched = {p['id'] for p in matched_weapons(target.yan_level, weapons)}
+        state.match_error = ''
+    except ValueError as error:
+        matched = set()
+        state.match_error = str(error)
+    state.entries.clear()
+    for identifier in sorted(identifiers, key=lambda key: (weapons.get(key, {}).get('rarity', 99), key)):
+        definition = weapons.get(identifier)
+        row = state.entries.add()
+        row.identifier = identifier
+        row.selected = identifier in selected
+        row.missing = definition is None
+        row.matched = identifier in matched
+        if definition:
+            row.slot, row.rarity, row.weapon_type = definition['slot'], definition['rarity'], definition['type']
+    state.active_index = 0
+
+
+def catalog_visible(state, row):
+    return ((not state.matched_only or row.matched) and
+            (state.slot == 'ALL' or row.slot == state.slot) and
+            (state.rarity == 'ALL' or row.rarity == int(state.rarity)) and
+            (not state.weapon_type or row.weapon_type == state.weapon_type))
+
+
+def apply_catalog(context, state):
+    target = catalog_target(context, state)
+    weapons = definitions(context.scene, 'weapons')
+    selected = {row.identifier for row in state.entries if row.selected}
+    existing = {p.identifier.strip() for p in target.yan_level.pool}
+    deleted = selected - set(weapons) - existing
+    if deleted:
+        raise ValueError('Definitions removed; Reload and clear missing selections: ' + ', '.join(sorted(deleted)))
+    # Keep original order, strings and even duplicate rows/weights for retained IDs.
+    entries = [(p.identifier, p.weight) for p in target.yan_level.pool if p.identifier.strip() in selected]
+    entries.extend((row.identifier, 1.0) for row in state.entries if row.selected and row.identifier not in existing)
+    target.yan_level.pool.clear()
+    for identifier, weight in entries:
+        row = target.yan_level.pool.add()
+        row.identifier, row.weight = identifier, weight
+
+
+class YAN_OT_catalog_open(bpy.types.Operator):
+    bl_idname = 'yanengine.catalog_open'
+    bl_label = 'Open Weapon Catalog'
+    matched_only: BoolProperty(default=False)
+
+    @classmethod
+    def poll(cls, context):
+        return context.object is not None and context.object.yan_level.role == 'WEAPON'
+
+    def execute(self, context):
+        state = context.window_manager.yan_catalog
+        state.target, state.scene = context.object, context.scene
+        state.slot, state.rarity, state.weapon_type = 'ALL', 'ALL', ''
+        state.matched_only = self.matched_only
+        try:
+            reload_catalog(context, state, initial=True)
+        except ValueError as error:
+            self.report({'ERROR'}, str(error))
+            return {'CANCELLED'}
+        bpy.ops.wm.call_panel('INVOKE_DEFAULT', name='YAN_PT_weapon_catalog', keep_open=True)
+        return {'FINISHED'}
+
+
+class YAN_OT_catalog_action(bpy.types.Operator):
+    bl_idname = 'yanengine.catalog_action'
+    bl_label = 'Catalog Selection'
+    action: EnumProperty(items=[('SELECT', 'Select All Visible', ''), ('CLEAR_VISIBLE', 'Clear Visible', ''),
+                               ('CLEAR', 'Clear All', ''), ('RELOAD', 'Reload', '')])
+
+    def execute(self, context):
+        state = context.window_manager.yan_catalog
+        try:
+            catalog_target(context, state)
+            if self.action == 'RELOAD':
+                _definition_cache.clear()
+                reload_catalog(context, state)
+            else:
+                for row in state.entries:
+                    if self.action == 'CLEAR' or catalog_visible(state, row):
+                        row.selected = self.action == 'SELECT'
+        except ValueError as error:
+            self.report({'ERROR'}, str(error))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class YAN_OT_catalog_type(bpy.types.Operator):
+    bl_idname = 'yanengine.catalog_type'
+    bl_label = 'Catalog Type'
+    identifier: StringProperty()
+
+    def execute(self, context):
+        context.window_manager.yan_catalog.weapon_type = self.identifier
+        return {'FINISHED'}
+
+
+class YAN_MT_catalog_types(bpy.types.Menu):
+    bl_label = 'Catalog Type'
+
+    def draw(self, context):
+        self.layout.operator('yanengine.catalog_type', text='All').identifier = ''
+        state = context.window_manager.yan_catalog
+        for name in sorted({row.weapon_type for row in state.entries if not row.missing}):
+            self.layout.operator('yanengine.catalog_type', text=name).identifier = name
+
+
+class YAN_OT_catalog_apply(bpy.types.Operator):
+    bl_idname = 'yanengine.catalog_apply'
+    bl_label = 'Apply to Weapon Spawn'
+    bl_description = 'Replace Manual Pool with all checked weapons (including hidden checks); keep existing weights and Dynamic Filter'
+    bl_options = {'UNDO'}
+
+    def execute(self, context):
+        state = context.window_manager.yan_catalog
+        try:
+            apply_catalog(context, state)
+            reload_catalog(context, state)
+        except ValueError as error:
+            self.report({'ERROR'}, str(error))
+            return {'CANCELLED'}
+        self.report({'INFO'}, f'Applied Manual Pool to {state.target.name}')
+        if context.area:
+            context.area.tag_redraw()
+        return {'FINISHED'}
+
+
+class YAN_UL_catalog(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.alert = item.missing
+        row.prop(item, 'selected', text='')
+        columns = row.split(factor=0.48)
+        columns.label(text=f'Missing / Unknown: {item.identifier}' if item.missing else f'★{item.rarity}  {item.identifier}')
+        details = columns.split(factor=0.3)
+        details.label(text=item.slot)
+        details.label(text=item.weapon_type)
+
+    def filter_items(self, context, data, propname):
+        return ([self.bitflag_filter_item if catalog_visible(data, row) else 0
+                 for row in getattr(data, propname)], [])
+
+
+class YAN_PT_weapon_catalog(bpy.types.Panel):
+    bl_label = 'Weapon Catalog'
+    bl_idname = 'YAN_PT_weapon_catalog'
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'WINDOW'
+    bl_ui_units_x = 34
+
+    def draw(self, context):
+        layout = self.layout
+        state = context.window_manager.yan_catalog
+        try:
+            target = catalog_target(context, state)
+        except ValueError as error:
+            layout.label(text=str(error), icon='ERROR')
+            return
+        layout.label(text=f'Weapon Spawn: {target.name}')
+        layout.label(text='Catalog display filters (do not change Dynamic Filter)')
+        row = layout.row(align=True)
+        row.prop(state, 'slot')
+        row.prop(state, 'rarity')
+        row.menu('YAN_MT_catalog_types', text='Type: ' + (state.weapon_type or 'All'))
+        layout.prop(state, 'matched_only')
+        if state.matched_only and state.match_error:
+            layout.label(text=state.match_error, icon='ERROR')
+        row = layout.row(align=True)
+        for action, label in [('SELECT', 'Select All Visible'), ('CLEAR_VISIBLE', 'Clear Visible'), ('CLEAR', 'Clear All')]:
+            row.operator('yanengine.catalog_action', text=label).action = action
+        layout.template_list('YAN_UL_catalog', '', state, 'entries', state, 'active_index', rows=10)
+        visible = [row for row in state.entries if catalog_visible(state, row)]
+        selected = [row for row in state.entries if row.selected]
+        hidden = sum(not catalog_visible(state, row) for row in selected)
+        layout.label(text=f'Visible: {len(visible)}   Selected: {len(selected)} ({hidden} hidden)')
+        if not visible:
+            layout.label(text='No weapons match the catalog display filters', icon='INFO')
+        if any(row.missing for row in selected):
+            layout.label(text='Missing IDs are retained until unchecked', icon='ERROR')
+        if not selected:
+            layout.label(text='Empty Manual Pool: all weapons use Dynamic Filter', icon='INFO')
+        layout.label(text='Apply replaces Manual Pool with all checks; Dynamic Filter is kept.')
+        row = layout.row()
+        row.operator('yanengine.catalog_action', text='Reload', icon='FILE_REFRESH').action = 'RELOAD'
+        row.operator('yanengine.catalog_apply', icon='CHECKMARK')
+
+
 class YAN_OT_pool(bpy.types.Operator):
     bl_idname = 'yanengine.pool'
     bl_label = 'Edit Pool'
@@ -315,11 +623,112 @@ class YAN_OT_pool(bpy.types.Operator):
     def execute(self, context):
         cfg = context.object.yan_level
         if self.index < 0:
+            try:
+                choices = definitions(context.scene, 'weapons' if cfg.role == 'WEAPON' else 'enemies')
+                if not choices:
+                    raise ValueError('No definitions available')
+            except ValueError as error:
+                self.report({'ERROR'}, str(error))
+                return {'CANCELLED'}
             row = cfg.pool.add()
-            row.identifier = 'pistol' if cfg.role == 'WEAPON' else 'normal'
+            row.identifier = next(iter(choices))
         elif self.index < len(cfg.pool):
             cfg.pool.remove(self.index)
         return {'FINISHED'}
+
+
+class YAN_OT_choose_pool(bpy.types.Operator):
+    bl_idname = 'yanengine.choose_pool'
+    bl_label = 'Choose Pool ID'
+    bl_options = {'UNDO'}
+    index: IntProperty()
+    identifier: StringProperty()
+
+    def execute(self, context):
+        cfg = context.object.yan_level
+        if 0 <= self.index < len(cfg.pool):
+            cfg.pool[self.index].identifier = self.identifier
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
+
+class YAN_MT_pool_choices(bpy.types.Menu):
+    bl_label = 'Choose Definition'
+
+    def draw(self, context):
+        cfg = context.object.yan_level
+        entry = context.yan_pool_entry
+        index = next(i for i, row in enumerate(cfg.pool) if row.as_pointer() == entry.as_pointer())
+        try:
+            choices = definitions(context.scene, 'weapons' if cfg.role == 'WEAPON' else 'enemies')
+            if entry.identifier.strip() not in choices:
+                self.layout.label(text=f'Missing / Unknown: {entry.identifier}', icon='ERROR')
+            for identifier, definition in choices.items():
+                op = self.layout.operator('yanengine.choose_pool', text=definition_label(definition, cfg.role == 'WEAPON'))
+                op.index, op.identifier = index, identifier
+        except ValueError as error:
+            self.layout.label(text=str(error), icon='ERROR')
+
+
+class YAN_OT_weapon_type(bpy.types.Operator):
+    bl_idname = 'yanengine.weapon_type'
+    bl_label = 'Toggle Weapon Type'
+    bl_options = {'UNDO'}
+    identifier: StringProperty()
+
+    def execute(self, context):
+        selected = context.object.yan_level.weapon_types
+        if not self.identifier:
+            selected.clear()
+        else:
+            index = selected.find(self.identifier)
+            if index >= 0:
+                selected.remove(index)
+            else:
+                selected.add().name = self.identifier
+        return {'FINISHED'}
+
+
+class YAN_OT_refresh_definitions(bpy.types.Operator):
+    bl_idname = 'yanengine.refresh_definitions'
+    bl_label = 'Refresh Definitions'
+
+    def execute(self, context):
+        _definition_cache.clear()
+        if context.area:
+            context.area.tag_redraw()
+        return {'FINISHED'}
+
+
+def draw_weapon_filter(layout, cfg, weapons):
+    box = layout.box()
+    box.label(text='Weapon Filter')
+    for prop in ('weapon_slot', 'min_rarity', 'max_rarity'):
+        box.prop(cfg, prop)
+    box.label(text='Type (multiple; none selected = All)')
+    selected = {entry.name for entry in cfg.weapon_types}
+    box.operator('yanengine.weapon_type', text='All', icon='CHECKBOX_HLT' if not selected else 'CHECKBOX_DEHLT').identifier = ''
+    types = {entry['type'] for entry in weapons.values()}
+    for name in sorted(types | selected):
+        row = box.row()
+        row.alert = name not in types
+        row.operator('yanengine.weapon_type', text=name if name in types else f'Missing / Unknown: {name}',
+                     icon='CHECKBOX_HLT' if name in selected else 'CHECKBOX_DEHLT').identifier = name
+    box.label(text='Source: Manual Pool' if cfg.pool else 'Source: All Weapons (definition weights)')
+    try:
+        matches = matched_weapons(cfg, weapons)
+        box.label(text=f'Matched Weapons: {len({p["id"] for p in matches})}')
+        box.operator('yanengine.catalog_open', text='View Matched in Catalog').matched_only = True
+        for key in dict.fromkeys(p['id'] for p in matches):
+            box.label(text=definition_label(weapons[key], True))
+        if not matches or sum(p['weight'] for p in matches) <= 0:
+            row = box.row()
+            row.alert = True
+            row.label(text='No positive-weight weapons match Filter', icon='ERROR')
+    except (ValueError, KeyError, TypeError) as error:
+        row = box.row()
+        row.alert = True
+        row.label(text=str(error), icon='ERROR')
 
 
 class YAN_OT_validate(bpy.types.Operator):
@@ -361,6 +770,7 @@ class YAN_PT_level(bpy.types.Panel):
         cfg = context.scene.yan_level
         for key in ('stage_id', 'project_root', 'output_directory', 'fixed_seed'):
             layout.prop(cfg, key)
+        layout.operator('yanengine.refresh_definitions', icon='FILE_REFRESH')
         if cfg.fixed_seed:
             layout.prop(cfg, 'seed')
         layout.separator()
@@ -377,13 +787,26 @@ class YAN_PT_level(bpy.types.Panel):
             if settings.role in {'ENEMY', 'TRIGGER'}:
                 layout.prop(settings, 'group')
             if settings.role in {'ENEMY', 'WEAPON'}:
-                layout.label(text='Enemy Pool' if settings.role == 'ENEMY' else 'Weapon Pool')
+                layout.label(text='Enemy Pool' if settings.role == 'ENEMY' else 'Weapon Pool (Manual Pool)')
+                choices = {}
+                try:
+                    choices = definitions(context.scene, 'weapons' if settings.role == 'WEAPON' else 'enemies')
+                except ValueError as error:
+                    layout.label(text=str(error), icon='ERROR')
                 for index, entry in enumerate(settings.pool):
                     row = layout.row(align=True)
-                    row.prop(entry, 'identifier', text='')
-                    row.prop(entry, 'weight', text='')
+                    row.context_pointer_set('yan_pool_entry', entry)
+                    definition = choices.get(entry.identifier.strip())
+                    label = definition_label(definition, settings.role == 'WEAPON') if definition else f'Missing / Unknown: {entry.identifier}'
+                    picker = row.row(align=True)
+                    picker.alert = definition is None
+                    picker.menu('YAN_MT_pool_choices', text=label)
+                    row.prop(entry, 'weight')
                     row.operator('yanengine.pool', text='', icon='REMOVE').index = index
                 layout.operator('yanengine.pool', text='Add Entry', icon='ADD').index = -1
+                if settings.role == 'WEAPON':
+                    layout.operator('yanengine.catalog_open', text='Open Weapon Catalog').matched_only = False
+                    draw_weapon_filter(layout, settings, choices)
             if settings.role == 'TRIGGER':
                 for key in ('spawn_count', 'spawn_interval', 'initial_delay', 'max_alive', 'selection', 'one_shot'):
                     layout.prop(settings, key)
@@ -394,7 +817,11 @@ class YAN_PT_level(bpy.types.Panel):
         layout.operator('yanengine.export', icon='EXPORT')
 
 
-CLASSES = (YAN_PoolEntry, YAN_ObjectSettings, YAN_SceneSettings, YAN_OT_pool, YAN_OT_validate, YAN_OT_export, YAN_PT_level)
+CLASSES = (YAN_PoolEntry, YAN_WeaponType, YAN_ObjectSettings, YAN_SceneSettings, YAN_OT_pool,
+           YAN_CatalogEntry, YAN_CatalogState, YAN_OT_catalog_open, YAN_OT_catalog_action,
+           YAN_OT_catalog_type, YAN_MT_catalog_types, YAN_OT_catalog_apply, YAN_UL_catalog, YAN_PT_weapon_catalog,
+           YAN_OT_choose_pool, YAN_MT_pool_choices, YAN_OT_weapon_type, YAN_OT_refresh_definitions,
+           YAN_OT_validate, YAN_OT_export, YAN_PT_level)
 
 
 def register():
@@ -402,9 +829,12 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.Object.yan_level = PointerProperty(type=YAN_ObjectSettings)
     bpy.types.Scene.yan_level = PointerProperty(type=YAN_SceneSettings)
+    bpy.types.WindowManager.yan_catalog = PointerProperty(type=YAN_CatalogState, options={'SKIP_SAVE'})
 
 
 def unregister():
+    _definition_cache.clear()
+    del bpy.types.WindowManager.yan_catalog
     del bpy.types.Scene.yan_level
     del bpy.types.Object.yan_level
     for cls in reversed(CLASSES):

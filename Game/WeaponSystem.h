@@ -255,6 +255,8 @@ public:
     // All definition/point validation and lottery happen once at stage initialization.
     bool Load(const std::string& definitionsPath, const std::string& levelPath,
         std::optional<WeaponRandomSettings> settingsOverride = std::nullopt);
+    // Editor reload is transactional and does not reroll or respawn existing pickups.
+    bool ReloadForEditor(const std::string& definitionsPath, const std::string& levelPath);
     const WeaponDefinition* Find(const std::string& id) const {
         for (const auto& definition : definitions_) if (definition.id == id) return &definition;
         return nullptr;

@@ -554,6 +554,8 @@
     <ClCompile Include="Game\BulletManager.cpp" />
     <ClInclude Include="Game\BulletManager.h" />
     <ClInclude Include="Game\WeaponSystem.h" />
+    <ClInclude Include="Game\WeaponEditor.h" />
+    <ClInclude Include="Game\WeaponEditorUI.h" />
     <ClInclude Include="Game\WeaponHUD.h" />
     <ClInclude Include="Game\UIFont.h" />
     <ClCompile Include="Game\UIFont.cpp" />

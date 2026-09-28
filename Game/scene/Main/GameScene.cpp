@@ -474,6 +474,13 @@ void GameScene::DrawRender(GameApp&) {
 }
 
 
+#ifdef _DEBUG
+void GameScene::EquipWeaponForDebug(const WeaponDefinition& definition) {
+    player_.CurrentWeapon().Equip(definition);
+    suppressFireUntilRelease_ = true;
+}
+#endif
+
 void GameScene::DrawImGui(GameApp& app) {
 #if defined(_DEBUG) && defined(USE_IMGUI)
     DrawDebugTools(app);
@@ -529,6 +536,7 @@ void GameScene::DrawImGui(GameApp& app) {
         {static_cast<float>(sceneRect.right),static_cast<float>(sceneRect.bottom)}, false, false, i != static_cast<size_t>(selectedEnemy_));
 #ifdef _DEBUG
     ImGui::Begin("Weapon System");
+    if (ImGui::Button("Weapon Editor")) weaponEditor_.visible=true;
     auto& weapon = player_.CurrentWeapon();
     ImGui::BeginDisabled(captured || !stage_.IsPlaying() || weapons_.Definitions().empty());
     const auto& equipped = weapon.Definition();
@@ -537,8 +545,7 @@ void GameScene::DrawImGui(GameApp& app) {
             const bool selected = candidate.id == weapon.Definition().id;
             const auto label = candidate.displayName + " (" + candidate.id + ")";
             if (ImGui::Selectable(label.c_str(), selected)) {
-                weapon.Equip(candidate);
-                suppressFireUntilRelease_ = true;
+                EquipWeaponForDebug(candidate);
             }
             if (selected) ImGui::SetItemDefaultFocus();
         }
@@ -606,6 +613,23 @@ void GameScene::DrawImGui(GameApp& app) {
         ImGui::TreePop();
     }
     ImGui::End();
+    if (const auto saved=weaponEditor_.Draw(weapons_,LevelPath(),!captured && stage_.IsPlaying())) {
+        // Historical definitions must not be restored by the timeline after a save.
+        debugHistory_.Clear();
+        const auto equipId=saved->empty() ? player_.CurrentWeapon().Definition().id : *saved;
+        if (!saved->empty() || !weapons_.Find(equipId)) {
+            const auto* next=weapons_.Find(equipId);
+            if (!next) next=weapons_.InitialWeapon();
+            if (next) EquipWeaponForDebug(*next);
+        }
+        for (size_t i=0;i<weaponVisuals_.size();++i) {
+            const auto* updated=weapons_.Find(weapons_.Pickups()[i].weaponId);
+            if (!updated) continue;
+            weaponVisuals_[i]->SetScale(updated->pickupScale);
+            weaponVisuals_[i]->SetMaterialColor({updated->pickupColor.x,updated->pickupColor.y,updated->pickupColor.z,1});
+            weaponVisuals_[i]->Update(0);
+        }
+    }
     if (!showroom_) {
     ImGui::Begin("Stage Progress");
     ImGui::Text("Stage State: %s", stage_.IsPlaying() ? "Playing" : "Cleared");

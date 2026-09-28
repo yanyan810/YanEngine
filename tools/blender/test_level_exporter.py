@@ -5,6 +5,7 @@ import json
 import math
 import hashlib
 import struct
+import shutil
 import bpy
 from mathutils import Matrix, Vector, Euler
 sys.path.insert(0,str(Path(__file__).resolve().parent))
@@ -73,8 +74,12 @@ try: e.engine_transform(shear)
 except ValueError: pass
 else: raise AssertionError('Shear accepted')
 
-scene.yan_level.project_root=''
-scene.yan_level.output_directory=str(root/'generated/blender-tests/stage01')
+test_root=root/'generated/blender-tests/project'
+(test_root/'resources/Data').mkdir(parents=True,exist_ok=True)
+for name in ('enemies.json','weapons.json'):
+    shutil.copyfile(root/'resources/Data'/name,test_root/'resources/Data'/name)
+scene.yan_level.project_root=str(test_root)
+scene.yan_level.output_directory='resources/levels/stage01'
 assert bpy.ops.yanengine.validate()=={'FINISHED'}
 selected=list(ctx.selected_objects); source_scene=ctx.window.scene
 out=e.export_level(ctx)
@@ -128,4 +133,140 @@ bpy.ops.wm.save_as_mainfile(filepath=str(blend))
 bpy.ops.wm.open_mainfile(filepath=str(blend))
 assert bpy.context.scene.objects['SP_A_03'].yan_level.pool[0].identifier=='fast'
 e.unregister(); e.register()
+
+# Filter export and legacy pool IDs use real Blender RNA, not mock properties.
+scene=bpy.context.scene
+cfg=scene.objects['WeaponSpawn_01'].yan_level
+original_pool=[(p.identifier,p.weight) for p in cfg.pool]
+cfg.pool.clear()
+cfg.weapon_slot='Main'; cfg.min_rarity='2'; cfg.max_rarity='3'
+cfg.weapon_types.add().name='Shotgun'
+weapons=e.definitions(scene,'weapons')
+matches=e.matched_weapons(cfg,weapons)
+expected=[key for key,w in weapons.items() if w['slot']=='Main' and 2<=w['rarity']<=3 and w['type']=='Shotgun']
+assert [p['id'] for p in matches]==expected and expected
+level,_=e.build_level(scene,bpy.context.evaluated_depsgraph_get())
+point=next(p for p in level['weaponSpawnPoints'] if p['id']=='WeaponSpawn_01')
+assert 'weaponPool' not in point
+assert point['filter']=={'slot':'Main','minRarity':2,'maxRarity':3,'types':['Shotgun']}
+for identifier,weight in [('pistol',100),(expected[0],7)]:
+    row=cfg.pool.add(); row.identifier=identifier; row.weight=weight
+assert e.matched_weapons(cfg,weapons)==[{'id':expected[0],'weight':7}]
+rejected(lambda:setattr(cfg.pool[1],'weight',0),lambda:setattr(cfg.pool[1],'weight',7))
+rejected(lambda:setattr(cfg,'min_rarity','5'),lambda:setattr(cfg,'min_rarity','2'))
+rejected(lambda:setattr(cfg,'weapon_slot','Sub'),lambda:setattr(cfg,'weapon_slot','Main'))
+rejected(lambda:setattr(cfg.pool[0],'identifier','deleted_weapon'),lambda:setattr(cfg.pool[0],'identifier','pistol'))
+
+# JSON additions/reordering/deletions reload automatically and never rewrite saved IDs.
+definition_path=test_root/'resources/Data/weapons.json'
+original_text=definition_path.read_text(encoding='utf-8')
+document=json.loads(original_text)
+new_weapon=dict(document['weapons'][0],id='new_test_weapon',type='NewTestType',weight=9)
+document['weapons'].insert(0,new_weapon)
+definition_path.write_text(json.dumps(document),encoding='utf-8')
+updated=e.definitions(scene,'weapons')
+assert updated['new_test_weapon']['type']=='NewTestType'
+assert cfg.pool[0].identifier=='pistol'
+cfg.pool.clear(); cfg.weapon_slot='ALL'; cfg.min_rarity='1'; cfg.max_rarity='5'; cfg.weapon_types.clear()
+cfg.weapon_types.add().name='NewTestType'
+assert e.matched_weapons(cfg,updated)==[{'id':'new_test_weapon','weight':9}]
+row=cfg.pool.add(); row.identifier='new_test_weapon'; row.weight=4
+definition_path.write_text(original_text,encoding='utf-8')
+assert 'new_test_weapon' not in e.definitions(scene,'weapons')
+assert cfg.pool[0].identifier=='new_test_weapon'
+
+# Unknown IDs/types survive save/load; existing IDs keep their strings too.
+cfg.weapon_types.add().name='Shotgun'
+bpy.ops.wm.save_as_mainfile(filepath=str(root/'generated/blender-tests/filter-properties.blend'))
+bpy.ops.wm.open_mainfile(filepath=str(root/'generated/blender-tests/filter-properties.blend'))
+cfg=bpy.context.scene.objects['WeaponSpawn_01'].yan_level
+assert cfg.pool[0].identifier=='new_test_weapon' and cfg.pool[0].weight==4
+assert [t.name for t in cfg.weapon_types]==['NewTestType','Shotgun']
+assert e.weapon_filter(cfg)=={'minRarity':1,'maxRarity':5,'types':['NewTestType','Shotgun']}
+assert bpy.context.scene.objects['SP_A_03'].yan_level.pool[0].identifier=='fast'
+
+# An optional second existing stage is read-only throughout this regression test.
+stage02=root/'resources/levels/stage02/stage02.blend'
+if stage02.exists():
+    bpy.ops.wm.open_mainfile(filepath=str(stage02))
+    bpy.context.scene.yan_level.project_root=str(root)
+    before={o.name:[p.identifier for p in o.yan_level.pool] for o in bpy.context.scene.objects}
+    e.build_level(bpy.context.scene,bpy.context.evaluated_depsgraph_get())
+    assert before=={o.name:[p.identifier for p in o.yan_level.pool] for o in bpy.context.scene.objects}
+print('BLENDER_SPAWN_UI_TESTS_PASSED: filter export, manual/default weights, zero matches, dynamic definitions, missing ID persistence, stage02')
+
+# Catalog edits are a draft until Apply and never change Dynamic Filter.
+bpy.ops.wm.open_mainfile(filepath=str(root/'resources/levels/stage01/stage01.blend'))
+scene=bpy.context.scene
+scene.yan_level.project_root=str(test_root)
+target=scene.objects['WeaponSpawn_01']
+bpy.context.view_layer.objects.active=target
+cfg=target.yan_level
+cfg.pool.clear()
+for identifier,weight in [('smg',7),('pistol',3),('smg',2)]:
+    row=cfg.pool.add(); row.identifier=identifier; row.weight=weight
+cfg.weapon_slot='Main'; cfg.min_rarity='2'; cfg.max_rarity='3'
+cfg.weapon_types.clear()
+state=bpy.context.window_manager.yan_catalog
+state.target=target; state.scene=scene
+e.reload_catalog(bpy.context,state,initial=True)
+snapshot=[(p.identifier,p.weight) for p in cfg.pool]
+filters=e.weapon_filter(cfg)
+assert {r.identifier for r in state.entries if r.selected}=={'smg','pistol'}
+state.slot='Main'; state.rarity='2'; state.weapon_type='Shotgun'
+visible={r.identifier for r in state.entries if e.catalog_visible(state,r)}
+assert visible=={key for key,w in weapons.items() if w['slot']=='Main' and w['rarity']==2 and w['type']=='Shotgun'}
+assert visible
+assert bpy.ops.yanengine.catalog_action(action='SELECT')=={'FINISHED'}
+assert {r.identifier for r in state.entries if r.selected}==visible|{'smg','pistol'}
+assert [(p.identifier,p.weight) for p in cfg.pool]==snapshot
+assert bpy.ops.yanengine.catalog_action(action='CLEAR_VISIBLE')=={'FINISHED'}
+assert {r.identifier for r in state.entries if r.selected}=={'smg','pistol'}
+bpy.ops.yanengine.catalog_action(action='SELECT')
+assert bpy.ops.yanengine.catalog_apply()=={'FINISHED'}
+assert [(p.identifier,p.weight) for p in cfg.pool][:3]==snapshot
+assert all(p.weight==1 for p in list(cfg.pool)[3:])
+assert e.weapon_filter(cfg)==filters
+
+# Matched view follows the saved pool AND filter, not draft checks.
+state.slot='ALL'; state.rarity='ALL'; state.weapon_type=''; state.matched_only=True
+assert {r.identifier for r in state.entries if e.catalog_visible(state,r)}=={p['id'] for p in e.matched_weapons(cfg,weapons)}
+bpy.ops.yanengine.catalog_action(action='CLEAR')
+assert not any(r.selected for r in state.entries)
+assert len(cfg.pool)>0
+bpy.ops.yanengine.catalog_apply()
+assert len(cfg.pool)==0 and e.weapon_filter(cfg)==filters
+assert {r.identifier for r in state.entries if e.catalog_visible(state,r)}=={p['id'] for p in e.matched_weapons(cfg,weapons)}
+
+# Reload adds new JSON definitions/types, but never checks new weapons automatically.
+state.matched_only=False
+document=json.loads(original_text)
+document['weapons'].append(new_weapon)
+definition_path.write_text(json.dumps(document),encoding='utf-8')
+bpy.ops.yanengine.catalog_action(action='RELOAD')
+draft=next(r for r in state.entries if r.identifier=='new_test_weapon')
+assert draft.weapon_type=='NewTestType' and not draft.selected
+draft.selected=True
+bpy.ops.yanengine.catalog_apply()
+assert [(p.identifier,p.weight) for p in cfg.pool]==[('new_test_weapon',1)]
+definition_path.write_text(original_text,encoding='utf-8')
+bpy.ops.yanengine.catalog_action(action='RELOAD')
+draft=next(r for r in state.entries if r.identifier=='new_test_weapon')
+assert draft.missing and draft.selected
+bpy.ops.yanengine.catalog_apply()
+assert cfg.pool[0].identifier=='new_test_weapon'  # no silent removal
+draft=next(r for r in state.entries if r.identifier=='new_test_weapon')
+draft.selected=False
+bpy.ops.yanengine.catalog_apply()
+assert not cfg.pool
+
+# A different active object cannot receive a stale catalog draft.
+bpy.context.view_layer.objects.active=scene.objects['PlayerSpawn']
+try: e.apply_catalog(bpy.context,state)
+except ValueError: pass
+else: raise AssertionError('Catalog wrote to a different selection')
+bpy.context.view_layer.objects.active=target
+assert e.weapon_filter(cfg)==filters
+e.unregister(); e.register()
+print('BLENDER_CATALOG_TESTS_PASSED: display filters, visible/hidden checks, draft isolation, weights/order, matches, reload, missing IDs, target guard')
 print('BLENDER_LEVEL_TESTS_PASSED: roles, validation, groups/pools, transforms, glTF filtering, atomic rollback, saved properties, registration')

@@ -237,3 +237,24 @@ bool WeaponSystem::Load(const std::string& definitionsPath, const std::string& l
         return false;
     }
 }
+
+bool WeaponSystem::ReloadForEditor(const std::string& definitionsPath, const std::string& levelPath) {
+    WeaponSystem loaded;
+    if (!loaded.Load(definitionsPath, levelPath, WeaponRandomSettings{true, actualSeed_})) {
+        error_ = loaded.Error(); return false;
+    }
+    if (loaded.points_.size() != points_.size()) {
+        error_ = "Stage changed; restart the stage before saving weapons"; return false;
+    }
+    for (size_t i=0; i<points_.size(); ++i) {
+        if (loaded.points_[i].id != points_[i].id || !loaded.Find(pickups_[i].weaponId)) {
+            error_ = "Cannot remove an active pickup weapon or change stage points; restart with updated stage references first";
+            return false;
+        }
+    }
+    loaded.pickups_ = pickups_;
+    loaded.settings_ = settings_;
+    loaded.actualSeed_ = actualSeed_;
+    *this = std::move(loaded);
+    return true;
+}
