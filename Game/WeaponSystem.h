@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "Vector3.h"
 #include <algorithm>
 #include <cmath>
@@ -52,9 +52,19 @@ inline const char* WeaponReloadStateName(WeaponReloadState state) {
     }
 }
 
+enum class WeaponSlot { Main, Sub };
+inline const char* WeaponSlotName(WeaponSlot slot) {
+    return slot == WeaponSlot::Main ? "Main" : "Sub";
+}
+
 struct WeaponDefinition {
     std::string id;
     std::string displayName;
+    // Typeは種類、Slotは装備分類。レアリティと抽選重みも性能から独立させる。
+    std::string type = "Unknown";
+    WeaponSlot slot = WeaponSlot::Main;
+    int rarity = 1;
+    double spawnWeight = 1;
 
     WeaponFireMode fireMode = WeaponFireMode::SemiAuto;
     int burstCount = 3;
@@ -213,11 +223,22 @@ private:
 };
 
 struct WeaponPoolEntry { std::string id; double weight = 1; };
+struct WeaponSpawnFilter {
+    std::optional<WeaponSlot> slot; // 未指定なら両枠を許可する。
+    int minRarity = 1, maxRarity = 5;
+    std::vector<std::string> types; // 空なら全Type。複数指定時はそのいずれか。
+    bool Matches(const WeaponDefinition& weapon) const {
+        return (!slot || weapon.slot == *slot) &&
+            weapon.rarity >= minRarity && weapon.rarity <= maxRarity &&
+            (types.empty() || std::find(types.begin(), types.end(), weapon.type) != types.end());
+    }
+};
 struct WeaponSpawnPoint {
     std::string id;
     Vector3 position{};
     Vector3 rotation{};
-    std::vector<WeaponPoolEntry> weaponPool;
+    WeaponSpawnFilter filter;
+    std::vector<WeaponPoolEntry> weaponPool; // 検証済み・条件で絞り込んだ抽選候補。
 };
 struct WeaponPickup {
     std::string spawnPointId;

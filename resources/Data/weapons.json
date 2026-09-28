@@ -3,6 +3,10 @@
   "weapons": [
     {
       "id": "pistol",
+      "type": "Pistol",
+      "slot": "Sub",
+      "rarity": 1,
+      "weight": 1,
       "displayName": "Pistol",
       "fireMode": "SemiAuto",
       "damage": 25,
@@ -35,6 +39,10 @@
     },
     {
       "id": "smg",
+      "type": "SMG",
+      "slot": "Main",
+      "rarity": 2,
+      "weight": 1,
       "displayName": "SMG",
       "fireMode": "FullAuto",
       "damage": 15,
@@ -67,6 +75,10 @@
     },
     {
       "id": "rifle",
+      "type": "AssaultRifle",
+      "slot": "Main",
+      "rarity": 3,
+      "weight": 1,
       "displayName": "Assault Rifle",
       "fireMode": "FullAuto",
       "damage": 30,
@@ -99,6 +111,10 @@
     },
     {
       "id": "shotgun",
+      "type": "Shotgun",
+      "slot": "Main",
+      "rarity": 2,
+      "weight": 1,
       "displayName": "Shotgun",
       "fireMode": "SemiAuto",
       "damage": 15,
@@ -131,6 +147,10 @@
     },
     {
       "id": "pump_shotgun",
+      "type": "Shotgun",
+      "slot": "Main",
+      "rarity": 3,
+      "weight": 1,
       "displayName": "Pump Shotgun",
       "fireMode": "SemiAuto",
       "damage": 12,
@@ -166,6 +186,10 @@
     },
     {
       "id": "auto_shotgun",
+      "type": "Shotgun",
+      "slot": "Main",
+      "rarity": 4,
+      "weight": 1,
       "displayName": "Auto Shotgun",
       "fireMode": "FullAuto",
       "damage": 9,
@@ -198,6 +222,10 @@
     },
     {
       "id": "burst_rifle",
+      "type": "AssaultRifle",
+      "slot": "Main",
+      "rarity": 3,
+      "weight": 1,
       "displayName": "Burst Rifle",
       "fireMode": "Burst",
       "damage": 24,

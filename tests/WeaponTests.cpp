@@ -1,4 +1,4 @@
-﻿#include "WeaponSystem.h"
+#include "WeaponSystem.h"
 #include "StageProgress.h"
 #include "EnemyParts.h"
 #include <nlohmann/json.hpp>
@@ -124,6 +124,103 @@ static void TestExtendedModes(const WeaponSystem& system) {
     assert(weapon.BurstRemaining()==remaining && weapon.BurstTimer()==timer);
     std::cout << "Extended weapon tests passed: Semi/Full/Burst, burst timing and exhaustion, ammo/pellet independence, PerRound phases, interruption, reserve/full stop, zero timings, equip reset, stage freeze.\n";
 }
+static void TestSpawnFilters(const json& definitions, const json& level) {
+    WeaponSystem system;
+    const auto load=[&](const json& data, const json& map) {
+        Save(data,map);
+        return system.Load("weapon-test.json","weapon-level-test.json",WeaponRandomSettings{true,42});
+    };
+    auto map=level;
+    map["weaponSpawnPoints"]=json::array({{{"id","filtered"},{"position",{0,0,0}},
+        {"filter",{{"slot","Sub"},{"minRarity",1},{"maxRarity",2}}}}});
+    assert(load(definitions,map));
+    assert(system.Pickups()[0].weaponId=="pistol");
+    WeaponRuntime runtime;
+    assert(system.TryPickup({0,0,0},runtime));
+    assert(runtime.Definition().slot==WeaponSlot::Sub && runtime.Definition().rarity==1);
+    assert(runtime.Definition().type=="Pistol" && runtime.TryFire());
+
+    // 種類から枠を推論しない。PistolでもデータでMainを指定できる。
+    auto data=definitions;
+    data["weapons"][0]["slot"]="Main";
+    map["weaponSpawnPoints"][0]["filter"]={{"slot","Main"},{"types",{"Pistol"}}};
+    assert(load(data,map) && system.Pickups()[0].weaponId=="pistol");
+    for (int rarity=1; rarity<=5; ++rarity) {
+        data["weapons"][0]["rarity"]=rarity;
+        map["weaponSpawnPoints"][0]["filter"]["minRarity"]=rarity;
+        map["weaponSpawnPoints"][0]["filter"]["maxRarity"]=rarity;
+        assert(load(data,map));
+        assert(system.Find("pistol")->damage==definitions["weapons"][0]["damage"].get<float>());
+    }
+    map["weaponSpawnPoints"][0]["filter"]={{"slot","Main"},{"minRarity",3},{"maxRarity",4},{"types",{"Shotgun"}}};
+    assert(load(definitions,map));
+    assert(system.Points()[0].weaponPool.size()==2);
+    for (const auto& entry : system.Points()[0].weaponPool) {
+        const auto* weapon=system.Find(entry.id);
+        assert(weapon->type=="Shotgun" && weapon->rarity>=3 && weapon->rarity<=4);
+    }
+    // 既存poolの重みを維持しつつ、条件外の高weight武器を除外する。
+    map["weaponSpawnPoints"][0]["filter"]={{"slot","Main"},{"minRarity",2},{"maxRarity",3}};
+    map["weaponSpawnPoints"][0]["weaponPool"]={
+        {{"id","pistol"},{"weight",1000000}},{{"id","smg"},{"weight",1}},{{"id","rifle"},{"weight",9}},{{"id","shotgun"},{"weight",0}}};
+    const auto point=map["weaponSpawnPoints"][0];
+    map["weaponSpawnPoints"]=json::array();
+    for (int i=0;i<1000;++i) {
+        auto copy=point; copy["id"]="weighted_"+std::to_string(i);
+        map["weaponSpawnPoints"].push_back(copy);
+    }
+    assert(load(definitions,map));
+    const auto first=system.Pickups();
+    int rifles=0;
+    for (const auto& pickup : first) {
+        assert(pickup.weaponId=="smg" || pickup.weaponId=="rifle");
+        rifles+=pickup.weaponId=="rifle";
+    }
+    assert(rifles>820 && rifles<980);
+    assert(load(definitions,map));
+    for (size_t i=0;i<first.size();++i) assert(first[i].weaponId==system.Pickups()[i].weaponId);
+
+    // 新フィールドを持たないデータと旧poolは、同じSeedで従来と同じ候補順・結果になる。
+    assert(load(definitions,level));
+    const auto existing=system.Pickups();
+    data=definitions;
+    for (auto& weapon : data["weapons"]) for (auto key : {"type","slot","rarity","weight"}) weapon.erase(key);
+    assert(load(data,level));
+    assert(system.Find("pistol")->slot==WeaponSlot::Main && system.Find("pistol")->rarity==1);
+    assert(system.Find("pistol")->type=="Unknown");
+    for (size_t i=0;i<existing.size();++i) assert(existing[i].weaponId==system.Pickups()[i].weaponId);
+
+    // 全武器からの抽選では定義側weightを使う。
+    data=definitions;
+    for (auto& weapon : data["weapons"]) weapon["weight"]=weapon["id"]=="smg" ? 1 : 0;
+    map["weaponSpawnPoints"]=json::array({{{"id","filtered"},{"position",{0,0,0}}}});
+    assert(load(data,map) && system.Pickups()[0].weaponId=="smg");
+    const auto reject=[&](const json& badData, const json& badMap) {
+        assert(!load(badData,badMap) && !system.Error().empty());
+        assert(system.Pickups()[0].weaponId=="smg"); // 失敗時は最後の有効な状態を保持する。
+    };
+    for (const auto& value : {json(0),json(6),json(1.5),json("2"),json(nullptr)}) {
+        auto bad=definitions; bad["weapons"][0]["rarity"]=value; reject(bad,map);
+    }
+    for (const auto& value : {json(-1),json(1e10),json("1"),json(nullptr)}) {
+        auto bad=definitions; bad["weapons"][0]["weight"]=value; reject(bad,map);
+    }
+    auto bad=definitions; bad["weapons"][0]["slot"]="Other"; reject(bad,map);
+    bad=definitions; bad["weapons"][0]["type"]=""; reject(bad,map);
+    for (const auto& filter : {
+        json{{"minRarity",0}},json{{"maxRarity",6}},json{{"minRarity",3},{"maxRarity",2}},
+        json{{"minRarity",1.5}},json{{"slot","Other"}},json{{"types","Shotgun"}},
+        json{{"types",{""}}},json{{"minRairty",3}},json{{"slot","Sub"},{"minRarity",5}},
+        json{{"types",{"MissingType"}}},json(nullptr)}) {
+        auto badMap=map; badMap["weaponSpawnPoints"][0]["filter"]=filter; reject(definitions,badMap);
+        assert(system.Error().find("filtered")!=std::string::npos);
+    }
+    auto badMap=map;
+    badMap["weaponSpawnPoints"][0]["filter"]={{"slot","Sub"}};
+    reject(data,badMap); // 条件一致がweight=0だけでも抽選しない。
+    assert(load(definitions,map) && system.Error().empty());
+}
+
 int main() {
     const auto definitions=Read("../../resources/Data/weapons.json");
     const auto level=Read("../../resources/levels/fps_spawns.json");
@@ -131,6 +228,7 @@ int main() {
     assert(system.Load("../../resources/Data/weapons.json","../../resources/levels/fps_spawns.json",WeaponRandomSettings{true,12345}));
     assert(system.Points().size()==3 && system.InitialWeapon()->id=="pistol");
     TestExtendedModes(system);
+    TestSpawnFilters(definitions,level);
     const auto pistol = *system.Find("pistol");
     const auto smg = *system.Find("smg");
     const auto rifle = *system.Find("rifle");
