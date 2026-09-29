@@ -208,7 +208,7 @@ int main() {
         }
     }
     std::puts("Destroyed-part pass-through tests passed: six parts, transformed front/back enemies, intact parts still block.");
-    EnemyParts stacked{};
+    EnemyParts stacked(6);
     for(auto& p:stacked)p={EnemyPartType::Head,{{5,0,0},{6,1,1}}};
     stacked[5]={EnemyPartType::Body,{{2,0,0},{3,1,1}}};
     EnemyPartHit hit;

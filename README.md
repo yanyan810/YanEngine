@@ -1,5 +1,7 @@
 # FPS Foundation
 
+面ベースの可変部位・Shared HPの制作手順は [Enemy Face Parts](docs/enemy-face-parts.md) を参照してください。
+
 旧2.5Dバトルゲームを参照解除し、新しいFPS制作のための最小シーンへ整理した状態です。
 
 - 一人称カメラ（WASD移動・マウス視点）

@@ -10,6 +10,7 @@
       "displayName": "Normal",
       "hpMultiplier": 1,
       "id": "normal",
+      "partAsset": "resources/enemy/boss/normal.enemy.json",
       "moveSpeed": 2.5,
       "type": "Normal",
       "typeMarker": {

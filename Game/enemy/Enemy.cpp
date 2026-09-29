@@ -81,6 +81,13 @@ void Enemy::PreloadAssets() {
             }
         } catch (const std::exception&) { /* Face -> Chunk -> whole part. */ }
     }
+    EnemyDefinitions definitions;
+    if (definitions.Load("resources/Data/enemies.json")) {
+        for (const auto& [id,definition]:definitions.All()) {
+            (void)id;
+            if (definition.partAsset) PrepareAssetModels(definition.partAsset);
+        }
+    } else OutputDebugStringA(("Enemy asset preload: "+definitions.Error()+"\n").c_str());
     assetsPreloaded_ = true;
 }
 
@@ -88,6 +95,7 @@ void Enemy::ReleasePreloadedAssets() {
     // GameApp calls this only after all scenes/enemies have been destroyed.
     for (auto& faces : faceData_) faces = {};
     for (auto& files : fragmentFiles_) files = {};
+    assetModels_.clear();
     assetsPreloaded_ = false;
     splitAssetsAvailable_ = false;
 }
@@ -126,7 +134,9 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
     object_.SetSpotLightIntensity(0.0f);
     AABB bounds{};
     hasHitBox_ = object_.GetModel() && object_.GetModel()->GetLocalAABB(bounds);
-    if (hasHitBox_) parts_ = MakeEnemyParts(bounds);
+    parts_=hasHitBox_ ? MakeEnemyParts(bounds) : EnemyParts{};
+    visuals_.clear(); visuals_.resize(parts_.size());
+    asset_.reset();
     // 部位モデルが一式そろわない場合は全身モデルを使い、欠けた姿で表示されるのを防ぐ。
     splitVisuals_ = useSplitAssets && hasHitBox_ && splitAssetsAvailable_;
     for (size_t i = 0; i < visuals_.size(); ++i) {
@@ -147,28 +157,7 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
         obj.SetPointLightIntensity(0.0f);
         obj.SetSpotLightIntensity(0.0f);
     }
-    if (splitVisuals_) {
-        Model::ModelData geometry;
-        geometry.materials.push_back({"resources/white1x1.png"});
-        Model::MeshData mesh;
-        mesh.vertices.resize(kFaceCapacity*6);
-        for (auto& vertex : mesh.vertices) vertex={{0,0,0,1},{0,0},{0,1,0}};
-        mesh.indexCount=static_cast<uint32_t>(mesh.vertices.size());
-        geometry.indices.resize(mesh.vertices.size());
-        for (uint32_t v=0;v<geometry.indices.size();++v) geometry.indices[v]=v;
-        geometry.meshes.push_back(std::move(mesh));
-        geometry.rootNode.meshIndices.push_back(0);
-        faceModelCommon_.Initialize(dx);
-        faceModel_=std::make_unique<Model>();
-        faceModel_->InitializeFromModelData(&faceModelCommon_,geometry);
-        faceBatch_=std::make_unique<Object3d>();
-        faceBatch_->Initialize(common,dx);
-        faceBatch_->SetCamera(camera);
-        faceBatch_->SetModel(faceModel_.get());
-        faceBatch_->SetEnableLighting(0);
-        faceBatch_->SetMaterialColor({.65f,.025f,.025f,1});
-        faceBatch_->Update(0);
-    }
+    if (splitVisuals_) PrepareFaceBatch();
     explosionTime_ = 0;
     blastHitTime_ = lastBlastDamage_ = 0;
     ApplyDefinition(definition_);
@@ -179,10 +168,41 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
 
 void Enemy::ApplyDefinition(const EnemyDefinition& definition) {
     definition_=definition;
-    ai_={};
+    ai_={}; exploded_=false;
     ai_.settings={definition.detectionRange,definition.attackRange,definition.moveSpeed,
         definition.attackDamage,definition.attackInterval,definition.IsRanged(),definition.minRange,definition.maxRange};
-    ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
+    if (definition.partAsset) {
+        asset_=PrepareAssetModels(definition.partAsset);
+        parts_=asset_->source->Instantiate(definition.hpMultiplier);
+        splitVisuals_=true; hasHitBox_=true;
+        visuals_.clear(); visuals_.resize(parts_.size());
+        for (size_t i=0;i<parts_.size();++i) {
+            auto& visual=visuals_[i]; visual.type=parts_[i].type;
+            visual.object=std::make_unique<Object3d>();
+            visual.object->Initialize(common_,dx_); visual.object->SetCamera(camera_);
+            visual.object->SetModel(asset_->models[i]); visual.object->SetEnableLighting(1);
+            visual.object->SetDirection({.3f,-1,.5f}); visual.object->SetIntensity(1);
+            visual.object->SetPointLightIntensity(0); visual.object->SetSpotLightIntensity(0);
+        }
+        PrepareFaceBatch();
+    } else {
+        if (asset_) {
+            asset_.reset();
+            AABB bounds{}; hasHitBox_=object_.GetModel()->GetLocalAABB(bounds);
+            parts_=hasHitBox_ ? MakeEnemyParts(bounds) : EnemyParts{};
+            splitVisuals_=hasHitBox_ && splitAssetsAvailable_;
+            visuals_.clear(); visuals_.resize(parts_.size());
+            if (splitVisuals_) for (size_t i=0;i<parts_.size();++i) {
+                auto& visual=visuals_[i]; visual.type=parts_[i].type;
+                visual.object=std::make_unique<Object3d>();
+                visual.object->Initialize(common_,dx_); visual.object->SetCamera(camera_);
+                visual.object->SetModel(kPartModelPaths[i]); visual.object->StopAnimation();
+                visual.object->SetEnableLighting(1); visual.object->SetDirection({.3f,-1,.5f});
+                visual.object->SetIntensity(1); visual.object->SetPointLightIntensity(0); visual.object->SetSpotLightIntensity(0);
+            }
+        }
+        ApplyEnemyHpMultiplier(parts_,definition.hpMultiplier);
+    }
     PrepareExplosionVisual();
     RebuildTypeMarker();
     if (common_ && dx_) UpdateVisuals(0);
@@ -234,7 +254,7 @@ bool Enemy::Raycast(const Vector3& origin, const Vector3& direction, float maxDi
 Vector3 Enemy::ExplosionCenter() const {
     Vector3 center = position_ + Vector3{0, definition_.collisionHeight * .5f, 0};
     for (const auto& body : parts_) {
-        if (body.type == EnemyPartType::Body) {
+        if (body.role == EnemyPartRole::Body) {
             center = EnemyPartTransformPoint((body.bounds.min + body.bounds.max) * .5f,
                 object_.GetWorldMatrix());
             break;
@@ -243,10 +263,15 @@ Vector3 Enemy::ExplosionCenter() const {
     return center;
 }
 
-EnemyBulletHitResult Enemy::ApplyBulletDamage(EnemyPartType part, float damage, const Vector3& direction) {
+EnemyBulletHitResult Enemy::ApplyBulletDamage(EnemyPartType part,float damage,const Vector3& direction) {
+    return ApplyBulletDamage(FindLegacyPart(part),damage,direction);
+}
+EnemyBulletHitResult Enemy::ApplyBulletDamage(size_t part, float damage, const Vector3& direction) {
+    if (part>=parts_.size() || parts_[part].Destroyed()) return {};
     // Check before applying damage so even a lethal body shot triggers the explosion.
     // 致死ダメージで死亡状態になった後では起爆条件を満たせないため、被弾前の状態で判定する。
-    const bool detonate = IsBomberDetonationHit(definition_.type, part, damage, IsDead());
+    const bool detonate = IsBomberDetonationHit(definition_.type, LegacyRoleType(parts_[part].role), damage, IsDead()) &&
+        (parts_[part].usesLocalHp || parts_[part].sharedGroup<parts_.hpGroups.size());
     EnemyBulletHitResult result;
     result.damage = ApplyDamage(part, damage, direction);
     if (!detonate) return result;
@@ -258,13 +283,16 @@ EnemyBulletHitResult Enemy::ApplyBulletDamage(EnemyPartType part, float damage, 
     explosionTime_ = kExplosionDuration;
     // Reuse the existing destruction visuals. Destroying all parts also prevents
     // subsequent pellets/corpse shots from triggering another explosion.
-    for (const auto& bodyPart : parts_) {
+    for (size_t index=0;index<parts_.size();++index) {
+        const auto& bodyPart=parts_[index];
         const auto partCenter = EnemyPartTransformPoint((bodyPart.bounds.min + bodyPart.bounds.max) * .5f,
             object_.GetWorldMatrix());
         const auto outward = partCenter - center;
         const float length = std::hypot(outward.x, outward.y, outward.z);
-        ApplyDamage(bodyPart.type, bodyPart.hp, length > 1e-5f ? outward * (1 / length) : direction);
+        ApplyDamage(index, std::max(bodyPart.hp,1.0f), length > 1e-5f ? outward * (1 / length) : direction);
     }
+    exploded_=true;
+    for (auto& group:parts_.hpGroups) if (group.deathOnZero) group.hp=0;
     return result;
 }
 
@@ -276,20 +304,33 @@ void Enemy::ApplyExplosionDamage(const EnemyExplosion& explosion) {
     const auto outward = position_ + Vector3{0, definition_.collisionHeight * .5f, 0} - explosion.center;
     const float length = std::hypot(outward.x, outward.y, outward.z);
     // Blast damage uses the ordinary damage path, so other Bombers do not chain-detonate.
-    lastBlastDamage_ = ApplyDamage(EnemyPartType::Body, damage,
+    size_t target=kNoEnemyPart;
+    for (size_t i=0;i<parts_.size();++i) {
+        const auto& part=parts_[i];
+        const bool receivesDamage=(part.usesLocalHp && part.hp>0) ||
+            (part.sharedGroup<parts_.hpGroups.size() && part.sharedDamageRate>0 && parts_.hpGroups[part.sharedGroup].hp>0);
+        if (part.Destroyed() || !receivesDamage) continue;
+        if (target==kNoEnemyPart) target=i;
+        if (part.role==EnemyPartRole::Body) { target=i; break; }
+    }
+    if (target==kNoEnemyPart) return;
+    lastBlastDamage_ = ApplyDamage(target, damage,
         length > 1e-5f ? outward * (1 / length) : Vector3{0, 1, 0});
     if (lastBlastDamage_ <= 0) return;
     // Debugの当たり判定枠に頼らず、Releaseでも被爆した個体を判別できるよう全身を強調する。
     blastHitTime_ = .9f;
-    ShowHitFeedback(EnemyPartType::Body);
+    ShowHitFeedback(target);
     UpdateVisuals(0); // 命中したフレームの描画から反映し、次のAI更新を待たない。
 }
 
-float Enemy::ApplyDamage(EnemyPartType type, float damage, const Vector3& shotDirection) {
-    const float lost = DamageEnemyPart(parts_, type, damage);
+float Enemy::ApplyDamage(EnemyPartType type,float damage,const Vector3& shotDirection) {
+    return ApplyDamage(FindLegacyPart(type),damage,shotDirection);
+}
+float Enemy::ApplyDamage(size_t index, float damage, const Vector3& shotDirection) {
+    const float lost = DamageEnemyPart(parts_, index, damage);
     if (lost <= 0 || !splitVisuals_) return lost;
     for (size_t i = 0; i < parts_.size(); ++i) {
-        if (parts_[i].type != type || parts_[i].DamageState() != EnemyPartDamageState::Destroyed) continue;
+        if (i != index || parts_[i].DamageState() != EnemyPartDamageState::Destroyed) continue;
         auto& visual = visuals_[i];
         if (!visual.object) break;
         if (breakMode_ == FragmentMode::Face && SpawnFaces(i, shotDirection)) { visual.object.reset(); break; }
@@ -304,8 +345,11 @@ float Enemy::ApplyDamage(EnemyPartType type, float damage, const Vector3& shotDi
         const auto scale = visual.object->GetScale();
         const auto center = EnemyPartTransformPoint((bounds.min+bounds.max)*.5f,
             Matrix4x4::MakeAffineMatrix(scale,rotation,translation));
-        const bool fragments = !fragmentFiles_[i].empty();
-        const size_t count = fragments ? fragmentFiles_[i].size() : 1;
+        std::vector<Model*> pieces;
+        if (asset_) pieces=asset_->chunks[i];
+        else if (i<fragmentFiles_.size()) for (const auto& file:fragmentFiles_[i]) pieces.push_back(ModelManager::GetInstance()->FindModel(file));
+        const bool fragments = !pieces.empty();
+        const size_t count = fragments ? pieces.size() : 1;
         for (size_t j = 0; j < count; ++j) {
             DetachedEnemyFragment detached;
             AABB pieceBounds = bounds;
@@ -313,7 +357,7 @@ float Enemy::ApplyDamage(EnemyPartType type, float damage, const Vector3& shotDi
                 detached.object = std::make_unique<Object3d>();
                 detached.object->Initialize(common_, dx_);
                 detached.object->SetCamera(camera_);
-                detached.object->SetModel(fragmentFiles_[i][j]);
+                detached.object->SetModel(pieces[j]);
                 detached.object->StopAnimation();
                 detached.object->GetModel()->GetLocalAABB(pieceBounds);
                 detached.object->SetEnableLighting(1);
@@ -325,7 +369,7 @@ float Enemy::ApplyDamage(EnemyPartType type, float damage, const Vector3& shotDi
                 detached.object = std::move(visual.object);
             }
             detached.motion.Initialize(pieceBounds, translation, rotation, scale, shotDirection,
-                type, {spin(),spin(),spin()}, detachedSettings_);
+                LegacyRoleType(parts_[i].role), {spin(),spin(),spin()}, detachedSettings_);
             if (fragments) {
                 const auto outward = detached.motion.position-center;
                 const float length = std::hypot(outward.x,outward.y,outward.z);
@@ -346,8 +390,9 @@ float Enemy::ApplyDamage(EnemyPartType type, float damage, const Vector3& shotDi
     }
     return lost;
 }
-void Enemy::ShowHitFeedback(EnemyPartType type) {
-    for (auto& part:parts_) if (part.type==type) part.flashRemaining=0.2f;
+void Enemy::ShowHitFeedback(EnemyPartType type) { ShowHitFeedback(FindLegacyPart(type)); }
+void Enemy::ShowHitFeedback(size_t index) {
+    if (index<parts_.size()) parts_[index].flashRemaining=0.2f;
 }
 float Enemy::Update(float dt, const Vector3& playerPosition) {
     const float attackDamage = ai_.Update(position_, rotation_, playerPosition, dt, IsDead());
@@ -396,6 +441,7 @@ void Enemy::UpdateVisuals(float dt) {
         case EnemyPartDamageState::Critical: color = {.59f,.06f,.06f,1}; break;
         default: break;
         }
+        if (parts_[i].flashRemaining>0) color={1,1,.3f,1};
         if (blastHitTime_ > 0) color = {1, .08f, .02f, 1};
         obj.SetEnableLighting(blastHitTime_ > 0 ? 0 : 1);
         obj.SetMaterialColor(color);
@@ -439,7 +485,7 @@ void Enemy::DrawImGui() {
 #ifdef USE_IMGUI
     ImGui::Text("Enemy ID: %s | Definition ID: %s | Type: %s", id_.c_str(), definition_.id.c_str(), EnemyTypeName(definition_.type));
     ImGui::Text("HP Multiplier: %.2f", definition_.hpMultiplier);
-    for (const auto& part : parts_) if (part.type == EnemyPartType::Body)
+    for (const auto& part : parts_) if (part.role == EnemyPartRole::Body)
         ImGui::Text("Body HP: %.0f / %.0f | Last blast damage received: %.0f", part.hp, part.maxHp, lastBlastDamage_);
 #ifdef _DEBUG
     // Change only dimensions: ApplyDefinition would reset HP and AI state.
@@ -494,7 +540,7 @@ void Enemy::DrawImGui() {
     if (splitVisuals_) {
         for (auto& visual : visuals_) {
             ImGui::PushID(static_cast<int>(visual.type));
-            ImGui::Checkbox(EnemyPartName(visual.type), &visual.visible);
+            ImGui::Checkbox(parts_[static_cast<size_t>(&visual-visuals_.data())].name.c_str(), &visual.visible);
             ImGui::PopID();
         }
     }
@@ -518,8 +564,12 @@ void Enemy::DrawImGui() {
         ImGui::TreePop();
     }
     ImGui::TextUnformatted("Enemy Parts");
+    for (const auto& group:parts_.hpGroups)
+        ImGui::Text("Group %s: %.0f / %.0f%s",group.id.c_str(),group.hp,group.maxHp,group.deathOnZero?" (death at zero)":"");
     for (const auto& part : parts_) {
-        ImGui::Text("%-8s %.0f / %.0f | %s | Damage %.0f%%", EnemyPartName(part.type),
+        ImGui::Text("Role: %s | Local: %s | Breakable: %s",EnemyPartRoleName(part.role),part.usesLocalHp?"yes":"no",part.breakable?"yes":"no");
+        if (part.sharedGroup<parts_.hpGroups.size()) ImGui::Text("Shared: %s x %.2f",parts_.hpGroups[part.sharedGroup].id.c_str(),part.sharedDamageRate);
+        ImGui::Text("%-8s %.0f / %.0f | %s | Damage %.0f%%", part.name.c_str(),
             part.hp, part.maxHp, EnemyPartDamageStateName(part.DamageState()), part.DamageRate() * 100.0f);
     }
     ImGui::Checkbox("Show Enemy Part Colliders", &showPartColliders_);
@@ -628,7 +678,7 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
             if(a.w>1e-5f && b.w>1e-5f) draw->AddLine(project(a),project(b),color,part.flashRemaining>0?3.0f:1.0f);
         }
         if((showPartColliders_ || forceParts) && corners[7].z>=0 && corners[7].w>1e-5f)
-            draw->AddText(project(corners[7]),color,EnemyPartName(part.type));
+            draw->AddText(project(corners[7]),color,part.name.c_str());
     }
     draw->PopClipRect();
 #else
@@ -649,7 +699,7 @@ void Enemy::TrimFacePool(size_t reserve) {
     }
 }
 bool Enemy::SpawnFaces(size_t part, const Vector3& direction) {
-    const auto& source=faceData_[part];
+    const auto& source=parts_[part].geometry ? parts_[part].geometry->faces : faceData_[part];
     if (source.empty() || !faceBatch_) return false;
     const auto& visual=*visuals_[part].object;
     const auto world=Matrix4x4::MakeAffineMatrix(visual.GetScale(),visual.GetRotate(),visual.GetTranslate());
@@ -708,6 +758,8 @@ Enemy::DebugState Enemy::CaptureDebug() const {
     state.blastHitTime=blastHitTime_; state.lastBlastDamage=lastBlastDamage_;
     state.explosionTime=explosionTime_; state.explosionCenter=explosionCenter_;
     state.attacks=attackCount_; state.damage=lastAttackDamage_; state.flash=attackFlash_; state.random=random_;
+    state.exploded=exploded_; state.splitVisuals=splitVisuals_; state.hasHitBox=hasHitBox_;
+    state.asset=asset_; state.models.resize(visuals_.size()); state.visible.resize(visuals_.size());
     for (size_t i=0;i<visuals_.size();++i) {
         state.models[i]=visuals_[i].object ? visuals_[i].object->GetModel() : nullptr;
         state.visible[i]=visuals_[i].visible;
@@ -720,6 +772,8 @@ Enemy::DebugState Enemy::CaptureDebug() const {
 }
 void Enemy::RestoreDebug(const DebugState& state) {
     definition_=state.definition; ai_=state.ai; parts_=state.parts;
+    asset_=state.asset; visuals_.resize(parts_.size());
+    exploded_=state.exploded; splitVisuals_=state.splitVisuals; hasHitBox_=state.hasHitBox;
     position_=state.position; rotation_=state.rotation; scale_=state.scale;
     SetSpawnIdentity(state.spawnId,state.trigger); nextSpawnOrder_=state.nextOrder;
     blastHitTime_=state.blastHitTime; lastBlastDamage_=state.lastBlastDamage;
@@ -750,3 +804,55 @@ void Enemy::RestoreDebug(const DebugState& state) {
     // Scene updates all restored visuals only after every enemy has been restored.
 }
 #endif
+
+void Enemy::PrepareFaceBatch() {
+    if (faceBatch_) return;
+    Model::ModelData geometry;
+    geometry.materials.push_back({"resources/white1x1.png"});
+    Model::MeshData mesh;
+    mesh.vertices.resize(kFaceCapacity*6);
+    for (auto& vertex : mesh.vertices) vertex={{0,0,0,1},{0,0},{0,1,0}};
+    mesh.indexCount=static_cast<uint32_t>(mesh.vertices.size());
+    geometry.indices.resize(mesh.vertices.size());
+    for (uint32_t v=0;v<geometry.indices.size();++v) geometry.indices[v]=v;
+    geometry.meshes.push_back(std::move(mesh));
+    geometry.rootNode.meshIndices.push_back(0);
+    faceModelCommon_.Initialize(dx_);
+    faceModel_=std::make_unique<Model>();
+    faceModel_->InitializeFromModelData(&faceModelCommon_,geometry);
+    faceBatch_=std::make_unique<Object3d>();
+    faceBatch_->Initialize(common_,dx_);
+    faceBatch_->SetCamera(camera_);
+    faceBatch_->SetModel(faceModel_.get());
+    faceBatch_->SetEnableLighting(0);
+    faceBatch_->SetMaterialColor({.65f,.025f,.025f,1});
+    faceBatch_->Update(0);
+}
+
+std::shared_ptr<const EnemyRenderAsset> Enemy::PrepareAssetModels(std::shared_ptr<const EnemyAsset> asset) {
+    if (const auto found=assetModels_.find(asset->path);found!=assetModels_.end()) return found->second;
+    auto result=std::make_shared<EnemyRenderAsset>(); result->source=asset;
+    const auto build=[&](const std::string& key,const std::vector<std::array<EnemyPartVertex,3>>& triangles) {
+        Model::ModelData geometry; geometry.materials.push_back({asset->texture});
+        Model::MeshData mesh;
+        for (const auto& tri:triangles) for (const auto& v:tri) {
+            mesh.vertices.push_back({{v.position.x,v.position.y,v.position.z,1},v.uv,v.normal});
+            geometry.indices.push_back(static_cast<uint32_t>(geometry.indices.size()));
+        }
+        mesh.indexCount=static_cast<uint32_t>(geometry.indices.size());
+        geometry.meshes.push_back(std::move(mesh)); geometry.rootNode.meshIndices.push_back(0);
+        return ModelManager::GetInstance()->CreatePrimitiveModel(key,geometry);
+    };
+    for (size_t i=0;i<asset->defaults.size();++i) {
+        const auto& part=asset->defaults[i];
+        const std::string key="EnemyAsset/"+asset->path+"/"+std::to_string(i);
+        result->models.push_back(build(key,part.geometry->triangles));
+        // Offline-equivalent octant chunks, shared by all instances of this asset.
+        const auto buckets=PartitionEnemyChunks(*part.geometry,part.bounds);
+        std::vector<Model*> chunks;
+        for (size_t j=0;j<buckets.size();++j) if (!buckets[j].empty()) chunks.push_back(build(key+"/chunk"+std::to_string(j),buckets[j]));
+        result->chunks.push_back(std::move(chunks));
+    }
+    assetModels_[asset->path]=result;
+    return result;
+}

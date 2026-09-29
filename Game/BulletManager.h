@@ -6,6 +6,7 @@ struct BulletEnemyImpact {
     size_t enemyIndex = 0;
     EnemyPartType part = EnemyPartType::None;
     EnemyBulletHitResult result;
+    std::string partName;
 };
 
 class BulletManager {

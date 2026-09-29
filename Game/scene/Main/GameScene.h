@@ -59,6 +59,7 @@ private:
         unsigned long long shots=0,hits=0,attacks=0;
         int selectedEnemy=0,lastHitEnemy=-1;
         EnemyPartType lastHitPart=EnemyPartType::None;
+        std::string lastHitPartName="None";
         float ads=0,fov=0,lastDamage=0,lastEnemyDamage=0,playerFlash=0;
         bool freezeEnemies=true;
     };
@@ -89,6 +90,7 @@ private:
     StageClearOverlay clearOverlay_;
     bool showGoalDebug_ = true;
     EnemyPartType lastHitPart_ = EnemyPartType::None;
+    std::string lastHitPartName_="None";
     unsigned long long shotCount_ = 0;
     unsigned long long hitCount_ = 0;
     float lastDamage_ = 0.0f;

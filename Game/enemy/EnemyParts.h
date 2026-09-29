@@ -3,6 +3,9 @@
 #include <array>
 #include <algorithm>
 #include <limits>
+#include <vector>
+#include <string>
+#include <memory>
 
 enum class EnemyPartType { None, Head, Body, LeftArm, RightArm, LeftLeg, RightLeg };
 inline const char* EnemyPartName(EnemyPartType type) {
@@ -16,6 +19,51 @@ inline const char* EnemyPartName(EnemyPartType type) {
     default: return "None";
     }
 }
+// Legacy tags remain adapters for old assets/tools; runtime hit identity is partIndex.
+enum class EnemyPartRole { Generic, Head, Body, Arm, Leg, Core, Armor };
+inline const char* EnemyPartRoleName(EnemyPartRole role) {
+    switch(role) {
+    case EnemyPartRole::Head: return "Head"; case EnemyPartRole::Body: return "Body";
+    case EnemyPartRole::Arm: return "Arm"; case EnemyPartRole::Leg: return "Leg";
+    case EnemyPartRole::Core: return "Core"; case EnemyPartRole::Armor: return "Armor";
+    default: return "Generic";
+    }
+}
+inline EnemyPartRole LegacyPartRole(EnemyPartType type) {
+    switch(type) {
+    case EnemyPartType::Head: return EnemyPartRole::Head;
+    case EnemyPartType::Body: return EnemyPartRole::Body;
+    case EnemyPartType::LeftArm: case EnemyPartType::RightArm: return EnemyPartRole::Arm;
+    case EnemyPartType::LeftLeg: case EnemyPartType::RightLeg: return EnemyPartRole::Leg;
+    default: return EnemyPartRole::Generic;
+    }
+}
+inline EnemyPartType LegacyRoleType(EnemyPartRole role) {
+    switch(role) {
+    case EnemyPartRole::Head: return EnemyPartType::Head;
+    case EnemyPartRole::Body: return EnemyPartType::Body;
+    case EnemyPartRole::Arm: return EnemyPartType::LeftArm;
+    case EnemyPartRole::Leg: return EnemyPartType::LeftLeg;
+    default: return EnemyPartType::None;
+    }
+}
+inline constexpr size_t kNoEnemyPart=std::numeric_limits<size_t>::max();
+struct EnemyPartVertex { Vector3 position{},normal{0,1,0}; Vector2 uv{}; };
+struct EnemyPartGeometry {
+    std::vector<std::array<EnemyPartVertex,3>> triangles;
+    std::vector<std::array<Vector3,3>> faces; // shared with Face Shatter; never copied per enemy
+};
+inline auto PartitionEnemyChunks(const EnemyPartGeometry& geometry,const AABB& bounds) {
+    std::array<std::vector<std::array<EnemyPartVertex,3>>,8> buckets;
+    const auto center=(bounds.min+bounds.max)*.5f;
+    for (const auto& tri:geometry.triangles) {
+        const auto p=(tri[0].position+tri[1].position+tri[2].position)*(1.0f/3);
+        const size_t bucket=(p.x>=center.x?1u:0u)|(p.y>=center.y?2u:0u)|(p.z>=center.z?4u:0u);
+        buckets[bucket].push_back(tri);
+    }
+    return buckets;
+}
+struct EnemyHpGroup { std::string id; float maxHp=1,hp=1; bool deathOnZero=true; };
 enum class EnemyPartDamageState { Normal, LightDamage, HeavyDamage, Critical, Destroyed };
 inline const char* EnemyPartDamageStateName(EnemyPartDamageState state) {
     switch (state) {
@@ -41,9 +89,18 @@ struct EnemyPart {
     float flashRemaining = 0.0f;
     float maxHp = EnemyPartMaxHp(type);
     float hp = maxHp;
-    float DamageRate() const { return maxHp > 0 ? std::clamp(1.0f - hp / maxHp, 0.0f, 1.0f) : 1.0f; }
+    std::string name=EnemyPartName(type);
+    EnemyPartRole role=LegacyPartRole(type);
+    bool usesLocalHp=true,breakable=true;
+    bool deathOnZero=(role==EnemyPartRole::Head || role==EnemyPartRole::Body);
+    size_t sharedGroup=kNoEnemyPart;
+    float sharedDamageRate=1;
+    std::shared_ptr<const EnemyPartGeometry> geometry;
+    bool Destroyed() const { return usesLocalHp && breakable && hp<=0; }
+    float DamageRate() const { if (!usesLocalHp) return 0; return maxHp > 0 ? std::clamp(1.0f - hp / maxHp, 0.0f, 1.0f) : 1.0f; }
     EnemyPartDamageState DamageState() const {
-        if (hp <= 0) return EnemyPartDamageState::Destroyed;
+        if (Destroyed()) return EnemyPartDamageState::Destroyed;
+        if (!usesLocalHp) return EnemyPartDamageState::Normal;
         const float rate = DamageRate();
         if (rate >= .75f) return EnemyPartDamageState::Critical;
         if (rate >= .50f) return EnemyPartDamageState::HeavyDamage;
@@ -51,19 +108,36 @@ struct EnemyPart {
         return EnemyPartDamageState::Normal;
     }
 };
-using EnemyParts = std::array<EnemyPart, 6>;
+// Vector-compatible state container also owns this instance's shared HP.
+struct EnemyParts : std::vector<EnemyPart> {
+    using std::vector<EnemyPart>::vector;
+    std::vector<EnemyHpGroup> hpGroups;
+};
 inline void ApplyEnemyHpMultiplier(EnemyParts& parts, float multiplier) {
     for (auto& part : parts) part.hp = part.maxHp = EnemyPartMaxHp(part.type)*multiplier;
+}
+inline float DamageEnemyPart(EnemyParts& parts,size_t index,float damage) {
+    if (index>=parts.size() || !std::isfinite(damage) || damage<=0) return 0;
+    auto& part=parts[index];
+    if (part.Destroyed()) return 0;
+    float localLost=0,sharedLost=0;
+    if (part.usesLocalHp) {
+        const float before=part.hp;
+        part.hp=std::max(0.0f,before-damage); localLost=before-part.hp;
+    }
+    if (part.sharedGroup<parts.hpGroups.size()) {
+        auto& group=parts.hpGroups[part.sharedGroup];
+        const float before=group.hp;
+        group.hp=std::max(0.0f,before-damage*part.sharedDamageRate); sharedLost=before-group.hp;
+    }
+    // Feedback counts the greater loss, not double the same impact in LocalAndShared.
+    return std::max(localLost,sharedLost);
 }
 // Return actual HP lost (overkill and already-destroyed hits are clamped).
 inline float DamageEnemyPart(EnemyParts& parts, EnemyPartType type, float damage) {
     if (!std::isfinite(damage) || damage <= 0 || type == EnemyPartType::None) return 0;
-    for (auto& part : parts) {
-        if (part.type != type) continue;
-        const float before = part.hp;
-        part.hp = std::max(0.0f, before - damage);
-        return before - part.hp;
-    }
+    for (size_t i=0;i<parts.size();++i)
+        if (parts[i].type==type) return DamageEnemyPart(parts,i,damage);
     return 0;
 }
 struct EnemyPartHit {
@@ -71,6 +145,7 @@ struct EnemyPartHit {
     float distance = 0.0f;
     Vector3 position{};
     EnemyPartType part = EnemyPartType::None;
+    size_t partIndex=kNoEnemyPart;
 };
 inline Vector3 EnemyPartTransformPoint(const Vector3& p, const Matrix4x4& m) {
     return {p.x*m.m[0][0]+p.y*m.m[1][0]+p.z*m.m[2][0]+m.m[3][0],
@@ -85,12 +160,12 @@ inline EnemyParts MakeEnemyParts(const AABB& model) {
         return AABB{{model.min.x,model.min.y+size.y*y0,model.min.z+size.z*z0},
             {model.max.x,model.min.y+size.y*y1,model.min.z+size.z*z1}};
     };
-    return {{{EnemyPartType::Head,box(.82f,1,.38f,.62f)},
+    return {{EnemyPartType::Head,box(.82f,1,.38f,.62f)},
         {EnemyPartType::Body,box(.45f,.82f,.38f,.62f)},
         {EnemyPartType::LeftArm,box(.70f,.86f,.62f,1)},
         {EnemyPartType::RightArm,box(.70f,.86f,0,.38f)},
         {EnemyPartType::LeftLeg,box(0,.45f,.50f,.64f)},
-        {EnemyPartType::RightLeg,box(0,.45f,.36f,.50f)}}};
+        {EnemyPartType::RightLeg,box(0,.45f,.36f,.50f)}};
 }
 inline bool RaycastEnemyParts(const EnemyParts& parts, const Matrix4x4& world,
     const Vector3& origin,const Vector3& direction,float range,EnemyPartHit& hit) {
@@ -111,15 +186,39 @@ inline bool RaycastEnemyParts(const EnemyParts& parts, const Matrix4x4& world,
     const float factor=std::hypot(localDirection.x,localDirection.y,localDirection.z);
     if (!std::isfinite(factor)||factor<=0) return false;
     float closest=range;
-    for (const auto& part:parts) {
+    for (size_t index=0;index<parts.size();++index) {
+        const auto& part=parts[index];
         // Removed body parts must not occlude targets behind their former position.
         if (part.DamageState() == EnemyPartDamageState::Destroyed) continue;
         float localDistance;
         if (!RaycastAABB(localOrigin,localDirection,part.bounds,closest*factor,localDistance)) continue;
+        if (part.geometry) {
+            // Two-sided Moller-Trumbore in model space; t remains world distance.
+            bool found=false;
+            float nearest=closest;
+            const auto cross=[](Vector3 a,Vector3 b) { return Vector3{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x}; };
+            const auto dot=[](Vector3 a,Vector3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; };
+            for (const auto& triangle:part.geometry->faces) {
+                const auto edge1=triangle[1]-triangle[0],edge2=triangle[2]-triangle[0];
+                const auto p=cross(localDirection,edge2);
+                const float det=dot(edge1,p);
+                if (std::abs(det)<1e-9f) continue;
+                const auto delta=localOrigin-triangle[0];
+                const float u=dot(delta,p)/det;
+                if (u<0 || u>1) continue;
+                const auto q=cross(delta,edge1);
+                const float v=dot(localDirection,q)/det;
+                if (v<0 || u+v>1) continue;
+                const float t=dot(edge2,q)/det;
+                if (t>=0 && t<=nearest) { nearest=t; found=true; }
+            }
+            if (!found) continue;
+            localDistance=nearest*factor;
+        }
         const float distance=localDistance/factor;
         if (hit.hit && distance>=closest) continue;
         closest=distance;
-        hit={true,distance,origin+unit*distance,part.type};
+        hit={true,distance,origin+unit*distance,part.type,index};
     }
     return hit.hit;
 }

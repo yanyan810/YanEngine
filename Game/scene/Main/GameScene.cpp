@@ -481,7 +481,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
         (player_.IsDead() ? L" (Player Dead)" : L"") + L" | Enemy: " +
         std::wstring(selectedState.begin(), selectedState.end()) +
         L" | Shots: " + std::to_wstring(shotCount_) + L" | Hits: " + std::to_wstring(hitCount_);
-    const std::string partName = EnemyPartName(lastHitPart_);
+    const std::string& partName = lastHitPartName_;
     const auto fullStatus = status + L" | Last Hit Part: " + std::wstring(partName.begin(), partName.end()) +
         L" | Last Damage: " + std::to_wstring(static_cast<int>(lastDamage_)) +
         L" | Enemy Attacks: " + std::to_wstring(enemyAttackCount_);
@@ -490,7 +490,7 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
 
 void GameScene::OnBulletImpact(const BulletEnemyImpact& impact) {
     ++hitCount_;
-    lastHitPart_=impact.part;
+    lastHitPart_=impact.part; lastHitPartName_=impact.partName;
     lastHitEnemy_=static_cast<int>(impact.enemyIndex);
     lastDamage_=impact.result.damage;
     if (!impact.result.explosion) return;
@@ -546,7 +546,7 @@ void GameScene::DrawImGui(GameApp& app) {
     ImGui::TextUnformatted(!stage_.IsPlaying() ? "Stage cleared. Gameplay stopped; debug controls remain available." :
         captured ? "WASD: walk | Mouse: look | LMB: fire | ESC: release" : "Click the Scene image to resume FPS controls.");
     ImGui::Text("Shot Count: %llu | Hit Count: %llu", shotCount_, hitCount_);
-    ImGui::Text("Last Hit Enemy: %d | Last Hit Part: %s", lastHitEnemy_, EnemyPartName(lastHitPart_));
+    ImGui::Text("Last Hit Enemy: %d | Last Hit Part: %s", lastHitEnemy_, lastHitPartName_.c_str());
     ImGui::Text("Last Damage: %.0f (actual HP lost)", lastDamage_);
 
     const auto alive=std::count_if(enemies_.begin(),enemies_.end(),[](const auto& e){return !e->IsDead();});
@@ -793,7 +793,7 @@ GameScene::DebugFrame GameScene::CaptureDebug() const {
     state.projectiles=enemyProjectiles_; state.spawns=spawnSystem_; state.weapons=weapons_; state.stage=stage_;
     state.pelletRandom=pelletRandom_; state.nextEnemy=nextEnemyId_; state.frame=debugFrame_;
     state.shots=shotCount_; state.hits=hitCount_; state.attacks=enemyAttackCount_;
-    state.selectedEnemy=selectedEnemy_; state.lastHitEnemy=lastHitEnemy_; state.lastHitPart=lastHitPart_;
+    state.selectedEnemy=selectedEnemy_; state.lastHitEnemy=lastHitEnemy_; state.lastHitPart=lastHitPart_; state.lastHitPartName=lastHitPartName_;
     state.ads=adsBlend_; state.fov=camera_.GetFovY(); state.lastDamage=lastDamage_;
     state.lastEnemyDamage=lastEnemyDamage_; state.playerFlash=playerDamagedFlash_;
     return state;
@@ -811,7 +811,7 @@ void GameScene::RestoreDebug(GameApp& app,const DebugFrame& state) {
     enemyProjectiles_=state.projectiles; spawnSystem_=state.spawns; weapons_=state.weapons; stage_=state.stage;
     pelletRandom_=state.pelletRandom; nextEnemyId_=state.nextEnemy; debugFrame_=state.frame;
     shotCount_=state.shots; hitCount_=state.hits; enemyAttackCount_=state.attacks;
-    selectedEnemy_=state.selectedEnemy; lastHitEnemy_=state.lastHitEnemy; lastHitPart_=state.lastHitPart;
+    selectedEnemy_=state.selectedEnemy; lastHitEnemy_=state.lastHitEnemy; lastHitPart_=state.lastHitPart; lastHitPartName_=state.lastHitPartName;
     adsBlend_=state.ads; lastDamage_=state.lastDamage; lastEnemyDamage_=state.lastEnemyDamage; playerDamagedFlash_=state.playerFlash;
     for (auto& enemy : enemies_) enemy->UpdateVisuals(0);
     for (auto& visual : weaponVisuals_) visual->Update(0);
@@ -909,7 +909,7 @@ void GameScene::DrawDebugTools(GameApp&) {}
 
 void GameScene::ResetShowroomEnemies(GameApp& app) {
     enemies_.clear(); enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
-    nextEnemyId_=0; selectedEnemy_=0; lastHitEnemy_=-1; lastHitPart_=EnemyPartType::None;
+    nextEnemyId_=0; selectedEnemy_=0; lastHitEnemy_=-1; lastHitPart_=EnemyPartType::None; lastHitPartName_="None";
     enemyAttackCount_=0; playerDamagedFlash_=0; lastEnemyDamage_=0;
     player_.ResetHPForDebug();
     // Showroom points are placed immediately, independent of trigger activation/timing.

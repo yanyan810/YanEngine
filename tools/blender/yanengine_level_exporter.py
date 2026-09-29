@@ -1,5 +1,5 @@
 """YanEngine level authoring. Blender 4.4+; install this file as a legacy add-on."""
-bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 2, 0),
+bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 3, 0),
            "blender": (4, 4, 0), "location": "View3D > Sidebar > YanEngine Level", "category": "Import-Export"}
 import bpy
 from bpy.props import BoolProperty, StringProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty, CollectionProperty
@@ -379,6 +379,8 @@ class YAN_ObjectSettings(bpy.types.PropertyGroup):
     max_alive: IntProperty(name="Max Alive", default=5, min=1, max=10000)
     selection: EnumProperty(name="Selection", items=[('Random', 'Random', ''), ('RoundRobin', 'RoundRobin', '')])
     one_shot: BoolProperty(name="One Shot", default=True)
+    auto_collider_count: IntProperty(name="Box Count", description="Maximum number of approximate Box colliders", default=4, min=1, max=32)
+    auto_collider_padding: FloatProperty(name="Padding", description="Extra local-space margin added to generated boxes", default=0.02, min=0.0, max=10.0)
 
 
 class YAN_SceneSettings(bpy.types.PropertyGroup):
@@ -731,6 +733,123 @@ def draw_weapon_filter(layout, cfg, weapons):
         row.label(text=str(error), icon='ERROR')
 
 
+def _remove_generated_colliders(source):
+    """Remove only colliders previously generated for source by this add-on."""
+    owner = source.get('yan_auto_collider_owner') or source.name
+    for obj in list(bpy.data.objects):
+        if obj.get('yan_auto_collider_generated') and obj.get('yan_auto_collider_owner') == owner:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+
+def _generate_compound_boxes(source, count, padding):
+    if source.type != 'MESH':
+        raise ValueError('Auto Compound requires a Mesh object')
+    mesh = source.data
+    if not mesh.vertices or not mesh.polygons:
+        raise ValueError(f'{source.name}: mesh has no geometry')
+
+    # Work in source-local space. Keeping source rotation in every generated box means
+    # StageWorld can continue to use its existing rotated Box collider path unchanged.
+    coords = [v.co.copy() for v in mesh.vertices]
+    low = Vector((min(v[i] for v in coords) for i in range(3)))
+    high = Vector((max(v[i] for v in coords) for i in range(3)))
+    extents = high - low
+    axis = max(range(3), key=lambda i: extents[i])
+    if extents[axis] <= 1e-6:
+        raise ValueError(f'{source.name}: mesh bounds are degenerate')
+
+    # Put each polygon in one slice using its center, then include all vertices of that
+    # polygon in the slice bounds. This intentionally overlaps neighbouring geometry a
+    # little rather than leaving gameplay holes between boxes.
+    bins = [[] for _ in range(count)]
+    span = extents[axis]
+    for poly in mesh.polygons:
+        center = sum((mesh.vertices[i].co[axis] for i in poly.vertices), 0.0) / len(poly.vertices)
+        index = min(count - 1, max(0, int(((center - low[axis]) / span) * count)))
+        bins[index].extend(poly.vertices)
+
+    source['yan_auto_collider_owner'] = source.name
+    created = []
+    for slice_index, indices in enumerate(bins):
+        if not indices:
+            continue
+        unique = set(indices)
+        points = [mesh.vertices[i].co for i in unique]
+        bmin = Vector((min(v[i] for v in points) for i in range(3)))
+        bmax = Vector((max(v[i] for v in points) for i in range(3)))
+        for i in range(3):
+            bmin[i] -= padding
+            bmax[i] += padding
+        size = bmax - bmin
+        if min(size) <= 1e-6:
+            continue
+        center = (bmin + bmax) * 0.5
+        half = size * 0.5
+
+        empty = bpy.data.objects.new(f'COL_{source.name}_{slice_index:02d}', None)
+        empty.empty_display_type = 'CUBE'
+        empty.empty_display_size = 1.0
+        empty.display_type = 'WIRE'
+        empty.matrix_world = source.matrix_world @ Matrix.Translation(center) @ Matrix.Diagonal((half.x, half.y, half.z, 1.0))
+        context_collection = source.users_collection[0] if source.users_collection else bpy.context.scene.collection
+        context_collection.objects.link(empty)
+        empty.yan_level.role = 'COLLIDER'
+        empty.yan_level.identifier = empty.name
+        empty['yan_auto_collider_generated'] = True
+        empty['yan_auto_collider_owner'] = source.name
+        created.append(empty)
+    if not created:
+        raise ValueError(f'{source.name}: no collider boxes could be generated')
+    return created
+
+
+class YAN_OT_generate_auto_colliders(bpy.types.Operator):
+    bl_idname = 'yanengine.generate_auto_colliders'
+    bl_label = 'Generate Approximate Colliders'
+    bl_description = 'Generate editable Box colliders that approximately cover the selected Static Mesh'
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object is not None and context.object.type == 'MESH' and context.object.yan_level.role == 'STATIC'
+
+    def execute(self, context):
+        source = context.object
+        cfg = source.yan_level
+        try:
+            _remove_generated_colliders(source)
+            created = _generate_compound_boxes(source, cfg.auto_collider_count, cfg.auto_collider_padding)
+            # The generated Collider objects now own collision. Avoid also exporting one
+            # large Static Box for the source mesh.
+            cfg.collision = 'NONE'
+            for obj in context.selected_objects:
+                obj.select_set(False)
+            for obj in created:
+                obj.select_set(True)
+            context.view_layer.objects.active = created[0]
+            self.report({'INFO'}, f'Generated {len(created)} Box colliders for {source.name}')
+            return {'FINISHED'}
+        except Exception as error:
+            self.report({'ERROR'}, str(error))
+            return {'CANCELLED'}
+
+
+class YAN_OT_clear_auto_colliders(bpy.types.Operator):
+    bl_idname = 'yanengine.clear_auto_colliders'
+    bl_label = 'Clear Generated Colliders'
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object is not None and context.object.type == 'MESH' and context.object.yan_level.role == 'STATIC'
+
+    def execute(self, context):
+        source = context.object
+        _remove_generated_colliders(source)
+        self.report({'INFO'}, f'Cleared generated colliders for {source.name}')
+        return {'FINISHED'}
+
+
 class YAN_OT_validate(bpy.types.Operator):
     bl_idname = 'yanengine.validate'
     bl_label = 'Validate Level'
@@ -784,6 +903,14 @@ class YAN_PT_level(bpy.types.Panel):
                 layout.prop(settings, 'collision')
                 if settings.collision == 'CUSTOM':
                     layout.prop(settings, 'custom_collider')
+                auto = layout.box()
+                auto.label(text='Approximate Collision (Box Compound)')
+                auto.prop(settings, 'auto_collider_count')
+                auto.prop(settings, 'auto_collider_padding')
+                row = auto.row(align=True)
+                row.operator('yanengine.generate_auto_colliders', icon='MOD_BUILD')
+                row.operator('yanengine.clear_auto_colliders', text='Clear', icon='TRASH')
+                auto.label(text='Generated boxes are editable Collider objects.')
             if settings.role in {'ENEMY', 'TRIGGER'}:
                 layout.prop(settings, 'group')
             if settings.role in {'ENEMY', 'WEAPON'}:
@@ -821,6 +948,7 @@ CLASSES = (YAN_PoolEntry, YAN_WeaponType, YAN_ObjectSettings, YAN_SceneSettings,
            YAN_CatalogEntry, YAN_CatalogState, YAN_OT_catalog_open, YAN_OT_catalog_action,
            YAN_OT_catalog_type, YAN_MT_catalog_types, YAN_OT_catalog_apply, YAN_UL_catalog, YAN_PT_weapon_catalog,
            YAN_OT_choose_pool, YAN_MT_pool_choices, YAN_OT_weapon_type, YAN_OT_refresh_definitions,
+           YAN_OT_generate_auto_colliders, YAN_OT_clear_auto_colliders,
            YAN_OT_validate, YAN_OT_export, YAN_PT_level)
 
 

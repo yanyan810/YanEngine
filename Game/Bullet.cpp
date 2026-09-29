@@ -24,7 +24,7 @@ std::optional<BulletHit> TraceBulletPath(const Vector3& origin, const Vector3& d
         if (raycastEnemy(i, origin, direction, distance, part) &&
             (!closest || part.distance < distance)) {
             distance = part.distance;
-            closest = BulletHit{distance, origin+direction*distance, part.part, i, false};
+            closest = BulletHit{distance, origin+direction*distance, part.part, i, false, part.partIndex};
         }
     }
     return closest;

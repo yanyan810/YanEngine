@@ -665,5 +665,6 @@
     <ClInclude Include="Game\enemy\EnemyDefinition.h" />
     <ClInclude Include="Game\enemy\EnemyProjectile.h" />
     <ClInclude Include="Game\enemy\EnemyParts.h" />
+    <ClInclude Include="Game\enemy\EnemyAsset.h" />
   </ItemGroup>
 </Project>

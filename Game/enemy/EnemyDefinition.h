@@ -1,6 +1,7 @@
 #pragma once
 #include <nlohmann/json.hpp>
 #include "Vector3.h"
+#include "EnemyAsset.h"
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -26,6 +27,7 @@ struct EnemyTypeMarker {
 struct EnemyDefinition {
     std::string id = "normal", displayName = "Normal";
     EnemyType type = EnemyType::Normal;
+    std::shared_ptr<const EnemyAsset> partAsset;
     float detectionRange=20, moveSpeed=2.5f, attackRange=1.5f, attackDamage=10, attackInterval=1;
     float hpMultiplier=1, preferredRange=12, minRange=7, maxRange=16;
     float projectileSpeed=12, projectileRadius=.2f, projectileLifetime=5;
@@ -50,10 +52,18 @@ public:
             nlohmann::json data; file >> data;
             if (!data.at("enemies").is_array()) throw std::runtime_error("enemies must be an array");
             std::map<std::string,EnemyDefinition> next;
+            std::map<std::string,std::shared_ptr<const EnemyAsset>> assets;
             for (const auto& item : data.at("enemies")) {
                 EnemyDefinition d;
                 d.id=item.at("id").get<std::string>();
                 d.displayName=item.value("displayName",d.id);
+                const auto reference=item.value("partAsset",std::string{});
+                const auto assetPath=reference.empty()?std::string{}:ResolveEnemyResource(reference,path);
+                if (!assetPath.empty()) {
+                    auto& asset=assets[assetPath];
+                    if (!asset) asset=EnemyAsset::Load(assetPath);
+                    d.partAsset=asset;
+                }
                 const auto type=item.at("type").get<std::string>();
                 bool known=false;
                 for (auto t : {EnemyType::Normal,EnemyType::Ranged,EnemyType::Fast,EnemyType::Tank,EnemyType::Bomber})
@@ -99,6 +109,7 @@ public:
     const EnemyDefinition* Find(const std::string& id) const {
         const auto it=definitions_.find(id); return it==definitions_.end() ? nullptr : &it->second;
     }
+    const std::map<std::string,EnemyDefinition>& All() const { return definitions_; }
     const std::string& Error() const { return error_; }
 private:
     std::map<std::string,EnemyDefinition> definitions_{{"normal",EnemyDefinition{}}};

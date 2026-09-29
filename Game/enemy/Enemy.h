@@ -7,6 +7,11 @@
 #include "DetachedEnemyPart.h"
 #include <random>
 
+struct EnemyRenderAsset {
+    std::shared_ptr<const EnemyAsset> source;
+    std::vector<Model*> models;
+    std::vector<std::vector<Model*>> chunks;
+};
 struct EnemyPartVisual {
     EnemyPartType type = EnemyPartType::None;
     std::unique_ptr<Object3d> object;
@@ -38,6 +43,10 @@ public:
     using RaycastHit = EnemyPartHit;
     bool Raycast(const Vector3& origin, const Vector3& direction, float maxDistance, RaycastHit& hit) const;
     void ShowHitFeedback(EnemyPartType part);
+    void ShowHitFeedback(size_t part);
+    const std::string& PartName(size_t index) const { static const std::string none="None"; return index<parts_.size()?parts_[index].name:none; }
+    float ApplyDamage(size_t part,float damage,const Vector3& shotDirection);
+    EnemyBulletHitResult ApplyBulletDamage(size_t part,float damage,const Vector3& direction);
     float ApplyDamage(EnemyPartType part, float damage, const Vector3& shotDirection);
     EnemyBulletHitResult ApplyBulletDamage(EnemyPartType part, float damage, const Vector3& direction);
     void ApplyExplosionDamage(const EnemyExplosion& explosion);
@@ -47,7 +56,7 @@ public:
     void ApplyDefinition(const EnemyDefinition& definition);
 #ifdef _DEBUG
     Vector3 HeadCenterForDebug() const {
-        for (const auto& part : parts_) if (part.type==EnemyPartType::Head)
+        for (const auto& part : parts_) if (part.role==EnemyPartRole::Head)
             return EnemyPartTransformPoint((part.bounds.min+part.bounds.max)*.5f,
                 Matrix4x4::MakeAffineMatrix(definition_.VisualScale(scale_),rotation_,position_));
         return position_;
@@ -63,11 +72,13 @@ public:
         unsigned long long attacks=0;
         float damage=0,flash=0;
         float explosionTime=0;
+        bool exploded=false,splitVisuals=false,hasHitBox=false;
         float blastHitTime=0, lastBlastDamage=0;
         Vector3 explosionCenter{};
         std::mt19937 random;
-        std::array<Model*,6> models{};
-        std::array<bool,6> visible{};
+        std::vector<Model*> models;
+        std::shared_ptr<const EnemyRenderAsset> asset;
+        std::vector<bool> visible;
         std::vector<DebugDetached> detached;
         std::vector<FaceShard> faces;
         FragmentMode breakMode=FragmentMode::Face;
@@ -93,16 +104,26 @@ public:
     const std::string& GetSpawnTriggerId() const { return spawnTriggerId_; }
     unsigned int PendingAttackCount() const { return ai_.attacksThisUpdate; }
     void ConfirmAttack(float actualDamage) { attackCount_ += ai_.attacksThisUpdate; lastAttackDamage_ = actualDamage; attackFlash_ = .35f; }
-    bool IsDead() const { return EnemyPartsDead(parts_); }
+    bool IsDead() const { return exploded_ || EnemyPartsDead(parts_); }
     EnemyState GetState() const { return IsDead() ? EnemyState::Dead : ai_.state; }
     void Draw(bool showMarker=true);
     void DrawExplosion();
     void SetPartVisible(EnemyPartType type, bool visible);
+    void SetPartVisible(size_t index,bool visible) { if (index<visuals_.size()) visuals_[index].visible=visible; }
 private:
 #ifdef _DEBUG
     std::string dimensionFileStatus_;
 #endif
     void PrepareExplosionVisual();
+    void PrepareFaceBatch();
+    static std::shared_ptr<const EnemyRenderAsset> PrepareAssetModels(std::shared_ptr<const EnemyAsset> asset);
+    inline static std::map<std::string,std::shared_ptr<const EnemyRenderAsset>> assetModels_;
+    std::shared_ptr<const EnemyRenderAsset> asset_;
+    size_t FindLegacyPart(EnemyPartType type) const {
+        if (type==EnemyPartType::None) return kNoEnemyPart;
+        for (size_t i=0;i<parts_.size();++i) if (parts_[i].type==type) return i;
+        return kNoEnemyPart;
+    }
     Vector3 ExplosionCenter() const;
     void RebuildTypeMarker();
     uint64_t spawnId_ = 0;
@@ -118,6 +139,7 @@ private:
     std::unique_ptr<Model> explosionModel_;
     std::unique_ptr<Object3d> explosionVisual_;
     float explosionTime_ = 0;
+    bool exploded_=false;
     float blastHitTime_ = 0, lastBlastDamage_ = 0;
     Vector3 explosionCenter_{};
     static constexpr float kExplosionDuration = .7f;
@@ -151,7 +173,7 @@ private:
     std::vector<DetachedEnemyPart> detachedParts_;
     DetachedPartSettings detachedSettings_{};
     std::mt19937 random_{std::random_device{}()};
-    std::array<EnemyPartVisual, 6> visuals_{};
+    std::vector<EnemyPartVisual> visuals_;
     bool splitVisuals_ = false;
     EnemyParts parts_{};
     bool showPartColliders_ = false;

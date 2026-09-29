@@ -11,9 +11,9 @@ inline const char* EnemyStateName(EnemyState state) {
     }
 }
 inline bool EnemyPartsDead(const EnemyParts& parts) {
+    for (const auto& group:parts.hpGroups) if (group.deathOnZero && group.hp<=0) return true;
     for (const auto& part : parts)
-        if ((part.type == EnemyPartType::Head || part.type == EnemyPartType::Body) &&
-            part.DamageState() == EnemyPartDamageState::Destroyed) return true;
+        if (part.deathOnZero && part.usesLocalHp && part.hp<=0) return true;
     return false;
 }
 // Symmetric correction per enemy; radius sum defines minimum XZ separation.

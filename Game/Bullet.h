@@ -17,6 +17,7 @@ struct BulletHit {
     EnemyPartType part = EnemyPartType::None;
     size_t enemyIndex = 0;
     bool wall = true;
+    size_t partIndex=kNoEnemyPart;
 };
 using BulletTrace = std::function<std::optional<BulletHit>(const Vector3&, const Vector3&, float)>;
 using BulletImpact = std::function<void(const Bullet&, const BulletHit&)>;

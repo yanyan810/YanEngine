@@ -29,9 +29,9 @@ void BulletManager::Update(float dt, const StageWorld& world,
     simulation_.Update(dt, MakeTrace(world, enemies), [&](const Bullet& bullet, const BulletHit& hit) {
         if (hit.wall) return;
         auto& enemy = *enemies[hit.enemyIndex];
-        auto result = enemy.ApplyBulletDamage(hit.part, bullet.damage, bullet.direction);
-        enemy.ShowHitFeedback(hit.part);
-        onImpact({hit.enemyIndex, hit.part, result});
+        auto result = enemy.ApplyBulletDamage(hit.partIndex, bullet.damage, bullet.direction);
+        enemy.ShowHitFeedback(hit.partIndex);
+        onImpact({hit.enemyIndex, hit.part, result, enemy.PartName(hit.partIndex)});
     });
 }
 
