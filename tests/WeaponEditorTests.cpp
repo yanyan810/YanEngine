@@ -112,6 +112,28 @@ int main() {
         ImGui::NewFrame(); assert(!ui.Draw(live,level,true)); ImGui::Render();
         if (i>0) assert(ImGui::GetDrawData()->TotalVtxCount>0);
     }
+    int previews=0;
+    for (int i=0;i<3;++i) {
+        ImGui::NewFrame();
+        assert(!ui.Draw(live,level,true,[&] { ++previews; ImGui::TextUnformatted("3D scene texture"); }));
+        ImGui::Render();
+    }
+    assert(previews==3 && ui.Selected());
+    ui.mode=WeaponEditorMode::Test;
+    ImGui::NewFrame();
+    assert(!ui.Draw(live,level,true,[&] { ++previews; }));
+    ImGui::Render(); assert(previews==3);
+    ui.mode=WeaponEditorMode::Edit;
+    // Test equips an owned draft copy: no save, no live definition replacement.
+    const auto diskBeforeTest=ReadBytes(path);
+    const float savedInterval=live.Find("pistol")->fireInterval;
+    editor.entries[0].value.fireInterval=0.1f;
+    runtime.Equip(editor.entries[0].value);
+    assert(runtime.TryFire());
+    runtime.Update(0.099f); assert(!runtime.TryFire());
+    runtime.Update(0.002f); assert(runtime.TryFire());
+    assert(editor.Dirty() && ReadBytes(path)==diskBeforeTest);
+    assert(live.Find("pistol")->fireInterval==savedInterval);
     ImGui::DestroyContext();
     std::cout<<"Weapon Editor tests passed: create, duplicate, validation, defaults, preservation, transactional save, conflict/I/O failure, delete safety, pickup state, equip reset, revert.\n";
 }

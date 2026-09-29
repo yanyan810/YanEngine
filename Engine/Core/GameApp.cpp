@@ -297,7 +297,7 @@ void GameApp::Draw() {
         }
         imgui_->SetPreviewTexture(render_->GetPreviewSrvIndex());
             sceneMgr_->DrawImGui(*this);
-            render_->DrawImGui(); // ポストエフェクト切り替えUI
+            if (!imgui_->IsWeaponWorkspace()) render_->DrawImGui(); // ポストエフェクト切り替えUI
         imgui_->End(dx_->GetCommandList());
     }
 #endif

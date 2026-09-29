@@ -2,16 +2,35 @@
 #if defined(_DEBUG) && defined(USE_IMGUI)
 #include "WeaponEditor.h"
 #include "imgui.h"
+#include <functional>
+
+enum class WeaponEditorMode { Edit, Test };
 
 class WeaponEditorUI {
 public:
     bool visible=false;
+    WeaponEditorMode mode=WeaponEditorMode::Edit;
+    bool returnToGame=false;
+    const WeaponDefinition* Selected() const {
+        return selected_>=0 && static_cast<size_t>(selected_)<model_.entries.size()
+            ? &model_.entries[static_cast<size_t>(selected_)].value : nullptr;
+    }
+    std::optional<WeaponDefinition> TakeTestRequest() {
+        auto request=testRequest_; testRequest_.reset(); return request;
+    }
     // A value signals a successful save; nonempty value requests the shared Debug Equip path.
-    std::optional<std::string> Draw(WeaponSystem& live,const std::string& level,bool canEquip) {
-        if (!visible) return std::nullopt;
+    std::optional<std::string> Draw(WeaponSystem& live,const std::string& level,bool canEquip, const std::function<void()>& preview={}) {
+        if (!visible || mode==WeaponEditorMode::Test) return std::nullopt;
         std::optional<std::string> result;
-        ImGui::SetNextWindowSize({1080,660},ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("Weapon Editor",&visible)) { ImGui::End(); return result; }
+        ImGuiWindowFlags flags=0;
+        if (preview) {
+            const auto* viewport=ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(viewport->WorkPos);
+            ImGui::SetNextWindowSize(viewport->WorkSize);
+            ImGui::SetNextWindowViewport(viewport->ID);
+            flags=ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoDocking;
+        } else ImGui::SetNextWindowSize({1080,660},ImGuiCond_FirstUseEver);
+        if (!ImGui::Begin("Weapon Editor",preview ? nullptr : &visible,flags)) { ImGui::End(); return result; }
         if (!model_.IsOpen()) {
             if (!model_.Open(path_,level)) {
                 ImGui::TextWrapped("%s",model_.error.c_str()); ImGui::End(); return result;
@@ -38,15 +57,23 @@ public:
             ImGui::SameLine(); if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
+        if (preview) {
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!Selected() || !model_.Validate().empty());
+            if (ImGui::Button("Test Weapon")) testRequest_=*Selected();
+            ImGui::EndDisabled(); ImGui::SameLine();
+            if (ImGui::Button("Return to Game")) returnToGame=true;
+        }
         if (!model_.error.empty()) ImGui::TextWrapped("Error: %s",model_.error.c_str());
         const auto validation=model_.Validate();
         if (!validation.empty()) ImGui::TextWrapped("Validation: %s",validation.c_str());
         ImGui::Separator();
         // Resizable list / tabbed properties / summary; panes scroll independently.
         if (ImGui::BeginTable("Weapon editor panes",3,ImGuiTableFlags_Resizable|ImGuiTableFlags_BordersInnerV)) {
-            ImGui::TableSetupColumn("Weapons",ImGuiTableColumnFlags_WidthFixed,210);
-            ImGui::TableSetupColumn("Settings",ImGuiTableColumnFlags_WidthStretch,2);
-            ImGui::TableSetupColumn("Summary",ImGuiTableColumnFlags_WidthStretch,1);
+            ImGui::TableSetupColumn("Weapon List",ImGuiTableColumnFlags_WidthStretch,1);
+            ImGui::TableSetupColumn(preview ? "Weapon Preview" : "Settings",ImGuiTableColumnFlags_WidthStretch,2.2f);
+            ImGui::TableSetupColumn(preview ? "Parameters" : "Summary",ImGuiTableColumnFlags_WidthStretch,2);
+            ImGui::TableHeadersRow();
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0);
             ImGui::BeginChild("List",{0,0});
             search_.Draw("Search",-1);
@@ -91,14 +118,22 @@ public:
                 if (ImGui::Selectable(label.c_str(),selected_==static_cast<int>(i))) selected_=static_cast<int>(i);
                 ImGui::PopID();
             }
-            ImGui::EndChild(); ImGui::TableSetColumnIndex(1); ImGui::BeginChild("Properties",{0,0});
+            ImGui::EndChild();
+            if (preview) {
+                ImGui::TableSetColumnIndex(1); ImGui::BeginChild("3D Preview",{0,0});
+                ImGui::TextUnformatted("Showroom / Weapon Preview");
+                ImGui::TextWrapped("Test Weapon: LMB fire | RMB ADS | R reload | ESC editor");
+                preview(); ImGui::EndChild();
+            }
+            ImGui::TableSetColumnIndex(preview ? 2 : 1); ImGui::BeginChild("Properties",{0,0});
             if (ImGui::BeginCombo("Initial Weapon",model_.initialWeapon.c_str())) {
                 for (const auto& entry:model_.entries)
                     if (ImGui::Selectable(entry.value.id.c_str(),model_.initialWeapon==entry.value.id)) model_.initialWeapon=entry.value.id;
                 ImGui::EndCombo();
             }
             if (selected_>=0 && static_cast<size_t>(selected_)<model_.entries.size()) DrawFields(model_.entries[static_cast<size_t>(selected_)].value);
-            ImGui::EndChild(); ImGui::TableSetColumnIndex(2); ImGui::BeginChild("Summary",{0,0});
+            if (!preview) { ImGui::EndChild(); ImGui::TableSetColumnIndex(2); ImGui::BeginChild("Summary",{0,0}); }
+            else ImGui::Separator();
             if (selected_>=0 && static_cast<size_t>(selected_)<model_.entries.size()) Summary(model_.entries[static_cast<size_t>(selected_)].value);
             ImGui::EndChild(); ImGui::EndTable();
         }
@@ -106,6 +141,7 @@ public:
     }
 private:
     WeaponEditor model_;
+    std::optional<WeaponDefinition> testRequest_;
     ImGuiTextFilter search_;
     int selected_=0,duplicate_=-1;
     std::string newId_,newName_;
@@ -181,8 +217,8 @@ private:
         ImGui::Text("All Pellets Damage: %.2f",static_cast<double>(w.damage)*w.pelletCount);
         ImGui::Text("Shots / Magazine: %d",w.ammoPerShot>0?w.magazineSize/w.ammoPerShot:0);
         ImGui::Text("Initial Total Ammo: %lld",static_cast<long long>(w.magazineSize)+std::min(w.reserveAmmo,w.maxReserveAmmo));
-        ImGui::Separator(); ImGui::TextUnformatted("Preview (reserved)");
-        ImGui::TextWrapped("Save & Equip, click the Scene, then fire. ESC returns the mouse to the editor.");
+        ImGui::Separator();
+        ImGui::TextWrapped("Test Weapon in Showroom uses unsaved parameters. ESC returns to the editor.");
         ImGui::TextWrapped("Save preserves current pickups. Spawn Filter changes affect future stage starts.");
     }
 };

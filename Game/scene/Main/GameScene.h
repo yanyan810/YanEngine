@@ -69,6 +69,11 @@ private:
     DebugJsonEditor debugJson_;
 #ifdef USE_IMGUI
     WeaponEditorUI weaponEditor_;
+    std::unique_ptr<Object3d> weaponPreview_;
+    std::optional<WeaponRuntime> beforeWeaponTest_;
+    float weaponPreviewAspect_=1.0f;
+    void DrawWeaponWorkspace(GameApp& app);
+    void UpdateWeaponPreview();
 #endif
     void EquipWeaponForDebug(const WeaponDefinition& definition);
     bool debugPaused_=false;

@@ -113,12 +113,32 @@ void GameScene::OnEnter(GameApp& app) {
     crosshairHorizontal_.SetScale({12.0f / width, 2.0f / height, 1.0f});
     crosshairVertical_.SetScale({2.0f / width, 12.0f / height, 1.0f});
     if (showroom_) { freezeEnemies_=true; ResetShowroomEnemies(app); }
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_) {
+        weaponEditor_.visible=true; weaponEditor_.returnToGame=false;
+        beforeWeaponTest_.reset();
+        weaponEditor_.mode=WeaponEditorMode::Edit;
+        app.ImGui()->SetWeaponWorkspace(true);
+        debugPaused_=false;
+        weaponPreview_=std::make_unique<Object3d>();
+        weaponPreview_->Initialize(app.ObjCom(),app.Dx());
+        weaponPreview_->SetCamera(&camera_);
+        // Replace this model binding when weapon model assets become available.
+        weaponPreview_->SetModel("cube/cube.obj");
+        weaponPreview_->SetTexture("resources/white1x1.png");
+        weaponPreview_->SetEnableLighting(0);
+    }
+#endif
     Update(app, 0.0f);
 #ifdef _DEBUG
     if (debugHistory_.Size()==0) debugHistory_.Push(CaptureDebug());
 #endif
 }
 void GameScene::OnExit(GameApp& app) {
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_) app.ImGui()->SetWeaponWorkspace(false);
+    beforeWeaponTest_.reset(); weaponPreview_.reset();
+#endif
     app.GetInput()->SetCameraControlEnabled(false);
     app.GetInput()->SetMouseCaptureRect(nullptr);
     app.GetInput()->SetCameraToggleKeyEnabled(true);
@@ -142,6 +162,25 @@ void GameScene::Update(GameApp& app, float dt) {
     }
     dt = std::isfinite(dt) ? std::max(dt, 0.0f) : 0.0f;
     Input& input = *app.GetInput();
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_) {
+        if (weaponEditor_.mode==WeaponEditorMode::Test && input.IsKeyTrigger(DIK_ESCAPE)) {
+            weaponEditor_.mode=WeaponEditorMode::Edit;
+            if (beforeWeaponTest_) player_.CurrentWeapon()=*beforeWeaponTest_;
+            beforeWeaponTest_.reset();
+            bullets_.Clear(); enemyProjectiles_.Clear(); projectileVisuals_.clear();
+            adsBlend_=0; player_.SetLookSensitivityMultiplier(1);
+        }
+        if (weaponEditor_.mode==WeaponEditorMode::Edit) {
+            input.SetCameraControlEnabled(false);
+            initialCapturePending_=false;
+            ImGui::GetIO().ConfigFlags=(ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
+            UpdateWeaponPreview();
+            ground_.Update(0);
+            return;
+        }
+    }
+#endif
     const bool wasCaptured = input.IsCameraControlEnabled();
     bool viewReady = true;
     bool clickedView = false;
@@ -164,7 +203,7 @@ void GameScene::Update(GameApp& app, float dt) {
 #ifdef USE_IMGUI
     typing=ImGui::GetIO().WantTextInput || ImGui::IsAnyItemActive();
 #endif
-    if (input.HasFocus() && input.IsKeyTrigger(DIK_F1)) {
+    if (!showroom_ && input.HasFocus() && input.IsKeyTrigger(DIK_F1)) {
         debugPaused_=!debugPaused_;
         initialCapturePending_=!debugPaused_;
         suppressFireUntilRelease_=true;
@@ -352,7 +391,11 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     Input& input = *app.GetInput();
     auto& weapon = player_.CurrentWeapon();
     const bool controls = wasCaptured && input.IsCameraControlEnabled() && input.HasFocus();
-    const bool pickedUp = controls && input.IsKeyTrigger(DIK_E) && weapons_.TryPickup(player_.GetTransform().translate,weapon);
+    bool allowPickup=true;
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    allowPickup=!(showroom_ && weaponEditor_.mode==WeaponEditorMode::Test);
+#endif
+    const bool pickedUp = allowPickup && controls && input.IsKeyTrigger(DIK_E) && weapons_.TryPickup(player_.GetTransform().translate,weapon);
     const bool allowFire = controls && !pickedUp && !suppressFireUntilRelease_;
 #ifdef _DEBUG
     if (!debugPaused_ && !allowFire) weapon.CancelBurst();
@@ -464,6 +507,12 @@ void GameScene::OnBulletImpact(const BulletEnemyImpact& impact) {
 }
 void GameScene::DrawRender(GameApp&) {
     ground_.Draw();
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_ && weaponEditor_.mode==WeaponEditorMode::Edit) {
+        if (weaponPreview_ && weaponEditor_.Selected()) weaponPreview_->Draw();
+        return;
+    }
+#endif
     for (size_t i=0; i<weaponVisuals_.size(); ++i)
         if (weapons_.Pickups()[i].visible) weaponVisuals_[i]->Draw();
     for(auto& enemy : enemies_) enemy->Draw(!showroom_ || showEnemyMarkers_);
@@ -483,6 +532,7 @@ void GameScene::EquipWeaponForDebug(const WeaponDefinition& definition) {
 
 void GameScene::DrawImGui(GameApp& app) {
 #if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_) { DrawWeaponWorkspace(app); return; }
     DrawDebugTools(app);
     if (showroom_) DrawShowroomTools(app);
 #endif
@@ -696,6 +746,9 @@ void GameScene::DrawImGui(GameApp& app) {
 }
 
 void GameScene::DrawOverlay2D(GameApp&) {
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_ && weaponEditor_.mode==WeaponEditorMode::Edit) return;
+#endif
     const auto view = Matrix4x4::MakeIdentity4x4();
     const auto projection = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f,
         static_cast<float>(WinApp::kClientWidth), static_cast<float>(WinApp::kClientHeight), 0.0f, 100.0f);
@@ -964,3 +1017,66 @@ void GameScene::DrawShowroomTools(GameApp& app) {
     (void)app;
 #endif
 }
+
+#if defined(_DEBUG) && defined(USE_IMGUI)
+void GameScene::UpdateWeaponPreview() {
+    const auto* draft=weaponEditor_.Selected();
+    if (!draft || !weaponPreview_) return;
+    // Dedicated authoring camera, independent of the FPS player's test position.
+    const Vector3 center={level_.playerPosition.x,level_.playerPosition.y+2.0f,level_.playerPosition.z+4.0f};
+    auto scale=draft->pickupScale;
+    for (float* value : {&scale.x,&scale.y,&scale.z})
+        *value=std::isfinite(*value) ? std::clamp(*value,0.001f,100.0f) : 0.3f;
+    const float extent=std::max({scale.x,scale.y,scale.z,0.1f});
+    const float distance=extent*3.0f/std::min(weaponPreviewAspect_,1.0f)+1.0f;
+    camera_.SetAspect(weaponPreviewAspect_);
+    camera_.SetTranslate({center.x,center.y,center.z-distance});
+    camera_.SetRotate({0,0,0}); camera_.SetFovY(kNormalFovDegrees*kDegreesToRadians); camera_.Update();
+    weaponPreview_->SetTranslate(center);
+    weaponPreview_->SetRotate({0.2f,0.6f,0});
+    weaponPreview_->SetScale(scale);
+    weaponPreview_->SetMaterialColor({draft->pickupColor.x,draft->pickupColor.y,draft->pickupColor.z,1});
+    weaponPreview_->Update(0);
+}
+
+void GameScene::DrawWeaponWorkspace(GameApp& app) {
+    if (weaponEditor_.mode==WeaponEditorMode::Test) {
+        const auto* viewport=ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos); ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::Begin("Weapon Test",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoMove|
+            ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoDocking);
+        ImGui::TextUnformatted("Test Weapon | LMB: Fire | RMB: ADS | R: Reload | ESC: Weapon Editor");
+        app.ImGui()->DrawScenePreview(); ImGui::End();
+        return;
+    }
+    if (const auto saved=weaponEditor_.Draw(weapons_,LevelPath(),stage_.IsPlaying(),[&] {
+        const auto size=ImGui::GetContentRegionAvail();
+        weaponPreviewAspect_=std::max(size.x,1.0f)/std::max(size.y,1.0f);
+        app.ImGui()->DrawScenePreview(true);
+    })) {
+        debugHistory_.Clear();
+        const auto id=saved->empty() ? player_.CurrentWeapon().Definition().id : *saved;
+        const auto* definition=weapons_.Find(id);
+        if (!definition) definition=weapons_.InitialWeapon();
+        if (definition && (!saved->empty() || !weapons_.Find(id))) EquipWeaponForDebug(*definition);
+        for (size_t i=0;i<weaponVisuals_.size();++i) {
+            const auto* updated=weapons_.Find(weapons_.Pickups()[i].weaponId);
+            if (!updated) continue;
+            weaponVisuals_[i]->SetScale(updated->pickupScale);
+            weaponVisuals_[i]->SetMaterialColor({updated->pickupColor.x,updated->pickupColor.y,updated->pickupColor.z,1});
+            weaponVisuals_[i]->Update(0);
+        }
+    }
+    if (const auto draft=weaponEditor_.TakeTestRequest()) {
+        beforeWeaponTest_=player_.CurrentWeapon();
+        EquipWeaponForDebug(*draft); // Owns a copy; does not reload or write weapons.json.
+        weaponEditor_.mode=WeaponEditorMode::Test;
+        camera_.SetAspect(1280.0f/720.0f);
+        player_.RefreshDebug();
+        initialCapturePending_=true;
+        debugPaused_=false; debugHistory_.Clear();
+    }
+    if (weaponEditor_.returnToGame) RequestChangeScene_("Game");
+}
+#endif

@@ -24,6 +24,9 @@ public:
     void Begin();
     void End(ID3D12GraphicsCommandList* cmd);
     void Shutdown();
+    void SetWeaponWorkspace(bool active) { weaponWorkspace_=active; }
+    bool IsWeaponWorkspace() const { return weaponWorkspace_; }
+    void DrawScenePreview(bool fillRegion=false);
     bool GetSceneImageRect(RECT& rect) const;
     bool IsSceneImageHovered() const { return sceneImageHovered_; }
 
@@ -38,6 +41,7 @@ private:
     DirectXCommon* dxCommon_ = nullptr;
     SrvManager* srvManager_ = nullptr;
 
+    bool weaponWorkspace_=false;
     bool initialized_ = false;
     bool sceneImageHovered_ = false;
     int selectedParticleItem_ = 0;

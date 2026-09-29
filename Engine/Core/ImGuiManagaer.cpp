@@ -117,13 +117,13 @@ void ImGuiManagaer::Begin()
 #ifdef USE_IMGUI
 
 
-    sceneImageHovered_ = false;
-    gHasSceneImageRect = false;
+    // Workspace image is submitted by the scene after Update; retain its last
+    // rectangle for this frame's FPS input/capture, unlike the docked Scene panel.
+    if (!weaponWorkspace_) { sceneImageHovered_ = false; gHasSceneImageRect = false; }
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
-    BeginDockSpace_();
-    DrawEditorPanels_();
+    if (!weaponWorkspace_) { BeginDockSpace_(); DrawEditorPanels_(); }
 
 #endif // USE_IMGUI
 
@@ -397,19 +397,25 @@ void ImGuiManagaer::DrawEditorPanels_()
         ImGui::RadioButton("Particle Mode", &gParticleTestEditorMode, 1);
         ImGui::Separator();
     }
+    DrawScenePreview();
+    ImGui::End();
+#endif // USE_IMGUI
+}
+
+void ImGuiManagaer::DrawScenePreview(bool fillRegion) {
+#ifdef USE_IMGUI
     if (hasSceneTexture_ && srvManager_) {
         ImVec2 avail = ImGui::GetContentRegionAvail();
         if (avail.x < 8.0f || avail.y < 8.0f) {
             gHasSceneImageRect = false;
             ImGui::TextDisabled("Scene view is too small.");
-            ImGui::End();
             return;
         }
         constexpr float sceneAspect = 1280.0f / 720.0f;
         ImVec2 imageSize = avail;
-        if (imageSize.x / imageSize.y > sceneAspect) {
+        if (!fillRegion && imageSize.x / imageSize.y > sceneAspect) {
             imageSize.x = imageSize.y * sceneAspect;
-        } else {
+        } else if (!fillRegion) {
             imageSize.y = imageSize.x / sceneAspect;
         }
         imageSize.x = std::max(1.0f, imageSize.x);
@@ -429,8 +435,9 @@ void ImGuiManagaer::DrawEditorPanels_()
         gHasSceneImageRect = false;
         ImGui::TextUnformatted("Scene texture is not ready.");
     }
-    ImGui::End();
-#endif // USE_IMGUI
+#else
+    (void)fillRegion;
+#endif
 }
 
 void ImGuiManagaer::End(ID3D12GraphicsCommandList* cmd)
