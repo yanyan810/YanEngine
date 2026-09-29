@@ -225,3 +225,69 @@ Blender 5.0.1でアドオン登録・Export・Role別除外・保存プロパテ
 - [ ] TriggerのGroup・Spawn Count・Max Alive・間隔と、敵種類のPoolが反映される。
 - [ ] 武器とGoalがBlenderで指定した位置にあり、取得・StageClearが動く。
 - [ ] 既存の体格・Marker・被弾色・部位破壊が維持されている。
+
+
+## Approximate Collision / Box Compound（1.4）
+
+Static Meshの **Generate Approximate Colliders** は、評価済みメッシュ（Boolean等を含む）の面分布から
+複数のBoxを近似生成します。ゲーム側のMesh Colliderは不要です。
+
+- **Max Box Count**：生成数の上限です。単純な直方体は1個で止まります。既存の保存プロパティ
+  `auto_collider_count` は維持しているため、以前の.blendの設定値をそのまま利用できます。
+- **Padding**：分割後の各Boxに加えるローカル空間の余白です。Box間の隙間を守るため、
+  向き合う面の余白は隙間の1/4以下に制限します。接する面には余白を追加しません。
+  これにより元の隙間の少なくとも半分を残します。外向きの余白は指定値を使います。
+
+### 分割方法
+
+X/Y/Zすべてについて、三角形中心の大きなGapと面の境界座標を分割候補にします。
+候補平面で面を一時的にクリップし、子グループのBox総体積がどの程度減るかを比較します。
+元メッシュは変更しません。
+
+門型では最初の分割だけでは体積が減らないことがあるため、次の1分割まで評価します。
+最大数の範囲で最も空間の無駄を減らせる分割を採用し、改善が小さければ停止します。
+内部の1%/追加Boxのペナルティで不要な分割を抑え、UI項目は増やしていません。
+候補数は各軸の主要なGap・境界に制限しています。曲面・複雑な形状では最適解を保証するものではなく、
+Max Box Countが少ない場合は通路を完全に残せないこともあるため、必要に応じて手動調整してください。
+
+### 生成・再生成
+
+生成物は従来どおり `COL_<SourceName>_00` 等のCube Empty / Collider Objectです。
+移動・回転・拡大縮小による調整、`yan_auto_collider_generated`、`yan_auto_collider_owner`を維持します。
+再生成／ClearはそのSourceの自動生成分だけを削除し、手動Colliderと別Sourceの生成物を残します。
+再生成の形状計算・入力検証に失敗した場合は、前の生成物を維持します。
+
+### 検証
+
+Blender **4.4.1** と **5.2.2 LTS** のバックグラウンドテストで、Max Box Count=8に対して確認しました。
+
+| 形状 | 生成数 |
+|---|---:|
+| Cube | 1 |
+| 横長直方体 | 1 |
+| L字（接続した凹形状） | 2 |
+| 門型（接続した凹形状） | 3 |
+| Booleanで入口を開けた門型 | 3 |
+| 離れた2形状を1Meshにしたもの | 2 |
+
+門型は上部と左右の柱に相当する3Boxへ分かれ、X/Y/Z方向を入れ替えても中央を塞ぎません。
+Padding 0.02および10でも中央の通路が残ること、Max Box Countの遵守、床／棚の面の保持、
+回転・非均一スケール、手動調整、再生成／Clearと手動Collider保護を確認しています。
+実際のExportを既存StageLoader/StageWorldに読み込み、中央の射線・プレイヤー移動が通過し、
+柱・上部で遮られることも確認しています。
+
+C++実装とLevel JSON形式は変更していません。Colliderの出力は引き続き
+`id / position / rotation / scale / localBounds`です。
+
+```powershell
+./Tools/test-compound-colliders.ps1 -BlenderPath 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe'
+./Tools/test-blender-level.ps1 -BlenderPath 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe'
+```
+
+テスト用のメッシュ、JSON、glTFは`generated/compound-tests`にのみ出力します。
+
+既存Level Exporter全体の回帰テスト（Static/Custom Collider、Spawn、Trigger、Goal、
+Catalog、保存プロパティ、Export失敗時の復旧）は5.2.2で成功しました。
+4.4.1では現行の`stage01.blend`を読み込めず、この既存ファイルを使う回帰テストは開始できません。
+今回追加した形状生成・Export・StageWorldの専用テストは、4.4.1でも成功しています。
+ステージファイルの変換や保存し直しは行っていません。
