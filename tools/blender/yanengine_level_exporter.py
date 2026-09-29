@@ -1,5 +1,5 @@
 """YanEngine level authoring. Blender 4.4+; install this file as a legacy add-on."""
-bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 3, 0),
+bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 4, 0),
            "blender": (4, 4, 0), "location": "View3D > Sidebar > YanEngine Level", "category": "Import-Export"}
 import bpy
 from bpy.props import BoolProperty, StringProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty, CollectionProperty
@@ -379,7 +379,7 @@ class YAN_ObjectSettings(bpy.types.PropertyGroup):
     max_alive: IntProperty(name="Max Alive", default=5, min=1, max=10000)
     selection: EnumProperty(name="Selection", items=[('Random', 'Random', ''), ('RoundRobin', 'RoundRobin', '')])
     one_shot: BoolProperty(name="One Shot", default=True)
-    auto_collider_count: IntProperty(name="Box Count", description="Maximum number of approximate Box colliders", default=4, min=1, max=32)
+    auto_collider_count: IntProperty(name="Max Box Count", description="Upper limit; simple shapes use fewer boxes", default=4, min=1, max=32)
     auto_collider_padding: FloatProperty(name="Padding", description="Extra local-space margin added to generated boxes", default=0.02, min=0.0, max=10.0)
 
 
@@ -741,52 +741,200 @@ def _remove_generated_colliders(source):
             bpy.data.objects.remove(obj, do_unlink=True)
 
 
+def _compound_group(faces, thickness):
+    if not faces:
+        return None
+    low = tuple(min(p[a] for face in faces for p in face) for a in range(3))
+    high = tuple(max(p[a] for face in faces for p in face) for a in range(3))
+    volume = math.prod(max(high[a] - low[a], thickness) for a in range(3))
+    return faces, low, high, volume
+
+
+def _compound_candidates(group, epsilon):
+    """Bounded candidates on ALL axes: centroid gaps and repeated face boundaries.
+
+    Boundaries matter: the best cut through a lintel/pillar joint need not be at
+    the midpoint of a centroid gap. Keep both, rather than picking a longest axis.
+    """
+    faces, low, high, _ = group
+    result = []
+    for axis in range(3):
+        span = high[axis] - low[axis]
+        if span <= epsilon:
+            continue
+        centers = sorted(sum(p[axis] for p in f) / len(f) for f in faces)
+        gaps = sorted(((b-a, (a+b)*.5) for a, b in zip(centers, centers[1:])
+                       if b-a > epsilon), reverse=True)
+        boundaries = {}
+        for face in faces:
+            for value in (min(p[axis] for p in face), max(p[axis] for p in face)):
+                if low[axis]+epsilon < value < high[axis]-epsilon:
+                    boundaries[value] = boundaries.get(value, 0)+1
+        # Cap search cost on dense terrain, while retaining large empty intervals.
+        values = [(position, gap/span) for gap, position in gaps[:6]]
+        values += [(value, 0.0) for value in sorted(boundaries, key=lambda v: (-boundaries[v], v))[:6]]
+        used = []
+        for value, gap in values:
+            if low[axis]+epsilon < value < high[axis]-epsilon and not any(abs(value-v) <= epsilon for v in used):
+                used.append(value)
+                result.append((axis, value, gap))
+    return result
+
+
+def _compound_cut(group, axis, plane, epsilon, thickness):
+    """Clip face polygons at a candidate plane; never change the author's mesh.
+
+    Centroid-only assignment keeps long crossing triangles intact and can fill a
+    doorway even after splitting. Clipping retains their full surface coverage.
+    Coplanar cut faces are assigned conservatively without creating slabs across holes.
+    """
+    sides = [[], []]
+    coplanar = []
+    for face in group[0]:
+        distances = [p[axis]-plane for p in face]
+        if all(abs(d) <= epsilon for d in distances):
+            coplanar.append(face)
+            continue
+        if max(distances) <= epsilon:
+            sides[0].append(face)
+            continue
+        if min(distances) >= -epsilon:
+            sides[1].append(face)
+            continue
+        for side, sign in enumerate((1, -1)):
+            clipped = []
+            previous = face[-1]
+            prev_d = previous[axis]-plane
+            for point, distance in zip(face, distances):
+                inside, prev_inside = sign*distance <= 0, sign*prev_d <= 0
+                if inside != prev_inside:
+                    t = prev_d/(prev_d-distance)
+                    intersection = tuple(previous[a]+t*(point[a]-previous[a]) for a in range(3))
+                    clipped.append(intersection)
+                if inside:
+                    clipped.append(point)
+                previous, prev_d = point, distance
+            if len(clipped) >= 3:
+                sides[side].append(tuple(clipped))
+    left = _compound_group(sides[0], thickness)
+    right = _compound_group(sides[1], thickness)
+    if not left or not right:
+        return None
+    children = [left, right]
+    for face in coplanar:
+        # A cut-plane face is harmless only if another child's Box covers it.
+        # Keep isolated shelves/floors instead of deleting their collision surface.
+        if any(all(child[1][a]-epsilon <= p[a] <= child[2][a]+epsilon
+                   for p in face for a in range(3)) for child in children):
+            continue
+        enlarged = [_compound_group(child[0]+[face], thickness) for child in children]
+        side = min(range(2), key=lambda i: enlarged[i][3]-children[i][3])
+        children[side] = enlarged[side]
+    return tuple(children)
+
+
+def _approximate_compound_bounds(mesh, maximum):
+    mesh.calc_loop_triangles()
+    faces = [tuple(tuple(mesh.vertices[i].co) for i in triangle.vertices) for triangle in mesh.loop_triangles]
+    if not faces:
+        raise ValueError('Mesh has no surface triangles')
+    if any(not math.isfinite(c) for f in faces for p in f for c in p):
+        raise ValueError('Mesh contains non-finite coordinates')
+    span = max(max(p[a] for f in faces for p in f)-min(p[a] for f in faces for p in f) for a in range(3))
+    if span <= 1e-6:
+        raise ValueError('Mesh bounds are degenerate')
+    epsilon = max(span*1e-7, 1e-8)
+    thickness = max(span*1e-6, 1e-4)
+    groups = [_compound_group(faces, thickness)]
+
+    def splits(group):
+        options = []
+        for axis, plane, gap in _compound_candidates(group, epsilon):
+            children = _compound_cut(group, axis, plane, epsilon, thickness)
+            if children:
+                options.append((sum(child[3] for child in children), gap, children))
+        return options
+
+    while len(groups) < maximum:
+        best = None
+        budget = maximum-len(groups)
+        for index, group in enumerate(groups):
+            options = splits(group)
+            plans = list(options)
+            if budget >= 2:
+                # Look ahead one split: a gate may first become lintel + two pillars
+                # in one box, with volume reduction only when those pillars separate.
+                for _, gap, children in options:
+                    for side in (0, 1):
+                        next_options = splits(children[side])
+                        if next_options:
+                            _, next_gap, grandchildren = min(next_options, key=lambda x: (x[0], -x[1]))
+                            leaves = (children[1-side], *grandchildren)
+                            plans.append((sum(child[3] for child in leaves), max(gap, next_gap), leaves))
+            for volume, gap, leaves in plans:
+                saving = group[3]-volume
+                # A 1% per-box penalty prevents numerically tiny or cosmetic splits.
+                added = len(leaves)-1
+                score = saving-group[3]*.01*added
+                if score <= group[3]*1e-7:
+                    continue
+                rank = (score, -added, gap)
+                if best is None or rank > best[0]:
+                    best = (rank, index, leaves)
+        if best is None:
+            break
+        _, index, leaves = best
+        groups[index:index+1] = leaves
+    return [(group[1], group[2]) for group in groups], thickness
+
+
+def _pad_compound_bounds(boxes, padding, thickness):
+    """Apply final margins, capping facing margins to preserve >= half a gap."""
+    result = []
+    for index, (low, high) in enumerate(boxes):
+        before, after = [padding]*3, [padding]*3
+        for other_index, (other_low, other_high) in enumerate(boxes):
+            if index == other_index:
+                continue
+            for axis in range(3):
+                if other_low[axis] >= high[axis]:
+                    after[axis] = min(after[axis], (other_low[axis]-high[axis])*.25)
+                if other_high[axis] <= low[axis]:
+                    before[axis] = min(before[axis], (low[axis]-other_high[axis])*.25)
+        bmin = Vector(tuple(low[a]-before[a] for a in range(3)))
+        bmax = Vector(tuple(high[a]+after[a] for a in range(3)))
+        # Open/planar meshes still need a valid, nonzero Box for StageWorld.
+        for axis in range(3):
+            if bmax[axis]-bmin[axis] < thickness:
+                center = (bmax[axis]+bmin[axis])*.5
+                bmin[axis], bmax[axis] = center-thickness*.5, center+thickness*.5
+        result.append((bmin, bmax))
+    return result
+
+
 def _generate_compound_boxes(source, count, padding):
     if source.type != 'MESH':
         raise ValueError('Auto Compound requires a Mesh object')
-    mesh = source.data
-    if not mesh.vertices or not mesh.polygons:
-        raise ValueError(f'{source.name}: mesh has no geometry')
-
-    # Work in source-local space. Keeping source rotation in every generated box means
-    # StageWorld can continue to use its existing rotated Box collider path unchanged.
-    coords = [v.co.copy() for v in mesh.vertices]
-    low = Vector((min(v[i] for v in coords) for i in range(3)))
-    high = Vector((max(v[i] for v in coords) for i in range(3)))
-    extents = high - low
-    axis = max(range(3), key=lambda i: extents[i])
-    if extents[axis] <= 1e-6:
-        raise ValueError(f'{source.name}: mesh bounds are degenerate')
-
-    # Put each polygon in one slice using its center, then include all vertices of that
-    # polygon in the slice bounds. This intentionally overlaps neighbouring geometry a
-    # little rather than leaving gameplay holes between boxes.
-    bins = [[] for _ in range(count)]
-    span = extents[axis]
-    for poly in mesh.polygons:
-        center = sum((mesh.vertices[i].co[axis] for i in poly.vertices), 0.0) / len(poly.vertices)
-        index = min(count - 1, max(0, int(((center - low[axis]) / span) * count)))
-        bins[index].extend(poly.vertices)
-
+    if not isinstance(count, int) or not 1 <= count <= 32 or not math.isfinite(padding) or padding < 0:
+        raise ValueError('Invalid Max Box Count or Padding')
+    # Match Static Mesh export, including Boolean/other evaluated modifiers.
+    if source.mode == 'EDIT':
+        source.update_from_editmode()
+    bpy.context.view_layer.update()
+    evaluated = source.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+    try:
+        boxes, thickness = _approximate_compound_bounds(mesh, count)
+    finally:
+        evaluated.to_mesh_clear()
+    boxes = _pad_compound_bounds(boxes, padding, thickness)
+    # Validate first: a failed regeneration must not remove the previous colliders.
+    _remove_generated_colliders(source)
     source['yan_auto_collider_owner'] = source.name
     created = []
-    for slice_index, indices in enumerate(bins):
-        if not indices:
-            continue
-        unique = set(indices)
-        points = [mesh.vertices[i].co for i in unique]
-        bmin = Vector((min(v[i] for v in points) for i in range(3)))
-        bmax = Vector((max(v[i] for v in points) for i in range(3)))
-        for i in range(3):
-            bmin[i] -= padding
-            bmax[i] += padding
-        size = bmax - bmin
-        if min(size) <= 1e-6:
-            continue
-        center = (bmin + bmax) * 0.5
-        half = size * 0.5
-
-        empty = bpy.data.objects.new(f'COL_{source.name}_{slice_index:02d}', None)
+    for index, (bmin, bmax) in enumerate(boxes):
+        center, half = (bmin+bmax)*.5, (bmax-bmin)*.5
+        empty = bpy.data.objects.new(f'COL_{source.name}_{index:02d}', None)
         empty.empty_display_type = 'CUBE'
         empty.empty_display_size = 1.0
         empty.display_type = 'WIRE'
@@ -798,8 +946,6 @@ def _generate_compound_boxes(source, count, padding):
         empty['yan_auto_collider_generated'] = True
         empty['yan_auto_collider_owner'] = source.name
         created.append(empty)
-    if not created:
-        raise ValueError(f'{source.name}: no collider boxes could be generated')
     return created
 
 
@@ -817,7 +963,6 @@ class YAN_OT_generate_auto_colliders(bpy.types.Operator):
         source = context.object
         cfg = source.yan_level
         try:
-            _remove_generated_colliders(source)
             created = _generate_compound_boxes(source, cfg.auto_collider_count, cfg.auto_collider_padding)
             # The generated Collider objects now own collision. Avoid also exporting one
             # large Static Box for the source mesh.
