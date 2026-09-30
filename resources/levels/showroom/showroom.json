@@ -267,6 +267,25 @@
           "weight": 1.0
         }
       ]
+    },
+    {
+      "id": "Enemy_05_normal_test",
+      "position": [
+        -14.0,
+        0.0,
+        24.0
+      ],
+      "rotation": [
+        0.0,
+        -1.570796251296997,
+        0.0
+      ],
+      "enemyPool": [
+        {
+          "id": "normal_test",
+          "weight": 1.0
+        }
+      ]
     }
   ],
   "spawnTriggers": [],
@@ -287,6 +306,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "pistol",
@@ -306,6 +329,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "smg",
@@ -325,6 +352,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "rifle",
@@ -344,6 +375,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "shotgun",
@@ -363,6 +398,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "pump_shotgun",
@@ -382,6 +421,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "auto_shotgun",
@@ -401,6 +444,10 @@
         -0.0,
         0.0
       ],
+      "filter": {
+        "minRarity": 1,
+        "maxRarity": 5
+      },
       "weaponPool": [
         {
           "id": "burst_rifle",

@@ -10,6 +10,10 @@ Debug x64で起動し、F1またはESCでマウスを出して **FPS Controls �
 
 敵は左からNormal / Ranged / Fast / Tank / Bomber。中心間隔4m、足元Y=0、初期向きはプレイヤー側です。EnemySpawnの配置データを直接読み、入場時に全員を生成します。ShowroomではTriggerの更新・Goal判定を実行しません。
 
+別個体の **Normal Test**（ID: `normal_test`）を左奥の **(-14, 0, 24)** に配置しています。`resources/enemy/boss/normal.test.enemy.json` を使うNormal型で、既存5体の列から離してあります。
+
+現在のWeapon Editor画面には **Reset Showroom (F5)** と **Freeze Enemies** を表示します。試射中も **F5** でリセットできます。敵を元の位置・HP・部位で再生成し、プレイヤーHP・現在の武器の弾薬・Pickupを回復、飛翔中の弾と射撃／命中記録を消去します。現在位置、AI静止設定、未保存の武器編集内容は維持します。敵データは入場時に読み込んだ内容で復元します。
+
 ## 操作
 
 - **Freeze Enemies**：初期ON。AI移動・攻撃・敵同士の押し合いを止めます。射撃によるDamageState変化・部位破壊・破片の動きは継続します。既に発射済みの敵弾／爆弾も継続します。

@@ -13,7 +13,10 @@ data, geometry=e.build_level(bpy.context.scene,bpy.context.evaluated_depsgraph_g
 saved=json.loads((root/'resources/levels/showroom/showroom.json').read_text(encoding='utf-8'))
 assert data==saved
 assert not data['spawnTriggers'] and not data['goalTriggers']
-assert len(data['spawnPoints'])==5 and len(data['weaponSpawnPoints'])==7
+assert len(data['spawnPoints'])==6 and len(data['weaponSpawnPoints'])==7
+test_enemy=data['spawnPoints'][-1]
+assert test_enemy['enemyPool'][0]['id']=='normal_test'
+assert test_enemy['position']==[-14,0,24]
 assert len(geometry)==15 and len(data['colliders'])==5
 assert all(obj.data.materials for obj in geometry)
 # Every initial lineup center fits the nominal 60-degree, 16:9 start view horizontally.

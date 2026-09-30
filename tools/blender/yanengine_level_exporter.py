@@ -1,5 +1,5 @@
 """YanEngine level authoring. Blender 4.4+; install this file as a legacy add-on."""
-bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 4, 0),
+bl_info = {"name": "YanEngine Level", "author": "YanEngine", "version": (1, 4, 3),
            "blender": (4, 4, 0), "location": "View3D > Sidebar > YanEngine Level", "category": "Import-Export"}
 import bpy
 from bpy.props import BoolProperty, StringProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty, CollectionProperty
@@ -772,7 +772,9 @@ def _compound_candidates(group, epsilon):
                     boundaries[value] = boundaries.get(value, 0)+1
         # Cap search cost on dense terrain, while retaining large empty intervals.
         values = [(position, gap/span) for gap, position in gaps[:6]]
-        values += [(value, 0.0) for value in sorted(boundaries, key=lambda v: (-boundaries[v], v))[:6]]
+        # Small door jambs may occur less often than triangulated wall edges.
+        # Keep every boundary on ordinary architectural meshes; cap dense meshes.
+        values += [(value, 0.0) for value in sorted(boundaries, key=lambda v: (-boundaries[v], v))[:24]]
         used = []
         for value, gap in values:
             if low[axis]+epsilon < value < high[axis]-epsilon and not any(abs(value-v) <= epsilon for v in used):
@@ -824,8 +826,15 @@ def _compound_cut(group, axis, plane, epsilon, thickness):
     for face in coplanar:
         # A cut-plane face is harmless only if another child's Box covers it.
         # Keep isolated shelves/floors instead of deleting their collision surface.
-        if any(all(child[1][a]-epsilon <= p[a] <= child[2][a]+epsilon
-                   for p in face for a in range(3)) for child in children):
+        covered = [i for i, child in enumerate(children)
+                   if all(child[1][a]-epsilon <= p[a] <= child[2][a]+epsilon
+                          for p in face for a in range(3))]
+        if covered:
+            # Retain the surface for later recursive cuts. Dropping it because
+            # today's box covers it can create false holes in tomorrow's boxes.
+            side = covered[0]
+            child = children[side]
+            children[side] = (child[0]+[face], child[1], child[2], child[3])
             continue
         enlarged = [_compound_group(child[0]+[face], thickness) for child in children]
         side = min(range(2), key=lambda i: enlarged[i][3]-children[i][3])
@@ -847,43 +856,125 @@ def _approximate_compound_bounds(mesh, maximum):
     thickness = max(span*1e-6, 1e-4)
     groups = [_compound_group(faces, thickness)]
 
+    # For a consistently oriented closed mesh, boxes must also preserve solid
+    # volume, not merely its visible surfaces after clipping.
+    edges = {}
+    signed_volume = 0.0
+    origin = faces[0][0]
+    for triangle, face in zip(mesh.loop_triangles, faces):
+        ids = tuple(triangle.vertices)
+        for a, b in zip(ids, ids[1:]+ids[:1]):
+            key = (min(a,b), max(a,b))
+            count, balance = edges.get(key, (0,0))
+            edges[key] = count+1, balance+(1 if a < b else -1)
+        a,b,c = [tuple(p[i]-origin[i] for i in range(3)) for p in face]
+        signed_volume += (a[0]*(b[1]*c[2]-b[2]*c[1])+
+                          a[1]*(b[2]*c[0]-b[0]*c[2])+
+                          a[2]*(b[0]*c[1]-b[1]*c[0]))/6.0
+    solid_volume = abs(signed_volume) if all(v == (2,0) for v in edges.values()) else 0.0
+
+    # Fix structural planes before clipping. Intersections with triangulation
+    # diagonals otherwise invent many new boundaries and crowd doorway planes
+    # out of the bounded lookahead search.
+    structural = []
+    for axis in range(3):
+        counts = {}
+        for face in faces:
+            for point in face:
+                value = point[axis]
+                if groups[0][1][axis]+epsilon < value < groups[0][2][axis]-epsilon:
+                    counts[value] = counts.get(value, 0)+1
+        structural.extend((axis, value, 2.0) for value in
+                          sorted(counts, key=lambda v: (-counts[v], v))[:24])
+
     def splits(group):
         options = []
-        for axis, plane, gap in _compound_candidates(group, epsilon):
+        candidates = list(structural)
+        # Centroid gaps remain useful for disconnected/non-axis-aligned meshes.
+        candidates.extend(candidate for candidate in _compound_candidates(group, epsilon)
+                          if candidate[2] > 0 and not any(
+                              candidate[0] == axis and abs(candidate[1]-plane) <= epsilon
+                              for axis, plane, _ in structural))
+        for axis, plane, gap in candidates:
+            if not group[1][axis]+epsilon < plane < group[2][axis]-epsilon:
+                continue
             children = _compound_cut(group, axis, plane, epsilon, thickness)
             if children:
                 options.append((sum(child[3] for child in children), gap, children))
         return options
 
+    def plans(group, budget):
+        # A recessed door needs cuts at both jambs, its top AND its back.
+        # Intermediate cuts may save no volume at all. Keep these candidates
+        # temporarily, but commit only a complete plan with positive savings.
+        # Bound the search rather than recursively exploring every partition.
+        frontier = [(None, (group,))]
+        cache = {}
+        for added in range(1, min(budget, 4)+1):
+            candidates = {}
+            for origin, leaves in frontier:
+                for side, leaf in enumerate(leaves):
+                    key = id(leaf)
+                    if key not in cache:
+                        # Hold a reference too, preventing Python id reuse.
+                        cache[key] = (leaf, splits(leaf))
+                    for _, gap, children in cache[key][1]:
+                        replacement = leaves[:side]+children+leaves[side+1:]
+                        volume = sum(child[3] for child in replacement)
+                        # Keep separate search lanes for each first cut. Otherwise
+                        # zero-saving doorway cuts lose to unrelated large gaps.
+                        lane = origin if origin is not None else tuple(
+                            (child[1], child[2]) for child in children)
+                        # Equal bounds do not imply equal remaining surfaces.
+                        signature = (lane, tuple(sorted(
+                            tuple(sorted(child[0])) for child in replacement)))
+                        previous = candidates.get(signature)
+                        if previous is None or gap > previous[1]:
+                            candidates[signature] = (volume, gap, replacement, lane)
+            # Compare near-equal volumes as ties; floating-point noise
+            # must not select a random path before a real void is exposed.
+            tolerance = max(group[3]*1e-7, thickness**3)
+            ordered = sorted(candidates.values(),
+                             key=lambda item: (round(item[0]/tolerance), -item[1]))
+            if not ordered:
+                break
+            for volume, gap, leaves, _ in ordered:
+                yield volume, gap, leaves
+            # Retain multiple paths PER first cut, not 24 paths for the entire
+            # mesh. Small entrances must compete within their own search lane.
+            frontier = []
+            retained = {}
+            for _, _, leaves, lane in ordered:
+                if retained.get(lane, 0) < 8:
+                    frontier.append((lane, leaves))
+                    retained[lane] = retained.get(lane, 0)+1
+
     while len(groups) < maximum:
+        if solid_volume > 0 and sum(g[3] for g in groups) <= solid_volume*(1+1e-7):
+            break
         best = None
         budget = maximum-len(groups)
         for index, group in enumerate(groups):
-            options = splits(group)
-            plans = list(options)
-            if budget >= 2:
-                # Look ahead one split: a gate may first become lintel + two pillars
-                # in one box, with volume reduction only when those pillars separate.
-                for _, gap, children in options:
-                    for side in (0, 1):
-                        next_options = splits(children[side])
-                        if next_options:
-                            _, next_gap, grandchildren = min(next_options, key=lambda x: (x[0], -x[1]))
-                            leaves = (children[1-side], *grandchildren)
-                            plans.append((sum(child[3] for child in leaves), max(gap, next_gap), leaves))
-            for volume, gap, leaves in plans:
+            # Reject numerical noise only. A percentage-per-box cost suppresses
+            # real narrow entrances merely because the surrounding building is large.
+            tolerance = max(group[3]*1e-7, thickness**3)
+            for volume, gap, leaves in plans(group, budget):
                 saving = group[3]-volume
-                # A 1% per-box penalty prevents numerically tiny or cosmetic splits.
-                added = len(leaves)-1
-                score = saving-group[3]*.01*added
-                if score <= group[3]*1e-7:
+                if sum(g[3] for g in groups)-saving < solid_volume-max(solid_volume*1e-6, tolerance):
                     continue
-                rank = (score, -added, gap)
-                if best is None or rank > best[0]:
-                    best = (rank, index, leaves)
+                if saving <= tolerance:
+                    continue
+                added = len(leaves)-1
+                # Quantize within numerical tolerance so equivalent partitions
+                # favor fewer boxes, rather than floating-point roundoff.
+                rank = (round(saving/tolerance), -added, gap)
+                if best is None or saving > best[3]+max(tolerance, best[4]) or (
+                        abs(saving-best[3]) <= max(tolerance, best[4])
+                        and rank[1:] > best[0][1:]):
+                    best = (rank, index, leaves, saving, tolerance)
         if best is None:
             break
-        _, index, leaves = best
+        _, index, leaves, _, _ = best
         groups[index:index+1] = leaves
     return [(group[1], group[2]) for group in groups], thickness
 
@@ -891,8 +982,16 @@ def _approximate_compound_bounds(mesh, maximum):
 def _pad_compound_bounds(boxes, padding, thickness):
     """Apply final margins, capping facing margins to preserve >= half a gap."""
     result = []
+    # A lintel may sit between full-height side boxes: none is strictly below
+    # it, so pairwise facing tests alone cannot protect the opening underneath.
+    # Limit margins by the smallest structural interval on each axis as well.
+    margins = []
+    for axis in range(3):
+        coordinates = sorted(set(bound[axis] for box in boxes for bound in box))
+        intervals = [b-a for a,b in zip(coordinates, coordinates[1:]) if b-a > thickness]
+        margins.append(min(padding, min(intervals)*.25) if intervals and len(boxes) > 1 else padding)
     for index, (low, high) in enumerate(boxes):
-        before, after = [padding]*3, [padding]*3
+        before, after = list(margins), list(margins)
         for other_index, (other_low, other_high) in enumerate(boxes):
             if index == other_index:
                 continue

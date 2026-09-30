@@ -5,7 +5,7 @@ Debugビルドの **Weapon System → Weapon Editor** から開きます。FPS�
 ## 操作
 
 1. 左ペインで武器を検索・選択します。New WeaponはIDとDisplay Nameを入力して作成、Duplicateは選択武器の性能をコピーします。作成・削除を含む変更はSaveまで下書きです。
-2. 中央のGeneral / Fire / Ammo / Reload / ADS・Accuracyで編集します。Typeは自由な文字列です。BurstおよびPerRoundの専用項目は対応モードのときだけ表示します。
+2. 中央（ショウルームでは右）の「Editing: ID / 名前」が左の選択武器と一致していることを確認し、General / Fire / Ammo / Reload / ADS・Accuracyで編集します。武器を選び直すと編集対象も切り替わり、開いているタブは維持されます。Typeは自由な文字列です。BurstおよびPerRoundの専用項目は対応モードのときだけ表示します。
 3. 右ペインでRPM（60 / fireInterval）、Pellet数、PelletあたりDamage、全Pellet命中時のDamage、Magazine内の発射回数、初期総弾数を確認します。Burstの内部間隔はRPMとは別表示です。
 4. **Save & Equip** を押し、Sceneをクリックして射撃します。弾数・Reload・Burst・Cooldownは既存のDebug Equipと同じ経路で初期化します。ESCで再びEditorへ戻って調整できます。
 
@@ -19,7 +19,7 @@ Debugビルドの **Weapon System → Weapon Editor** から開きます。FPS�
 
 Deleteは確認Popupを表示します。削除・ID変更はStageや.blend側の参照を書き換えません。現在のStageのPool／Filterが不正になる変更や、現在配置されているPickupのID削除は保存を拒否します。別Stage・.blendの参照は自動検索しないため、変更後はそれぞれの参照を確認してください。
 
-Initial Weaponは中央上部で選択できます。初期武器を削除する場合は、先に別の武器を指定してください。現在Stageから参照されている武器は、Stage側を修正して再起動してから削除します。
+Initial Weaponは設定欄の「Game Start Settings」を開いて選択できます。これはゲーム開始時の装備の設定で、編集対象は左の武器リストで選択します。初期武器を削除する場合は、先に別の武器を指定してください。現在Stageから参照されている武器は、Stage側を修正して再起動してから削除します。
 
 ## 保存と互換性
 
