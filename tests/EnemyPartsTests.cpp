@@ -8,6 +8,42 @@ int main() {
     // Off-center Boss-like mesh bounds: depth X, height Y, span Z.
     const AABB bounds{{-.38f,.016f,-1.02f},{.22f,2.482f,1.02f}};
     const auto parts=MakeEnemyParts(bounds);
+    // Shared-only limbs kill the whole enemy; invincible and nonbreakable pieces
+    // must also disappear from hit tests without rewriting their HP configuration.
+    auto shared=parts;
+    shared.hpGroups.push_back({"Group1",100,100,true});
+    for (auto& part:shared) {
+        part.usesLocalHp=false; part.breakable=false; part.deathOnZero=false;
+    }
+    shared[2].sharedGroup=0; shared[3].sharedGroup=0;
+    assert(DamageEnemyPart(shared,size_t(2),50)==50);
+    assert(shared.hpGroups[0].hp==50 && !EnemyPartsDead(shared));
+    assert(DamageEnemyPart(shared,size_t(3),50)==50 && EnemyPartsDead(shared));
+    const auto beforeDeath=shared;
+    assert(BeginEnemyDeath(shared));
+    assert(!BeginEnemyDeath(shared)); // Repeated death does not generate more debris.
+    for (const auto& part:shared) {
+        assert(part.Destroyed() && part.hp==part.maxHp);
+        assert(!part.usesLocalHp && !part.breakable);
+    }
+    EnemyPartHit deathHit;
+    assert(!RaycastEnemyParts(shared,Matrix4x4::MakeIdentity4x4(),{-3,1,0},{1,0,0},100,deathHit));
+    assert(DamageEnemyPart(shared,size_t(2),50)==0);
+    auto rewound=beforeDeath;
+    assert(!rewound.deathProcessed && BeginEnemyDeath(rewound));
+    auto local=parts;
+    DamageEnemyPart(local,EnemyPartType::Head,10000);
+    assert(EnemyPartsDead(local) && BeginEnemyDeath(local));
+    for (const auto& part:local) assert(part.Destroyed());
+    auto instant=parts;
+    assert(!EnemyPartsDead(instant) && BeginEnemyDeath(instant) && EnemyPartsDead(instant));
+    auto nonlethal=parts;
+    DamageEnemyPart(nonlethal,EnemyPartType::LeftArm,10000);
+    assert(!EnemyPartsDead(nonlethal) && !nonlethal.deathProcessed);
+    auto harmlessGroup=beforeDeath;
+    harmlessGroup.hpGroups[0].deathOnZero=false;
+    assert(!EnemyPartsDead(harmlessGroup));
+    assert(!parts.deathProcessed); // A new/reset instance is unaffected.
     const std::array<Transform,4> transforms{{{{1,1,1},{},{0,0,0}},
         {{2,2,2},{0,1.5707963f,0},{3,0,2}},
         {{.5f,3,1.4f},{.3f,-.7f,.2f},{-8,4,10}},

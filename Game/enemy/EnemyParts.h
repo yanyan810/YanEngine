@@ -96,7 +96,8 @@ struct EnemyPart {
     size_t sharedGroup=kNoEnemyPart;
     float sharedDamageRate=1;
     std::shared_ptr<const EnemyPartGeometry> geometry;
-    bool Destroyed() const { return usesLocalHp && breakable && hp<=0; }
+    bool detachedOnDeath=false;
+    bool Destroyed() const { return detachedOnDeath || (usesLocalHp && breakable && hp<=0); }
     float DamageRate() const { if (!usesLocalHp) return 0; return maxHp > 0 ? std::clamp(1.0f - hp / maxHp, 0.0f, 1.0f) : 1.0f; }
     EnemyPartDamageState DamageState() const {
         if (Destroyed()) return EnemyPartDamageState::Destroyed;
@@ -112,7 +113,16 @@ struct EnemyPart {
 struct EnemyParts : std::vector<EnemyPart> {
     using std::vector<EnemyPart>::vector;
     std::vector<EnemyHpGroup> hpGroups;
+    bool deathProcessed=false;
 };
+// Latch death independently of HP rules (including invincible/nonbreakable parts).
+// The state is copied with debug snapshots and fresh assets start alive.
+inline bool BeginEnemyDeath(EnemyParts& parts) {
+    if (parts.deathProcessed) return false;
+    parts.deathProcessed=true;
+    for (auto& part:parts) part.detachedOnDeath=true;
+    return true;
+}
 inline void ApplyEnemyHpMultiplier(EnemyParts& parts, float multiplier) {
     for (auto& part : parts) part.hp = part.maxHp = EnemyPartMaxHp(part.type)*multiplier;
 }
