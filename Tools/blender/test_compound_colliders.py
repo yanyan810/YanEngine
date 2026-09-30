@@ -63,6 +63,29 @@ def check(obj, expected, solid_samples, empty_samples):
     return boxes
 
 
+# Regression: saved doorway mesh, including its concave floor/front n-gons.
+# Keep independent of the user's mutable stage02.blend.
+xl, xr, back, top = -.5068422555923462, .32812178134918213, .5576860904693604, -.20529323816299438
+vertices = [(-1,-1,-1),(-1,-1,1),(xl,back,top),(-1,1,-1),(-1,1,1),
+            (1,-1,-1),(1,-1,1),(xr,back,top),(1,1,-1),(1,1,1),
+            (xl,1,top),(xl,1,-1),(xr,1,top),(xr,1,-1),(xl,back,-1),(xr,back,-1)]
+polygons = [[0,1,4,3],[3,4,9,8,13,12,10,11],[8,9,6,5],[5,6,1,0],
+            [8,5,0,3,11,14,15,13],[9,4,1,6],[10,2,14,11],[7,12,13,15],
+            [14,2,7,15],[7,2,10,12]]
+door_mesh = bpy.data.meshes.new('RecessedDoor')
+door_mesh.from_pydata(vertices, [], polygons)
+door_mesh.update()
+door = bpy.data.objects.new('RecessedDoor', door_mesh)
+bpy.context.scene.collection.objects.link(door)
+for maximum in (4, 8):
+    boxes = e._generate_compound_boxes(door, maximum, .02)
+    bpy.context.view_layer.update()
+    assert len(boxes) == 4, ('RecessedDoor', maximum, len(boxes))
+    assert not any(covers(boxes, (x,y,z)) for x in (-.4,0,.2)
+                   for y in (.65,.8,.95) for z in (-.9,-.6,-.3))
+    assert all(covers(boxes,p) for p in [(-.8,.8,-.6),(.8,.8,-.6),(0,.8,.5),(0,0,-.6)])
+print('RecessedDoor: budget 4 uses 4 boxes; padded entrance remains open', flush=True)
+
 cube = shape('Cube', {(0,0,0)})
 check(cube, 1, [(x,y,z) for x in (.1,.5,.9) for y in (.1,.5,.9) for z in (.1,.5,.9)], [])
 long_box = shape('Long', {(0,0,0)}, stretch=(20,1,1))

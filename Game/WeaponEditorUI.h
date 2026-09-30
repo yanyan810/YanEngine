@@ -19,7 +19,7 @@ public:
         auto request=testRequest_; testRequest_.reset(); return request;
     }
     // A value signals a successful save; nonempty value requests the shared Debug Equip path.
-    std::optional<std::string> Draw(WeaponSystem& live,const std::string& level,bool canEquip, const std::function<void()>& preview={}) {
+    std::optional<std::string> Draw(WeaponSystem& live,const std::string& level,bool canEquip, const std::function<void()>& preview={}, const std::function<void()>& showroomControls={}) {
         if (!visible || mode==WeaponEditorMode::Test) return std::nullopt;
         std::optional<std::string> result;
         ImGuiWindowFlags flags=0;
@@ -63,6 +63,7 @@ public:
             if (ImGui::Button("Test Weapon")) testRequest_=*Selected();
             ImGui::EndDisabled(); ImGui::SameLine();
             if (ImGui::Button("Return to Game")) returnToGame=true;
+            if (showroomControls) showroomControls();
         }
         if (!model_.error.empty()) ImGui::TextWrapped("Error: %s",model_.error.c_str());
         const auto validation=model_.Validate();
@@ -126,12 +127,22 @@ public:
                 preview(); ImGui::EndChild();
             }
             ImGui::TableSetColumnIndex(preview ? 2 : 1); ImGui::BeginChild("Properties",{0,0});
-            if (ImGui::BeginCombo("Initial Weapon",model_.initialWeapon.c_str())) {
-                for (const auto& entry:model_.entries)
-                    if (ImGui::Selectable(entry.value.id.c_str(),model_.initialWeapon==entry.value.id)) model_.initialWeapon=entry.value.id;
-                ImGui::EndCombo();
+            if (const auto* selected=Selected()) {
+                ImGui::TextWrapped("Editing: %s / %s",selected->id.c_str(),selected->displayName.c_str());
+                ImGui::Separator();
+                DrawFields(model_.entries[static_cast<size_t>(selected_)].value,selected_);
+            } else {
+                ImGui::TextUnformatted("Select a weapon from the Weapon List to edit.");
             }
-            if (selected_>=0 && static_cast<size_t>(selected_)<model_.entries.size()) DrawFields(model_.entries[static_cast<size_t>(selected_)].value);
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Game Start Settings")) {
+                ImGui::TextWrapped("Initial Weapon sets the starting loadout. Select the weapon to edit in the Weapon List.");
+                if (ImGui::BeginCombo("Initial Weapon",model_.initialWeapon.c_str())) {
+                    for (const auto& entry:model_.entries)
+                        if (ImGui::Selectable(entry.value.id.c_str(),model_.initialWeapon==entry.value.id)) model_.initialWeapon=entry.value.id;
+                    ImGui::EndCombo();
+                }
+            }
             if (!preview) { ImGui::EndChild(); ImGui::TableSetColumnIndex(2); ImGui::BeginChild("Summary",{0,0}); }
             else ImGui::Separator();
             if (selected_>=0 && static_cast<size_t>(selected_)<model_.entries.size()) Summary(model_.entries[static_cast<size_t>(selected_)].value);
@@ -151,9 +162,10 @@ private:
         std::copy(value.begin(),value.end(),buffer.begin());
         if (ImGui::InputText(label,buffer.data(),buffer.size())) value=buffer.data();
     }
-    static void DrawFields(WeaponDefinition& w) {
+    static void DrawFields(WeaponDefinition& w,int selection) {
         if (!ImGui::BeginTabBar("Categories")) return;
         if (ImGui::BeginTabItem("General")) {
+            ImGui::PushID(selection);
             Text("ID",w.id); Text("Display Name",w.displayName);
             ImGui::TextWrapped("Changing ID does not rename stage or Blender references.");
             int slot=static_cast<int>(w.slot); if (ImGui::Combo("Slot",&slot,"Main\0Sub\0")) w.slot=static_cast<WeaponSlot>(slot);
@@ -164,9 +176,10 @@ private:
             if (ImGui::InputFloat3("Pickup Scale",scale)) w.pickupScale={scale[0],scale[1],scale[2]};
             float color[]{w.pickupColor.x,w.pickupColor.y,w.pickupColor.z};
             if (ImGui::ColorEdit3("Pickup Color",color)) w.pickupColor={color[0],color[1],color[2]};
-            ImGui::EndTabItem();
+            ImGui::PopID(); ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Fire")) {
+            ImGui::PushID(selection);
             int mode=static_cast<int>(w.fireMode);
             if (ImGui::Combo("Fire Mode",&mode,"SemiAuto\0FullAuto\0Burst\0")) w.fireMode=static_cast<WeaponFireMode>(mode);
             ImGui::InputFloat("Damage / Pellet",&w.damage); ImGui::InputFloat("Fire Interval (s)",&w.fireInterval);
@@ -176,14 +189,16 @@ private:
                 ImGui::InputInt("Burst Count",&w.burstCount); ImGui::InputFloat("Burst Interval (s)",&w.burstInterval);
             }
             ImGui::InputFloat("Bullet Speed",&w.bulletSpeed); ImGui::InputFloat("Bullet Lifetime (s)",&w.bulletLifeTime);
-            ImGui::EndTabItem();
+            ImGui::PopID(); ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Ammo")) {
+            ImGui::PushID(selection);
             ImGui::InputInt("Magazine Size",&w.magazineSize); ImGui::InputInt("Reserve Ammo",&w.reserveAmmo);
             ImGui::InputInt("Max Reserve Ammo",&w.maxReserveAmmo); ImGui::InputInt("Ammo Per Shot",&w.ammoPerShot);
-            ImGui::EndTabItem();
+            ImGui::PopID(); ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Reload")) {
+            ImGui::PushID(selection);
             int mode=static_cast<int>(w.reloadMode);
             if (ImGui::Combo("Reload Mode",&mode,"Magazine\0PerRound\0")) w.reloadMode=static_cast<WeaponReloadMode>(mode);
             if (w.reloadMode==WeaponReloadMode::Magazine) ImGui::InputFloat("Reload Time (s)",&w.reloadTime);
@@ -193,13 +208,14 @@ private:
                 ImGui::InputFloat("Reload End Time",&w.reloadEndTime);
                 ImGui::Checkbox("Reload Can Interrupt",&w.reloadCanInterrupt);
             }
-            ImGui::EndTabItem();
+            ImGui::PopID(); ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("ADS / Accuracy")) {
+            ImGui::PushID(selection);
             ImGui::InputFloat("Hip Spread Degrees",&w.hipSpreadDegrees); ImGui::InputFloat("ADS Spread Degrees",&w.adsSpreadDegrees);
             ImGui::InputFloat("ADS FOV",&w.adsFovDegrees); ImGui::InputFloat("ADS Transition Time",&w.adsTransitionTime);
             ImGui::InputFloat("ADS Sensitivity Multiplier",&w.adsSensitivityMultiplier);
-            ImGui::EndTabItem();
+            ImGui::PopID(); ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }

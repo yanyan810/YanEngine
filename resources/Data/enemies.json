@@ -1,6 +1,21 @@
 {
   "enemies": [
     {
+      "id": "normal_test",
+      "displayName": "Normal Test",
+      "type": "Normal",
+      "partAsset": "resources/enemy/boss/normal.test.enemy.json",
+      "visualScale": [0.425, 0.425, 0.425],
+      "collisionRadius": 0.36,
+      "collisionHeight": 2.11,
+      "hpMultiplier": 1,
+      "moveSpeed": 2.5,
+      "detectionRange": 20,
+      "attackRange": 1.5,
+      "attackDamage": 10,
+      "attackInterval": 1
+    },
+    {
       "attackDamage": 10,
       "attackInterval": 1,
       "attackRange": 1.5,

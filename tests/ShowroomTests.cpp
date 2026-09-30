@@ -16,7 +16,7 @@ int main() {
     assert(spawns.Triggers().empty() && progress.Goals().empty());
     assert(!progress.Update(10000,{0,0,14}) && progress.IsPlaying());
     const std::array<std::string,5> order{"normal","ranged","fast","tank","bomber"};
-    assert(spawns.Points().size()==order.size());
+    assert(spawns.Points().size()==order.size()+1);
     for (size_t i=0;i<order.size();++i) {
         const auto& p=spawns.Points()[i];
         assert(p.enemyPool.size()==1 && p.enemyPool[0].id==order[i]);
@@ -28,11 +28,22 @@ int main() {
         ApplyEnemyHpMultiplier(parts,d->hpMultiplier);
         assert(DamageEnemyPart(parts,EnemyPartType::Head,10000)>0 && EnemyPartsDead(parts));
     }
+    const auto& testPoint=spawns.Points().back();
+    assert(testPoint.enemyPool.size()==1 && testPoint.enemyPool[0].id=="normal_test");
+    assert(testPoint.position.x==-14 && testPoint.position.y==0 && testPoint.position.z==24);
+    const auto* testDefinition=definitions.Find("normal_test");
+    assert(testDefinition && testDefinition->type==EnemyType::Normal && testDefinition->partAsset);
+    assert(testDefinition->partAsset->path.find("normal.test.enemy.json")!=std::string::npos);
+    auto damaged=testDefinition->partAsset->Instantiate();
+    assert(DamageEnemyPart(damaged,EnemyPartType::Head,10000)>0 && EnemyPartsDead(damaged));
+    const auto restored=testDefinition->partAsset->Instantiate();
+    assert(!EnemyPartsDead(restored));
+    for (const auto& part:restored) assert(part.hp==part.maxHp);
     int triggered=0;
     spawns.Update(10000,level.playerPosition,[&](const auto&,const auto&){++triggered;return uint64_t{0};},[](uint64_t){return true;});
     assert(triggered==0);
     WeaponSystem weapons; assert(weapons.Load("../../resources/Data/weapons.json",path));
-    assert(weapons.Pickups().size()==weapons.Definitions().size());
+    assert(weapons.Pickups().size()==weapons.Points().size());
     std::set<std::string> ids;
     for (const auto& pickup : weapons.Pickups()) {
         assert(ids.insert(pickup.weaponId).second);
@@ -47,7 +58,7 @@ int main() {
         assert(weapon.Step(1,true,true,false)>0);
         assert(weapon.Magazine()<d->magazineSize);
     }
-    for (const auto& d : weapons.Definitions()) assert(ids.contains(d.id));
+    for (const auto& p : weapons.Points()) assert(!p.weaponPool.empty() && ids.contains(p.weaponPool.front().id));
     // Same reusable-pickup API remains opt-in; main-level pickups are still consumed.
     WeaponSystem main; assert(main.Load("../../resources/Data/weapons.json","../../resources/levels/stage01/stage01.json"));
     WeaponRuntime gun; const auto position=main.Pickups().front().position;

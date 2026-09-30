@@ -70,6 +70,9 @@ for i,enemy in enumerate(['normal','ranged','fast','tank','bomber']):
     obj=make(f'Enemy_{i:02}_{enemy}','ENEMY','EnemySpawns',(-2+4*i,0,14),rotation=(0,-1.57079632679,0))
     obj.yan_level.group='Display'
     row=obj.yan_level.pool.add(); row.identifier=enemy; row.weight=1
+obj=make('Enemy_05_normal_test','ENEMY','EnemySpawns',(-14,0,24),rotation=(0,-1.57079632679,0))
+obj.yan_level.group='Test'
+row=obj.yan_level.pool.add(); row.identifier='normal_test'; row.weight=1
 weapons=json.loads((root/'resources/Data/weapons.json').read_text(encoding='utf-8'))['weapons']
 order=['pistol','smg','rifle','shotgun','pump_shotgun','auto_shotgun','burst_rifle']
 order += [w['id'] for w in weapons if w['id'] not in order]

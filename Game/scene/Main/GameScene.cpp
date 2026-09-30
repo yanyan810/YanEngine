@@ -152,16 +152,25 @@ void GameScene::OnExit(GameApp& app) {
 void GameScene::Update(GameApp& app, float dt) {
     // SceneManager consumes this request after Update, safely outside ImGui drawing.
     if (!NextScene().empty()) return;
-    if (player_.GetHP() <= 0) { RequestChangeScene_("GameOver"); return; }
+    Input& input = *app.GetInput();
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    if (showroom_ && input.HasFocus() && input.IsKeyTrigger(DIK_F5) && !ImGui::GetIO().WantTextInput)
+        resetEnemiesPending_=true;
+#endif
     if (showroom_ && resetEnemiesPending_) {
         app.Dx()->WaitForGPU();
         ResetShowroomEnemies(app); resetEnemiesPending_=false;
+        weapons_.ResetPickups();
+        const auto equipped=player_.CurrentWeapon().Definition();
+        player_.CurrentWeapon().Equip(equipped);
+        shotCount_=0; hitCount_=0; lastDamage_=0;
+        suppressFireUntilRelease_=true;
 #ifdef _DEBUG
         debugHistory_.Clear(); debugHistory_.Push(CaptureDebug());
 #endif
     }
+    if (player_.GetHP() <= 0) { RequestChangeScene_("GameOver"); return; }
     dt = std::isfinite(dt) ? std::max(dt, 0.0f) : 0.0f;
-    Input& input = *app.GetInput();
 #if defined(_DEBUG) && defined(USE_IMGUI)
     if (showroom_) {
         if (weaponEditor_.mode==WeaponEditorMode::Test && input.IsKeyTrigger(DIK_ESCAPE)) {
@@ -1046,7 +1055,7 @@ void GameScene::DrawWeaponWorkspace(GameApp& app) {
         ImGui::SetNextWindowViewport(viewport->ID);
         ImGui::Begin("Weapon Test",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoMove|
             ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoDocking);
-        ImGui::TextUnformatted("Test Weapon | LMB: Fire | RMB: ADS | R: Reload | ESC: Weapon Editor");
+        ImGui::TextUnformatted("Test Weapon | LMB: Fire | RMB: ADS | R: Reload | F5: Reset Showroom | ESC: Weapon Editor");
         app.ImGui()->DrawScenePreview(); ImGui::End();
         return;
     }
@@ -1054,6 +1063,11 @@ void GameScene::DrawWeaponWorkspace(GameApp& app) {
         const auto size=ImGui::GetContentRegionAvail();
         weaponPreviewAspect_=std::max(size.x,1.0f)/std::max(size.y,1.0f);
         app.ImGui()->DrawScenePreview(true);
+    },[&] {
+        if (ImGui::Button("Reset Showroom (F5)")) resetEnemiesPending_=true;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Respawn enemies and restore HP, ammo and pickups. Clear projectiles and hit stats. Weapon drafts are preserved.");
+        ImGui::SameLine();
+        ImGui::Checkbox("Freeze Enemies",&freezeEnemies_);
     })) {
         debugHistory_.Clear();
         const auto id=saved->empty() ? player_.CurrentWeapon().Definition().id : *saved;
