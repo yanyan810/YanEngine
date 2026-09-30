@@ -68,6 +68,7 @@ int main() {
     DamageEnemyPart(quads,size_t(0),1000);
     assert(quads.hpGroups[0].hp==0 && !EnemyPartsDead(quads) && !quads[0].Destroyed());
     auto normal=EnemyAsset::Load("../../resources/enemy/boss/normal.enemy.json");
+    const auto normalSource=Read("../../resources/enemy/boss/normal.enemy.json");
     assert(normal->defaults.size()==6);
     size_t faces=0;
     const auto legacy=Read("../../resources/enemy/boss/faces/faces.json");
@@ -77,7 +78,7 @@ int main() {
     for (size_t i=0;i<normal->defaults.size();++i) {
         auto state=normal->Instantiate();
         const auto& part=state[i]; faces+=part.geometry->faces.size();
-        assert(part.maxHp==EnemyPartMaxHp(part.type));
+        assert(part.maxHp==normalSource.at("parts").at(i).at("localHp").get<float>());
         const auto& original=legacy.at("parts").at(legacyKeys[i]);
         assert(original.size()==part.geometry->faces.size());
         for (size_t f=0;f<original.size();++f) for (size_t v=0;v<3;++v) {
@@ -137,5 +138,15 @@ int main() {
     EnemyDefinitions definitions;
     assert(definitions.Load("../../resources/Data/enemies.json"));
     assert(definitions.Find("normal")->partAsset && !definitions.Find("bomber")->partAsset);
+    const auto testAsset=definitions.Find("normal_test")->partAsset;
+    auto sharedTest=testAsset->Instantiate();
+    DamageEnemyPart(sharedTest,EnemyPartType::LeftArm,50);
+    assert(sharedTest.hpGroups[0].hp==50 && !EnemyPartsDead(sharedTest));
+    DamageEnemyPart(sharedTest,EnemyPartType::RightArm,50);
+    assert(sharedTest.hpGroups[0].hp==0 && EnemyPartsDead(sharedTest));
+    assert(BeginEnemyDeath(sharedTest));
+    for (const auto& part:sharedTest) assert(part.Destroyed());
+    assert(!BeginEnemyDeath(sharedTest));
+    assert(!EnemyPartsDead(testAsset->Instantiate()));
     std::cout<<"EnemyAsset tests passed: Blender face identity, exact rays / bullet index, arbitrary counts, local/shared/rates, nonbreakable/invincible, group death, instance isolation, six-part compatibility, all 712 face/chunk triangles, fragment motion, validation.\n";
 }

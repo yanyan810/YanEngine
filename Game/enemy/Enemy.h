@@ -50,6 +50,7 @@ public:
     float ApplyDamage(EnemyPartType part, float damage, const Vector3& shotDirection);
     EnemyBulletHitResult ApplyBulletDamage(EnemyPartType part, float damage, const Vector3& direction);
     void ApplyExplosionDamage(const EnemyExplosion& explosion);
+    void Die(const Vector3& direction = {0,1,0});
     void DrawPartDebug(const Matrix4x4& viewProjection, const Vector2& screenMin, const Vector2& screenMax, bool forceParts=false, bool forceMovement=false, bool rangeOnly=false) const;
     void DrawImGui();
     const EnemyDefinition& Definition() const { return definition_; }
@@ -111,6 +112,7 @@ public:
     void SetPartVisible(EnemyPartType type, bool visible);
     void SetPartVisible(size_t index,bool visible) { if (index<visuals_.size()) visuals_[index].visible=visible; }
 private:
+    void DetachPart(size_t index,const Vector3& direction,bool forceFaces=false);
 #ifdef _DEBUG
     std::string dimensionFileStatus_;
 #endif
@@ -158,7 +160,7 @@ private:
     float faceLifetime_ = 5.0f;
     static constexpr size_t kFaceCapacity = 1024;
     static void TrimFacePool(size_t reserve);
-    bool SpawnFaces(size_t part, const Vector3& direction);
+    bool SpawnFaces(size_t part, const Vector3& direction,bool deathBurst=false);
     void DrawFaces();
     Object3dCommon* common_ = nullptr;
     DirectXCommon* dx_ = nullptr;

@@ -1,5 +1,7 @@
 # Showroom（検証専用シーン）
 
+敵の死亡時は、残っている全部位が面の破片になって外側へ飛び散り、重力で落下します。死亡演出はBreak Modeの設定によらずFace方式を使用します。Local HP・Shared HPによる死亡とBomberの起爆は通常ゲームと共通の死亡処理を使用します。Sharedのみ／破壊不可の部位も死亡時には崩れ、すでに飛んだ部位は再生成しません。Freeze Enemies中でも死亡演出は動き、F5のリセットで全身が復元されます。
+
 Debug x64で起動し、F1またはESCでマウスを出して **FPS Controls → Open Showroom** を押します。Showroomは独立したシーンとして登録し、射撃・武器・敵の実装はGameSceneと共用しています。ReleaseではShowroomを登録せず、移動ボタンや専用ImGuiも表示しません。本編の起動先はGameのままです。
 
 ## 配置

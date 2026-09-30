@@ -5,6 +5,7 @@
 #include "GeometryGenerator.h"
 #include "Raycast.h"
 #include <nlohmann/json.hpp>
+#include <numbers>
 namespace {
     constexpr const char* kBossModelPath = "enemy/boss/boss.gltf";
     constexpr std::array<const char*, 6> kPartModelPaths{{
@@ -267,7 +268,7 @@ EnemyBulletHitResult Enemy::ApplyBulletDamage(EnemyPartType part,float damage,co
     return ApplyBulletDamage(FindLegacyPart(part),damage,direction);
 }
 EnemyBulletHitResult Enemy::ApplyBulletDamage(size_t part, float damage, const Vector3& direction) {
-    if (part>=parts_.size() || parts_[part].Destroyed()) return {};
+    if (IsDead() || part>=parts_.size() || parts_[part].Destroyed()) return {};
     // Check before applying damage so even a lethal body shot triggers the explosion.
     // 致死ダメージで死亡状態になった後では起爆条件を満たせないため、被弾前の状態で判定する。
     const bool detonate = IsBomberDetonationHit(definition_.type, LegacyRoleType(parts_[part].role), damage, IsDead()) &&
@@ -281,16 +282,7 @@ EnemyBulletHitResult Enemy::ApplyBulletDamage(size_t part, float damage, const V
     // 表示は実際に起爆した時だけ開始する。頭部破壊後の胴体への追撃ではここに到達しない。
     explosionCenter_ = center;
     explosionTime_ = kExplosionDuration;
-    // Reuse the existing destruction visuals. Destroying all parts also prevents
-    // subsequent pellets/corpse shots from triggering another explosion.
-    for (size_t index=0;index<parts_.size();++index) {
-        const auto& bodyPart=parts_[index];
-        const auto partCenter = EnemyPartTransformPoint((bodyPart.bounds.min + bodyPart.bounds.max) * .5f,
-            object_.GetWorldMatrix());
-        const auto outward = partCenter - center;
-        const float length = std::hypot(outward.x, outward.y, outward.z);
-        ApplyDamage(index, std::max(bodyPart.hp,1.0f), length > 1e-5f ? outward * (1 / length) : direction);
-    }
+    Die(direction);
     exploded_=true;
     for (auto& group:parts_.hpGroups) if (group.deathOnZero) group.hp=0;
     return result;
@@ -327,68 +319,83 @@ float Enemy::ApplyDamage(EnemyPartType type,float damage,const Vector3& shotDire
     return ApplyDamage(FindLegacyPart(type),damage,shotDirection);
 }
 float Enemy::ApplyDamage(size_t index, float damage, const Vector3& shotDirection) {
+    if (IsDead()) return 0;
     const float lost = DamageEnemyPart(parts_, index, damage);
-    if (lost <= 0 || !splitVisuals_) return lost;
-    for (size_t i = 0; i < parts_.size(); ++i) {
-        if (i != index || parts_[i].DamageState() != EnemyPartDamageState::Destroyed) continue;
-        auto& visual = visuals_[i];
-        if (!visual.object) break;
-        if (breakMode_ == FragmentMode::Face && SpawnFaces(i, shotDirection)) { visual.object.reset(); break; }
-        AABB bounds{};
-        if (!visual.object->GetModel()->GetLocalAABB(bounds)) break;
-        std::uniform_real_distribution<float> magnitude(2.0f,6.0f);
-        std::uniform_real_distribution<float> jitter(-1.0f,1.0f);
-        std::bernoulli_distribution sign;
-        const auto spin = [&]() { return magnitude(random_)*(sign(random_) ? 1.0f : -1.0f); };
-        const auto translation = visual.object->GetTranslate();
-        const auto rotation = visual.object->GetRotate();
-        const auto scale = visual.object->GetScale();
-        const auto center = EnemyPartTransformPoint((bounds.min+bounds.max)*.5f,
-            Matrix4x4::MakeAffineMatrix(scale,rotation,translation));
-        std::vector<Model*> pieces;
-        if (asset_) pieces=asset_->chunks[i];
-        else if (i<fragmentFiles_.size()) for (const auto& file:fragmentFiles_[i]) pieces.push_back(ModelManager::GetInstance()->FindModel(file));
-        const bool fragments = !pieces.empty();
-        const size_t count = fragments ? pieces.size() : 1;
-        for (size_t j = 0; j < count; ++j) {
-            DetachedEnemyFragment detached;
-            AABB pieceBounds = bounds;
-            if (fragments) {
-                detached.object = std::make_unique<Object3d>();
-                detached.object->Initialize(common_, dx_);
-                detached.object->SetCamera(camera_);
-                detached.object->SetModel(pieces[j]);
-                detached.object->StopAnimation();
-                detached.object->GetModel()->GetLocalAABB(pieceBounds);
-                detached.object->SetEnableLighting(1);
-                detached.object->SetDirection({.3f,-1,.5f});
-                detached.object->SetIntensity(1);
-                detached.object->SetPointLightIntensity(0);
-                detached.object->SetSpotLightIntensity(0);
-            } else {
-                detached.object = std::move(visual.object);
-            }
-            detached.motion.Initialize(pieceBounds, translation, rotation, scale, shotDirection,
-                LegacyRoleType(parts_[i].role), {spin(),spin(),spin()}, detachedSettings_);
-            if (fragments) {
-                const auto outward = detached.motion.position-center;
-                const float length = std::hypot(outward.x,outward.y,outward.z);
-                detached.motion.velocity = detached.motion.velocity + Vector3{jitter(random_),jitter(random_),jitter(random_)}*spreadPower_;
-                if (length > 1e-5f) detached.motion.velocity = detached.motion.velocity + outward*(outwardPower_/length);
-            }
-            detached.object->SetTranslate(translation);
-            detached.object->SetRotate(rotation);
-            detached.object->SetScale(scale);
-            detached.object->SetMaterialColor({.59f,.06f,.06f,1});
-            detached.object->Update(0);
-            MakeFragmentRoom();
-            detached.spawnOrder = nextSpawnOrder_++;
-            detachedParts_.push_back(std::move(detached));
-        }
-        if (fragments) visual.object.reset();
-        break;
-    }
+    if (lost <= 0) return lost;
+    if (EnemyPartsDead(parts_)) Die(shotDirection);
+    else if (parts_[index].Destroyed()) DetachPart(index,shotDirection);
     return lost;
+}
+void Enemy::Die(const Vector3& direction) {
+    if (!BeginEnemyDeath(parts_)) return;
+    ai_.state=EnemyState::Dead;
+    ai_.attacksThisUpdate=0;
+    const auto world=Matrix4x4::MakeAffineMatrix(definition_.VisualScale(scale_),rotation_,position_);
+    const auto center=position_+Vector3{0,definition_.collisionHeight*.5f,0};
+    for (size_t i=0;i<parts_.size();++i) {
+        const auto partCenter=EnemyPartTransformPoint((parts_[i].bounds.min+parts_[i].bounds.max)*.5f,world);
+        const auto outward=partCenter-center;
+        const float length=std::hypot(outward.x,outward.y,outward.z);
+        DetachPart(i,(length>1e-5f ? outward*(1/length) : Vector3{0,1,0})+direction*.35f,true);
+    }
+}
+void Enemy::DetachPart(size_t i,const Vector3& shotDirection,bool forceFaces) {
+    if (!splitVisuals_ || i>=visuals_.size()) return;
+    auto& visual = visuals_[i];
+    if (!visual.object) return;
+    if ((forceFaces || breakMode_ == FragmentMode::Face) && SpawnFaces(i, shotDirection,forceFaces)) { visual.object.reset(); return; }
+    AABB bounds{};
+    if (!visual.object->GetModel()->GetLocalAABB(bounds)) return;
+    std::uniform_real_distribution<float> magnitude(2.0f,6.0f);
+    std::uniform_real_distribution<float> jitter(-1.0f,1.0f);
+    std::bernoulli_distribution sign;
+    const auto spin = [&]() { return magnitude(random_)*(sign(random_) ? 1.0f : -1.0f); };
+    const auto translation = visual.object->GetTranslate();
+    const auto rotation = visual.object->GetRotate();
+    const auto scale = visual.object->GetScale();
+    const auto center = EnemyPartTransformPoint((bounds.min+bounds.max)*.5f,
+        Matrix4x4::MakeAffineMatrix(scale,rotation,translation));
+    std::vector<Model*> pieces;
+    if (asset_) pieces=asset_->chunks[i];
+    else if (i<fragmentFiles_.size()) for (const auto& file:fragmentFiles_[i]) pieces.push_back(ModelManager::GetInstance()->FindModel(file));
+    const bool fragments = !pieces.empty();
+    const size_t count = fragments ? pieces.size() : 1;
+    for (size_t j = 0; j < count; ++j) {
+        DetachedEnemyFragment detached;
+        AABB pieceBounds = bounds;
+        if (fragments) {
+            detached.object = std::make_unique<Object3d>();
+            detached.object->Initialize(common_, dx_);
+            detached.object->SetCamera(camera_);
+            detached.object->SetModel(pieces[j]);
+            detached.object->StopAnimation();
+            detached.object->GetModel()->GetLocalAABB(pieceBounds);
+            detached.object->SetEnableLighting(1);
+            detached.object->SetDirection({.3f,-1,.5f});
+            detached.object->SetIntensity(1);
+            detached.object->SetPointLightIntensity(0);
+            detached.object->SetSpotLightIntensity(0);
+        } else {
+            detached.object = std::move(visual.object);
+        }
+        detached.motion.Initialize(pieceBounds, translation, rotation, scale, shotDirection,
+            LegacyRoleType(parts_[i].role), {spin(),spin(),spin()}, detachedSettings_);
+        if (fragments) {
+            const auto outward = detached.motion.position-center;
+            const float length = std::hypot(outward.x,outward.y,outward.z);
+            detached.motion.velocity = detached.motion.velocity + Vector3{jitter(random_),jitter(random_),jitter(random_)}*spreadPower_;
+            if (length > 1e-5f) detached.motion.velocity = detached.motion.velocity + outward*(outwardPower_/length);
+        }
+        detached.object->SetTranslate(translation);
+        detached.object->SetRotate(rotation);
+        detached.object->SetScale(scale);
+        detached.object->SetMaterialColor({.59f,.06f,.06f,1});
+        detached.object->Update(0);
+        MakeFragmentRoom();
+        detached.spawnOrder = nextSpawnOrder_++;
+        detachedParts_.push_back(std::move(detached));
+    }
+    if (fragments) visual.object.reset();
 }
 void Enemy::ShowHitFeedback(EnemyPartType type) { ShowHitFeedback(FindLegacyPart(type)); }
 void Enemy::ShowHitFeedback(size_t index) {
@@ -468,7 +475,7 @@ void Enemy::Draw(bool showMarker) {
     DrawFaces();
     for (auto& detached : detachedParts_) detached.object->Draw();
     if (!splitVisuals_) {
-        if (std::any_of(parts_.begin(), parts_.end(), [](const auto& part) { return part.hp > 0; })) object_.Draw();
+        if (!IsDead()) object_.Draw();
         return;
     }
     for (size_t i = 0; i < visuals_.size(); ++i) {
@@ -698,7 +705,7 @@ void Enemy::TrimFacePool(size_t reserve) {
         oldest->faceShards_.erase(oldest->faceShards_.begin());
     }
 }
-bool Enemy::SpawnFaces(size_t part, const Vector3& direction) {
+bool Enemy::SpawnFaces(size_t part, const Vector3& direction,bool deathBurst) {
     const auto& source=parts_[part].geometry ? parts_[part].geometry->faces : faceData_[part];
     if (source.empty() || !faceBatch_) return false;
     const auto& visual=*visuals_[part].object;
@@ -706,7 +713,11 @@ bool Enemy::SpawnFaces(size_t part, const Vector3& direction) {
     AABB partBounds{};
     if (!visual.GetModel()->GetLocalAABB(partBounds)) return false;
     const auto partCenter=EnemyPartTransformPoint((partBounds.min+partBounds.max)*.5f,world);
-    const size_t count=std::min({source.size(),static_cast<size_t>(maxFacesPerBreak_),static_cast<size_t>(maxActiveFaces_)});
+    // Share the death burst budget across the body so later legs do not evict
+    // all of the head/torso shards spawned earlier in this same frame.
+    const size_t budget=deathBurst ? std::max(size_t{1},static_cast<size_t>(maxActiveFaces_)/std::max(size_t{1},parts_.size()))
+        : static_cast<size_t>(maxActiveFaces_);
+    const size_t count=std::min({source.size(),static_cast<size_t>(maxFacesPerBreak_),budget});
     std::uniform_real_distribution<float> random(-1,1);
     std::uniform_real_distribution<float> spin(2,6);
     auto config=detachedSettings_; config.lifeTime=faceLifetime_;
@@ -730,6 +741,18 @@ bool Enemy::SpawnFaces(size_t part, const Vector3& direction) {
         const float length=std::hypot(outward.x,outward.y,outward.z);
         shard.motion.velocity=shard.motion.velocity+Vector3{random(random_),random(random_),random(random_)}*spreadPower_;
         if (length>1e-5f) shard.motion.velocity=shard.motion.velocity+outward*(outwardPower_/length);
+        if (deathBurst) {
+            // A face is a light shard, not a heavy torso/leg. Give every shard
+            // horizontal travel and lift; downward limb directions must not
+            // drive the burst straight into the floor.
+            const float angle=random(random_)*std::numbers::pi_v<float>;
+            Vector3 scatter{direction.x*.6f+std::cos(angle),0,direction.z*.6f+std::sin(angle)};
+            const float horizontal=std::hypot(scatter.x,scatter.z);
+            scatter=horizontal>1e-5f ? scatter*(1/horizontal) : Vector3{1,0,0};
+            const float speed=5.5f+random(random_)*1.5f;
+            shard.motion.velocity=scatter*speed;
+            shard.motion.velocity.y=5.5f+random(random_)*1.5f;
+        }
         TrimFacePool(1);
         shard.spawnOrder=nextSpawnOrder_++;
         faceShards_.push_back(shard);

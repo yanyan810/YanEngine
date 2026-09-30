@@ -11,6 +11,7 @@ inline const char* EnemyStateName(EnemyState state) {
     }
 }
 inline bool EnemyPartsDead(const EnemyParts& parts) {
+    if (parts.deathProcessed) return true;
     for (const auto& group:parts.hpGroups) if (group.deathOnZero && group.hp<=0) return true;
     for (const auto& part : parts)
         if (part.deathOnZero && part.usesLocalHp && part.hp<=0) return true;

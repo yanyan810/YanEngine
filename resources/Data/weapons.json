@@ -4,7 +4,7 @@
     {
       "adsFov": 50.0,
       "adsSensitivityMultiplier": 0.9,
-      "adsSpreadDegrees": 0.2,
+      "adsSpreadDegrees": 0.0,
       "adsTransitionTime": 0.12,
       "ammoPerShot": 1,
       "bulletLifeTime": 3.0,
@@ -13,7 +13,7 @@
       "displayName": "Pistol",
       "fireInterval": 0.25,
       "fireMode": "SemiAuto",
-      "hipSpreadDegrees": 1.0,
+      "hipSpreadDegrees": 0.0,
       "id": "pistol",
       "magazineSize": 12,
       "maxReserveAmmo": 60,
