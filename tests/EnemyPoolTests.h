@@ -97,7 +97,22 @@ inline void RunEnemyPoolTests(GameApp& app) {
     auto* first=pool.Acquire("normal",next++,"overflow",{},{});
     auto* second=pool.Acquire("normal",next++,"overflow",{},{});
     check(first!=second && pool.RuntimeAllocations()==1,"overflow not counted");
-    first->Die(); first->UpdateVisuals(10); check(pool.Release(first),"overflow release");
+    first->Die();
+    first->UpdateVisuals(.1f);
+    const auto firstBurst=first->CaptureDebug();
+    check(!firstBurst.faces.empty(),"first consecutive death burst missing");
+    second->Die();
+    second->UpdateVisuals(0);
+    first->UpdateVisuals(0);
+    const auto preservedBurst=first->CaptureDebug();
+    check(!second->CaptureDebug().faces.empty(),"second consecutive death burst missing");
+    check(preservedBurst.faces.size()==firstBurst.faces.size(),"second death evicted first burst");
+    for (size_t i=0;i<firstBurst.faces.size();++i)
+        check(preservedBurst.faces[i].spawnOrder==firstBurst.faces[i].spawnOrder,"first burst shards replaced");
+    check(!pool.Release(first) && !pool.Release(second),"consecutive death debris released early");
+    first->UpdateVisuals(10); check(pool.Release(first),"overflow release");
+    check(!second->CanReturnToPool(),"first expiration cleared second burst");
+    second->UpdateVisuals(10); check(pool.Release(second),"second burst did not expire");
     check(pool.Acquire("normal",next++,"reuse",{}, {})==first && pool.RuntimeAllocations()==1,"overflow slot not reused");
     pool.ReleaseAll();
 
