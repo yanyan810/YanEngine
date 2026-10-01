@@ -226,9 +226,18 @@ int main() {
     const auto level=Read("../../resources/levels/fps_spawns.json");
     WeaponSystem system;
     assert(system.Load("../../resources/Data/weapons.json","../../resources/levels/fps_spawns.json",WeaponRandomSettings{true,12345}));
-    assert(system.Points().size()==3 && system.InitialWeapon()->id=="pistol");
+    assert(system.Points().size()==3 && system.InitialWeapon()->id==definitions.at("initialWeapon").get<std::string>());
     TestExtendedModes(system);
-    TestSpawnFilters(definitions,level);
+    // Filter assertions use a fixed seven-weapon catalog; editor-created weapons
+    // must not change the number or identity of random candidates in this fixture.
+    auto filterDefinitions=definitions;
+    const std::array<std::string,7> filterIds{"pistol","smg","rifle","shotgun","pump_shotgun","auto_shotgun","burst_rifle"};
+    auto& filterWeapons=filterDefinitions["weapons"];
+    filterWeapons.erase(std::remove_if(filterWeapons.begin(),filterWeapons.end(),[&](const auto& value) {
+        return std::find(filterIds.begin(),filterIds.end(),value.at("id").template get<std::string>())==filterIds.end();
+    }),filterWeapons.end());
+    filterDefinitions["initialWeapon"]="pistol";
+    TestSpawnFilters(filterDefinitions,level);
     const auto pistol = *system.Find("pistol");
     const auto smg = *system.Find("smg");
     const auto rifle = *system.Find("rifle");

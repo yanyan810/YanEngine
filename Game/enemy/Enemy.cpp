@@ -167,6 +167,43 @@ void Enemy::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera
 }
 
 
+void Enemy::PrepareForPool(Object3dCommon* common,DirectXCommon* dx,Camera* camera,const EnemyDefinition& definition) {
+    Initialize(common,dx,camera,true);
+    ApplyDefinition(definition);
+    spawnDefinition_=definition_; spawnParts_=parts_; spawnAI_=ai_;
+    spawnModels_.clear(); spawnModels_.reserve(visuals_.size());
+    for (const auto& visual:visuals_) spawnModels_.push_back(visual.object ? visual.object->GetModel() : nullptr);
+    faceShards_.reserve(kFaceCapacity);
+    detachedParts_.reserve(kMaxFragments);
+}
+void Enemy::RetireFromPool() {
+    faceShards_.clear(); detachedParts_.clear();
+    explosionTime_=0; blastHitTime_=0;
+}
+void Enemy::ResetForSpawn(uint64_t spawnId,const std::string& trigger,const Vector3& position,const Vector3& rotation) {
+    RetireFromPool();
+    definition_=spawnDefinition_; parts_=spawnParts_; ai_=spawnAI_;
+    position_=position; rotation_=rotation; scale_={2,2,2};
+    SetSpawnIdentity(spawnId,trigger);
+    attackCount_=0; lastAttackDamage_=0; attackFlash_=0;
+    exploded_=false; explosionCenter_={}; lastBlastDamage_=0;
+    breakMode_=FragmentMode::Face; detachedSettings_={};
+    maxFacesPerBreak_=64; faceLifetime_=5; spreadPower_=1.5f; outwardPower_=1.5f;
+    showPartColliders_=false; showMovementCollider_=false; showExplosionRange_=true;
+    random_.seed(static_cast<uint32_t>(spawnId)^0x9e3779b9u);
+#ifdef _DEBUG
+    dimensionFileStatus_.clear();
+#endif
+    for (size_t i=0;i<visuals_.size();++i) {
+        auto& visual=visuals_[i]; visual.visible=true;
+        if (visual.object) { visual.object->SetModel(spawnModels_[i]); visual.object->StopAnimation(); }
+    }
+    if (typeMarker_) {
+        const auto& color=definition_.typeMarker.color;
+        typeMarker_->SetMaterialColor({color.x,color.y,color.z,1});
+    }
+    UpdateVisuals(0);
+}
 void Enemy::ApplyDefinition(const EnemyDefinition& definition) {
     definition_=definition;
     ai_={}; exploded_=false;
@@ -342,8 +379,8 @@ void Enemy::Die(const Vector3& direction) {
 void Enemy::DetachPart(size_t i,const Vector3& shotDirection,bool forceFaces) {
     if (!splitVisuals_ || i>=visuals_.size()) return;
     auto& visual = visuals_[i];
-    if (!visual.object) return;
-    if ((forceFaces || breakMode_ == FragmentMode::Face) && SpawnFaces(i, shotDirection,forceFaces)) { visual.object.reset(); return; }
+    if (!visual.object || !visual.visible) return;
+    if ((forceFaces || breakMode_ == FragmentMode::Face) && SpawnFaces(i, shotDirection,forceFaces)) { visual.visible=false; return; }
     AABB bounds{};
     if (!visual.object->GetModel()->GetLocalAABB(bounds)) return;
     std::uniform_real_distribution<float> magnitude(2.0f,6.0f);
@@ -376,7 +413,12 @@ void Enemy::DetachPart(size_t i,const Vector3& shotDirection,bool forceFaces) {
             detached.object->SetPointLightIntensity(0);
             detached.object->SetSpotLightIntensity(0);
         } else {
-            detached.object = std::move(visual.object);
+            // Keep the attached renderer for the next pooled spawn.
+            detached.object=std::make_unique<Object3d>();
+            detached.object->Initialize(common_,dx_); detached.object->SetCamera(camera_);
+            detached.object->SetModel(visual.object->GetModel()); detached.object->StopAnimation();
+            detached.object->SetEnableLighting(1); detached.object->SetDirection({.3f,-1,.5f});
+            detached.object->SetIntensity(1); detached.object->SetPointLightIntensity(0); detached.object->SetSpotLightIntensity(0);
         }
         detached.motion.Initialize(pieceBounds, translation, rotation, scale, shotDirection,
             LegacyRoleType(parts_[i].role), {spin(),spin(),spin()}, detachedSettings_);
@@ -395,7 +437,7 @@ void Enemy::DetachPart(size_t i,const Vector3& shotDirection,bool forceFaces) {
         detached.spawnOrder = nextSpawnOrder_++;
         detachedParts_.push_back(std::move(detached));
     }
-    if (fragments) visual.object.reset();
+    visual.visible=false;
 }
 void Enemy::ShowHitFeedback(EnemyPartType type) { ShowHitFeedback(FindLegacyPart(type)); }
 void Enemy::ShowHitFeedback(size_t index) {
@@ -809,8 +851,8 @@ void Enemy::RestoreDebug(const DebugState& state) {
         return object;
     };
     for (size_t i=0;i<visuals_.size();++i) {
-        if (!state.models[i]) visuals_[i].object.reset();
-        else if (!visuals_[i].object || visuals_[i].object->GetModel()!=state.models[i]) visuals_[i].object=create(state.models[i]);
+        if (state.models[i] && visuals_[i].object) visuals_[i].object->SetModel(state.models[i]);
+        else if (state.models[i]) visuals_[i].object=create(state.models[i]);
         visuals_[i].type=parts_[i].type; visuals_[i].visible=state.visible[i];
     }
     detachedParts_.clear();
@@ -823,7 +865,7 @@ void Enemy::RestoreDebug(const DebugState& state) {
     maxActiveFaces_=state.maxFaces; maxFacesPerBreak_=state.facesPerBreak; faceLifetime_=state.faceLifetime;
     spreadPower_=state.spread; outwardPower_=state.outward;
     PrepareExplosionVisual();
-    RebuildTypeMarker();
+    // Definition-specific pool slots already own the appropriate marker.
     // Scene updates all restored visuals only after every enemy has been restored.
 }
 #endif

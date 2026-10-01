@@ -40,6 +40,11 @@ public:
     static void ReleasePreloadedAssets();
     ~Enemy();
     void Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera, bool useSplitAssets = false);
+    void PrepareForPool(Object3dCommon* common,DirectXCommon* dx,Camera* camera,const EnemyDefinition& definition);
+    // Definition-specific slots retain their prepared GPU resources for their lifetime.
+    void ResetForSpawn(uint64_t spawnId,const std::string& trigger,const Vector3& position,const Vector3& rotation);
+    void RetireFromPool();
+    bool CanReturnToPool() const { return IsDead() && detachedParts_.empty() && faceShards_.empty() && explosionTime_<=0; }
     using RaycastHit = EnemyPartHit;
     bool Raycast(const Vector3& origin, const Vector3& direction, float maxDistance, RaycastHit& hit) const;
     void ShowHitFeedback(EnemyPartType part);
@@ -112,6 +117,10 @@ public:
     void SetPartVisible(EnemyPartType type, bool visible);
     void SetPartVisible(size_t index,bool visible) { if (index<visuals_.size()) visuals_[index].visible=visible; }
 private:
+    EnemyDefinition spawnDefinition_;
+    EnemyParts spawnParts_;
+    EnemyAI spawnAI_;
+    std::vector<Model*> spawnModels_;
     void DetachPart(size_t index,const Vector3& direction,bool forceFaces=false);
 #ifdef _DEBUG
     std::string dimensionFileStatus_;

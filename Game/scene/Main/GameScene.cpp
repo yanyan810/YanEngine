@@ -81,6 +81,11 @@ void GameScene::OnEnter(GameApp& app) {
         weaponVisuals_.push_back(std::move(visual));
     }
     enemies_.clear();
+    EnemyPoolSettings poolSettings;
+    try { poolSettings=EnemyPoolSettings::Load("resources/Data/enemy_pool.json"); }
+    catch (const std::exception& error) { OutputDebugStringA((std::string("Enemy Pool config: ")+error.what()+"; using defaults\n").c_str()); }
+    enemyPool_.Initialize(app.ObjCom(),app.Dx(),&camera_,enemyDefinitions_,poolSettings);
+    enemies_.reserve(enemyPool_.Capacity());
     enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     clearOverlay_.Initialize(app.SpriteCom(), app.Dx());
     selectedEnemy_ = 0; lastHitEnemy_ = -1;
@@ -146,6 +151,7 @@ void GameScene::OnExit(GameApp& app) {
     ImGui::GetIO().ConfigFlags = (ImGui::GetIO().ConfigFlags & ~kCapturedMouseFlags) | savedMouseFlags_;
 #endif
     enemies_.clear();
+    enemyPool_.Clear();
     enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     app.ObjCom()->SetDefaultCamera(nullptr);
 }
@@ -293,6 +299,7 @@ void GameScene::Update(GameApp& app, float dt) {
 
     if (stage_.IsPlaying()) UpdateCombat(app, dt, wasCaptured);
     else for (auto& enemy : enemies_) enemy->UpdateVisuals(dt);
+    RecycleEnemies();
     // Combat applies all damage before SceneManager consumes the transition.
     if (player_.GetHP() <= 0) { RequestChangeScene_("GameOver"); return; }
     ground_.Update(dt);
@@ -417,14 +424,8 @@ void GameScene::UpdateCombat(GameApp& app, float dt, bool wasCaptured) {
     if (showroom_ && pickedUp) weapons_.ResetPickups();
     if (!showroom_) spawnSystem_.Update(dt, player_.GetTransform().translate,
         [&](const EnemySpawnPoint& point, const std::string& trigger) {
-            auto enemy = std::make_unique<Enemy>();
             const uint64_t id = nextEnemyId_++;
-            enemy->SetSpawnIdentity(id, trigger);
-            enemy->SetPosition(point.position);
-            enemy->SetRotation(point.rotation);
-            enemy->Initialize(app.ObjCom(), app.Dx(), &camera_, true);
-            enemy->ApplyDefinition(*enemyDefinitions_.Find(spawnSystem_.SelectEnemyId(point)));
-            enemies_.push_back(std::move(enemy));
+            enemies_.push_back(enemyPool_.Acquire(spawnSystem_.SelectEnemyId(point),id,trigger,point.position,point.rotation));
             return id;
         },
         [&](uint64_t id) {
@@ -560,6 +561,7 @@ void GameScene::DrawImGui(GameApp& app) {
 
     const auto alive=std::count_if(enemies_.begin(),enemies_.end(),[](const auto& e){return !e->IsDead();});
     ImGui::Text("Enemy Count: %zu | Alive: %d", enemies_.size(), static_cast<int>(alive));
+    DrawEnemyPoolStats();
     ImGui::Text("Last Enemy Attack: %s | Attack Count: %llu | Last Damage: %.0f",
         playerDamagedFlash_>0 ? "HIT / Player Damaged!" : "-", enemyAttackCount_, lastEnemyDamage_);
     const auto& transform = player_.GetTransform();
@@ -809,12 +811,13 @@ GameScene::DebugFrame GameScene::CaptureDebug() const {
 }
 void GameScene::RestoreDebug(GameApp& app,const DebugFrame& state) {
     freezeEnemies_=state.freezeEnemies;
-    while (enemies_.size()>state.enemies.size()) enemies_.pop_back();
-    while (enemies_.size()<state.enemies.size()) {
-        auto enemy=std::make_unique<Enemy>(); enemy->Initialize(app.ObjCom(),app.Dx(),&camera_,true);
-        enemies_.push_back(std::move(enemy));
+    app.Dx()->WaitForGPU();
+    enemyPool_.ReleaseAll(); enemies_.clear();
+    for (const auto& saved:state.enemies) {
+        auto* enemy=enemyPool_.Acquire(saved.definition.id,saved.spawnId,saved.trigger,saved.position,saved.rotation);
+        enemy->RestoreDebug(saved);
+        enemies_.push_back(enemy);
     }
-    for (size_t i=0;i<enemies_.size();++i) enemies_[i]->RestoreDebug(state.enemies[i]);
     player_.RestoreDebug(state.player); camera_.SetFovY(state.fov); camera_.Update();
     bullets_.Restore(state.bullets);
     enemyProjectiles_=state.projectiles; spawnSystem_=state.spawns; weapons_=state.weapons; stage_=state.stage;
@@ -916,7 +919,30 @@ void GameScene::DrawDebugTools(GameApp& app) {
 void GameScene::DrawDebugTools(GameApp&) {}
 #endif
 
+void GameScene::RecycleEnemies() {
+    Enemy* selected=selectedEnemy_>=0 && static_cast<size_t>(selectedEnemy_)<enemies_.size() ? enemies_[selectedEnemy_] : nullptr;
+    Enemy* last=lastHitEnemy_>=0 && static_cast<size_t>(lastHitEnemy_)<enemies_.size() ? enemies_[lastHitEnemy_] : nullptr;
+    std::erase_if(enemies_,[&](Enemy* enemy) {
+        if (!enemy->CanReturnToPool()) return false;
+        stage_.ObserveEnemy(enemy->GetSpawnId(),true);
+        return enemyPool_.Release(enemy);
+    });
+    const auto index=[&](Enemy* enemy,int fallback) {
+        const auto found=std::find(enemies_.begin(),enemies_.end(),enemy);
+        return found==enemies_.end() ? fallback : static_cast<int>(found-enemies_.begin());
+    };
+    selectedEnemy_=index(selected,0); lastHitEnemy_=index(last,-1);
+}
+void GameScene::DrawEnemyPoolStats() {
+#if defined(_DEBUG) && defined(USE_IMGUI)
+    ImGui::Text("Enemy Pool | Active: %zu | Inactive: %zu | Capacity: %zu | Runtime Allocations: %zu",
+        enemyPool_.Active(),enemyPool_.Inactive(),enemyPool_.Capacity(),enemyPool_.RuntimeAllocations());
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Runtime Allocations counts Enemy slots created after prewarm (including rewind overflow), not all CPU allocations.");
+#endif
+}
 void GameScene::ResetShowroomEnemies(GameApp& app) {
+    (void)app;
+    enemyPool_.ReleaseAll();
     enemies_.clear(); enemyProjectiles_.Clear(); projectileVisuals_.clear(); bullets_.Clear();
     nextEnemyId_=0; selectedEnemy_=0; lastHitEnemy_=-1; lastHitPart_=EnemyPartType::None; lastHitPartName_="None";
     enemyAttackCount_=0; playerDamagedFlash_=0; lastEnemyDamage_=0;
@@ -926,12 +952,7 @@ void GameScene::ResetShowroomEnemies(GameApp& app) {
         if (point.enemyPool.empty()) continue;
         const auto* definition=enemyDefinitions_.Find(point.enemyPool.front().id);
         if (!definition) continue;
-        auto enemy=std::make_unique<Enemy>();
-        enemy->SetSpawnIdentity(nextEnemyId_++,point.id);
-        enemy->SetPosition(point.position); enemy->SetRotation(point.rotation);
-        enemy->Initialize(app.ObjCom(),app.Dx(),&camera_,true);
-        enemy->ApplyDefinition(*definition);
-        enemies_.push_back(std::move(enemy));
+        enemies_.push_back(enemyPool_.Acquire(definition->id,nextEnemyId_++,point.id,point.position,point.rotation));
     }
 }
 void GameScene::DrawShowroomTools(GameApp& app) {
@@ -1056,6 +1077,7 @@ void GameScene::DrawWeaponWorkspace(GameApp& app) {
         ImGui::Begin("Weapon Test",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoMove|
             ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoDocking);
         ImGui::TextUnformatted("Test Weapon | LMB: Fire | RMB: ADS | R: Reload | F5: Reset Showroom | ESC: Weapon Editor");
+        DrawEnemyPoolStats();
         app.ImGui()->DrawScenePreview(); ImGui::End();
         return;
     }
@@ -1068,6 +1090,7 @@ void GameScene::DrawWeaponWorkspace(GameApp& app) {
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Respawn enemies and restore HP, ammo and pickups. Clear projectiles and hit stats. Weapon drafts are preserved.");
         ImGui::SameLine();
         ImGui::Checkbox("Freeze Enemies",&freezeEnemies_);
+        DrawEnemyPoolStats();
     })) {
         debugHistory_.Clear();
         const auto id=saved->empty() ? player_.CurrentWeapon().Definition().id : *saved;

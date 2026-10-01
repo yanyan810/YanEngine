@@ -13,8 +13,8 @@ class BulletManager {
 public:
     void Initialize(Object3dCommon* common, DirectXCommon* dx, Camera* camera);
     void Spawn(const WeaponDefinition& weapon, const Matrix4x4& cameraWorld, float adsBlend,
-        std::mt19937& random, const StageWorld& world, const std::vector<std::unique_ptr<Enemy>>& enemies);
-    void Update(float dt, const StageWorld& world, const std::vector<std::unique_ptr<Enemy>>& enemies,
+        std::mt19937& random, const StageWorld& world, const std::vector<Enemy*>& enemies);
+    void Update(float dt, const StageWorld& world, const std::vector<Enemy*>& enemies,
         const std::function<void(const BulletEnemyImpact&)>& onImpact);
     void Draw();
     void Clear() { simulation_.Clear(); }

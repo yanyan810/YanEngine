@@ -1,7 +1,7 @@
 #include "BulletManager.h"
 
 namespace {
-    BulletTrace MakeTrace(const StageWorld& world, const std::vector<std::unique_ptr<Enemy>>& enemies) {
+    BulletTrace MakeTrace(const StageWorld& world, const std::vector<Enemy*>& enemies) {
         return [&world, &enemies](const Vector3& origin, const Vector3& direction, float distance) {
             return TraceBulletPath(origin, direction, distance, world, enemies.size(),
                 [&enemies](size_t i, const Vector3& start, const Vector3& unit, float range, EnemyPartHit& hit) {
@@ -19,12 +19,12 @@ void BulletManager::Initialize(Object3dCommon* common, DirectXCommon* dx, Camera
 
 void BulletManager::Spawn(const WeaponDefinition& weapon, const Matrix4x4& cameraWorld,
     float adsBlend, std::mt19937& random, const StageWorld& world,
-    const std::vector<std::unique_ptr<Enemy>>& enemies) {
+    const std::vector<Enemy*>& enemies) {
     simulation_.SpawnShot(weapon, cameraWorld, adsBlend, random, MakeTrace(world, enemies));
 }
 
 void BulletManager::Update(float dt, const StageWorld& world,
-    const std::vector<std::unique_ptr<Enemy>>& enemies,
+    const std::vector<Enemy*>& enemies,
     const std::function<void(const BulletEnemyImpact&)>& onImpact) {
     simulation_.Update(dt, MakeTrace(world, enemies), [&](const Bullet& bullet, const BulletHit& hit) {
         if (hit.wall) return;
