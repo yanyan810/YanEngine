@@ -4,6 +4,7 @@
 #include "Object3d.h"
 #include "Player.h"
 #include "Enemy.h"
+#include "EnemyPool.h"
 #include "EnemySpawnSystem.h"
 #include "EnemyProjectile.h"
 #include "StageLoader.h"
@@ -32,6 +33,9 @@ public:
     void DrawImGui(GameApp& app) override;
     void DrawOverlay2D(GameApp& app) override;
 private:
+#ifdef _DEBUG
+    friend void RunEnemyPoolTests(GameApp& app);
+#endif
     void UpdateCombat(GameApp& app, float dt, bool wasCaptured);
     void OnBulletImpact(const BulletEnemyImpact& impact);
     void OnStageClear(GameApp& app);
@@ -41,6 +45,8 @@ private:
     std::string LevelPath() const { return showroom_ ? "resources/levels/showroom/showroom.json" :
         stageLoaded_ ? "resources/levels/stage01/stage01.json" : "resources/levels/fps_spawns.json"; }
     void ResetShowroomEnemies(GameApp& app);
+    void RecycleEnemies();
+    void DrawEnemyPoolStats();
     void DrawShowroomTools(GameApp& app);
     bool showroom_=false, freezeEnemies_=true;
     bool showEnemyLabels_=true, showWeaponLabels_=true, showEnemyMarkers_=true;
@@ -103,7 +109,8 @@ private:
     int savedMouseFlags_ = 0;
     Camera camera_;
     Player player_;
-    std::vector<std::unique_ptr<Enemy>> enemies_;
+    EnemyPool enemyPool_;
+    std::vector<Enemy*> enemies_; // Active, non-owning; stable until removed from this list.
     EnemyDefinitions enemyDefinitions_;
     EnemyProjectileSystem enemyProjectiles_;
     BulletManager bullets_;

@@ -140,9 +140,10 @@ int main() {
     assert(definitions.Find("normal")->partAsset && !definitions.Find("bomber")->partAsset);
     const auto testAsset=definitions.Find("normal_test")->partAsset;
     auto sharedTest=testAsset->Instantiate();
+    const auto initialSharedHp=sharedTest.hpGroups[0].hp;
     DamageEnemyPart(sharedTest,EnemyPartType::LeftArm,50);
-    assert(sharedTest.hpGroups[0].hp==50 && !EnemyPartsDead(sharedTest));
-    DamageEnemyPart(sharedTest,EnemyPartType::RightArm,50);
+    assert(sharedTest.hpGroups[0].hp==initialSharedHp-50 && !EnemyPartsDead(sharedTest));
+    DamageEnemyPart(sharedTest,EnemyPartType::RightArm,sharedTest.hpGroups[0].hp);
     assert(sharedTest.hpGroups[0].hp==0 && EnemyPartsDead(sharedTest));
     assert(BeginEnemyDeath(sharedTest));
     for (const auto& part:sharedTest) assert(part.Destroyed());

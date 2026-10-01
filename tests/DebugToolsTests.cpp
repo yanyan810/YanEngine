@@ -10,6 +10,9 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
+#ifdef _DEBUG
+#include <crtdbg.h>
+#endif
 using nlohmann::json;
 struct State {
     EnemyAI ai;
@@ -25,6 +28,12 @@ struct State {
 };
 static std::string Read(const std::string& path) { std::ifstream f(path); return {std::istreambuf_iterator<char>(f),std::istreambuf_iterator<char>()}; }
 int main() {
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0,_WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#ifdef _DEBUG
+    _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
+#endif
     DebugTimeline<State> history;
     State state;
     EnemyDefinitions definitions; assert(definitions.Load("../../resources/Data/enemies.json"));
@@ -65,15 +74,19 @@ int main() {
 
     const std::string path="debug-editor-test.json";
     const auto original=Read("../../resources/Data/enemies.json");
+    const auto originalJson=json::parse(original);
+    size_t normalIndex=0;
+    while (normalIndex<originalJson["enemies"].size() && originalJson["enemies"][normalIndex]["id"]!="normal") ++normalIndex;
+    assert(normalIndex<originalJson["enemies"].size());
     { std::ofstream f(path); f<<original; }
     DebugJsonEditor editor; assert(editor.Open(path));
     json number=3; DebugJsonEditor::SetNumber(number,3.25); assert(number.is_number_float() && number==3.25);
     json countValue=5; DebugJsonEditor::SetNumber(countValue,8); assert(countValue.is_number_integer() && countValue==8);
     DebugJsonEditor::SetNumber(number,std::numeric_limits<double>::infinity()); assert(number==3.25);
     const auto validate=[](const std::string& file) { EnemyDefinitions d; return d.Load(file) ? std::string{} : d.Error(); };
-    editor.document["enemies"][0]["collisionRadius"]=-1;
+    editor.document["enemies"][normalIndex]["collisionRadius"]=-1;
     assert(!editor.Save(validate) && Read(path)==original && !std::filesystem::exists(path+".debug-tmp"));
-    editor.document["enemies"][0]["collisionRadius"]=.4;
+    editor.document["enemies"][normalIndex]["collisionRadius"]=.4;
     assert(editor.Save(validate));
     assert(Read(path+".debug-backup")==original);
     EnemyDefinitions edited; assert(edited.Load(path) && edited.Find("normal")->collisionRadius==.4f);
@@ -81,7 +94,7 @@ int main() {
     { std::ofstream f(path); f<<original; }
     assert(!editor.Save(validate) && Read(path)==original); // External edits are never overwritten.
     assert(editor.Open(path));
-    editor.document["enemies"][0]["moveSpeed"]=3.5;
+    editor.document["enemies"][normalIndex]["moveSpeed"]=3.5;
     assert(editor.Save(validate) && Read(path)!=original && Read(path)!=changed);
     assert(editor.Open(path) && !editor.dirty);
     assert(!editor.Open("absent-debug-editor-file.json") && editor.path==path);

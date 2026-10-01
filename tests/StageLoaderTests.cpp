@@ -93,7 +93,7 @@ int main() {
     auto expired=bomb; expired.lifetime=.0000001f;
     assert(StepStageProjectile(expired,1,{100,0,0},world)==0 && !expired.active);
     const auto rest=bomb.position;
-    assert(StepStageProjectile(bomb,2,rest,world)==25 && !bomb.active);
+    assert(StepStageProjectile(bomb,2,rest,world)==definitions.Find("bomber")->explosionDamage && !bomb.active);
     assert(StepStageProjectile(bomb,2,rest,world)==0);
     world.colliders={Box({0,-.3f,0},{100,.3f,100})};
     bomb=MakeEnemyProjectile(*definitions.Find("bomber"),{0,1.2f,0},{10,0,0});

@@ -27,6 +27,9 @@
 #include <Windows.h>
 #include <chrono>
 #include <algorithm>
+#ifdef _DEBUG
+#include "../../tests/EnemyPoolTests.h"
+#endif
 
 GameApp::GameApp() = default;
 GameApp::~GameApp() = default;
@@ -36,6 +39,18 @@ int GameApp::Run() {
         Finalize_();
         return -1;
     }
+#ifdef _DEBUG
+    if (std::wstring(GetCommandLineW()).find(L"--enemy-pool-test")!=std::wstring::npos) {
+        int result=0;
+        try { RunEnemyPoolTests(*this); }
+        catch (const std::exception& error) {
+            std::filesystem::create_directories("generated/enemy-pool-tests");
+            std::ofstream("generated/enemy-pool-tests/result.txt")<<"FAIL: "<<error.what()<<'\n';
+            result=1;
+        }
+        Finalize_(); return result;
+    }
+#endif
 
     auto previousFrame = std::chrono::steady_clock::now();
     // ループ
