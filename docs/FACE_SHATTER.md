@@ -15,7 +15,7 @@ Blender 5.0.1で生成確認済み。4.4互換コード実装済み・実機未�
 
 一括描画Object3dのWVPは毎Drawで現在のCameraから更新します。初版の初期化時だけの更新では視点変更後に画面へ貼り付く問題があり、ユーザー報告を受けて修正しました。
 
-上限：Max Active Face Shardsは全Enemy合計256（1～1024）、Max Face Shards Per Breakは64（1～1024）、Face Shard Lifetimeは5秒。超過する部位は均等選択するため、初期値では全表面が残るわけではありません。選ばれたFaceの初期位置は元表面と一致します。全Faceを確認するにはPer Breakを202以上へ上げてください。全6部位を同時に残す場合はActiveも712以上にします。
+上限：Max Active Face Shards Per Enemyは敵1体ごとに256（1～1024）、Max Face Shards Per Breakは64（1～1024）、Face Shard Lifetimeは5秒。超過する部位は均等選択するため、初期値では全表面が残るわけではありません。選ばれたFaceの初期位置は元表面と一致します。全Faceを確認するにはPer Breakを202以上へ上げてください。全6部位を同時に残す場合はActiveも712以上にします。
 
 Faceデータがない／読み込みに失敗した部位はChunkへ、Chunkもなければ単体部位へFallback。既存Chunk/単体部位の全Enemy合計128個制限とは別枠です。どちらも最古から削除します。上限合計の初期値は384個です。物理は各Faceごと、頂点バッファは最大1024枚分を固定確保して使い回します。
 

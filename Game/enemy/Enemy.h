@@ -168,7 +168,7 @@ private:
     int maxFacesPerBreak_ = 64;
     float faceLifetime_ = 5.0f;
     static constexpr size_t kFaceCapacity = 1024;
-    static void TrimFacePool(size_t reserve);
+    void TrimFacePool(size_t reserve);
     bool SpawnFaces(size_t part, const Vector3& direction,bool deathBurst=false);
     void DrawFaces();
     Object3dCommon* common_ = nullptr;

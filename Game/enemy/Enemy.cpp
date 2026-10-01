@@ -595,7 +595,7 @@ void Enemy::DrawImGui() {
     }
     int mode=static_cast<int>(breakMode_);
     if (ImGui::Combo("Break Mode", &mode, "Chunk\0Face\0")) breakMode_=static_cast<FragmentMode>(mode);
-    ImGui::SliderInt("Max Active Face Shards", &maxActiveFaces_, 1, static_cast<int>(kFaceCapacity));
+    ImGui::SliderInt("Max Active Face Shards Per Enemy", &maxActiveFaces_, 1, static_cast<int>(kFaceCapacity));
     ImGui::SliderInt("Max Face Shards Per Break", &maxFacesPerBreak_, 1, static_cast<int>(kFaceCapacity));
     ImGui::SliderFloat("Face Shard Lifetime", &faceLifetime_, .1f, 15);
     ImGui::Text("Active Faces (this Enemy): %zu", faceShards_.size());
@@ -736,16 +736,12 @@ void Enemy::DrawPartDebug(const Matrix4x4& vp,const Vector2& screenMin,const Vec
 }
 
 void Enemy::TrimFacePool(size_t reserve) {
-    while (true) {
-        size_t total=reserve;
-        Enemy* oldest=nullptr;
-        for (auto* owner : fragmentOwners_) {
-            total+=owner->faceShards_.size();
-            if (!owner->faceShards_.empty() && (!oldest || owner->faceShards_.front().spawnOrder<oldest->faceShards_.front().spawnOrder)) oldest=owner;
-        }
-        if (total<=static_cast<size_t>(maxActiveFaces_) || !oldest) break;
-        oldest->faceShards_.erase(oldest->faceShards_.begin());
-    }
+    // Each enemy owns a separate face buffer. A new death burst must not evict
+    // another enemy's shards before their lifetime expires.
+    const size_t limit=static_cast<size_t>(std::clamp(maxActiveFaces_,1,static_cast<int>(kFaceCapacity)));
+    const size_t available=limit-std::min(reserve,limit);
+    if (faceShards_.size()>available)
+        faceShards_.erase(faceShards_.begin(),faceShards_.begin()+(faceShards_.size()-available));
 }
 bool Enemy::SpawnFaces(size_t part, const Vector3& direction,bool deathBurst) {
     const auto& source=parts_[part].geometry ? parts_[part].geometry->faces : faceData_[part];
